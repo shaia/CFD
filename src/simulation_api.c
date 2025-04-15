@@ -1,8 +1,7 @@
-#include "grid.h"
 #include "solver.h"
+#include "grid.h"
 #include "vtk_output.h"
-#include <stddef.h>
-#include <math.h>
+#include "utils.h"
 
 // Structure to hold simulation data
 typedef struct {
@@ -45,23 +44,10 @@ void run_simulation_step(SimulationData* sim_data) {
 
 // Write simulation data to VTK file
 void write_simulation_to_vtk(SimulationData* sim_data, const char* filename) {
-    // Combine u and v into a single velocity magnitude array
-    size_t nx = sim_data->grid->nx;
-    size_t ny = sim_data->grid->ny;
-    double* velocity_magnitude = (double*)malloc(nx * ny * sizeof(double));
+    double* velocity_magnitude = calculate_velocity_magnitude(sim_data->field, sim_data->grid->nx, sim_data->grid->ny);
 
-    for (size_t j = 0; j < ny; j++) {
-        for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
-            double u = sim_data->field->u[idx];
-            double v = sim_data->field->v[idx];
-            velocity_magnitude[idx] = sqrt(u * u + v * v);
-        }
-    }
-
-    // Write the velocity magnitude to the VTK file
     write_vtk_output(filename, "velocity_magnitude", velocity_magnitude, 
-                     nx, ny,
+                     sim_data->grid->nx, sim_data->grid->ny,
                      sim_data->grid->xmin, sim_data->grid->xmax,
                      sim_data->grid->ymin, sim_data->grid->ymax);
 

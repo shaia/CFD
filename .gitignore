@@ -69,9 +69,14 @@ _deps
 CMakeUserPresets.json
 
 
+#cmake-build-debug
 build/**/*
 
 include/*
 lib/*
 bin/*
 test/test_runner
+
+
+#vscode
+.vscode/

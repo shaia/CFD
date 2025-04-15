@@ -39,7 +39,6 @@ void write_vtk_output(const char* filename, const char* field_name,
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
             size_t idx = j * nx + i;
-            printf("%f\n", data[idx]);
             fprintf(fp, "%f\n", data[idx]);
         }
     }

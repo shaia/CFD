@@ -178,4 +178,22 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
     cfd_free(p_new);
     cfd_free(rho_new);
     cfd_free(T_new);
-} 
+}
+
+double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny) {
+    double* velocity_magnitude = (double*)malloc(nx * ny * sizeof(double));
+    if (!velocity_magnitude) {
+        cfd_error("Failed to allocate memory for velocity magnitude");
+    }
+
+    for (size_t j = 0; j < ny; j++) {
+        for (size_t i = 0; i < nx; i++) {
+            size_t idx = j * nx + i;
+            double u = field->u[idx];
+            double v = field->v[idx];
+            velocity_magnitude[idx] = sqrt(u * u + v * v);
+        }
+    }
+
+    return velocity_magnitude;
+}
