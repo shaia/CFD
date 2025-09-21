@@ -1,20 +1,37 @@
+// Enable C11 features for aligned_alloc
+#define _POSIX_C_SOURCE 200112L
+#define _ISOC11_SOURCE
+
 #include "solver.h"
 #include "utils.h"
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>
 #include "vtk_output.h"
 
 #ifdef __AVX2__
 #include <immintrin.h>
 #endif
 
-// Windows compatibility for aligned_alloc
-#ifdef _WIN32
-#include <malloc.h>
-#define aligned_alloc(size, alignment) _aligned_malloc(size, alignment)
-#define aligned_free(ptr) _aligned_free(ptr)
+// Fallback for systems without aligned_alloc
+#ifndef _WIN32
+    #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
+        // Fallback implementation for older C standards
+        static void* aligned_alloc_fallback(size_t alignment, size_t size) {
+            void *ptr;
+            if (posix_memalign(&ptr, alignment, size) != 0) {
+                return NULL;
+            }
+            return ptr;
+        }
+        #define aligned_alloc(alignment, size) aligned_alloc_fallback(alignment, size)
+    #endif
+    #define aligned_free(ptr) free(ptr)
 #else
-#define aligned_free(ptr) free(ptr)
+    // Windows compatibility
+    #include <malloc.h>
+    #define aligned_alloc(alignment, size) _aligned_malloc(size, alignment)
+    #define aligned_free(ptr) _aligned_free(ptr)
 #endif
 
 // Block size for cache-friendly memory access
@@ -22,16 +39,45 @@
 
 // Optimized version of the solver using SIMD and cache-friendly memory access
 void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const SolverParams* params) {
+    // Validate input parameters
+    if (!field || !grid || !params) {
+        return;
+    }
+
     // Allocate temporary arrays with aligned memory for SIMD
-    double* u_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
-    double* v_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
-    double* p_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
-    double* rho_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
-    double* T_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
+    double* u_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
+    double* v_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
+    double* p_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
+    double* rho_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
+    double* T_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
+
+    // Check if memory allocation succeeded
+    if (!u_new || !v_new || !p_new || !rho_new || !T_new) {
+        // Clean up any allocated memory
+        if (u_new) aligned_free(u_new);
+        if (v_new) aligned_free(v_new);
+        if (p_new) aligned_free(p_new);
+        if (rho_new) aligned_free(rho_new);
+        if (T_new) aligned_free(T_new);
+        return;
+    }
 
     // Pre-compute grid spacing inverses
-    double* dx_inv = (double*)aligned_alloc((field->nx - 1) * sizeof(double), 32);
-    double* dy_inv = (double*)aligned_alloc((field->ny - 1) * sizeof(double), 32);
+    double* dx_inv = (double*)aligned_alloc(32, (field->nx - 1) * sizeof(double));
+    double* dy_inv = (double*)aligned_alloc(32, (field->ny - 1) * sizeof(double));
+
+    // Check if grid allocation succeeded
+    if (!dx_inv || !dy_inv) {
+        // Clean up all allocated memory
+        aligned_free(u_new);
+        aligned_free(v_new);
+        aligned_free(p_new);
+        aligned_free(rho_new);
+        aligned_free(T_new);
+        if (dx_inv) aligned_free(dx_inv);
+        if (dy_inv) aligned_free(dy_inv);
+        return;
+    }
     
     for (size_t i = 0; i < field->nx - 1; i++) {
         dx_inv[i] = 1.0 / (2.0 * grid->dx[i]);
@@ -48,10 +94,10 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
         
         // Update solution using block-based computation
         for (size_t j_block = 1; j_block < field->ny - 1; j_block += BLOCK_SIZE) {
-            size_t j_end = min_double(j_block + BLOCK_SIZE, field->ny - 1);
-            
+            size_t j_end = (j_block + BLOCK_SIZE < field->ny - 1) ? j_block + BLOCK_SIZE : field->ny - 1;
+
             for (size_t i_block = 1; i_block < field->nx - 1; i_block += BLOCK_SIZE) {
-                size_t i_end = min_double(i_block + BLOCK_SIZE, field->nx - 1);
+                size_t i_end = (i_block + BLOCK_SIZE < field->nx - 1) ? i_block + BLOCK_SIZE : field->nx - 1;
                 
                 // Process each block
                 for (size_t j = j_block; j < j_end; j++) {
