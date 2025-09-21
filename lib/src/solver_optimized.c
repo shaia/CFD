@@ -11,7 +11,7 @@
 // Windows compatibility for aligned_alloc
 #ifdef _WIN32
 #include <malloc.h>
-#define aligned_alloc(alignment, size) _aligned_malloc(size, alignment)
+#define aligned_alloc(size, alignment) _aligned_malloc(size, alignment)
 #define aligned_free(ptr) _aligned_free(ptr)
 #else
 #define aligned_free(ptr) free(ptr)
@@ -23,15 +23,15 @@
 // Optimized version of the solver using SIMD and cache-friendly memory access
 void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const SolverParams* params) {
     // Allocate temporary arrays with aligned memory for SIMD
-    double* u_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* v_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* p_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* rho_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* T_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    
+    double* u_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
+    double* v_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
+    double* p_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
+    double* rho_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
+    double* T_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
+
     // Pre-compute grid spacing inverses
-    double* dx_inv = (double*)aligned_alloc(32, (field->nx - 1) * sizeof(double));
-    double* dy_inv = (double*)aligned_alloc(32, (field->ny - 1) * sizeof(double));
+    double* dx_inv = (double*)aligned_alloc((field->nx - 1) * sizeof(double), 32);
+    double* dy_inv = (double*)aligned_alloc((field->ny - 1) * sizeof(double), 32);
     
     for (size_t i = 0; i < field->nx - 1; i++) {
         dx_inv[i] = 1.0 / (2.0 * grid->dx[i]);
