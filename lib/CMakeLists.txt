@@ -49,12 +49,19 @@ target_include_directories(cfd_library
 # Compiler-specific options
 if(MSVC)
     target_compile_options(cfd_library PRIVATE /W3)
-    # Enable AVX2 if available
-    target_compile_options(cfd_library PRIVATE /arch:AVX2)
+    # Enable AVX2 if available on x86/x64
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+        target_compile_options(cfd_library PRIVATE /arch:AVX2)
+    endif()
 else()
     target_compile_options(cfd_library PRIVATE -Wall -Wextra -O3)
-    # Enable AVX2 and other optimizations if available
-    target_compile_options(cfd_library PRIVATE -mavx2 -mfma)
+    # Enable AVX2 and other optimizations if available on x86/x64
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+        target_compile_options(cfd_library PRIVATE -mavx2 -mfma)
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+        # ARM64-specific optimizations
+        target_compile_options(cfd_library PRIVATE -mcpu=native)
+    endif()
     # Link math library on Unix systems
     target_link_libraries(cfd_library PUBLIC m)
 endif()
