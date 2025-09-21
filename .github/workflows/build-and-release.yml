@@ -24,7 +24,6 @@ jobs:
         uname -a
         echo "Processor: $(uname -m)"
         cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_EXAMPLES=ON -DBUILD_TESTS=ON
-
     - name: Build
       run: cmake --build build --config ${{ matrix.build_type }}
 
