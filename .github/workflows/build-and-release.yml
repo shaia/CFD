@@ -28,8 +28,21 @@ jobs:
     - name: Build
       run: cmake --build build --config ${{ matrix.build_type }}
 
-   
-  
+    - name: Run Tests
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          cd build/${{ matrix.build_type }}
+          ./test_runner.exe
+          ./test_simulation_basic.exe
+        else
+          cd build
+          ./test_runner
+          ./test_simulation_basic
+        fi
+      shell: bash
+
+
+
 
     - name: Package Artifacts
       if: matrix.build_type == 'Release'
