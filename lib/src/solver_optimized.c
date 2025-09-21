@@ -30,7 +30,7 @@
 #else
     // Windows compatibility
     #include <malloc.h>
-    #define aligned_alloc(alignment, size) _aligned_malloc(size, alignment)
+    #define aligned_alloc(size, alignment) _aligned_malloc(size, alignment)
     #define aligned_free(ptr) _aligned_free(ptr)
 #endif
 
@@ -45,11 +45,11 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
     }
 
     // Allocate temporary arrays with aligned memory for SIMD
-    double* u_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* v_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* p_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* rho_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* T_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
+    double* u_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
+    double* v_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
+    double* p_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
+    double* rho_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
+    double* T_new = (double*)aligned_alloc(field->nx * field->ny * sizeof(double), 32);
 
     // Check if memory allocation succeeded
     if (!u_new || !v_new || !p_new || !rho_new || !T_new) {
@@ -63,8 +63,8 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
     }
 
     // Pre-compute grid spacing inverses
-    double* dx_inv = (double*)aligned_alloc(32, (field->nx - 1) * sizeof(double));
-    double* dy_inv = (double*)aligned_alloc(32, (field->ny - 1) * sizeof(double));
+    double* dx_inv = (double*)aligned_alloc((field->nx - 1) * sizeof(double), 32);
+    double* dy_inv = (double*)aligned_alloc((field->ny - 1) * sizeof(double), 32);
 
     // Check if grid allocation succeeded
     if (!dx_inv || !dy_inv) {
