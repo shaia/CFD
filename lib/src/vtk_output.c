@@ -21,21 +21,12 @@ void write_vtk_output(const char* filename, const char* field_name,
     fprintf(fp, "ORIGIN %f %f 0.0\n", xmin, ymin);
     fprintf(fp, "SPACING %f %f 1.0\n", (xmax - xmin) / (nx - 1), (ymax - ymin) / (ny - 1));
 
-    // Debug: Print grid points
-    printf("Grid Points:\n");
-    for (size_t j = 0; j < ny; j++) {
-        for (size_t i = 0; i < nx; i++) {
-            printf("(%f, %f)\n", xmin + i * ((xmax - xmin) / (nx - 1)), ymin + j * ((ymax - ymin) / (ny - 1)));
-        }
-    }
 
     // Write field data
     fprintf(fp, "\nPOINT_DATA %zu\n", nx * ny);
     fprintf(fp, "SCALARS %s float 1\n", field_name);
     fprintf(fp, "LOOKUP_TABLE default\n");
 
-    // Debug: Print data values
-    printf("Data Values:\n");
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
             size_t idx = j * nx + i;

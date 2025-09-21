@@ -73,9 +73,15 @@ CMakeUserPresets.json
 build/**/*
 
 include/*
-lib/*
 bin/*
 test/test_runner
+
+# Note: lib/ directory contains our library source code and should be tracked
+# Only ignore compiled library files in specific locations if needed
+
+# Output files
+output/
+visualization/visualization_output/
 
 
 #vscode
