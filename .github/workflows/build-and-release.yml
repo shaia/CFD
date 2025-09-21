@@ -29,16 +29,7 @@ jobs:
       run: cmake --build build --config ${{ matrix.build_type }}
 
    
-    - name: Run Performance Benchmark (Release only)
-      if: matrix.build_type == 'Release'
-      working-directory: build
-      run: |
-        if [ "$RUNNER_OS" == "Windows" ]; then
-          ./Release/performance_comparison.exe
-        else
-          ./performance_comparison
-        fi
-      shell: bash
+  
 
     - name: Package Artifacts
       if: matrix.build_type == 'Release'
