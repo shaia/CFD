@@ -39,7 +39,7 @@ SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, 
 // Run simulation step
 void run_simulation_step(SimulationData* sim_data) {
     compute_time_step(sim_data->field, sim_data->grid, &sim_data->params);
-    solve_navier_stokes_optimized(sim_data->field, sim_data->grid, &sim_data->params);
+    solve_navier_stokes(sim_data->field, sim_data->grid, &sim_data->params);
 }
 
 // Write simulation data to VTK file
