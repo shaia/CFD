@@ -165,12 +165,12 @@ jobs:
         patch=${PARTS[2]:-0}
 
         # Check if this is a major change (breaking changes)
-        if git log $latest..HEAD --oneline | grep -i "breaking\|major"; then
+        if git log $latest..HEAD --oneline | grep -i "breaking\|major" || true; then
           major=$((major + 1))
           minor=0
           patch=0
         # Check if this is a minor change (new features)
-        elif git log $latest..HEAD --oneline | grep -i "feat\|feature\|add"; then
+        elif git log $latest..HEAD --oneline | grep -i "feat\|feature\|add" || true; then
           minor=$((minor + 1))
           patch=0
         # Otherwise it's a patch
