@@ -1,0 +1,192 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        build_type: [Release, Debug]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: |
+        echo "System info:"
+        uname -a
+        echo "Processor: $(uname -m)"
+        cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_EXAMPLES=ON -DBUILD_TESTS=ON
+
+    - name: Build
+      run: cmake --build build --config ${{ matrix.build_type }}
+
+   
+  
+
+    - name: Package Artifacts
+      if: matrix.build_type == 'Release'
+      run: |
+        mkdir -p artifacts
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          cp build/Release/*.exe artifacts/
+          cp build/lib/Release/*.lib artifacts/
+        else
+          cp build/lib/*.a artifacts/ 2>/dev/null || true
+          cp build/*_example artifacts/ 2>/dev/null || true
+          cp build/*_simulation artifacts/ 2>/dev/null || true
+          cp build/performance_comparison artifacts/ 2>/dev/null || true
+          cp build/custom_boundary_conditions artifacts/ 2>/dev/null || true
+        fi
+        cp -r lib/include artifacts/
+        cp README.md artifacts/
+        cp build.sh artifacts/ 2>/dev/null || true
+      shell: bash
+
+    - name: Upload Build Artifacts
+      if: matrix.build_type == 'Release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: cfd-framework-${{ matrix.os }}
+        path: artifacts/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: release-artifacts
+
+    - name: Create Release Archives
+      run: |
+        cd release-artifacts
+        for dir in */; do
+          if [ -d "$dir" ]; then
+            tar -czf "${dir%/}.tar.gz" -C "$dir" .
+            zip -r "${dir%/}.zip" "$dir"
+          fi
+        done
+        ls -la *.tar.gz *.zip
+
+    - name: Extract Version from Tag
+      id: version
+      run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+    - name: Generate Release Notes
+      run: |
+        cat > release_notes.md << EOF
+        # CFD Framework v${{ steps.version.outputs.version }}
+
+        ## Features
+        - 2D structured grid generation
+        - Navier-Stokes equations solver (basic and optimized)
+        - VTK output format for visualization
+        - Cross-platform support (Windows, Linux, macOS)
+        - Unity testing framework integration
+        - Performance benchmarking tools
+
+        ## Performance (Release build)
+        The optimized solver shows significant improvements for larger grids:
+        - 50x25 grid: +100% performance improvement
+        - 400x200 grid: +48% performance improvement
+
+        ## Build Instructions
+        \`\`\`bash
+        # Quick start
+        ./build.sh build
+        ./build.sh run
+
+        # Performance testing
+        CMAKE_BUILD_TYPE=Release ./build.sh build
+        cd build/Release && ./performance_comparison
+        \`\`\`
+
+        ## What's Changed
+        - See commit history for detailed changes
+
+        ## Supported Platforms
+        - ✅ Windows (MSVC)
+        - ✅ Linux (GCC/Clang)
+        - ✅ macOS (Clang)
+        EOF
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          release-artifacts/*.tar.gz
+          release-artifacts/*.zip
+        body_path: release_notes.md
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  version-bump:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Get Latest Tag
+      id: latest_tag
+      run: |
+        latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "tag=$latest_tag" >> $GITHUB_OUTPUT
+
+    - name: Determine Next Version
+      id: next_version
+      run: |
+        latest="${{ steps.latest_tag.outputs.tag }}"
+        # Remove 'v' prefix if present
+        version=${latest#v}
+
+        # Split version into parts
+        IFS='.' read -ra PARTS <<< "$version"
+        major=${PARTS[0]:-0}
+        minor=${PARTS[1]:-0}
+        patch=${PARTS[2]:-0}
+
+        # Check if this is a major change (breaking changes)
+        if git log $latest..HEAD --oneline | grep -i "breaking\|major" || true; then
+          major=$((major + 1))
+          minor=0
+          patch=0
+        # Check if this is a minor change (new features)
+        elif git log $latest..HEAD --oneline | grep -i "feat\|feature\|add" || true; then
+          minor=$((minor + 1))
+          patch=0
+        # Otherwise it's a patch
+        else
+          patch=$((patch + 1))
+        fi
+
+        next_version="v$major.$minor.$patch"
+        echo "version=$next_version" >> $GITHUB_OUTPUT
+        echo "Next version: $next_version"
+
+    - name: Create and Push Tag
+      if: steps.next_version.outputs.version != steps.latest_tag.outputs.tag
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        git tag -a "${{ steps.next_version.outputs.version }}" -m "Release ${{ steps.next_version.outputs.version }}"
+        git push origin "${{ steps.next_version.outputs.version }}"
