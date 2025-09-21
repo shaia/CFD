@@ -94,6 +94,24 @@ jobs:
         done
         ls -la *.tar.gz *.zip
 
+    - name: Setup git revision range
+      id: revision
+      run: |
+          # Get the latest tag, or use initial commit if no tags exist
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          if [ "$latest_tag" != "$(git rev-list --max-parents=0 HEAD)" ]; then
+            echo "range=${latest_tag}..HEAD" >> $GITHUB_OUTPUT
+          else
+            echo "range=HEAD" >> $GITHUB_OUTPUT
+          fi
+      
+    - name: Push tag using PAT
+      env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+      run: |
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "github-actions[bot]"
+        git push https://x-access-token:${GH_PAT}@github.com/${{ github.repository }} ${GITHUB_REF#refs/tags/}    
     - name: Extract Version from Tag
       id: version
       run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
