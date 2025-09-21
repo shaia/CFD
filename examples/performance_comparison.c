@@ -13,7 +13,7 @@
 #include "utils.h"
 
 void benchmark_solver(const char* solver_name,
-                     void (*solver_func)(FlowField*, Grid*, SolverParams*),
+                     void (*solver_func)(FlowField*, const Grid*, const SolverParams*),
                      size_t nx, size_t ny, int iterations) {
     printf("\n=== %s Benchmark ===\n", solver_name);
     printf("Grid size: %zux%zu, Iterations: %d\n", nx, ny, iterations);
