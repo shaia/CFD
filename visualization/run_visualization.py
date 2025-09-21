@@ -60,11 +60,10 @@ def main():
     # Move VTK files to output directory if they're in build/
     if os.path.exists("build"):
         import glob
-        import os
+        import shutil
         os.makedirs("output", exist_ok=True)
         build_vtk_files = glob.glob("build/output_optimized_*.vtk")
         for file in build_vtk_files:
-            import shutil
             filename = os.path.basename(file)
             shutil.move(file, f"output/{filename}")
 

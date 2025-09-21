@@ -11,7 +11,6 @@ from matplotlib.colors import LinearSegmentedColormap
 import os
 import matplotlib.gridspec as gridspec
 import glob
-import os
 
 def read_vtk_file(filename):
     """Read a VTK structured points file and extract data"""
