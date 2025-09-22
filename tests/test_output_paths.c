@@ -39,15 +39,15 @@ void test_output_directory_creation(void) {
     rmdir(test_dir);
     rmdir("../../output");
 
-    // Test basic directory creation
+    // Test basic directory creation - function returns 1 if dir exists or was created successfully
     int result = ensure_directory_exists("../../output");
-    TEST_ASSERT_EQUAL(0, result);
+    TEST_ASSERT_TRUE(result);  // Should succeed (either exists or was created)
 
     result = ensure_directory_exists(test_dir);
-    TEST_ASSERT_EQUAL(0, result);
+    TEST_ASSERT_TRUE(result);  // Should succeed
 
     result = ensure_directory_exists(nested_test_dir);
-    TEST_ASSERT_EQUAL(0, result);
+    TEST_ASSERT_TRUE(result);  // Should succeed
 
     // Test that directories were actually created
     TEST_ASSERT_TRUE(file_exists("../../output"));
@@ -56,7 +56,7 @@ void test_output_directory_creation(void) {
 
     // Test vtk_files directory creation
     result = ensure_directory_exists("../../output/vtk_files");
-    TEST_ASSERT_EQUAL(0, result);
+    TEST_ASSERT_TRUE(result);
     TEST_ASSERT_TRUE(file_exists("../../output/vtk_files"));
 
     // Clean up

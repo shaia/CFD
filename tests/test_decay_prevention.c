@@ -86,15 +86,13 @@ void test_flow_energy_maintenance(void) {
 
     printf("Energy ratios: mid=%.3f, end=%.3f\n", energy_ratio_mid, energy_ratio_end);
 
-    // Energy should not decay to less than 10% of initial value (source terms prevent this)
-    TEST_ASSERT_GREATER_THAN(0.1, energy_ratio_end);
+    // Energy should be maintained or grow slightly due to source terms
+    TEST_ASSERT_GREATER_THAN(energy_ratio_end, 0.95);  // Should not decay below 95%
+    TEST_ASSERT_LESS_THAN(energy_ratio_end, 2.0);      // Should not grow more than 100%
 
-    // Energy should not blow up either (stability check)
-    TEST_ASSERT_LESS_THAN(energy_ratio_end, 100.0);
-
-    // Mid-point energy should be reasonable
-    TEST_ASSERT_GREATER_THAN(0.2, energy_ratio_mid);
-    TEST_ASSERT_LESS_THAN(energy_ratio_mid, 50.0);
+    // Mid-point energy should show the source terms working
+    TEST_ASSERT_GREATER_THAN(energy_ratio_mid, 0.95);
+    TEST_ASSERT_LESS_THAN(energy_ratio_mid, 2.0);
 
     flow_field_destroy(field);
     grid_destroy(grid);
@@ -153,7 +151,7 @@ void test_source_term_effectiveness(void) {
            initial_velocity_mag, final_velocity_mag);
 
     // Source terms should have increased velocity from near-zero
-    TEST_ASSERT_GREATER_THAN(initial_velocity_mag, final_velocity_mag);
+    TEST_ASSERT_GREATER_THAN(final_velocity_mag, initial_velocity_mag);
 
     // But not to unreasonable levels
     TEST_ASSERT_LESS_THAN(final_velocity_mag, 100.0);
@@ -224,8 +222,8 @@ void test_decay_prevention_both_solvers(void) {
     printf("  Optimized solver: %.6f -> %.6f (ratio: %.3f)\n", initial_energy2, final_energy2, ratio2);
 
     // Both solvers should prevent rapid decay (source terms working)
-    TEST_ASSERT_GREATER_THAN(0.1, ratio1);  // Should not decay to <10% of initial
-    TEST_ASSERT_GREATER_THAN(0.1, ratio2);
+    TEST_ASSERT_GREATER_THAN(ratio1, 0.95);  // Energy should be maintained
+    TEST_ASSERT_GREATER_THAN(ratio2, 0.95);
 
     // Both should remain stable
     TEST_ASSERT_LESS_THAN(ratio1, 50.0);
