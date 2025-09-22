@@ -68,8 +68,7 @@ void write_velocity_vectors_to_vtk(SimulationData* sim_data, const char* filenam
 // Write complete flow field (velocity vectors + magnitude + pressure) to VTK file
 void write_flow_field_to_vtk(SimulationData* sim_data, const char* filename) {
     write_vtk_flow_field(filename,
-                        sim_data->field->u, sim_data->field->v,
-                        sim_data->field->p, sim_data->field->rho,
+                        sim_data->field,
                         sim_data->grid->nx, sim_data->grid->ny,
                         sim_data->grid->xmin, sim_data->grid->xmax,
                         sim_data->grid->ymin, sim_data->grid->ymax);
