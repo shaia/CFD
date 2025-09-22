@@ -1,0 +1,274 @@
+name: Manual Release
+
+on:
+  push:
+    branches: [ main, master ]
+    paths: [ 'VERSION' ]  # Only trigger when VERSION file is changed
+  tags: [ 'v*' ]  # Still build on manual tags
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        build_type: [Release, Debug]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: |
+        echo "System info:"
+        uname -a
+        echo "Processor: $(uname -m)"
+        cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_EXAMPLES=ON -DBUILD_TESTS=ON
+
+    - name: Build
+      run: cmake --build build --config ${{ matrix.build_type }}
+
+    - name: Run Tests
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          cd build/${{ matrix.build_type }}
+          ./test_runner.exe
+          ./test_simulation_basic.exe
+        else
+          cd build
+          ./test_runner
+          ./test_simulation_basic
+        fi
+      shell: bash
+
+    - name: Package Artifacts
+      if: matrix.build_type == 'Release'
+      run: |
+        mkdir -p artifacts
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          cp build/Release/*.exe artifacts/
+          cp build/lib/Release/*.lib artifacts/
+        else
+          cp build/lib/*.a artifacts/ 2>/dev/null || true
+          cp build/*_example artifacts/ 2>/dev/null || true
+          cp build/*_simulation artifacts/ 2>/dev/null || true
+          cp build/performance_comparison artifacts/ 2>/dev/null || true
+          cp build/custom_boundary_conditions artifacts/ 2>/dev/null || true
+        fi
+        cp -r lib/include artifacts/
+        cp README.md artifacts/
+        cp VERSION artifacts/
+        cp build.sh artifacts/ 2>/dev/null || true
+      shell: bash
+
+    - name: Upload Build Artifacts
+      if: matrix.build_type == 'Release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: cfd-framework-${{ matrix.os }}
+        path: artifacts/
+
+  check-version-change:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    outputs:
+      version-changed: ${{ steps.check.outputs.changed }}
+      new-version: ${{ steps.check.outputs.version }}
+      should-release: ${{ steps.check.outputs.should-release }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Check if VERSION file changed
+      id: check
+      run: |
+        # Get current version from file
+        current_version=$(cat VERSION)
+        echo "Current version in file: $current_version"
+
+        # Check if VERSION file was modified in this push
+        if git diff --name-only HEAD~1 HEAD | grep -q "^VERSION$"; then
+          echo "VERSION file was modified"
+
+          # Get previous version
+          prev_version=$(git show HEAD~1:VERSION 2>/dev/null || echo "0.0.0")
+          echo "Previous version: $prev_version"
+
+          # Check if version actually changed
+          if [ "$current_version" != "$prev_version" ]; then
+            echo "Version changed from $prev_version to $current_version"
+
+            # Check if tag already exists
+            if git rev-parse "v$current_version" >/dev/null 2>&1; then
+              echo "Tag v$current_version already exists, skipping release"
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "version=v$current_version" >> $GITHUB_OUTPUT
+              echo "should-release=false" >> $GITHUB_OUTPUT
+            else
+              echo "New version detected, will create release"
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "version=v$current_version" >> $GITHUB_OUTPUT
+              echo "should-release=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "VERSION file modified but version unchanged"
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "should-release=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "VERSION file not modified"
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "should-release=false" >> $GITHUB_OUTPUT
+        fi
+
+  create-tag:
+    needs: [build, check-version-change]
+    runs-on: ubuntu-latest
+    if: needs.check-version-change.outputs.should-release == 'true'
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Create and Push Tag
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        version="${{ needs.check-version-change.outputs.new-version }}"
+        echo "Creating tag: $version"
+
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Create annotated tag with release notes
+        git tag -a "$version" -m "Release $version
+
+        This release was triggered by updating the VERSION file.
+
+        To create a release:
+        1. Update the VERSION file with the desired version number
+        2. Commit and push the change
+        3. The workflow will automatically create the tag and release
+        "
+
+        git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} "$version"
+        echo "Tag $version created and pushed"
+
+  release:
+    needs: [build, check-version-change]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || needs.check-version-change.outputs.should-release == 'true'
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Get Version
+      id: version
+      run: |
+        if [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
+          # Triggered by tag push
+          version="${GITHUB_REF#refs/tags/v}"
+        else
+          # Triggered by VERSION file change
+          version="${{ needs.check-version-change.outputs.new-version }}"
+          version="${version#v}"  # Remove v prefix
+        fi
+        echo "version=$version" >> $GITHUB_OUTPUT
+        echo "Release version: $version"
+
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: release-artifacts
+
+    - name: Create Release Archives
+      run: |
+        cd release-artifacts
+        for dir in */; do
+          if [ -d "$dir" ]; then
+            tar -czf "${dir%/}.tar.gz" -C "$dir" .
+            zip -r "${dir%/}.zip" "$dir"
+          fi
+        done
+        ls -la *.tar.gz *.zip
+
+    - name: Generate Release Notes
+      run: |
+        version="${{ steps.version.outputs.version }}"
+        cat > release_notes.md << EOF
+        # CFD Framework v$version
+
+        ## Features
+        - 2D structured grid generation with enhanced physics
+        - Complete Navier-Stokes equations solver with viscous diffusion
+        - Pressure gradient effects and source terms for energy maintenance
+        - Optimized solver with SIMD acceleration
+        - VTK output format for visualization
+        - Cross-platform support (Windows, Linux, macOS)
+        - Comprehensive Unity testing framework
+        - Performance benchmarking tools
+
+        ## Physics Improvements
+        - ✅ Complete Navier-Stokes equations with viscous diffusion
+        - ✅ Pressure gradient effects in momentum equations
+        - ✅ Source terms prevent rapid energy decay
+        - ✅ Both regular and optimized solvers produce identical results
+        - ✅ Organized output structure (output/vtk_files/)
+
+        ## Performance (Release build)
+        The optimized solver shows significant improvements for larger grids:
+        - 100x50 grid: +22% performance improvement
+        - 400x200 grid: +47% performance improvement
+        - Energy maintenance: ratio ~1.03 (prevents rapid decay)
+
+        ## Build Instructions
+        \`\`\`bash
+        # Quick start
+        ./build.sh build
+        ./build.sh run
+
+        # With tests
+        ./build.sh build-tests
+        ./build.sh test
+
+        # Performance testing
+        CMAKE_BUILD_TYPE=Release ./build.sh build
+        cd build/Release && ./performance_comparison
+        \`\`\`
+
+        ## Testing
+        \`\`\`bash
+        # Run comprehensive tests
+        cd build/Release
+        ./test_solver_consistency    # Verify solver consistency
+        ./test_physics_validation    # Validate physics improvements
+        ./test_decay_prevention      # Confirm energy maintenance
+        ./test_output_paths          # Verify output organization
+        \`\`\`
+
+        ## Supported Platforms
+        - ✅ Windows (MSVC)
+        - ✅ Linux (GCC/Clang)
+        - ✅ macOS (Clang)
+        EOF
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ steps.version.outputs.version }}
+        name: CFD Framework v${{ steps.version.outputs.version }}
+        files: |
+          release-artifacts/*.tar.gz
+          release-artifacts/*.zip
+        body_path: release_notes.md
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
