@@ -13,7 +13,6 @@
 #define DEFAULT_SOURCE_AMPLITUDE_V 0.05   // Default amplitude of v-velocity source term
 #define DEFAULT_SOURCE_DECAY_RATE 0.1     // Default decay rate for source terms over time
 #define DEFAULT_PRESSURE_COUPLING 0.1     // Default coupling coefficient for pressure update
-
 FlowField* flow_field_create(size_t nx, size_t ny) {
     FlowField* field = (FlowField*)cfd_malloc(sizeof(FlowField));
     

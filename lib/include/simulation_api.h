@@ -31,7 +31,6 @@ double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t n
 
 // Calculate velocity magnitude squared (for performance-critical comparisons)
 double* calculate_velocity_magnitude_squared(const FlowField* field, size_t nx, size_t ny);
-
 // Free simulation data
 void free_simulation(SimulationData* sim_data);
 

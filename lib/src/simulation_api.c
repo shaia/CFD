@@ -102,7 +102,6 @@ double* calculate_velocity_magnitude_squared(const FlowField* field, size_t nx, 
 
     return velocity_magnitude_sq;
 }
-
 // Free simulation data
 void free_simulation(SimulationData* sim_data) {
     flow_field_destroy(sim_data->field);
