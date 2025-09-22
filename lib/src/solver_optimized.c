@@ -138,8 +138,8 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
                         // Source terms to maintain flow (prevents decay)
                         double x = grid->x[i];
                         double y = grid->y[j];
-                        double source_u = params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * params_copy.dt);
-                        double source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) * exp(-params->source_decay_rate * iter * params_copy.dt);
+                        double source_u, source_v;
+                        compute_source_terms(x, y, iter, params_copy.dt, params, &source_u, &source_v);
 
                         // Complete Navier-Stokes equations with optimized calculations
                         u_new[idx] = field->u[idx] + params_copy.dt * (

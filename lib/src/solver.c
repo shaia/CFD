@@ -145,6 +145,13 @@ void apply_boundary_conditions(FlowField* field, const Grid* grid) {
     }
 }
 
+// Helper function to compute source terms consistently across all solvers
+void compute_source_terms(double x, double y, int iter, double dt, const SolverParams* params,
+                         double* source_u, double* source_v) {
+    *source_u = params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * dt);
+    *source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) * exp(-params->source_decay_rate * iter * dt);
+}
+
 void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams* params) {
     // Allocate temporary arrays for the solution update
     double* u_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
@@ -196,8 +203,8 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
                 // Source terms to maintain flow (prevents decay)
                 double x = grid->x[i];
                 double y = grid->y[j];
-                double source_u = params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * params_copy.dt);
-                double source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) * exp(-params->source_decay_rate * iter * params_copy.dt);
+                double source_u, source_v;
+                compute_source_terms(x, y, iter, params_copy.dt, params, &source_u, &source_v);
 
                 // Complete Navier-Stokes equations
                 u_new[idx] = field->u[idx] + params_copy.dt * (

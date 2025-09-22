@@ -39,6 +39,8 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
 void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const SolverParams* params);
 void apply_boundary_conditions(FlowField* field, const Grid* grid);
 void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params);
+void compute_source_terms(double x, double y, int iter, double dt, const SolverParams* params,
+                         double* source_u, double* source_v);
 double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny);
 
 #endif // CFD_SOLVER_H
