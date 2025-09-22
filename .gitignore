@@ -86,3 +86,25 @@ visualization/visualization_output/
 
 #vscode
 .vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+
+# Claude AI assistant files
+.claude/
+
+# Other temporary/local files
+*.tmp
+*.swp
+*.swo
+*~
+nul
+%USERPROFILE%.actrc
+%USERPROFILE%/
+Dockerfile.act
+artifacts/
+test_frames/
