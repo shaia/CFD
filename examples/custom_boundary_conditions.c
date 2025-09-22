@@ -124,6 +124,7 @@ int main() {
 
     // Ensure output directory exists
     ensure_directory_exists("../../output");
+    ensure_directory_exists("../../output/vtk_files");
 
     printf("\nRunning simulation...\n");
     for (int iter = 0; iter < params.max_iter; iter++) {
@@ -134,7 +135,7 @@ int main() {
         // For this example, we'll just output at intervals
         if (iter % 200 == 0) {
             char filename[256];
-            snprintf(filename, sizeof(filename), "../../output/cylinder_flow_%d.vtk", iter);
+            snprintf(filename, sizeof(filename), "../../output/vtk_files/cylinder_flow_%d.vtk", iter);
 
             write_vtk_output(filename, "velocity_magnitude", field->u, nx, ny,
                            grid->xmin, grid->xmax, grid->ymin, grid->ymax);
@@ -144,7 +145,7 @@ int main() {
     }
 
     printf("\nSimulation completed!\n");
-    printf("Output files saved to ../../output/cylinder_flow_*.vtk\n");
+    printf("Output files saved to ../../output/vtk_files/cylinder_flow_*.vtk\n");
     printf("Use visualization tools to view the flow pattern around the cylinder.\n");
 
     // Cleanup

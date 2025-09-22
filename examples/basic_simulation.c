@@ -15,8 +15,9 @@ void run_simulation(SimulationData* sim_data) {
         // Optionally write output every 100 iterations
         if (iter % 100 == 0) {
             ensure_directory_exists("../../output");
+            ensure_directory_exists("../../output/vtk_files");
             char filename[256];
-            snprintf(filename, sizeof(filename), "../../output/output_optimized_%d.vtk", iter);
+            snprintf(filename, sizeof(filename), "../../output/vtk_files/output_optimized_%d.vtk", iter);
             write_simulation_to_vtk(sim_data, filename);
         }
     }

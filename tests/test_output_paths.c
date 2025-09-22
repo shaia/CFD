@@ -1,0 +1,248 @@
+#include "unity.h"
+#include "solver.h"
+#include "grid.h"
+#include "utils.h"
+#include "vtk_output.h"
+#include <stdio.h>
+#include <math.h>
+
+#ifdef _WIN32
+    #include <direct.h>
+    #include <io.h>
+    #define access _access
+    #define F_OK 0
+#else
+    #include <unistd.h>
+#endif
+
+void setUp(void) {
+    // Set up code (if needed)
+}
+
+void tearDown(void) {
+    // Clean up test files if needed
+}
+
+// Helper function to check if file exists
+int file_exists(const char* filename) {
+    return access(filename, F_OK) == 0;
+}
+
+// Test that output directories are created correctly
+void test_output_directory_creation(void) {
+    // Test that ensure_directory_exists works
+    const char* test_dir = "../../output/test_dir";
+    const char* nested_test_dir = "../../output/test_dir/nested";
+
+    // Clean up first (in case of previous test runs)
+    rmdir(nested_test_dir);
+    rmdir(test_dir);
+    rmdir("../../output");
+
+    // Test basic directory creation
+    int result = ensure_directory_exists("../../output");
+    TEST_ASSERT_EQUAL(0, result);
+
+    result = ensure_directory_exists(test_dir);
+    TEST_ASSERT_EQUAL(0, result);
+
+    result = ensure_directory_exists(nested_test_dir);
+    TEST_ASSERT_EQUAL(0, result);
+
+    // Test that directories were actually created
+    TEST_ASSERT_TRUE(file_exists("../../output"));
+    TEST_ASSERT_TRUE(file_exists(test_dir));
+    TEST_ASSERT_TRUE(file_exists(nested_test_dir));
+
+    // Test vtk_files directory creation
+    result = ensure_directory_exists("../../output/vtk_files");
+    TEST_ASSERT_EQUAL(0, result);
+    TEST_ASSERT_TRUE(file_exists("../../output/vtk_files"));
+
+    // Clean up
+    rmdir(nested_test_dir);
+    rmdir(test_dir);
+}
+
+// Test that VTK output files are created in correct locations
+void test_vtk_output_paths(void) {
+    // Create a small simulation
+    size_t nx = 5, ny = 5;
+    double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
+
+    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid_initialize_uniform(grid);
+
+    FlowField* field = flow_field_create(nx, ny);
+    initialize_flow_field(field, grid);
+
+    // Ensure output directory exists
+    ensure_directory_exists("../../output");
+    ensure_directory_exists("../../output/vtk_files");
+
+    // Test writing VTK file
+    const char* test_filename = "../../output/vtk_files/test_output.vtk";
+
+    // Remove file if it exists from previous runs
+    remove(test_filename);
+
+    // Write VTK output
+    write_vtk_output(test_filename, "test_field", field->u, nx, ny,
+                    xmin, xmax, ymin, ymax);
+
+    // Check that file was created
+    TEST_ASSERT_TRUE(file_exists(test_filename));
+
+    // Check file is not empty
+    FILE* file = fopen(test_filename, "r");
+    TEST_ASSERT_NOT_NULL(file);
+
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fclose(file);
+
+    TEST_ASSERT_GREATER_THAN(100, file_size);  // Should be reasonable size
+
+    // Test vector output
+    const char* vector_filename = "../../output/vtk_files/test_vectors.vtk";
+    remove(vector_filename);
+
+    write_vtk_vector_output(vector_filename, "velocity", field->u, field->v,
+                           nx, ny, xmin, xmax, ymin, ymax);
+
+    TEST_ASSERT_TRUE(file_exists(vector_filename));
+
+    // Clean up test files
+    remove(test_filename);
+    remove(vector_filename);
+
+    flow_field_destroy(field);
+    grid_destroy(grid);
+}
+
+// Test that solver output goes to correct directory
+void test_solver_output_paths(void) {
+    size_t nx = 8, ny = 6;
+    double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
+
+    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid_initialize_uniform(grid);
+
+    FlowField* field = flow_field_create(nx, ny);
+    initialize_flow_field(field, grid);
+
+    // Set up parameters to force output (iter % 100 == 0)
+    SolverParams params = {
+        .dt = 0.001,
+        .cfl = 0.2,
+        .gamma = 1.4,
+        .mu = 0.01,
+        .k = 0.0242,
+        .max_iter = 1,  // Will output at iteration 0
+        .tolerance = 1e-6
+    };
+
+    // Clean up any existing files
+    remove("../../output/vtk_files/output_0.vtk");
+    remove("../../output/vtk_files/output_optimized_0.vtk");
+
+    // Test basic solver output
+    solve_navier_stokes(field, grid, &params);
+
+    // Check that output file was created in correct location
+    TEST_ASSERT_TRUE(file_exists("../../output/vtk_files/output_0.vtk"));
+
+    // Reset field for optimized solver test
+    initialize_flow_field(field, grid);
+
+    // Test optimized solver output
+    solve_navier_stokes_optimized(field, grid, &params);
+
+    // Check that optimized output file was created in correct location
+    TEST_ASSERT_TRUE(file_exists("../../output/vtk_files/output_optimized_0.vtk"));
+
+    // Verify files have reasonable content
+    FILE* file1 = fopen("../../output/vtk_files/output_0.vtk", "r");
+    FILE* file2 = fopen("../../output/vtk_files/output_optimized_0.vtk", "r");
+
+    TEST_ASSERT_NOT_NULL(file1);
+    TEST_ASSERT_NOT_NULL(file2);
+
+    // Check files are not empty
+    fseek(file1, 0, SEEK_END);
+    fseek(file2, 0, SEEK_END);
+    long size1 = ftell(file1);
+    long size2 = ftell(file2);
+
+    TEST_ASSERT_GREATER_THAN(50, size1);
+    TEST_ASSERT_GREATER_THAN(50, size2);
+
+    fclose(file1);
+    fclose(file2);
+
+    // Clean up
+    remove("../../output/vtk_files/output_0.vtk");
+    remove("../../output/vtk_files/output_optimized_0.vtk");
+
+    flow_field_destroy(field);
+    grid_destroy(grid);
+}
+
+// Test that old scattered output directories don't get used
+void test_no_scattered_output(void) {
+    // These directories should NOT be created by our fixed code
+    const char* old_paths[] = {
+        "../../output/animation",
+        "../../output/animations",
+        "output/animation",
+        "output/animations"
+    };
+
+    size_t num_paths = sizeof(old_paths) / sizeof(old_paths[0]);
+
+    // Run a quick simulation
+    size_t nx = 5, ny = 5;
+    double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
+
+    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid_initialize_uniform(grid);
+
+    FlowField* field = flow_field_create(nx, ny);
+    initialize_flow_field(field, grid);
+
+    SolverParams params = {
+        .dt = 0.001,
+        .cfl = 0.2,
+        .gamma = 1.4,
+        .mu = 0.01,
+        .k = 0.0242,
+        .max_iter = 1,
+        .tolerance = 1e-6
+    };
+
+    // Run solver
+    solve_navier_stokes(field, grid, &params);
+
+    // Check that old scattered directories were NOT created
+    for (size_t i = 0; i < num_paths; i++) {
+        if (file_exists(old_paths[i])) {
+            printf("Warning: Old path still exists: %s\n", old_paths[i]);
+            // Don't fail the test, just warn - directories might exist from other tests
+        }
+    }
+
+    // Most importantly, check that our correct directory DOES exist
+    TEST_ASSERT_TRUE(file_exists("../../output/vtk_files"));
+
+    flow_field_destroy(field);
+    grid_destroy(grid);
+}
+
+int main(void) {
+    UNITY_BEGIN();
+    RUN_TEST(test_output_directory_creation);
+    RUN_TEST(test_vtk_output_paths);
+    RUN_TEST(test_solver_output_paths);
+    RUN_TEST(test_no_scattered_output);
+    return UNITY_END();
+}

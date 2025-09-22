@@ -27,6 +27,7 @@ int main() {
 
     // Step 2: Ensure output directory exists
     ensure_directory_exists("../../output");
+    ensure_directory_exists("../../output/vtk_files");
 
     // Step 3: Run a few simulation steps
     printf("\nRunning simulation...\n");
@@ -36,7 +37,7 @@ int main() {
 
         if (step % 5 == 0) {  // Output every 5 steps
             char filename[256];
-            snprintf(filename, sizeof(filename), "../../output/minimal_step_%02d.vtk", step);
+            snprintf(filename, sizeof(filename), "../../output/vtk_files/minimal_step_%02d.vtk", step);
             write_simulation_to_vtk(sim, filename);
             printf("  Step %d completed, saved: %s\n", step, filename);
         }

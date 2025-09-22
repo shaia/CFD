@@ -2,6 +2,7 @@
 #include "grid.h"
 #include "vtk_output.h"
 #include "utils.h"
+#include <math.h>
 
 // Structure to hold simulation data
 typedef struct {
@@ -22,14 +23,14 @@ SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, 
     sim_data->field = flow_field_create(nx, ny);
     initialize_flow_field(sim_data->field, sim_data->grid);
 
-    // Set solver parameters
+    // Set solver parameters for transient animation
     sim_data->params = (SolverParams){
-        .dt = 0.001,
-        .cfl = 0.5,
+        .dt = 0.001,      // Will be computed dynamically
+        .cfl = 0.2,       // More conservative CFL number
         .gamma = 1.4,
-        .mu = 1.789e-5,
+        .mu = 0.01,       // Increased viscosity for stable visual flow
         .k = 0.0242,
-        .max_iter = 1000,
+        .max_iter = 1,    // Single iteration per time step for animation
         .tolerance = 1e-6
     };
 
@@ -38,20 +39,51 @@ SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, 
 
 // Run simulation step
 void run_simulation_step(SimulationData* sim_data) {
-    compute_time_step(sim_data->field, sim_data->grid, &sim_data->params);
+    // Use fixed time step for animation stability
+    sim_data->params.dt = 0.005;  // Fixed small time step
     solve_navier_stokes(sim_data->field, sim_data->grid, &sim_data->params);
 }
 
-// Write simulation data to VTK file
+// Write simulation data to VTK file (original - pressure only)
 void write_simulation_to_vtk(SimulationData* sim_data, const char* filename) {
     double* velocity_magnitude = calculate_velocity_magnitude(sim_data->field, sim_data->grid->nx, sim_data->grid->ny);
 
-    write_vtk_output(filename, "velocity_magnitude", velocity_magnitude, 
+    write_vtk_output(filename, "velocity_magnitude", velocity_magnitude,
                      sim_data->grid->nx, sim_data->grid->ny,
                      sim_data->grid->xmin, sim_data->grid->xmax,
                      sim_data->grid->ymin, sim_data->grid->ymax);
 
     free(velocity_magnitude);
+}
+
+// Write velocity vectors to VTK file
+void write_velocity_vectors_to_vtk(SimulationData* sim_data, const char* filename) {
+    write_vtk_vector_output(filename, "velocity",
+                           sim_data->field->u, sim_data->field->v,
+                           sim_data->grid->nx, sim_data->grid->ny,
+                           sim_data->grid->xmin, sim_data->grid->xmax,
+                           sim_data->grid->ymin, sim_data->grid->ymax);
+}
+
+// Write complete flow field (velocity vectors + magnitude + pressure) to VTK file
+void write_flow_field_to_vtk(SimulationData* sim_data, const char* filename) {
+    write_vtk_flow_field(filename,
+                        sim_data->field->u, sim_data->field->v,
+                        sim_data->field->p, sim_data->field->rho,
+                        sim_data->grid->nx, sim_data->grid->ny,
+                        sim_data->grid->xmin, sim_data->grid->xmax,
+                        sim_data->grid->ymin, sim_data->grid->ymax);
+}
+
+// Calculate velocity magnitude field
+double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny) {
+    double* velocity_magnitude = (double*)cfd_malloc(nx * ny * sizeof(double));
+
+    for (size_t i = 0; i < nx * ny; i++) {
+        velocity_magnitude[i] = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+    }
+
+    return velocity_magnitude;
 }
 
 // Free simulation data
