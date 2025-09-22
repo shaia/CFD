@@ -8,6 +8,11 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+// Default source term parameters for energy maintenance (can be overridden via SolverParams)
+#define DEFAULT_SOURCE_AMPLITUDE_U 0.1    // Default amplitude of u-velocity source term
+#define DEFAULT_SOURCE_AMPLITUDE_V 0.05   // Default amplitude of v-velocity source term
+#define DEFAULT_SOURCE_DECAY_RATE 0.1     // Default decay rate for source terms over time
+#define DEFAULT_PRESSURE_COUPLING 0.1     // Default coupling coefficient for pressure update
 FlowField* flow_field_create(size_t nx, size_t ny) {
     FlowField* field = (FlowField*)cfd_malloc(sizeof(FlowField));
     
@@ -140,6 +145,13 @@ void apply_boundary_conditions(FlowField* field, const Grid* grid) {
     }
 }
 
+// Helper function to compute source terms consistently across all solvers
+void compute_source_terms(double x, double y, int iter, double dt, const SolverParams* params,
+                         double* source_u, double* source_v) {
+    *source_u = params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * dt);
+    *source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) * exp(-params->source_decay_rate * iter * dt);
+}
+
 void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams* params) {
     // Allocate temporary arrays for the solution update
     double* u_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
@@ -191,8 +203,8 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
                 // Source terms to maintain flow (prevents decay)
                 double x = grid->x[i];
                 double y = grid->y[j];
-                double source_u = 0.1 * sin(M_PI * y) * exp(-0.1 * iter * params_copy.dt);
-                double source_v = 0.05 * sin(2.0 * M_PI * x) * exp(-0.1 * iter * params_copy.dt);
+                double source_u, source_v;
+                compute_source_terms(x, y, iter, params_copy.dt, params, &source_u, &source_v);
 
                 // Complete Navier-Stokes equations
                 u_new[idx] = field->u[idx] + params_copy.dt * (
@@ -211,7 +223,7 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
 
                 // Update pressure using simplified equation of state
                 double divergence = du_dx + dv_dy;
-                p_new[idx] = field->p[idx] - 0.1 * params_copy.dt * field->rho[idx] *
+                p_new[idx] = field->p[idx] - params->pressure_coupling * params_copy.dt * field->rho[idx] *
                            (field->u[idx] * field->u[idx] + field->v[idx] * field->v[idx]) * divergence;
 
                 // Keep density and temperature constant for this simplified model

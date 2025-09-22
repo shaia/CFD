@@ -139,7 +139,11 @@ void test_solver_output_paths(void) {
         .mu = 0.01,
         .k = 0.0242,
         .max_iter = 1,  // Will output at iteration 0
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.1,
+        .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1,
+        .pressure_coupling = 0.1
     };
 
     // Clean up any existing files
@@ -217,7 +221,11 @@ void test_no_scattered_output(void) {
         .mu = 0.01,
         .k = 0.0242,
         .max_iter = 1,
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.1,
+        .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1,
+        .pressure_coupling = 0.1
     };
 
     // Run solver

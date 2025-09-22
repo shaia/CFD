@@ -41,6 +41,12 @@
 // Block size for cache-friendly memory access
 #define BLOCK_SIZE 32
 
+// Default source term parameters for energy maintenance (can be overridden via SolverParams)
+#define DEFAULT_SOURCE_AMPLITUDE_U 0.1    // Default amplitude of u-velocity source term
+#define DEFAULT_SOURCE_AMPLITUDE_V 0.05   // Default amplitude of v-velocity source term
+#define DEFAULT_SOURCE_DECAY_RATE 0.1     // Default decay rate for source terms over time
+#define DEFAULT_PRESSURE_COUPLING 0.1     // Default coupling coefficient for pressure update
+
 // Optimized version of the solver using SIMD and cache-friendly memory access
 void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const SolverParams* params) {
     // Validate input parameters
@@ -132,8 +138,8 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
                         // Source terms to maintain flow (prevents decay)
                         double x = grid->x[i];
                         double y = grid->y[j];
-                        double source_u = 0.1 * sin(M_PI * y) * exp(-0.1 * iter * params_copy.dt);
-                        double source_v = 0.05 * sin(2.0 * M_PI * x) * exp(-0.1 * iter * params_copy.dt);
+                        double source_u, source_v;
+                        compute_source_terms(x, y, iter, params_copy.dt, params, &source_u, &source_v);
 
                         // Complete Navier-Stokes equations with optimized calculations
                         u_new[idx] = field->u[idx] + params_copy.dt * (
@@ -152,7 +158,7 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
 
                         // Update pressure using simplified equation of state
                         double divergence = du_dx + dv_dy;
-                        p_new[idx] = field->p[idx] - 0.1 * params_copy.dt * field->rho[idx] *
+                        p_new[idx] = field->p[idx] - params->pressure_coupling * params_copy.dt * field->rho[idx] *
                                    (field->u[idx] * field->u[idx] + field->v[idx] * field->v[idx]) * divergence;
 
                         // Keep density and temperature constant for this simplified model

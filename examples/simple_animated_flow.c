@@ -7,6 +7,27 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+// Configurable vortex characteristics
+#define VORTEX_CENTER_AMPLITUDE_X 0.5    // Amplitude of vortex center x-movement
+#define VORTEX_CENTER_AMPLITUDE_Y 0.3    // Amplitude of vortex center y-movement
+#define VORTEX_STRENGTH_BASE 3.0         // Base strength of the vortex
+#define VORTEX_STRENGTH_VARIATION 0.5    // Amplitude of strength variation over time
+#define VORTEX_STRENGTH_FREQUENCY 2.0    // Frequency of strength variation
+#define VORTEX_SIZE_FACTOR 0.5           // Controls vortex size (1/σ² in Gaussian)
+#define VORTEX_DECAY_RATE 1.0            // Exponential decay rate with distance
+
+// Configurable background flow characteristics
+#define BACKGROUND_FLOW_U_BASE 0.5       // Base u-velocity of background flow
+#define BACKGROUND_FLOW_U_VARIATION 0.3  // Amplitude of u-velocity variation
+#define BACKGROUND_FLOW_V_AMPLITUDE 0.2  // Amplitude of v-velocity oscillation
+#define BACKGROUND_FLOW_V_FREQUENCY 2.0  // Frequency of v-velocity oscillation
+
+// Configurable pressure field characteristics
+#define PRESSURE_BASE 1.0                // Base pressure level
+#define PRESSURE_X_AMPLITUDE 0.5         // Amplitude of pressure variation in x
+#define PRESSURE_Y_AMPLITUDE 0.3         // Amplitude of pressure variation in y
+#define PRESSURE_Y_FREQUENCY 2.0         // Frequency of pressure variation in y
+
 // Simple analytical flow patterns for demonstration
 void set_analytical_flow(FlowField* field, const Grid* grid, double time) {
     for (size_t j = 0; j < field->ny; j++) {
@@ -16,24 +37,26 @@ void set_analytical_flow(FlowField* field, const Grid* grid, double time) {
             double y = grid->y[j];
 
             // Rotating vortex that evolves over time
-            double cx = 2.0 + 0.5 * sin(time);  // Vortex center moves
-            double cy = 1.0 + 0.3 * cos(time);
+            double cx = 2.0 + VORTEX_CENTER_AMPLITUDE_X * sin(time);  // Vortex center moves
+            double cy = 1.0 + VORTEX_CENTER_AMPLITUDE_Y * cos(time);
             double r = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
             double theta = atan2(y - cy, x - cx);
 
             // Vortex strength that varies with time
-            double strength = 3.0 * exp(-r * r / 0.5) * (1.0 + 0.5 * sin(2.0 * time));
+            double strength = VORTEX_STRENGTH_BASE * exp(-r * r / VORTEX_SIZE_FACTOR) *
+                            (1.0 + VORTEX_STRENGTH_VARIATION * sin(VORTEX_STRENGTH_FREQUENCY * time));
 
             // Velocity components for rotating flow
-            field->u[idx] = -strength * sin(theta) * exp(-r);
-            field->v[idx] = strength * cos(theta) * exp(-r);
+            field->u[idx] = -strength * sin(theta) * exp(-VORTEX_DECAY_RATE * r);
+            field->v[idx] = strength * cos(theta) * exp(-VORTEX_DECAY_RATE * r);
 
             // Add background flow
-            field->u[idx] += 0.5 * (1.0 + 0.3 * sin(time + x));
-            field->v[idx] += 0.2 * sin(2.0 * time + y);
+            field->u[idx] += BACKGROUND_FLOW_U_BASE * (1.0 + BACKGROUND_FLOW_U_VARIATION * sin(time + x));
+            field->v[idx] += BACKGROUND_FLOW_V_AMPLITUDE * sin(BACKGROUND_FLOW_V_FREQUENCY * time + y);
 
             // Pressure field
-            field->p[idx] = 1.0 + 0.5 * sin(x + time) + 0.3 * cos(y + 2.0 * time);
+            field->p[idx] = PRESSURE_BASE + PRESSURE_X_AMPLITUDE * sin(x + time) +
+                          PRESSURE_Y_AMPLITUDE * cos(y + PRESSURE_Y_FREQUENCY * time);
 
             // Density
             field->rho[idx] = 1.0;

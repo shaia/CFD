@@ -44,7 +44,11 @@ void test_flow_energy_maintenance(void) {
         .mu = 0.01,  // Some viscosity that would cause decay without source terms
         .k = 0.0242,
         .max_iter = 20,  // Longer simulation to see decay/maintenance
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.1,
+        .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1,
+        .pressure_coupling = 0.1
     };
 
     // Store kinetic energy at different time steps
@@ -87,12 +91,12 @@ void test_flow_energy_maintenance(void) {
     printf("Energy ratios: mid=%.3f, end=%.3f\n", energy_ratio_mid, energy_ratio_end);
 
     // Energy should be maintained or grow slightly due to source terms
-    TEST_ASSERT_GREATER_THAN(energy_ratio_end, 0.95);  // Should not decay below 95%
-    TEST_ASSERT_LESS_THAN(energy_ratio_end, 2.0);      // Should not grow more than 100%
+    TEST_ASSERT_TRUE(energy_ratio_end > 0.95);  // Should not decay below 95%
+    TEST_ASSERT_TRUE(energy_ratio_end < 2.0);   // Should not grow more than 100%
 
     // Mid-point energy should show the source terms working
-    TEST_ASSERT_GREATER_THAN(energy_ratio_mid, 0.95);
-    TEST_ASSERT_LESS_THAN(energy_ratio_mid, 2.0);
+    TEST_ASSERT_TRUE(energy_ratio_mid > 0.95);
+    TEST_ASSERT_TRUE(energy_ratio_mid < 2.0);
 
     flow_field_destroy(field);
     grid_destroy(grid);
@@ -120,12 +124,13 @@ void test_source_term_effectiveness(void) {
         }
     }
 
-    // Calculate initial velocity magnitude
-    double initial_velocity_mag = 0.0;
+    // Calculate initial velocity magnitude squared (avoid expensive sqrt)
+    double initial_velocity_mag_sq = 0.0;
     for (size_t i = 0; i < nx * ny; i++) {
-        initial_velocity_mag += sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+        initial_velocity_mag_sq += field->u[i] * field->u[i] + field->v[i] * field->v[i];
     }
-    initial_velocity_mag /= (nx * ny);
+    initial_velocity_mag_sq /= (nx * ny);
+    double initial_velocity_mag = sqrt(initial_velocity_mag_sq);
 
     SolverParams params = {
         .dt = 0.001,
@@ -134,27 +139,32 @@ void test_source_term_effectiveness(void) {
         .mu = 0.01,
         .k = 0.0242,
         .max_iter = 15,  // Enough time for source terms to act
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.1,
+        .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1,
+        .pressure_coupling = 0.1
     };
 
     // Run solver
     solve_navier_stokes(field, grid, &params);
 
-    // Calculate final velocity magnitude
-    double final_velocity_mag = 0.0;
+    // Calculate final velocity magnitude squared (avoid expensive sqrt)
+    double final_velocity_mag_sq = 0.0;
     for (size_t i = 0; i < nx * ny; i++) {
-        final_velocity_mag += sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+        final_velocity_mag_sq += field->u[i] * field->u[i] + field->v[i] * field->v[i];
     }
-    final_velocity_mag /= (nx * ny);
+    final_velocity_mag_sq /= (nx * ny);
+    double final_velocity_mag = sqrt(final_velocity_mag_sq);
 
     printf("Source term test - Initial avg velocity: %.6f, Final: %.6f\n",
            initial_velocity_mag, final_velocity_mag);
 
     // Source terms should have increased velocity from near-zero
-    TEST_ASSERT_GREATER_THAN(final_velocity_mag, initial_velocity_mag);
+    TEST_ASSERT_TRUE(final_velocity_mag > initial_velocity_mag);
 
     // But not to unreasonable levels
-    TEST_ASSERT_LESS_THAN(final_velocity_mag, 100.0);
+    TEST_ASSERT_TRUE(final_velocity_mag < 100.0);
 
     flow_field_destroy(field);
     grid_destroy(grid);
@@ -200,7 +210,11 @@ void test_decay_prevention_both_solvers(void) {
         .mu = 0.01,
         .k = 0.0242,
         .max_iter = 10,
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.1,
+        .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1,
+        .pressure_coupling = 0.1
     };
 
     // Run both solvers
@@ -222,16 +236,16 @@ void test_decay_prevention_both_solvers(void) {
     printf("  Optimized solver: %.6f -> %.6f (ratio: %.3f)\n", initial_energy2, final_energy2, ratio2);
 
     // Both solvers should prevent rapid decay (source terms working)
-    TEST_ASSERT_GREATER_THAN(ratio1, 0.95);  // Energy should be maintained
-    TEST_ASSERT_GREATER_THAN(ratio2, 0.95);
+    TEST_ASSERT_TRUE(ratio1 > 0.95);  // Energy should be maintained
+    TEST_ASSERT_TRUE(ratio2 > 0.95);
 
     // Both should remain stable
-    TEST_ASSERT_LESS_THAN(ratio1, 50.0);
-    TEST_ASSERT_LESS_THAN(ratio2, 50.0);
+    TEST_ASSERT_TRUE(ratio1 < 50.0);
+    TEST_ASSERT_TRUE(ratio2 < 50.0);
 
     // Results should be reasonably similar between solvers
     double ratio_difference = fabs(ratio1 - ratio2);
-    TEST_ASSERT_LESS_THAN(ratio_difference, 5.0);  // Allow some difference due to numerical implementation
+    TEST_ASSERT_TRUE(ratio_difference < 5.0);  // Allow some difference due to numerical implementation
 
     flow_field_destroy(field1);
     flow_field_destroy(field2);

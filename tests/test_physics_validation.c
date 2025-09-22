@@ -65,7 +65,11 @@ void test_viscous_diffusion(void) {
         .mu = 0.1,  // High viscosity for visible diffusion
         .k = 0.0242,
         .max_iter = 10,
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.1,
+        .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1,
+        .pressure_coupling = 0.1
     };
 
     // Run solver
@@ -136,7 +140,11 @@ void test_pressure_gradient_effects(void) {
         .mu = 0.001,  // Low viscosity so pressure gradient dominates
         .k = 0.0242,
         .max_iter = 5,
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.1,
+        .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1,
+        .pressure_coupling = 0.1
     };
 
     // Run solver
@@ -204,7 +212,11 @@ void test_conservation_properties(void) {
         .mu = 0.01,
         .k = 0.0242,
         .max_iter = 3,  // Short run to check conservation
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.1,
+        .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1,
+        .pressure_coupling = 0.1
     };
 
     // Run solver

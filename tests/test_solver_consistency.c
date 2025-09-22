@@ -54,7 +54,11 @@ void test_solver_consistency(void) {
         .mu = 0.01,
         .k = 0.0242,
         .max_iter = 5,  // Small number for quick test
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.1,
+        .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1,
+        .pressure_coupling = 0.1
     };
 
     // Run both solvers for same number of iterations
@@ -141,7 +145,11 @@ void test_solver_stability(void) {
         .mu = 0.01,
         .k = 0.0242,
         .max_iter = 3,
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.1,
+        .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1,
+        .pressure_coupling = 0.1
     };
 
     // Test basic solver
