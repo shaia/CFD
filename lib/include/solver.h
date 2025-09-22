@@ -23,6 +23,12 @@ typedef struct {
     double k;           // thermal conductivity
     int max_iter;       // maximum number of iterations
     double tolerance;   // convergence tolerance
+
+    // Source term parameters for energy maintenance
+    double source_amplitude_u;    // Amplitude of u-velocity source term
+    double source_amplitude_v;    // Amplitude of v-velocity source term
+    double source_decay_rate;     // Decay rate for source terms over time
+    double pressure_coupling;     // Coupling coefficient for pressure update
 } SolverParams;
 
 // Function declarations

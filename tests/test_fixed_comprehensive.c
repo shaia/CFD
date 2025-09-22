@@ -86,7 +86,9 @@ void test_solver_consistency(void) {
 
     SolverParams params = {
         .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.01, .k = 0.0242,
-        .max_iter = 2, .tolerance = 1e-6
+        .max_iter = 2, .tolerance = 1e-6,
+        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1, .pressure_coupling = 0.1
     };
 
     // Run both solvers
@@ -145,7 +147,9 @@ void test_physics_improvements(void) {
 
     SolverParams params = {
         .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.001, .k = 0.0242,
-        .max_iter = 3, .tolerance = 1e-6
+        .max_iter = 3, .tolerance = 1e-6,
+        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1, .pressure_coupling = 0.1
     };
 
     solve_navier_stokes(field, grid, &params);
@@ -184,7 +188,9 @@ void test_decay_prevention(void) {
 
     SolverParams params = {
         .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.01, .k = 0.0242,
-        .max_iter = 10, .tolerance = 1e-6
+        .max_iter = 10, .tolerance = 1e-6,
+        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1, .pressure_coupling = 0.1
     };
 
     solve_navier_stokes(field, grid, &params);

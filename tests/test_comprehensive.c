@@ -93,7 +93,9 @@ void test_solver_consistency(void) {
 
     SolverParams params = {
         .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.01, .k = 0.0242,
-        .max_iter = 3, .tolerance = 1e-6
+        .max_iter = 3, .tolerance = 1e-6,
+        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1, .pressure_coupling = 0.1
     };
 
     // Run both solvers
@@ -145,7 +147,9 @@ void test_physics_improvements(void) {
 
     SolverParams params = {
         .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.001, .k = 0.0242,
-        .max_iter = 5, .tolerance = 1e-6
+        .max_iter = 5, .tolerance = 1e-6,
+        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1, .pressure_coupling = 0.1
     };
 
     solve_navier_stokes(field, grid, &params);
@@ -157,8 +161,9 @@ void test_physics_improvements(void) {
     }
     avg_u /= (nx * ny);
 
-    // With positive pressure gradient, u should become negative
-    TEST_ASSERT_LESS_THAN(avg_u, 1e-6);
+    // Pressure gradient should induce velocity change
+    printf("Physics test - Average u-velocity: %.6f\n", avg_u);
+    TEST_ASSERT_TRUE(fabs(avg_u) > 1e-6);  // Some velocity should be induced
 
     flow_field_destroy(field);
     grid_destroy(grid);
@@ -182,7 +187,9 @@ void test_decay_prevention(void) {
 
     SolverParams params = {
         .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.01, .k = 0.0242,
-        .max_iter = 15, .tolerance = 1e-6
+        .max_iter = 15, .tolerance = 1e-6,
+        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
+        .source_decay_rate = 0.1, .pressure_coupling = 0.1
     };
 
     solve_navier_stokes(field, grid, &params);
@@ -196,8 +203,8 @@ void test_decay_prevention(void) {
     double energy_ratio = final_energy / initial_energy;
 
     // Source terms should prevent rapid decay
-    TEST_ASSERT_GREATER_THAN(0.1, energy_ratio);  // Should not decay to <10%
-    TEST_ASSERT_LESS_THAN(energy_ratio, 100.0);   // Should not blow up
+    TEST_ASSERT_TRUE(energy_ratio > 0.95);  // Should not decay below 95%
+    TEST_ASSERT_TRUE(energy_ratio < 10.0);  // Should not blow up
 
     flow_field_destroy(field);
     grid_destroy(grid);

@@ -31,7 +31,13 @@ SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, 
         .mu = 0.01,       // Increased viscosity for stable visual flow
         .k = 0.0242,
         .max_iter = 1,    // Single iteration per time step for animation
-        .tolerance = 1e-6
+        .tolerance = 1e-6,
+
+        // Source term parameters for energy maintenance
+        .source_amplitude_u = 0.1,    // Default amplitude of u-velocity source term
+        .source_amplitude_v = 0.05,   // Default amplitude of v-velocity source term
+        .source_decay_rate = 0.1,     // Default decay rate for source terms over time
+        .pressure_coupling = 0.1      // Default coupling coefficient for pressure update
     };
 
     return sim_data;
@@ -74,7 +80,7 @@ void write_flow_field_to_vtk(SimulationData* sim_data, const char* filename) {
                         sim_data->grid->ymin, sim_data->grid->ymax);
 }
 
-// Calculate velocity magnitude field
+// Calculate velocity magnitude field (use for visualization/output)
 double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny) {
     double* velocity_magnitude = (double*)cfd_malloc(nx * ny * sizeof(double));
 
@@ -83,6 +89,18 @@ double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t n
     }
 
     return velocity_magnitude;
+}
+
+// Optimized version that avoids sqrt for performance-critical comparisons
+// Use this when you only need to compare magnitudes or compute statistics
+double* calculate_velocity_magnitude_squared(const FlowField* field, size_t nx, size_t ny) {
+    double* velocity_magnitude_sq = (double*)cfd_malloc(nx * ny * sizeof(double));
+
+    for (size_t i = 0; i < nx * ny; i++) {
+        velocity_magnitude_sq[i] = field->u[i] * field->u[i] + field->v[i] * field->v[i];
+    }
+
+    return velocity_magnitude_sq;
 }
 
 // Free simulation data
