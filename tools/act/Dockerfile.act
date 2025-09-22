@@ -1,0 +1,13 @@
+FROM catthehacker/ubuntu:act-latest
+
+# Install CMake and build tools
+RUN apt-get update && apt-get install -y \
+    cmake \
+    build-essential \
+    gcc \
+    g++ \
+    make \
+    && rm -rf /var/lib/apt/lists/*
+
+# Verify installations
+RUN cmake --version && gcc --version
