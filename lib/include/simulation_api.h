@@ -20,6 +20,17 @@ void run_simulation_step(SimulationData* sim_data);
 // Write simulation data to VTK file
 void write_simulation_to_vtk(SimulationData* sim_data, const char* filename);
 
+// Write velocity vectors to VTK file
+void write_velocity_vectors_to_vtk(SimulationData* sim_data, const char* filename);
+
+// Write complete flow field to VTK file
+void write_flow_field_to_vtk(SimulationData* sim_data, const char* filename);
+
+// Calculate velocity magnitude (returns sqrt of u^2 + v^2)
+double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny);
+
+// Calculate velocity magnitude squared (for performance-critical comparisons)
+double* calculate_velocity_magnitude_squared(const FlowField* field, size_t nx, size_t ny);
 // Free simulation data
 void free_simulation(SimulationData* sim_data);
 

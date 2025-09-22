@@ -4,6 +4,15 @@
 #include <string.h>
 #include "vtk_output.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+// Default source term parameters for energy maintenance (can be overridden via SolverParams)
+#define DEFAULT_SOURCE_AMPLITUDE_U 0.1    // Default amplitude of u-velocity source term
+#define DEFAULT_SOURCE_AMPLITUDE_V 0.05   // Default amplitude of v-velocity source term
+#define DEFAULT_SOURCE_DECAY_RATE 0.1     // Default decay rate for source terms over time
+#define DEFAULT_PRESSURE_COUPLING 0.1     // Default coupling coefficient for pressure update
 FlowField* flow_field_create(size_t nx, size_t ny) {
     FlowField* field = (FlowField*)cfd_malloc(sizeof(FlowField));
     
@@ -32,24 +41,30 @@ void flow_field_destroy(FlowField* field) {
 }
 
 void initialize_flow_field(FlowField* field, const Grid* grid) {
-    // Initialize with a simple test case: uniform flow with a small perturbation
+    // Initialize with a more stable flow field
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
             size_t idx = j * field->nx + i;
-            
-            // Set initial conditions
-            field->u[idx] = 1.0;  // Uniform flow in x-direction
-            field->v[idx] = 0.0;  // No flow in y-direction
+            double x = grid->x[i];
+            double y = grid->y[j];
+
+            // Set initial conditions with more interesting flow
+            field->u[idx] = 1.0 + 0.1 * sin(M_PI * y);  // Slightly varying u-velocity
+            field->v[idx] = 0.05 * sin(2.0 * M_PI * x); // Small v-velocity variation
             field->p[idx] = 1.0;  // Reference pressure
             field->rho[idx] = 1.0;  // Reference density
             field->T[idx] = 300.0;  // Reference temperature (K)
-            
-            // Add a small perturbation in the center
-            double x = grid->x[i];
-            double y = grid->y[j];
-            double r = sqrt((x - 0.5) * (x - 0.5) + (y - 0.5) * (y - 0.5));
-            if (r < 0.1) {
-                field->p[idx] += 0.1 * exp(-r * r / 0.01);
+
+            // Add a pressure perturbation for interesting flow
+            double cx = 1.0, cy = 0.5;  // Center of perturbation
+            double r = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+            if (r < 0.2) {
+                field->p[idx] += 0.1 * exp(-r * r / 0.02);
+                // Adjust velocities based on pressure gradient
+                double dp_dx = -0.1 * 2.0 * (x - cx) / 0.02 * exp(-r * r / 0.02);
+                double dp_dy = -0.1 * 2.0 * (y - cy) / 0.02 * exp(-r * r / 0.02);
+                field->u[idx] += -0.1 * dp_dx;  // Simple pressure-velocity coupling
+                field->v[idx] += -0.1 * dp_dy;
             }
         }
     }
@@ -59,7 +74,7 @@ void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params)
     double max_speed = 0.0;
     double dx_min = grid->dx[0];
     double dy_min = grid->dy[0];
-    
+
     // Find minimum grid spacing
     for (size_t i = 0; i < grid->nx - 1; i++) {
         dx_min = min_double(dx_min, grid->dx[i]);
@@ -67,20 +82,32 @@ void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params)
     for (size_t j = 0; j < grid->ny - 1; j++) {
         dy_min = min_double(dy_min, grid->dy[j]);
     }
-    
+
     // Find maximum wave speed
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
             size_t idx = j * field->nx + i;
-            double speed = sqrt(field->u[idx] * field->u[idx] + 
-                              field->v[idx] * field->v[idx]) +
-                         sqrt(params->gamma * field->p[idx] / field->rho[idx]);
-            max_speed = max_double(max_speed, speed);
+            double u_speed = fabs(field->u[idx]);
+            double v_speed = fabs(field->v[idx]);
+            double sound_speed = sqrt(params->gamma * field->p[idx] / field->rho[idx]);
+            double local_speed = sqrt(u_speed * u_speed + v_speed * v_speed) + sound_speed;
+            max_speed = max_double(max_speed, local_speed);
         }
     }
-    
-    // Compute time step based on CFL condition
-    params->dt = params->cfl * min_double(dx_min, dy_min) / max_speed;
+
+    // Prevent division by zero and ensure reasonable time step
+    if (max_speed < 1e-10) {
+        max_speed = 1.0;  // Use default if speeds are too small
+    }
+
+    // Compute time step based on CFL condition with safety factor
+    double dt_cfl = params->cfl * min_double(dx_min, dy_min) / max_speed;
+
+    // Limit time step to reasonable bounds
+    double dt_max = 0.01;  // Maximum allowed time step
+    double dt_min = 1e-6;  // Minimum allowed time step
+
+    params->dt = max_double(dt_min, min_double(dt_max, dt_cfl));
 }
 
 void apply_boundary_conditions(FlowField* field, const Grid* grid) {
@@ -91,25 +118,38 @@ void apply_boundary_conditions(FlowField* field, const Grid* grid) {
         field->p[j * field->nx + 0] = field->p[j * field->nx + field->nx - 2];
         field->rho[j * field->nx + 0] = field->rho[j * field->nx + field->nx - 2];
         field->T[j * field->nx + 0] = field->T[j * field->nx + field->nx - 2];
-        
+
         field->u[j * field->nx + field->nx - 1] = field->u[j * field->nx + 1];
         field->v[j * field->nx + field->nx - 1] = field->v[j * field->nx + 1];
         field->p[j * field->nx + field->nx - 1] = field->p[j * field->nx + 1];
         field->rho[j * field->nx + field->nx - 1] = field->rho[j * field->nx + 1];
         field->T[j * field->nx + field->nx - 1] = field->T[j * field->nx + 1];
     }
-    
-    // Apply wall boundary conditions in y-direction
+
+    // Apply periodic boundary conditions in y-direction (instead of walls)
     for (size_t i = 0; i < field->nx; i++) {
-        // Bottom wall
-        field->u[i] = 0.0;
-        field->v[i] = 0.0;
-        
-        // Top wall
+        // Bottom boundary = top interior
+        field->u[i] = field->u[(field->ny - 2) * field->nx + i];
+        field->v[i] = field->v[(field->ny - 2) * field->nx + i];
+        field->p[i] = field->p[(field->ny - 2) * field->nx + i];
+        field->rho[i] = field->rho[(field->ny - 2) * field->nx + i];
+        field->T[i] = field->T[(field->ny - 2) * field->nx + i];
+
+        // Top boundary = bottom interior
         size_t top_idx = (field->ny - 1) * field->nx + i;
-        field->u[top_idx] = 0.0;
-        field->v[top_idx] = 0.0;
+        field->u[top_idx] = field->u[field->nx + i];
+        field->v[top_idx] = field->v[field->nx + i];
+        field->p[top_idx] = field->p[field->nx + i];
+        field->rho[top_idx] = field->rho[field->nx + i];
+        field->T[top_idx] = field->T[field->nx + i];
     }
+}
+
+// Helper function to compute source terms consistently across all solvers
+void compute_source_terms(double x, double y, int iter, double dt, const SolverParams* params,
+                         double* source_u, double* source_v) {
+    *source_u = params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * dt);
+    *source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) * exp(-params->source_decay_rate * iter * dt);
 }
 
 void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams* params) {
@@ -130,25 +170,63 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
         for (size_t j = 1; j < field->ny - 1; j++) {
             for (size_t i = 1; i < field->nx - 1; i++) {
                 size_t idx = j * field->nx + i;
-                
+
                 // Compute spatial derivatives
-                double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / 
+                double du_dx = (field->u[idx + 1] - field->u[idx - 1]) /
                              (2.0 * grid->dx[i]);
-                double du_dy = (field->u[idx + field->nx] - field->u[idx - field->nx]) / 
+                double du_dy = (field->u[idx + field->nx] - field->u[idx - field->nx]) /
                              (2.0 * grid->dy[j]);
-                double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) / 
+                double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) /
                              (2.0 * grid->dx[i]);
-                double dv_dy = (field->v[idx + field->nx] - field->v[idx - field->nx]) / 
+                double dv_dy = (field->v[idx + field->nx] - field->v[idx - field->nx]) /
                              (2.0 * grid->dy[j]);
-                
-                // Update velocity components
-                u_new[idx] = field->u[idx] - params_copy.dt * 
-                            (field->u[idx] * du_dx + field->v[idx] * du_dy);
-                v_new[idx] = field->v[idx] - params_copy.dt * 
-                            (field->u[idx] * dv_dx + field->v[idx] * dv_dy);
-                
-                // Update pressure and density (simplified)
-                p_new[idx] = field->p[idx];
+
+                // Pressure gradients
+                double dp_dx = (field->p[idx + 1] - field->p[idx - 1]) /
+                             (2.0 * grid->dx[i]);
+                double dp_dy = (field->p[idx + field->nx] - field->p[idx - field->nx]) /
+                             (2.0 * grid->dy[j]);
+
+                // Second derivatives for viscous terms
+                double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) /
+                               (grid->dx[i] * grid->dx[i]);
+                double d2u_dy2 = (field->u[idx + field->nx] - 2.0 * field->u[idx] + field->u[idx - field->nx]) /
+                               (grid->dy[j] * grid->dy[j]);
+                double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) /
+                               (grid->dx[i] * grid->dx[i]);
+                double d2v_dy2 = (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) /
+                               (grid->dy[j] * grid->dy[j]);
+
+                // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density)
+                double nu = params->mu / field->rho[idx];
+
+                // Source terms to maintain flow (prevents decay)
+                double x = grid->x[i];
+                double y = grid->y[j];
+                double source_u, source_v;
+                compute_source_terms(x, y, iter, params_copy.dt, params, &source_u, &source_v);
+
+                // Complete Navier-Stokes equations
+                u_new[idx] = field->u[idx] + params_copy.dt * (
+                    -field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
+                    - dp_dx / field->rho[idx]                        // Pressure gradient
+                    + nu * (d2u_dx2 + d2u_dy2)                      // Viscous diffusion
+                    + source_u                                       // Source term
+                );
+
+                v_new[idx] = field->v[idx] + params_copy.dt * (
+                    -field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
+                    - dp_dy / field->rho[idx]                        // Pressure gradient
+                    + nu * (d2v_dx2 + d2v_dy2)                      // Viscous diffusion
+                    + source_v                                       // Source term
+                );
+
+                // Update pressure using simplified equation of state
+                double divergence = du_dx + dv_dy;
+                p_new[idx] = field->p[idx] - params->pressure_coupling * params_copy.dt * field->rho[idx] *
+                           (field->u[idx] * field->u[idx] + field->v[idx] * field->v[idx]) * divergence;
+
+                // Keep density and temperature constant for this simplified model
                 rho_new[idx] = field->rho[idx];
                 T_new[idx] = field->T[idx];
             }
@@ -167,11 +245,12 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
         // Output solution every 100 iterations
         if (iter % 100 == 0) {
             ensure_directory_exists("../../output");
+            ensure_directory_exists("../../output/vtk_files");
             char filename[256];
 #ifdef _WIN32
-            sprintf_s(filename, sizeof(filename), "../../output/output_%d.vtk", iter);
+            sprintf_s(filename, sizeof(filename), "../../output/vtk_files/output_%d.vtk", iter);
 #else
-            sprintf(filename, "../../output/output_%d.vtk", iter);
+            sprintf(filename, "../../output/vtk_files/output_%d.vtk", iter);
 #endif
             write_vtk_output(filename, "pressure", field->p, field->nx, field->ny,
                            grid->xmin, grid->xmax, grid->ymin, grid->ymax);
@@ -186,20 +265,3 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
     cfd_free(T_new);
 }
 
-double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny) {
-    double* velocity_magnitude = (double*)malloc(nx * ny * sizeof(double));
-    if (!velocity_magnitude) {
-        cfd_error("Failed to allocate memory for velocity magnitude");
-    }
-
-    for (size_t j = 0; j < ny; j++) {
-        for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
-            double u = field->u[idx];
-            double v = field->v[idx];
-            velocity_magnitude[idx] = sqrt(u * u + v * v);
-        }
-    }
-
-    return velocity_magnitude;
-}

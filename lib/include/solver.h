@@ -23,6 +23,12 @@ typedef struct {
     double k;           // thermal conductivity
     int max_iter;       // maximum number of iterations
     double tolerance;   // convergence tolerance
+
+    // Source term parameters for energy maintenance
+    double source_amplitude_u;    // Amplitude of u-velocity source term
+    double source_amplitude_v;    // Amplitude of v-velocity source term
+    double source_decay_rate;     // Decay rate for source terms over time
+    double pressure_coupling;     // Coupling coefficient for pressure update
 } SolverParams;
 
 // Function declarations
@@ -33,6 +39,8 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
 void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const SolverParams* params);
 void apply_boundary_conditions(FlowField* field, const Grid* grid);
 void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params);
+void compute_source_terms(double x, double y, int iter, double dt, const SolverParams* params,
+                         double* source_u, double* source_v);
 double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny);
 
 #endif // CFD_SOLVER_H

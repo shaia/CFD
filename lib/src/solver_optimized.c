@@ -13,6 +13,10 @@
 #include <immintrin.h>
 #endif
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 // Fallback for systems without aligned_alloc
 #ifndef _WIN32
     #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
@@ -36,6 +40,12 @@
 
 // Block size for cache-friendly memory access
 #define BLOCK_SIZE 32
+
+// Default source term parameters for energy maintenance (can be overridden via SolverParams)
+#define DEFAULT_SOURCE_AMPLITUDE_U 0.1    // Default amplitude of u-velocity source term
+#define DEFAULT_SOURCE_AMPLITUDE_V 0.05   // Default amplitude of v-velocity source term
+#define DEFAULT_SOURCE_DECAY_RATE 0.1     // Default decay rate for source terms over time
+#define DEFAULT_PRESSURE_COUPLING 0.1     // Default coupling coefficient for pressure update
 
 // Optimized version of the solver using SIMD and cache-friendly memory access
 void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const SolverParams* params) {
@@ -109,15 +119,49 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
                         double du_dy = (field->u[idx + field->nx] - field->u[idx - field->nx]) * dy_inv[j];
                         double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) * dx_inv[i];
                         double dv_dy = (field->v[idx + field->nx] - field->v[idx - field->nx]) * dy_inv[j];
-                        
-                        // Update velocity components
-                        u_new[idx] = field->u[idx] - params_copy.dt * 
-                                   (field->u[idx] * du_dx + field->v[idx] * du_dy);
-                        v_new[idx] = field->v[idx] - params_copy.dt * 
-                                   (field->u[idx] * dv_dx + field->v[idx] * dv_dy);
-                        
-                        // Update pressure and density (simplified)
-                        p_new[idx] = field->p[idx];
+
+                        // Pressure gradients
+                        double dp_dx = (field->p[idx + 1] - field->p[idx - 1]) * dx_inv[i];
+                        double dp_dy = (field->p[idx + field->nx] - field->p[idx - field->nx]) * dy_inv[j];
+
+                        // Second derivatives for viscous terms
+                        double dx2 = grid->dx[i] * grid->dx[i];
+                        double dy2 = grid->dy[j] * grid->dy[j];
+                        double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) / dx2;
+                        double d2u_dy2 = (field->u[idx + field->nx] - 2.0 * field->u[idx] + field->u[idx - field->nx]) / dy2;
+                        double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) / dx2;
+                        double d2v_dy2 = (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) / dy2;
+
+                        // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density)
+                        double nu = params->mu / field->rho[idx];
+
+                        // Source terms to maintain flow (prevents decay)
+                        double x = grid->x[i];
+                        double y = grid->y[j];
+                        double source_u, source_v;
+                        compute_source_terms(x, y, iter, params_copy.dt, params, &source_u, &source_v);
+
+                        // Complete Navier-Stokes equations with optimized calculations
+                        u_new[idx] = field->u[idx] + params_copy.dt * (
+                            -field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
+                            - dp_dx / field->rho[idx]                        // Pressure gradient
+                            + nu * (d2u_dx2 + d2u_dy2)                      // Viscous diffusion
+                            + source_u                                       // Source term
+                        );
+
+                        v_new[idx] = field->v[idx] + params_copy.dt * (
+                            -field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
+                            - dp_dy / field->rho[idx]                        // Pressure gradient
+                            + nu * (d2v_dx2 + d2v_dy2)                      // Viscous diffusion
+                            + source_v                                       // Source term
+                        );
+
+                        // Update pressure using simplified equation of state
+                        double divergence = du_dx + dv_dy;
+                        p_new[idx] = field->p[idx] - params->pressure_coupling * params_copy.dt * field->rho[idx] *
+                                   (field->u[idx] * field->u[idx] + field->v[idx] * field->v[idx]) * divergence;
+
+                        // Keep density and temperature constant for this simplified model
                         rho_new[idx] = field->rho[idx];
                         T_new[idx] = field->T[idx];
                     }
@@ -166,11 +210,12 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
         // Output solution every 100 iterations
         if (iter % 100 == 0) {
             ensure_directory_exists("../../output");
+            ensure_directory_exists("../../output/vtk_files");
             char filename[256];
 #ifdef _WIN32
-            sprintf_s(filename, sizeof(filename), "../../output/output_optimized_%d.vtk", iter);
+            sprintf_s(filename, sizeof(filename), "../../output/vtk_files/output_optimized_%d.vtk", iter);
 #else
-            sprintf(filename, "../../output/output_optimized_%d.vtk", iter);
+            sprintf(filename, "../../output/vtk_files/output_optimized_%d.vtk", iter);
 #endif
             write_vtk_output(filename, "pressure", field->p, field->nx, field->ny,
                            grid->xmin, grid->xmax, grid->ymin, grid->ymax);
