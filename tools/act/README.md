@@ -21,17 +21,7 @@ This directory contains development tools for testing GitHub Actions workflows l
 
 **Test specific workflow**:
 ```bash
-act -P ubuntu-latest=cfd-act:latest -W .github/workflows/build-and-release.yml --pull=false
-```
-
-**Dry run validation** (replace with your workflow file as needed):
-```bash
-act -P ubuntu-latest=cfd-act:latest -n -W .github/workflows/<your-workflow>.yml --pull=false
-```
-
-**Test with specific matrix**:
-```bash
-act push -P ubuntu-latest=cfd-act:latest --matrix os:ubuntu-latest --matrix build_type:Debug --pull=false
+act -P ubuntu-latest=catthehacker/ubuntu:act-latest -W .github/workflows/build-and-release.yml --pull=false
 ```
 
 ## Custom Docker Image
