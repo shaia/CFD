@@ -23,22 +23,14 @@ SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, 
     sim_data->field = flow_field_create(nx, ny);
     initialize_flow_field(sim_data->field, sim_data->grid);
 
-    // Set solver parameters for transient animation
-    sim_data->params = (SolverParams){
-        .dt = 0.001,      // Will be computed dynamically
-        .cfl = 0.2,       // More conservative CFL number
-        .gamma = 1.4,
-        .mu = 0.01,       // Increased viscosity for stable visual flow
-        .k = 0.0242,
-        .max_iter = 1,    // Single iteration per time step for animation
-        .tolerance = 1e-6,
+    // Initialize solver parameters with defaults, then customize for animation
+    sim_data->params = solver_params_default();
 
-        // Source term parameters for energy maintenance
-        .source_amplitude_u = 0.1,    // Default amplitude of u-velocity source term
-        .source_amplitude_v = 0.05,   // Default amplitude of v-velocity source term
-        .source_decay_rate = 0.1,     // Default decay rate for source terms over time
-        .pressure_coupling = 0.1      // Default coupling coefficient for pressure update
-    };
+    // Customize parameters for animation
+    sim_data->params.dt = 0.001;      // Will be computed dynamically
+    sim_data->params.cfl = 0.2;       // More conservative CFL number
+    sim_data->params.mu = 0.01;       // Increased viscosity for stable visual flow
+    sim_data->params.max_iter = 1;    // Single iteration per time step for animation
 
     return sim_data;
 }

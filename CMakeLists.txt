@@ -39,6 +39,10 @@ if(BUILD_EXAMPLES)
     # Simple animated flow demo
     add_executable(simple_animated_flow examples/simple_animated_flow.c)
     target_link_libraries(simple_animated_flow PRIVATE CFD::Library)
+
+    # Custom source terms example
+    add_executable(custom_source_terms examples/custom_source_terms.c)
+    target_link_libraries(custom_source_terms PRIVATE CFD::Library)
 endif()
 
 # Optionally build tests
