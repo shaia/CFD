@@ -27,8 +27,17 @@ set(CFD_LIBRARY_HEADERS
     include/simulation_api.h
 )
 
-# Create the static library
-add_library(cfd_library STATIC ${CFD_LIBRARY_SOURCES})
+# Create libraries (both static and shared if requested)
+if(BUILD_SHARED_LIBS)
+    # Create shared library
+    add_library(cfd_library SHARED ${CFD_LIBRARY_SOURCES})
+    # Also create static library with different name
+    add_library(cfd_library_static STATIC ${CFD_LIBRARY_SOURCES})
+    set_target_properties(cfd_library_static PROPERTIES OUTPUT_NAME cfd_library)
+else()
+    # Create static library only
+    add_library(cfd_library STATIC ${CFD_LIBRARY_SOURCES})
+endif()
 
 # Set library properties
 set_target_properties(cfd_library PROPERTIES
@@ -37,7 +46,7 @@ set_target_properties(cfd_library PROPERTIES
     PUBLIC_HEADER "${CFD_LIBRARY_HEADERS}"
 )
 
-# Include directories
+# Include directories for main library
 target_include_directories(cfd_library
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -46,24 +55,48 @@ target_include_directories(cfd_library
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# Compiler-specific options
-if(MSVC)
-    target_compile_options(cfd_library PRIVATE /W3)
-    # Enable AVX2 if available on x86/x64
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
-        target_compile_options(cfd_library PRIVATE /arch:AVX2)
+# If we built both libraries, set properties for static version too
+if(BUILD_SHARED_LIBS)
+    set_target_properties(cfd_library_static PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        PUBLIC_HEADER "${CFD_LIBRARY_HEADERS}"
+    )
+
+    target_include_directories(cfd_library_static
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+endif()
+
+# Function to apply compiler options to a target
+function(apply_compiler_options target_name)
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE /W3)
+        # Enable AVX2 if available on x86/x64
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+            target_compile_options(${target_name} PRIVATE /arch:AVX2)
+        endif()
+    else()
+        target_compile_options(${target_name} PRIVATE -Wall -Wextra -O3)
+        # Enable AVX2 and other optimizations if available on x86/x64
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+            target_compile_options(${target_name} PRIVATE -mavx2 -mfma)
+        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+            # ARM64-specific optimizations
+            target_compile_options(${target_name} PRIVATE -mcpu=native)
+        endif()
+        # Link math library on Unix systems
+        target_link_libraries(${target_name} PUBLIC m)
     endif()
-else()
-    target_compile_options(cfd_library PRIVATE -Wall -Wextra -O3)
-    # Enable AVX2 and other optimizations if available on x86/x64
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
-        target_compile_options(cfd_library PRIVATE -mavx2 -mfma)
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-        # ARM64-specific optimizations
-        target_compile_options(cfd_library PRIVATE -mcpu=native)
-    endif()
-    # Link math library on Unix systems
-    target_link_libraries(cfd_library PUBLIC m)
+endfunction()
+
+# Apply compiler options to libraries
+apply_compiler_options(cfd_library)
+if(BUILD_SHARED_LIBS)
+    apply_compiler_options(cfd_library_static)
 endif()
 
 # Optional: Create an alias for easier usage
@@ -72,7 +105,13 @@ add_library(CFD::Library ALIAS cfd_library)
 # Installation rules (optional, for library distribution)
 include(GNUInstallDirs)
 
-install(TARGETS cfd_library
+# Installation rules
+set(INSTALL_TARGETS cfd_library)
+if(BUILD_SHARED_LIBS)
+    list(APPEND INSTALL_TARGETS cfd_library_static)
+endif()
+
+install(TARGETS ${INSTALL_TARGETS}
     EXPORT cfd_libraryTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
