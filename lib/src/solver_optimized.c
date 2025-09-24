@@ -34,7 +34,7 @@
 #else
     // Windows compatibility
     #include <malloc.h>
-    #define aligned_alloc(size, alignment) _aligned_malloc(size, alignment)
+    #define aligned_alloc(alignment, size) _aligned_malloc(size, alignment)
     #define aligned_free(ptr) _aligned_free(ptr)
 #endif
 
