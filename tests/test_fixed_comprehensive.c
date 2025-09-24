@@ -207,8 +207,8 @@ void test_decay_prevention(void) {
            initial_energy, final_energy, energy_ratio);
 
     // With source terms, energy should be maintained or grow (not decay rapidly)
-    TEST_ASSERT_GREATER_THAN(0.5, energy_ratio);  // Should not decay to <50%
-    TEST_ASSERT_LESS_THAN(energy_ratio, 2.0);     // Should not grow too much either
+    TEST_ASSERT_TRUE(energy_ratio > 0.5);  // Should not decay to <50%
+    TEST_ASSERT_TRUE(energy_ratio < 2.0);  // Should not grow too much either
 
     flow_field_destroy(field);
     grid_destroy(grid);
