@@ -147,26 +147,22 @@ create_package() {
     cd "$BUILD_DIR"
 
     if [[ "$PLATFORM" == "Windows" ]]; then
-        # Windows: Copy .dll files to package root
+        # Windows: Copy library files only (.lib, .dll)
+        find . -name "*.lib" -exec cp {} "../$PACKAGE_PATH/" \;
         find . -name "*.dll" -exec cp {} "../$PACKAGE_PATH/" \;
         find . -name "*.pdb" -exec cp {} "../$PACKAGE_PATH/" \; 2>/dev/null || true
 
-        # Copy example executables
-        find . -name "*.exe" -path "*/Release/*" -exec cp {} "../$PACKAGE_PATH/" \;
-
     else
-        # Unix: Copy shared libraries and executables
+        # Unix: Copy library files only (.so/.dylib, .a)
         if [[ "$PLATFORM" == "macOS" ]]; then
             find . -name "*.dylib" -exec cp {} "../$PACKAGE_PATH/" \;
         else
             find . -name "*.so*" -exec cp {} "../$PACKAGE_PATH/" \;
         fi
 
-        # Copy executables (but not test executables)
-        find . -name "*_simulation" -type f -executable -exec cp {} "../$PACKAGE_PATH/" \;
-        find . -name "basic_simulation" -type f -executable -exec cp {} "../$PACKAGE_PATH/" \;
-        find . -name "minimal_example" -type f -executable -exec cp {} "../$PACKAGE_PATH/" \;
-        find . -name "performance_comparison" -type f -executable -exec cp {} "../$PACKAGE_PATH/" \;
+        # Copy static libraries
+        find . -name "*.a" -exec cp {} "../$PACKAGE_PATH/" \;
+
     fi
 
     cd ..
@@ -204,11 +200,11 @@ EOF
 
     cat >> "$PACKAGE_PATH/README.txt" << EOF
 
-Example Programs:
-- basic_simulation - Basic CFD simulation demo
-- minimal_example - Minimal usage example
-- performance_comparison - Performance benchmarking
-- animated_flow_simulation - Animated flow visualization
+Library Package Contents:
+- Static libraries for linking into your applications
+- Shared libraries for runtime distribution
+- Header files for C/C++ integration
+- CMake configuration files for easy project integration
 
 Usage (CMake):
   find_package(cfd_library REQUIRED)

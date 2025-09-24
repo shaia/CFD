@@ -176,9 +176,10 @@ jobs:
 
           # Copy binaries based on platform
           if [ "$RUNNER_OS" == "Windows" ]; then
-            # Windows: Copy .lib, .dll, .exe files
-            cp -r ../../build/${{ matrix.config.build_type }}/* .
-            cp -r ../../build/lib/${{ matrix.config.build_type }}/* . 2>/dev/null || true
+            # Windows: Copy only library files (.lib, .dll)
+            find ../../build -name "*.lib" -exec cp {} . \;
+            find ../../build -name "*.dll" -exec cp {} . \;
+            find ../../build -name "*.pdb" -exec cp {} . \; 2>/dev/null || true
 
             # Copy headers
             mkdir -p include
@@ -191,11 +192,11 @@ jobs:
             echo "" >> README.txt
             echo "Files included:" >> README.txt
             echo "- cfd_library.lib (static library)" >> README.txt
-            echo "- *.exe (example executables)" >> README.txt
+            echo "- cfd_library.dll (dynamic library)" >> README.txt
             echo "- include/ (header files)" >> README.txt
 
           else
-            # Linux/macOS: Copy .so/.dylib, executables
+            # Linux/macOS: Copy library files only (.so/.dylib, .a)
             if [ "$RUNNER_OS" == "Linux" ]; then
               find ../../build -name "*.so*" -exec cp {} . \;
               LIB_EXT="so"
@@ -207,11 +208,6 @@ jobs:
             # Copy static libraries
             find ../../build -name "*.a" -exec cp {} . \;
 
-            # Copy executables
-            find ../../build -name "*_simulation" -executable -type f -exec cp {} . \;
-            find ../../build -name "basic_simulation" -executable -type f -exec cp {} . \;
-            find ../../build -name "minimal_example" -executable -type f -exec cp {} . \;
-            find ../../build -name "performance_comparison" -executable -type f -exec cp {} . \;
 
             # Copy headers
             mkdir -p include
@@ -229,7 +225,6 @@ jobs:
             else
               echo "- libcfd_library.dylib (shared library)" >> README.txt
             fi
-            echo "- *_simulation (example executables)" >> README.txt
             echo "- include/ (header files)" >> README.txt
           fi
 
@@ -326,9 +321,8 @@ jobs:
             ### What's Included:
             - Static libraries (`.a`, `.lib`)
             - Shared libraries (`.so`, `.dylib`, `.dll`)
-            - Example executables
             - Header files for C/C++ integration
-            - Build documentation
+            - CMake configuration files
 
             ### Usage:
             1. Download the appropriate archive for your platform
