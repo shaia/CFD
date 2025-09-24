@@ -19,6 +19,7 @@
 
 // Fallback for systems without aligned_alloc
 #ifndef _WIN32
+    #include <unistd.h>  // For posix_memalign declaration
     #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
         // Fallback implementation for older C standards
         static void* aligned_alloc_fallback(size_t alignment, size_t size) {
@@ -55,11 +56,12 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
     }
 
     // Allocate temporary arrays with aligned memory for SIMD
-    double* u_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* v_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* p_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* rho_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* T_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
+    size_t array_size = field->nx * field->ny * sizeof(double);
+    double* u_new = (double*)aligned_alloc(32, array_size);
+    double* v_new = (double*)aligned_alloc(32, array_size);
+    double* p_new = (double*)aligned_alloc(32, array_size);
+    double* rho_new = (double*)aligned_alloc(32, array_size);
+    double* T_new = (double*)aligned_alloc(32, array_size);
 
     // Check if memory allocation succeeded
     if (!u_new || !v_new || !p_new || !rho_new || !T_new) {
@@ -73,8 +75,8 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
     }
 
     // Pre-compute grid spacing inverses
-    double* dx_inv = (double*)aligned_alloc(32, (field->nx - 1) * sizeof(double));
-    double* dy_inv = (double*)aligned_alloc(32, (field->ny - 1) * sizeof(double));
+    double* dx_inv = (double*)aligned_alloc(32, field->nx * sizeof(double));
+    double* dy_inv = (double*)aligned_alloc(32, field->ny * sizeof(double));
 
     // Check if grid allocation succeeded
     if (!dx_inv || !dy_inv) {
@@ -89,11 +91,11 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
         return;
     }
     
-    for (size_t i = 0; i < field->nx - 1; i++) {
-        dx_inv[i] = 1.0 / (2.0 * grid->dx[i]);
+    for (size_t i = 0; i < field->nx; i++) {
+        dx_inv[i] = (i < field->nx - 1) ? 1.0 / (2.0 * grid->dx[i]) : 0.0;
     }
-    for (size_t j = 0; j < field->ny - 1; j++) {
-        dy_inv[j] = 1.0 / (2.0 * grid->dy[j]);
+    for (size_t j = 0; j < field->ny; j++) {
+        dy_inv[j] = (j < field->ny - 1) ? 1.0 / (2.0 * grid->dy[j]) : 0.0;
     }
     
     // Main time-stepping loop

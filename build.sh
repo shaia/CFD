@@ -211,7 +211,7 @@ status() {
         if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
             exe_count=$(find "$BUILD_DIR" -name "*.exe" 2>/dev/null | wc -l || echo 0)
         else
-            exe_count=$(find "$BUILD_DIR" -executable -type f 2>/dev/null | wc -l || echo 0)
+            exe_count=$(find "$BUILD_DIR" -type f -perm +111 2>/dev/null | wc -l || echo 0)
         fi
         echo "Executables: ${exe_count} built"
 
