@@ -53,8 +53,8 @@ jobs:
               os: ubuntu-latest,
               generator: "Unix Makefiles",
               build_type: "Release",
-              cc: "gcc-11",
-              cxx: "g++-11",
+              cc: "gcc",
+              cxx: "g++",
               artifact_name: "cfd-linux-x64"
             }
           - {
@@ -62,8 +62,8 @@ jobs:
               os: ubuntu-latest,
               generator: "Unix Makefiles",
               build_type: "Release",
-              cc: "clang-14",
-              cxx: "clang++-14",
+              cc: "clang",
+              cxx: "clang++",
               artifact_name: "cfd-linux-clang-x64"
             }
 
@@ -107,9 +107,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build
-          if [ "${{ matrix.config.cc }}" = "clang-14" ]; then
-            sudo apt-get install -y clang-14 clang++-14
-          fi
 
       # macOS setup
       - name: Install macOS dependencies
