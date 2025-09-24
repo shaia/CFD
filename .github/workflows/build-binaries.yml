@@ -1,0 +1,366 @@
+name: Build and Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  BUILD_TYPE: Release
+  CTEST_OUTPUT_ON_FAILURE: 1
+
+jobs:
+  build-matrix:
+    name: Build ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          # Windows builds
+          - {
+              name: "Windows MSVC x64",
+              os: windows-latest,
+              generator: "Visual Studio 17 2022",
+              arch: "x64",
+              build_type: "Release",
+              cc: "cl",
+              cxx: "cl",
+              artifact_name: "cfd-windows-x64"
+            }
+          - {
+              name: "Windows MSVC x86",
+              os: windows-latest,
+              generator: "Visual Studio 17 2022",
+              arch: "Win32",
+              build_type: "Release",
+              cc: "cl",
+              cxx: "cl",
+              artifact_name: "cfd-windows-x86"
+            }
+
+          # Linux builds
+          - {
+              name: "Linux GCC x64",
+              os: ubuntu-latest,
+              generator: "Unix Makefiles",
+              build_type: "Release",
+              cc: "gcc-11",
+              cxx: "g++-11",
+              artifact_name: "cfd-linux-x64"
+            }
+          - {
+              name: "Linux Clang x64",
+              os: ubuntu-latest,
+              generator: "Unix Makefiles",
+              build_type: "Release",
+              cc: "clang-14",
+              cxx: "clang++-14",
+              artifact_name: "cfd-linux-clang-x64"
+            }
+
+          # macOS builds
+          - {
+              name: "macOS x64",
+              os: macos-13,  # Intel Mac
+              generator: "Unix Makefiles",
+              build_type: "Release",
+              cc: "clang",
+              cxx: "clang++",
+              artifact_name: "cfd-macos-x64"
+            }
+          - {
+              name: "macOS ARM64",
+              os: macos-latest,  # Apple Silicon
+              generator: "Unix Makefiles",
+              build_type: "Release",
+              cc: "clang",
+              cxx: "clang++",
+              artifact_name: "cfd-macos-arm64"
+            }
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache CMake build
+        uses: actions/cache@v3
+        with:
+          path: build
+          key: ${{ runner.os }}-${{ matrix.config.artifact_name }}-build-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.config.artifact_name }}-build-
+
+      # Linux setup
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build
+          if [ "${{ matrix.config.cc }}" = "clang-14" ]; then
+            sudo apt-get install -y clang-14 clang++-14
+          fi
+
+      # macOS setup
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake ninja
+
+      # Windows setup
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v1.3
+
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cd build
+
+          # Set compiler environment variables
+          if [ "$RUNNER_OS" == "Linux" ] || [ "$RUNNER_OS" == "macOS" ]; then
+            export CC=${{ matrix.config.cc }}
+            export CXX=${{ matrix.config.cxx }}
+          fi
+
+          # Configure based on platform
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            cmake .. -G "${{ matrix.config.generator }}" -A ${{ matrix.config.arch }} \
+              -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }} \
+              -DBUILD_SHARED_LIBS=ON \
+              -DBUILD_EXAMPLES=ON \
+              -DBUILD_TESTS=ON
+          else
+            cmake .. -G "${{ matrix.config.generator }}" \
+              -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }} \
+              -DBUILD_SHARED_LIBS=ON \
+              -DBUILD_EXAMPLES=ON \
+              -DBUILD_TESTS=ON \
+              -DCMAKE_C_COMPILER=${{ matrix.config.cc }} \
+              -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }}
+          fi
+        shell: bash
+
+      - name: Build
+        run: |
+          cd build
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            cmake --build . --config ${{ matrix.config.build_type }} --parallel
+          else
+            cmake --build . --parallel $(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+          fi
+        shell: bash
+
+      - name: Test
+        run: |
+          cd build
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            ctest -C ${{ matrix.config.build_type }} --output-on-failure
+          else
+            ctest --output-on-failure
+          fi
+        shell: bash
+
+      - name: Package binaries
+        run: |
+          # Create distribution directory
+          mkdir -p dist/${{ matrix.config.artifact_name }}
+          cd dist/${{ matrix.config.artifact_name }}
+
+          # Copy binaries based on platform
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            # Windows: Copy .lib, .dll, .exe files
+            cp -r ../../build/${{ matrix.config.build_type }}/* .
+            cp -r ../../build/lib/${{ matrix.config.build_type }}/* . 2>/dev/null || true
+
+            # Copy headers
+            mkdir -p include
+            cp -r ../../lib/include/* include/
+
+            # Create info file
+            echo "CFD Library - Windows ${{ matrix.config.arch }} Release" > README.txt
+            echo "Built on: $(date)" >> README.txt
+            echo "Compiler: MSVC" >> README.txt
+            echo "" >> README.txt
+            echo "Files included:" >> README.txt
+            echo "- cfd_library.lib (static library)" >> README.txt
+            echo "- *.exe (example executables)" >> README.txt
+            echo "- include/ (header files)" >> README.txt
+
+          else
+            # Linux/macOS: Copy .so/.dylib, executables
+            if [ "$RUNNER_OS" == "Linux" ]; then
+              find ../../build -name "*.so*" -exec cp {} . \;
+              LIB_EXT="so"
+            else
+              find ../../build -name "*.dylib*" -exec cp {} . \;
+              LIB_EXT="dylib"
+            fi
+
+            # Copy static libraries
+            find ../../build -name "*.a" -exec cp {} . \;
+
+            # Copy executables
+            find ../../build -name "*_simulation" -executable -type f -exec cp {} . \;
+            find ../../build -name "basic_simulation" -executable -type f -exec cp {} . \;
+            find ../../build -name "minimal_example" -executable -type f -exec cp {} . \;
+            find ../../build -name "performance_comparison" -executable -type f -exec cp {} . \;
+
+            # Copy headers
+            mkdir -p include
+            cp -r ../../lib/include/* include/
+
+            # Create info file
+            echo "CFD Library - ${{ matrix.config.name }} Release" > README.txt
+            echo "Built on: $(date)" >> README.txt
+            echo "Compiler: ${{ matrix.config.cc }}" >> README.txt
+            echo "" >> README.txt
+            echo "Files included:" >> README.txt
+            echo "- libcfd_library.a (static library)" >> README.txt
+            if [ "$RUNNER_OS" == "Linux" ]; then
+              echo "- libcfd_library.so (shared library)" >> README.txt
+            else
+              echo "- libcfd_library.dylib (shared library)" >> README.txt
+            fi
+            echo "- *_simulation (example executables)" >> README.txt
+            echo "- include/ (header files)" >> README.txt
+          fi
+
+          # List contents
+          echo "" >> README.txt
+          echo "Directory contents:" >> README.txt
+          ls -la >> README.txt
+        shell: bash
+
+      - name: Create archive
+        run: |
+          cd dist
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            # Create ZIP for Windows
+            powershell -Command "Compress-Archive -Path '${{ matrix.config.artifact_name }}/*' -DestinationPath '${{ matrix.config.artifact_name }}.zip'"
+          else
+            # Create tar.gz for Unix systems
+            tar -czf ${{ matrix.config.artifact_name }}.tar.gz ${{ matrix.config.artifact_name }}/
+          fi
+        shell: bash
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.config.artifact_name }}
+          path: |
+            dist/${{ matrix.config.artifact_name }}.*
+          retention-days: 7
+
+      - name: Generate build summary
+        run: |
+          echo "## Build Summary: ${{ matrix.config.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **OS**: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compiler**: ${{ matrix.config.cc }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Architecture**: ${{ matrix.config.arch || 'x64' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: ${{ matrix.config.build_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Show binary info
+          cd dist/${{ matrix.config.artifact_name }}
+          echo "### Generated Files:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -la >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: |
+          echo "Downloaded artifacts structure:"
+          ls -la artifacts/
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: CFD Library ${{ github.ref }}
+          body: |
+            ## CFD Library Release ${{ github.ref_name }}
+
+            Cross-platform binaries for the CFD simulation library.
+
+            ### Available Downloads:
+
+            **Windows:**
+            - `cfd-windows-x64.zip` - Windows 64-bit (MSVC)
+            - `cfd-windows-x86.zip` - Windows 32-bit (MSVC)
+
+            **Linux:**
+            - `cfd-linux-x64.tar.gz` - Linux 64-bit (GCC)
+            - `cfd-linux-clang-x64.tar.gz` - Linux 64-bit (Clang)
+
+            **macOS:**
+            - `cfd-macos-x64.tar.gz` - macOS Intel (x64)
+            - `cfd-macos-arm64.tar.gz` - macOS Apple Silicon (ARM64)
+
+            ### What's Included:
+            - Static libraries (`.a`, `.lib`)
+            - Shared libraries (`.so`, `.dylib`, `.dll`)
+            - Example executables
+            - Header files for C/C++ integration
+            - Build documentation
+
+            ### Usage:
+            1. Download the appropriate archive for your platform
+            2. Extract to your project directory
+            3. Link against the library files
+            4. Include the header files in your project
+
+            See README.txt in each archive for detailed instructions.
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        run: |
+          # Upload all artifacts to the release
+          for artifact_dir in artifacts/*/; do
+            artifact_name=$(basename "$artifact_dir")
+            echo "Processing artifact: $artifact_name"
+
+            for file in "$artifact_dir"*; do
+              if [ -f "$file" ]; then
+                filename=$(basename "$file")
+                echo "Uploading: $filename"
+
+                # Upload file to release
+                curl -X POST \
+                  -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                  -H "Content-Type: application/octet-stream" \
+                  --data-binary "@$file" \
+                  "${{ steps.create_release.outputs.upload_url }}?name=$filename"
+              fi
+            done
+          done
