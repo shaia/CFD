@@ -10,6 +10,7 @@
     #include <direct.h>
     #include <io.h>
     #define access _access
+    #define rmdir _rmdir
     #define F_OK 0
 #else
     #include <unistd.h>
