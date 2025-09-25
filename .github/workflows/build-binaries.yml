@@ -1,17 +1,23 @@
 name: Build and Release Binaries
 
+# This workflow serves two purposes:
+# 1. PR Validation: Build and test all platforms when PRs are opened/updated to master/main
+#    - If any build fails, the PR cannot be merged (GitHub branch protection rules)
+#    - Artifacts are uploaded temporarily for PR review (7 days retention)
+# 2. Release Creation: When version tags (v*) are pushed, create GitHub releases
+#    - Build all platforms and create downloadable release archives
+#    - Users can find releases at: https://github.com/USER/REPO/releases
+
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v1.0.0
-    branches:
-      - main
-      - master
+      - 'v*'  # Only trigger on version tags like v1.0.0
   pull_request:
     branches:
-      - main
       - master
-  workflow_dispatch:  # Allow manual trigger
+      - main
+    types: [opened, synchronize, reopened]  # Trigger on PR events
+  workflow_dispatch:  # Allow manual trigger for testing
 
 env:
   BUILD_TYPE: Release
@@ -94,7 +100,7 @@ jobs:
           fetch-depth: 0
 
       - name: Cache CMake build
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: build
           key: ${{ runner.os }}-${{ matrix.config.artifact_name }}-build-${{ hashFiles('**/CMakeLists.txt') }}
@@ -252,7 +258,8 @@ jobs:
           name: ${{ matrix.config.artifact_name }}
           path: |
             dist/${{ matrix.config.artifact_name }}.*
-          retention-days: 7
+          # Longer retention for tag builds (releases), shorter for PR validation
+          retention-days: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && 90 || 7 }}
 
       - name: Generate build summary
         run: |
@@ -271,11 +278,38 @@ jobs:
           ls -la >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
+  # Status check job - Required for PR merges
+  # This job will fail if any of the build-matrix jobs fail
+  build-status:
+    name: Build Status Check
+    runs-on: ubuntu-latest
+    needs: build-matrix
+    if: always()  # Run even if some builds fail
+
+    steps:
+      - name: Check build results
+        run: |
+          # Check if all builds succeeded
+          if [[ "${{ needs.build-matrix.result }}" == "success" ]]; then
+            echo "✅ All builds passed successfully!"
+            echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
+            echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ One or more builds failed!"
+            echo "Build Status: FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "Check individual build jobs for details." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
   create-release:
     name: Create GitHub Release
     needs: build-matrix
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    # Only create releases when building from tags, not PRs
+    if: startsWith(github.ref, 'refs/tags/') && github.event_name == 'push'
+
+    permissions:
+      contents: write  # Required for creating releases
 
     steps:
       - name: Checkout code
@@ -286,25 +320,31 @@ jobs:
         with:
           path: artifacts
 
-      - name: Display structure of downloaded files
+      - name: Prepare release files
         run: |
           echo "Downloaded artifacts structure:"
           ls -la artifacts/
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Create a release directory and move all archives
+          mkdir -p release-files
+          find artifacts -name "*.zip" -o -name "*.tar.gz" | while read file; do
+            cp "$file" release-files/
+            echo "Prepared: $(basename "$file")"
+          done
+
+          echo "Release files prepared:"
+          ls -la release-files/
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref }}
-          release_name: CFD Library ${{ github.ref }}
+          name: CFD Library ${{ github.ref_name }}
           body: |
             ## CFD Library Release ${{ github.ref_name }}
 
-            Cross-platform binaries for the CFD simulation library.
+            🚀 **Cross-platform binaries for the CFD simulation library**
 
-            ### Available Downloads:
+            ### 📥 Available Downloads:
 
             **Windows:**
             - `cfd-windows-x64.zip` - Windows 64-bit (MSVC)
@@ -318,40 +358,27 @@ jobs:
             - `cfd-macos-x64.tar.gz` - macOS Intel (x64)
             - `cfd-macos-arm64.tar.gz` - macOS Apple Silicon (ARM64)
 
-            ### What's Included:
+            ### 📦 What's Included:
             - Static libraries (`.a`, `.lib`)
             - Shared libraries (`.so`, `.dylib`, `.dll`)
             - Header files for C/C++ integration
-            - CMake configuration files
+            - Build documentation and examples
 
-            ### Usage:
+            ### 🔧 Quick Start:
             1. Download the appropriate archive for your platform
             2. Extract to your project directory
             3. Link against the library files
             4. Include the header files in your project
 
-            See README.txt in each archive for detailed instructions.
+            📖 See `README.txt` in each archive for detailed integration instructions.
+
+            ### ✅ Tested Platforms:
+            - Windows 10/11 (x64, x86)
+            - Ubuntu Linux (GCC, Clang)
+            - macOS (Intel & Apple Silicon)
+
+            ---
+            *Built with GitHub Actions • All binaries tested before release*
+          files: release-files/*
           draft: false
           prerelease: false
-
-      - name: Upload Release Assets
-        run: |
-          # Upload all artifacts to the release
-          for artifact_dir in artifacts/*/; do
-            artifact_name=$(basename "$artifact_dir")
-            echo "Processing artifact: $artifact_name"
-
-            for file in "$artifact_dir"*; do
-              if [ -f "$file" ]; then
-                filename=$(basename "$file")
-                echo "Uploading: $filename"
-
-                # Upload file to release
-                curl -X POST \
-                  -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                  -H "Content-Type: application/octet-stream" \
-                  --data-binary "@$file" \
-                  "${{ steps.create_release.outputs.upload_url }}?name=$filename"
-              fi
-            done
-          done
