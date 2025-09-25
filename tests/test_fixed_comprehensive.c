@@ -217,18 +217,26 @@ void test_decay_prevention(void) {
 // Test output paths are working
 void test_output_paths(void) {
     // Test directory creation
-    ensure_directory_exists("../../output");
-    ensure_directory_exists("..\\..\\artifacts\\output");
+    // Create cross-platform paths and directories
+    char artifacts_path[256];
+    char output_path[256];
+    char test_file[256];
 
-    TEST_ASSERT_TRUE(file_exists("../../output"));
-    TEST_ASSERT_TRUE(file_exists("..\\..\\artifacts\\output"));
+    make_artifacts_path(artifacts_path, sizeof(artifacts_path), "");
+    make_artifacts_path(output_path, sizeof(output_path), "output");
+
+    ensure_directory_exists(artifacts_path);
+    ensure_directory_exists(output_path);
+
+    TEST_ASSERT_TRUE(file_exists(artifacts_path));
+    TEST_ASSERT_TRUE(file_exists(output_path));
 
     // Test VTK file creation
     size_t nx = 5, ny = 5;
     double data[25];
     for (int i = 0; i < 25; i++) data[i] = i * 0.1;
 
-    const char* test_file = "..\\..\\artifacts\\output\\test_fixed.vtk";
+    make_output_path(test_file, sizeof(test_file), "test_fixed.vtk");
     remove(test_file);
 
     write_vtk_output(test_file, "test_data", data, nx, ny, 0.0, 1.0, 0.0, 1.0);

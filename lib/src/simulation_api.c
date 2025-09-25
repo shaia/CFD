@@ -1,15 +1,11 @@
+#include "simulation_api.h"
 #include "solver.h"
 #include "grid.h"
 #include "vtk_output.h"
 #include "utils.h"
 #include <math.h>
 
-// Structure to hold simulation data
-typedef struct {
-    Grid* grid;
-    FlowField* field;
-    SolverParams params;
-} SimulationData;
+// SimulationData struct is defined in simulation_api.h
 
 // Initialize simulation data
 SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, double ymin, double ymax) {
@@ -99,4 +95,28 @@ void free_simulation(SimulationData* sim_data) {
     flow_field_destroy(sim_data->field);
     grid_destroy(sim_data->grid);
     cfd_free(sim_data);
+}
+
+// Configuration functions for easy output directory management
+void set_output_directory(const char* path) {
+    cfd_set_artifacts_path(path);
+}
+
+void reset_output_directory(void) {
+    cfd_reset_artifacts_path();
+}
+
+void set_default_output_mode(output_path_mode_t mode) {
+    // Map simulation API enum to utils enum
+    switch (mode) {
+        case OUTPUT_CURRENT_DIR:
+            cfd_set_default_path_mode(CFD_PATH_CURRENT_DIR);
+            break;
+        case OUTPUT_TEMP_DIR:
+            cfd_set_default_path_mode(CFD_PATH_TEMP_DIR);
+            break;
+        case OUTPUT_RELATIVE_BUILD:
+            cfd_set_default_path_mode(CFD_PATH_RELATIVE_BUILD);
+            break;
+    }
 }

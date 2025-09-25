@@ -22,4 +22,31 @@ double sign(double x);
 // File system utilities
 int ensure_directory_exists(const char* path);
 
+// Cross-platform path utilities
+#ifdef _WIN32
+    #define PATH_SEPARATOR "\\"
+    #define PATH_SEPARATOR_CHAR '\\'
+#else
+    #define PATH_SEPARATOR "/"
+    #define PATH_SEPARATOR_CHAR '/'
+#endif
+
+// Configurable artifacts path management
+void cfd_set_artifacts_path(const char* path);
+const char* cfd_get_artifacts_path(void);
+void cfd_reset_artifacts_path(void); // Reset to default
+
+// Default path options
+typedef enum {
+    CFD_PATH_CURRENT_DIR,     // "./output" (default)
+    CFD_PATH_TEMP_DIR,        // System temp directory + "/cfd_output"
+    CFD_PATH_RELATIVE_BUILD   // "../../artifacts" (for build tree compatibility)
+} cfd_default_path_mode_t;
+
+void cfd_set_default_path_mode(cfd_default_path_mode_t mode);
+
+// Cross-platform path construction (uses configurable artifacts path)
+void make_output_path(char* buffer, size_t buffer_size, const char* filename);
+void make_artifacts_path(char* buffer, size_t buffer_size, const char* subdir);
+
 #endif // CFD_UTILS_H 

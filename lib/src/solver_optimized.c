@@ -230,14 +230,22 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
 
         // Output solution every 100 iterations
         if (iter % 100 == 0) {
-            ensure_directory_exists("../../output");
-            ensure_directory_exists("..\\..\\artifacts\\output");
+            char artifacts_path[256];
+            char output_path[256];
             char filename[256];
-#ifdef _WIN32
-            sprintf_s(filename, sizeof(filename), "..\\..\\artifacts\\output\\output_optimized_%d.vtk", iter);
-#else
-            sprintf(filename, "..\\..\\artifacts\\output\\output_optimized_%d.vtk", iter);
-#endif
+
+            // Create cross-platform paths
+            make_artifacts_path(artifacts_path, sizeof(artifacts_path), "");
+            make_artifacts_path(output_path, sizeof(output_path), "output");
+
+            ensure_directory_exists(artifacts_path);
+            ensure_directory_exists(output_path);
+
+            // Create output filename with proper path separator
+            char base_filename[128];
+            snprintf(base_filename, sizeof(base_filename), "output_optimized_%d.vtk", iter);
+            make_output_path(filename, sizeof(filename), base_filename);
+
             write_vtk_output(filename, "pressure", field->p, field->nx, field->ny,
                            grid->xmin, grid->xmax, grid->ymin, grid->ymax);
         }

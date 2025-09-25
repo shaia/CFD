@@ -43,6 +43,12 @@ target_link_libraries(your_target PRIVATE CFD::Library)
 #include "simulation_api.h"
 
 int main() {
+    // Optional: Configure output behavior
+    // Default: OUTPUT_CURRENT_DIR (creates ./output/ directory)
+    // set_default_output_mode(OUTPUT_TEMP_DIR);     // Use system temp directory
+    // set_default_output_mode(OUTPUT_RELATIVE_BUILD); // Use ../../artifacts (build tree)
+    // set_output_directory("./my_custom_dir");      // Set specific directory
+
     // Initialize simulation (100x50 grid, domain [0,1] x [0,0.5])
     SimulationData* sim = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
 
@@ -50,10 +56,10 @@ int main() {
     for (int i = 0; i < 1000; i++) {
         run_simulation_step(sim);
 
-        // Output every 100 steps
+        // Output every 100 steps (automatically goes to configured directory)
         if (i % 100 == 0) {
-            char filename[256];
-            snprintf(filename, sizeof(filename), "artifacts/output/result_%d.vtk", i);
+            char filename[64];
+            snprintf(filename, sizeof(filename), "result_%d.vtk", i);
             write_simulation_to_vtk(sim, filename);
         }
     }

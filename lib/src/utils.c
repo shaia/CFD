@@ -67,3 +67,107 @@ int ensure_directory_exists(const char* path) {
     return mkdir(path, 0755) == 0;
 #endif
 }
+
+// Static variables for configurable artifacts path
+static char artifacts_base_path[512] = ""; // Empty means use default
+static cfd_default_path_mode_t default_path_mode = CFD_PATH_CURRENT_DIR;
+
+// Configurable artifacts path management
+void cfd_set_artifacts_path(const char* path) {
+    if (path && strlen(path) > 0) {
+        strncpy(artifacts_base_path, path, sizeof(artifacts_base_path) - 1);
+        artifacts_base_path[sizeof(artifacts_base_path) - 1] = '\0';
+    } else {
+        artifacts_base_path[0] = '\0'; // Reset to default
+    }
+}
+
+void cfd_set_default_path_mode(cfd_default_path_mode_t mode) {
+    default_path_mode = mode;
+}
+
+const char* cfd_get_artifacts_path(void) {
+    static char default_path_buffer[512];
+
+    if (strlen(artifacts_base_path) > 0) {
+        return artifacts_base_path;
+    }
+
+    // Generate default path based on mode
+    switch (default_path_mode) {
+        case CFD_PATH_CURRENT_DIR:
+#ifdef _WIN32
+            strcpy(default_path_buffer, ".\\output");
+#else
+            strcpy(default_path_buffer, "./output");
+#endif
+            break;
+
+        case CFD_PATH_TEMP_DIR:
+#ifdef _WIN32
+            {
+                char* temp_dir = getenv("TEMP");
+                if (!temp_dir) temp_dir = getenv("TMP");
+                if (!temp_dir) temp_dir = "C:\\temp";
+                snprintf(default_path_buffer, sizeof(default_path_buffer),
+                        "%s\\cfd_output", temp_dir);
+            }
+#else
+            {
+                char* temp_dir = getenv("TMPDIR");
+                if (!temp_dir) temp_dir = "/tmp";
+                snprintf(default_path_buffer, sizeof(default_path_buffer),
+                        "%s/cfd_output", temp_dir);
+            }
+#endif
+            break;
+
+        case CFD_PATH_RELATIVE_BUILD:
+#ifdef _WIN32
+            strcpy(default_path_buffer, "..\\..\\artifacts");
+#else
+            strcpy(default_path_buffer, "../../artifacts");
+#endif
+            break;
+
+        default:
+#ifdef _WIN32
+            strcpy(default_path_buffer, ".\\output");
+#else
+            strcpy(default_path_buffer, "./output");
+#endif
+            break;
+    }
+
+    return default_path_buffer;
+}
+
+void cfd_reset_artifacts_path(void) {
+    artifacts_base_path[0] = '\0';
+}
+
+// Cross-platform path construction functions (using configurable path)
+void make_output_path(char* buffer, size_t buffer_size, const char* filename) {
+    const char* base_path = cfd_get_artifacts_path();
+
+#ifdef _WIN32
+    snprintf(buffer, buffer_size, "%s\\output\\%s", base_path, filename);
+#else
+    snprintf(buffer, buffer_size, "%s/output/%s", base_path, filename);
+#endif
+}
+
+void make_artifacts_path(char* buffer, size_t buffer_size, const char* subdir) {
+    const char* base_path = cfd_get_artifacts_path();
+
+    if (subdir && strlen(subdir) > 0) {
+#ifdef _WIN32
+        snprintf(buffer, buffer_size, "%s\\%s", base_path, subdir);
+#else
+        snprintf(buffer, buffer_size, "%s/%s", base_path, subdir);
+#endif
+    } else {
+        strncpy(buffer, base_path, buffer_size - 1);
+        buffer[buffer_size - 1] = '\0';
+    }
+}

@@ -78,11 +78,17 @@ void test_vtk_output_paths(void) {
     initialize_flow_field(field, grid);
 
     // Ensure output directory exists
-    ensure_directory_exists("../../output");
-    ensure_directory_exists("..\\..\\artifacts\\output");
+    char artifacts_path[256];
+    char output_path[256];
+    char test_filename[256];
+
+    make_artifacts_path(artifacts_path, sizeof(artifacts_path), "");
+    make_artifacts_path(output_path, sizeof(output_path), "output");
+    ensure_directory_exists(artifacts_path);
+    ensure_directory_exists(output_path);
 
     // Test writing VTK file
-    const char* test_filename = "..\\..\\artifacts\\output\\test_output.vtk";
+    make_output_path(test_filename, sizeof(test_filename), "test_output.vtk");
 
     // Remove file if it exists from previous runs
     remove(test_filename);
@@ -105,7 +111,8 @@ void test_vtk_output_paths(void) {
     TEST_ASSERT_GREATER_THAN(100, file_size);  // Should be reasonable size
 
     // Test vector output
-    const char* vector_filename = "..\\..\\artifacts\\output\\test_vectors.vtk";
+    char vector_filename[256];
+    make_output_path(vector_filename, sizeof(vector_filename), "test_vectors.vtk");
     remove(vector_filename);
 
     write_vtk_vector_output(vector_filename, "velocity", field->u, field->v,
@@ -148,14 +155,18 @@ void test_solver_output_paths(void) {
     };
 
     // Clean up any existing files
-    remove("..\\..\\artifacts\\output\\output_0.vtk");
-    remove("..\\..\\artifacts\\output\\output_optimized_0.vtk");
+    char basic_output[256], optimized_output[256];
+    make_output_path(basic_output, sizeof(basic_output), "output_0.vtk");
+    make_output_path(optimized_output, sizeof(optimized_output), "output_optimized_0.vtk");
+
+    remove(basic_output);
+    remove(optimized_output);
 
     // Test basic solver output
     solve_navier_stokes(field, grid, &params);
 
     // Check that output file was created in correct location
-    TEST_ASSERT_TRUE(file_exists("..\\..\\artifacts\\output\\output_0.vtk"));
+    TEST_ASSERT_TRUE(file_exists(basic_output));
 
     // Reset field for optimized solver test
     initialize_flow_field(field, grid);
@@ -164,11 +175,11 @@ void test_solver_output_paths(void) {
     solve_navier_stokes_optimized(field, grid, &params);
 
     // Check that optimized output file was created in correct location
-    TEST_ASSERT_TRUE(file_exists("..\\..\\artifacts\\output\\output_optimized_0.vtk"));
+    TEST_ASSERT_TRUE(file_exists(optimized_output));
 
     // Verify files have reasonable content
-    FILE* file1 = fopen("..\\..\\artifacts\\output\\output_0.vtk", "r");
-    FILE* file2 = fopen("..\\..\\artifacts\\output\\output_optimized_0.vtk", "r");
+    FILE* file1 = fopen(basic_output, "r");
+    FILE* file2 = fopen(optimized_output, "r");
 
     TEST_ASSERT_NOT_NULL(file1);
     TEST_ASSERT_NOT_NULL(file2);
@@ -186,8 +197,8 @@ void test_solver_output_paths(void) {
     fclose(file2);
 
     // Clean up
-    remove("..\\..\\artifacts\\output\\output_0.vtk");
-    remove("..\\..\\artifacts\\output\\output_optimized_0.vtk");
+    remove(basic_output);
+    remove(optimized_output);
 
     flow_field_destroy(field);
     grid_destroy(grid);
