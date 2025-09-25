@@ -327,10 +327,13 @@ jobs:
 
           # Create a release directory and move all archives
           mkdir -p release-files
-          find artifacts -name "*.zip" -o -name "*.tar.gz" | while read file; do
-            cp "$file" release-files/
-            echo "Prepared: $(basename "$file")"
-          done
+          # Use find -exec for safe file handling (handles spaces and special characters)
+          find artifacts \( -name "*.zip" -o -name "*.tar.gz" \) -exec sh -c '
+            for file do
+              cp "$file" release-files/
+              echo "Prepared: $(basename "$file")"
+            done
+          ' sh {} +
 
           echo "Release files prepared:"
           ls -la release-files/

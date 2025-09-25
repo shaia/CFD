@@ -2,6 +2,8 @@
 
 This document explains how to configure GitHub branch protection rules to ensure all PRs must pass builds before merging.
 
+> **Note**: Replace `{owner}` with your GitHub username/organization and `{repo}` with your repository name in all URLs and examples below.
+
 ## Branch Protection Configuration
 
 To enforce that PRs can only be merged when all builds pass:
@@ -58,13 +60,13 @@ git push origin v1.0.0
 This will:
 - Trigger the full build workflow
 - Run all tests on all platforms
-- Create a GitHub release at: `https://github.com/YOUR_USERNAME/cfd/releases`
+- Create a GitHub release at: `https://github.com/{owner}/{repo}/releases`
 - Upload all binary archives for user download
 
 ## User Download Experience
 
 Users can find pre-built binaries at:
-- **Releases page**: `https://github.com/YOUR_USERNAME/cfd/releases`
+- **Releases page**: `https://github.com/{owner}/{repo}/releases`
 - **Direct download**: Each release has platform-specific archives
 - **Clear instructions**: Release notes explain what's included and how to use
 
