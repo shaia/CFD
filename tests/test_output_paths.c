@@ -5,6 +5,7 @@
 #include "vtk_output.h"
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 
 #ifdef _WIN32
     #include <direct.h>
@@ -31,17 +32,30 @@ int file_exists(const char* filename) {
 
 // Test that output directories are created correctly
 void test_output_directory_creation(void) {
-    // Test that ensure_directory_exists works
-    const char* test_dir = "../../output/test_dir";
-    const char* nested_test_dir = "../../output/test_dir/nested";
+    // Create cross-platform test paths
+    char base_path[256];
+    char test_dir[256];
+    char nested_test_dir[256];
+    char output_dir[256];
+
+    make_artifacts_path(base_path, sizeof(base_path), "");
+    make_artifacts_path(output_dir, sizeof(output_dir), "output");
+
+#ifdef _WIN32
+    snprintf(test_dir, sizeof(test_dir), "%s\\test_dir", base_path);
+    snprintf(nested_test_dir, sizeof(nested_test_dir), "%s\\test_dir\\nested", base_path);
+#else
+    snprintf(test_dir, sizeof(test_dir), "%s/test_dir", base_path);
+    snprintf(nested_test_dir, sizeof(nested_test_dir), "%s/test_dir/nested", base_path);
+#endif
 
     // Clean up first (in case of previous test runs)
     rmdir(nested_test_dir);
     rmdir(test_dir);
-    rmdir("../../output");
+    rmdir(base_path);
 
     // Test basic directory creation - function returns 1 if dir exists or was created successfully
-    int result = ensure_directory_exists("../../output");
+    int result = ensure_directory_exists(base_path);
     TEST_ASSERT_TRUE(result);  // Should succeed (either exists or was created)
 
     result = ensure_directory_exists(test_dir);
@@ -51,14 +65,14 @@ void test_output_directory_creation(void) {
     TEST_ASSERT_TRUE(result);  // Should succeed
 
     // Test that directories were actually created
-    TEST_ASSERT_TRUE(file_exists("../../output"));
+    TEST_ASSERT_TRUE(file_exists(base_path));
     TEST_ASSERT_TRUE(file_exists(test_dir));
     TEST_ASSERT_TRUE(file_exists(nested_test_dir));
 
-    // Test vtk_files directory creation
-    result = ensure_directory_exists("../../output/vtk_files");
+    // Test output directory creation
+    result = ensure_directory_exists(output_dir);
     TEST_ASSERT_TRUE(result);
-    TEST_ASSERT_TRUE(file_exists("../../output/vtk_files"));
+    TEST_ASSERT_TRUE(file_exists(output_dir));
 
     // Clean up
     rmdir(nested_test_dir);
@@ -78,11 +92,17 @@ void test_vtk_output_paths(void) {
     initialize_flow_field(field, grid);
 
     // Ensure output directory exists
-    ensure_directory_exists("../../output");
-    ensure_directory_exists("../../output/vtk_files");
+    char artifacts_path[256];
+    char output_path[256];
+    char test_filename[256];
+
+    make_artifacts_path(artifacts_path, sizeof(artifacts_path), "");
+    make_artifacts_path(output_path, sizeof(output_path), "output");
+    ensure_directory_exists(artifacts_path);
+    ensure_directory_exists(output_path);
 
     // Test writing VTK file
-    const char* test_filename = "../../output/vtk_files/test_output.vtk";
+    make_output_path(test_filename, sizeof(test_filename), "test_output.vtk");
 
     // Remove file if it exists from previous runs
     remove(test_filename);
@@ -105,7 +125,8 @@ void test_vtk_output_paths(void) {
     TEST_ASSERT_GREATER_THAN(100, file_size);  // Should be reasonable size
 
     // Test vector output
-    const char* vector_filename = "../../output/vtk_files/test_vectors.vtk";
+    char vector_filename[256];
+    make_output_path(vector_filename, sizeof(vector_filename), "test_vectors.vtk");
     remove(vector_filename);
 
     write_vtk_vector_output(vector_filename, "velocity", field->u, field->v,
@@ -148,14 +169,18 @@ void test_solver_output_paths(void) {
     };
 
     // Clean up any existing files
-    remove("../../output/vtk_files/output_0.vtk");
-    remove("../../output/vtk_files/output_optimized_0.vtk");
+    char basic_output[256], optimized_output[256];
+    make_output_path(basic_output, sizeof(basic_output), "output_0.vtk");
+    make_output_path(optimized_output, sizeof(optimized_output), "output_optimized_0.vtk");
+
+    remove(basic_output);
+    remove(optimized_output);
 
     // Test basic solver output
     solve_navier_stokes(field, grid, &params);
 
     // Check that output file was created in correct location
-    TEST_ASSERT_TRUE(file_exists("../../output/vtk_files/output_0.vtk"));
+    TEST_ASSERT_TRUE(file_exists(basic_output));
 
     // Reset field for optimized solver test
     initialize_flow_field(field, grid);
@@ -164,11 +189,11 @@ void test_solver_output_paths(void) {
     solve_navier_stokes_optimized(field, grid, &params);
 
     // Check that optimized output file was created in correct location
-    TEST_ASSERT_TRUE(file_exists("../../output/vtk_files/output_optimized_0.vtk"));
+    TEST_ASSERT_TRUE(file_exists(optimized_output));
 
     // Verify files have reasonable content
-    FILE* file1 = fopen("../../output/vtk_files/output_0.vtk", "r");
-    FILE* file2 = fopen("../../output/vtk_files/output_optimized_0.vtk", "r");
+    FILE* file1 = fopen(basic_output, "r");
+    FILE* file2 = fopen(optimized_output, "r");
 
     TEST_ASSERT_NOT_NULL(file1);
     TEST_ASSERT_NOT_NULL(file2);
@@ -186,8 +211,8 @@ void test_solver_output_paths(void) {
     fclose(file2);
 
     // Clean up
-    remove("../../output/vtk_files/output_0.vtk");
-    remove("../../output/vtk_files/output_optimized_0.vtk");
+    remove(basic_output);
+    remove(optimized_output);
 
     flow_field_destroy(field);
     grid_destroy(grid);
@@ -196,12 +221,20 @@ void test_solver_output_paths(void) {
 // Test that old scattered output directories don't get used
 void test_no_scattered_output(void) {
     // These directories should NOT be created by our fixed code
-    const char* old_paths[] = {
-        "../../output/animation",
-        "../../output/animations",
-        "output/animation",
-        "output/animations"
-    };
+    // Define cross-platform old paths to check
+    char old_paths[4][256];
+
+#ifdef _WIN32
+    strcpy(old_paths[0], "..\\..\\output\\animation");
+    strcpy(old_paths[1], "..\\..\\output\\animations");
+    strcpy(old_paths[2], "output\\animation");
+    strcpy(old_paths[3], "output\\animations");
+#else
+    strcpy(old_paths[0], "../../output/animation");
+    strcpy(old_paths[1], "../../output/animations");
+    strcpy(old_paths[2], "output/animation");
+    strcpy(old_paths[3], "output/animations");
+#endif
 
     size_t num_paths = sizeof(old_paths) / sizeof(old_paths[0]);
 
@@ -241,7 +274,9 @@ void test_no_scattered_output(void) {
     }
 
     // Most importantly, check that our correct directory DOES exist
-    TEST_ASSERT_TRUE(file_exists("../../output/vtk_files"));
+    char correct_output_dir[256];
+    make_artifacts_path(correct_output_dir, sizeof(correct_output_dir), "output");
+    TEST_ASSERT_TRUE(file_exists(correct_output_dir));
 
     flow_field_destroy(field);
     grid_destroy(grid);

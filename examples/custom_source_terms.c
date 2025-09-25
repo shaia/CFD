@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
 
     // Create output directory
     ensure_directory_exists("../../output");
-    ensure_directory_exists("../../output/vtk_files");
+    ensure_directory_exists("..\\..\\artifacts\\output");
 
     // Example 1: Default parameters
     printf("1. Running simulation with DEFAULT source term parameters:\n");
@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
     solve_navier_stokes(field, grid, &params_default);
 
     // Save default case
-    write_vtk_output("../../output/vtk_files/default_source_terms.vtk", "u_velocity",
+    write_vtk_output("..\\..\\artifacts\\output\\default_source_terms.vtk", "u_velocity",
                      field->u, nx, ny, xmin, xmax, ymin, ymax);
     printf("   Output saved to: default_source_terms.vtk\n\n");
 
@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
     solve_navier_stokes(field, grid, &params_high_energy);
 
     // Save high energy case
-    write_vtk_output("../../output/vtk_files/high_energy_source_terms.vtk", "u_velocity",
+    write_vtk_output("..\\..\\artifacts\\output\\high_energy_source_terms.vtk", "u_velocity",
                      field->u, nx, ny, xmin, xmax, ymin, ymax);
     printf("   Output saved to: high_energy_source_terms.vtk\n\n");
 
@@ -104,7 +104,7 @@ int main(int argc, char* argv[]) {
     solve_navier_stokes(field, grid, &params_low_energy);
 
     // Save low energy case
-    write_vtk_output("../../output/vtk_files/low_energy_source_terms.vtk", "u_velocity",
+    write_vtk_output("..\\..\\artifacts\\output\\low_energy_source_terms.vtk", "u_velocity",
                      field->u, nx, ny, xmin, xmax, ymin, ymax);
     printf("   Output saved to: low_energy_source_terms.vtk\n\n");
 
@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
     solve_navier_stokes(field, grid, &params_asymmetric);
 
     // Save asymmetric case
-    write_vtk_output("../../output/vtk_files/asymmetric_source_terms.vtk", "u_velocity",
+    write_vtk_output("..\\..\\artifacts\\output\\asymmetric_source_terms.vtk", "u_velocity",
                      field->u, nx, ny, xmin, xmax, ymin, ymax);
     printf("   Output saved to: asymmetric_source_terms.vtk\n\n");
 
@@ -166,7 +166,7 @@ int main(int argc, char* argv[]) {
     printf("  params.source_amplitude_v = 0.1;  // Custom value\n");
     printf("  // ... then use params in solve_navier_stokes()\n\n");
 
-    printf("All output files saved to ../../output/vtk_files/\n");
+    printf("All output files saved to ..\\..\\artifacts\\output\\\n");
     printf("Use visualization tools to compare the different cases.\n");
 
     // Clean up

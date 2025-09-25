@@ -168,7 +168,7 @@ for (int step = 0; step < max_steps; step++) {
 
     // Output results
     char filename[256];
-    snprintf(filename, sizeof(filename), "output/result_%d.vtk", step);
+    snprintf(filename, sizeof(filename), "artifacts/output/result_%d.vtk", step);
     write_simulation_to_vtk(sim, filename);
 }
 

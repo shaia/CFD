@@ -52,6 +52,7 @@ void flow_field_destroy(FlowField* field);
 void initialize_flow_field(FlowField* field, const Grid* grid);
 void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams* params);
 void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const SolverParams* params);
+void solve_navier_stokes_stable(FlowField* field, const Grid* grid, const SolverParams* params);
 void apply_boundary_conditions(FlowField* field, const Grid* grid);
 void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params);
 void compute_source_terms(double x, double y, int iter, double dt, const SolverParams* params,

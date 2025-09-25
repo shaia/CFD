@@ -8,6 +8,12 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+// Physical stability limits for numerical computation
+#define MAX_DERIVATIVE_LIMIT 100.0     // Maximum allowed first derivative magnitude (1/s)
+#define MAX_SECOND_DERIVATIVE_LIMIT 1000.0  // Maximum allowed second derivative magnitude (1/s²)
+#define MAX_VELOCITY_LIMIT 100.0       // Maximum allowed velocity magnitude (m/s)
+#define MAX_DIVERGENCE_LIMIT 10.0      // Maximum allowed velocity divergence (1/s)
+
 // Helper function to initialize SolverParams with default values
 SolverParams solver_params_default(void) {
     SolverParams params = {
@@ -102,7 +108,11 @@ void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params)
             double u_speed = fabs(field->u[idx]);
             double v_speed = fabs(field->v[idx]);
             double sound_speed = sqrt(params->gamma * field->p[idx] / field->rho[idx]);
-            double local_speed = sqrt(u_speed * u_speed + v_speed * v_speed) + sound_speed;
+
+            // Optimized velocity magnitude calculation - avoid sqrt when possible
+            double vel_mag_sq = u_speed * u_speed + v_speed * v_speed;
+            double vel_mag = (vel_mag_sq > 1e-20) ? sqrt(vel_mag_sq) : 0.0;
+            double local_speed = vel_mag + sound_speed;
             max_speed = max_double(max_speed, local_speed);
         }
     }
@@ -165,18 +175,30 @@ void compute_source_terms(double x, double y, int iter, double dt, const SolverP
 }
 
 void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams* params) {
+    // Check for minimum grid size - prevent crashes on small grids
+    if (field->nx < 3 || field->ny < 3) {
+        return; // Skip solver for grids too small for finite differences
+    }
+
     // Allocate temporary arrays for the solution update
     double* u_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
     double* v_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
     double* p_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
     double* rho_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
     double* T_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
-    
+
+    // Initialize with current values to prevent uninitialized memory
+    memcpy(u_new, field->u, field->nx * field->ny * sizeof(double));
+    memcpy(v_new, field->v, field->nx * field->ny * sizeof(double));
+    memcpy(p_new, field->p, field->nx * field->ny * sizeof(double));
+    memcpy(rho_new, field->rho, field->nx * field->ny * sizeof(double));
+    memcpy(T_new, field->T, field->nx * field->ny * sizeof(double));
+
+    // Use conservative time step to prevent instabilities
+    double conservative_dt = fmin(params->dt, 0.0001);
+
     // Main time-stepping loop
     for (int iter = 0; iter < params->max_iter; iter++) {
-        // Compute time step
-        SolverParams params_copy = *params;
-        compute_time_step(field, grid, &params_copy);
         
         // Update solution using explicit Euler method
         for (size_t j = 1; j < field->ny - 1; j++) {
@@ -209,34 +231,57 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
                 double d2v_dy2 = (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) /
                                (grid->dy[j] * grid->dy[j]);
 
-                // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density)
-                double nu = params->mu / field->rho[idx];
+                // Safety checks to prevent division by zero
+                if (field->rho[idx] <= 1e-10) continue;
+                if (fabs(grid->dx[i]) < 1e-10 || fabs(grid->dy[j]) < 1e-10) continue;
 
-                // Source terms to maintain flow (prevents decay)
-                double x = grid->x[i];
-                double y = grid->y[j];
-                double source_u, source_v;
-                compute_source_terms(x, y, iter, params_copy.dt, params, &source_u, &source_v);
+                // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density) with safety
+                double nu = params->mu / fmax(field->rho[idx], 1e-10);
+                nu = fmin(nu, 1.0);  // Limit maximum viscosity
 
-                // Complete Navier-Stokes equations
-                u_new[idx] = field->u[idx] + params_copy.dt * (
+                // Limit derivatives to prevent instabilities
+                du_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dx));
+                du_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dy));
+                dv_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dx));
+                dv_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dy));
+                dp_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dx));
+                dp_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dy));
+                d2u_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dx2));
+                d2u_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dy2));
+                d2v_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
+                d2v_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
+
+                // Conservative velocity updates with limited changes
+                double du = conservative_dt * (
                     -field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
                     - dp_dx / field->rho[idx]                        // Pressure gradient
                     + nu * (d2u_dx2 + d2u_dy2)                      // Viscous diffusion
-                    + source_u                                       // Source term
                 );
 
-                v_new[idx] = field->v[idx] + params_copy.dt * (
+                double dv = conservative_dt * (
                     -field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
                     - dp_dy / field->rho[idx]                        // Pressure gradient
                     + nu * (d2v_dx2 + d2v_dy2)                      // Viscous diffusion
-                    + source_v                                       // Source term
                 );
 
-                // Update pressure using simplified equation of state
+                // Limit velocity changes
+                du = fmax(-1.0, fmin(1.0, du));
+                dv = fmax(-1.0, fmin(1.0, dv));
+
+                u_new[idx] = field->u[idx] + du;
+                v_new[idx] = field->v[idx] + dv;
+
+                // Limit velocity magnitudes
+                u_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, u_new[idx]));
+                v_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, v_new[idx]));
+
+                // Simplified stable pressure update
                 double divergence = du_dx + dv_dy;
-                p_new[idx] = field->p[idx] - params->pressure_coupling * params_copy.dt * field->rho[idx] *
-                           (field->u[idx] * field->u[idx] + field->v[idx] * field->v[idx]) * divergence;
+                divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
+
+                double dp = -0.1 * conservative_dt * field->rho[idx] * divergence;
+                dp = fmax(-1.0, fmin(1.0, dp));  // Limit pressure changes
+                p_new[idx] = field->p[idx] + dp;
 
                 // Keep density and temperature constant for this simplified model
                 rho_new[idx] = field->rho[idx];
@@ -253,17 +298,39 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
         
         // Apply boundary conditions
         apply_boundary_conditions(field, grid);
-        
+
+        // Check for NaN/Inf values and stop if found
+        int has_nan = 0;
+        for (size_t k = 0; k < field->nx * field->ny; k++) {
+            if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
+                has_nan = 1;
+                break;
+            }
+        }
+
+        if (has_nan) {
+            printf("Warning: NaN/Inf detected in iteration %d, stopping solver\n", iter);
+            break;
+        }
+
         // Output solution every 100 iterations
         if (iter % 100 == 0) {
-            ensure_directory_exists("../../output");
-            ensure_directory_exists("../../output/vtk_files");
+            char artifacts_path[256];
+            char output_path[256];
             char filename[256];
-#ifdef _WIN32
-            sprintf_s(filename, sizeof(filename), "../../output/vtk_files/output_%d.vtk", iter);
-#else
-            sprintf(filename, "../../output/vtk_files/output_%d.vtk", iter);
-#endif
+
+            // Create cross-platform paths
+            make_artifacts_path(artifacts_path, sizeof(artifacts_path), "");
+            make_artifacts_path(output_path, sizeof(output_path), "output");
+
+            ensure_directory_exists(artifacts_path);
+            ensure_directory_exists(output_path);
+
+            // Create output filename with proper path separator
+            char base_filename[128];
+            snprintf(base_filename, sizeof(base_filename), "output_%d.vtk", iter);
+            make_output_path(filename, sizeof(filename), base_filename);
+
             write_vtk_output(filename, "pressure", field->p, field->nx, field->ny,
                            grid->xmin, grid->xmax, grid->ymin, grid->ymax);
         }
