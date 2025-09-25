@@ -146,7 +146,7 @@ target_link_libraries(your_target PRIVATE CFD::Library)
 
 ## Compatibility
 
-- **C Standard**: C99 or later
+- **C Standard**: C11 or later
 - **CMake**: 3.10 or later
 - **Compilers**: GCC, Clang, MSVC
 - **Platforms**: Windows, Linux, macOS
