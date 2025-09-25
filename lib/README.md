@@ -53,7 +53,7 @@ int main() {
         // Output every 100 steps
         if (i % 100 == 0) {
             char filename[256];
-            snprintf(filename, sizeof(filename), "output/result_%d.vtk", i);
+            snprintf(filename, sizeof(filename), "artifacts/output/result_%d.vtk", i);
             write_simulation_to_vtk(sim, filename);
         }
     }
@@ -89,7 +89,7 @@ int main() {
     solve_flow_optimized(field, grid, &params);
 
     // Output results
-    write_vtk_output("result.vtk", "pressure", field->p,
+    write_vtk_output("artifacts/output/result.vtk", "pressure", field->p,
                      field->nx, field->ny,
                      grid->xmin, grid->xmax,
                      grid->ymin, grid->ymax);

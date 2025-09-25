@@ -218,17 +218,17 @@ void test_decay_prevention(void) {
 void test_output_paths(void) {
     // Test directory creation
     ensure_directory_exists("../../output");
-    ensure_directory_exists("../../output/vtk_files");
+    ensure_directory_exists("..\\..\\artifacts\\output");
 
     TEST_ASSERT_TRUE(file_exists("../../output"));
-    TEST_ASSERT_TRUE(file_exists("../../output/vtk_files"));
+    TEST_ASSERT_TRUE(file_exists("..\\..\\artifacts\\output"));
 
     // Test VTK file creation
     size_t nx = 5, ny = 5;
     double data[25];
     for (int i = 0; i < 25; i++) data[i] = i * 0.1;
 
-    const char* test_file = "../../output/vtk_files/test_fixed.vtk";
+    const char* test_file = "..\\..\\artifacts\\output\\test_fixed.vtk";
     remove(test_file);
 
     write_vtk_output(test_file, "test_data", data, nx, ny, 0.0, 1.0, 0.0, 1.0);

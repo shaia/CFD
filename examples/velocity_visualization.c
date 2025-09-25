@@ -22,7 +22,7 @@ int main() {
 
     // Create output directory
     ensure_directory_exists("output");
-    ensure_directory_exists("output/vtk_files");
+    ensure_directory_exists("artifacts\\output");
 
     // Run simulation with velocity visualization
     int max_steps = 100;
@@ -40,15 +40,15 @@ int main() {
             char filename[256];
 
             // 1. Velocity magnitude (original functionality)
-            snprintf(filename, sizeof(filename), "output/vtk_files/velocity_magnitude_%03d.vtk", step);
+            snprintf(filename, sizeof(filename), "artifacts\\output\\velocity_magnitude_%03d.vtk", step);
             write_simulation_to_vtk(sim_data, filename);
 
             // 2. Velocity vectors only
-            snprintf(filename, sizeof(filename), "output/vtk_files/velocity_vectors_%03d.vtk", step);
+            snprintf(filename, sizeof(filename), "artifacts\\output\\velocity_vectors_%03d.vtk", step);
             write_velocity_vectors_to_vtk(sim_data, filename);
 
             // 3. Complete flow field (vectors + magnitude + pressure)
-            snprintf(filename, sizeof(filename), "output/vtk_files/flow_field_%03d.vtk", step);
+            snprintf(filename, sizeof(filename), "artifacts\\output\\flow_field_%03d.vtk", step);
             write_flow_field_to_vtk(sim_data, filename);
 
             printf("Step %3d: Output written to VTK files\n", step);
@@ -57,8 +57,8 @@ int main() {
 
     // Final comprehensive output
     printf("\nWriting final comprehensive flow field visualization...\n");
-    write_flow_field_to_vtk(sim_data, "output/vtk_files/final_flow_field.vtk");
-    write_velocity_vectors_to_vtk(sim_data, "output/vtk_files/final_velocity_vectors.vtk");
+    write_flow_field_to_vtk(sim_data, "artifacts\\output\\final_flow_field.vtk");
+    write_velocity_vectors_to_vtk(sim_data, "artifacts\\output\\final_velocity_vectors.vtk");
 
     // Cleanup
     free_simulation(sim_data);

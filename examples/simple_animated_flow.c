@@ -85,7 +85,7 @@ int main() {
 
     // Create output directory
     ensure_directory_exists("../../output");
-    ensure_directory_exists("../../output/vtk_files");
+    ensure_directory_exists("..\\..\\artifacts\\output");
 
     // Animation parameters
     int max_steps = 100;
@@ -109,7 +109,7 @@ int main() {
             char filename[512];
 
             // Complete flow field for animation
-            snprintf(filename, sizeof(filename), "../../output/vtk_files/simple_flow_%04d.vtk", step);
+            snprintf(filename, sizeof(filename), "..\\..\\artifacts\\output\\simple_flow_%04d.vtk", step);
             write_flow_field_to_vtk(sim_data, filename);
 
             printf("Step %4d: Animation frame saved (t = %.3f)\n", step, time);
@@ -128,7 +128,7 @@ int main() {
     printf("\nGenerated animation files:\n");
     printf("  - simple_flow_*.vtk : %d frames\n", (max_steps / output_interval) + 1);
     printf("\nTo create animation:\n");
-    printf("  python visualization/animate_flow.py ../../output/vtk_files\n");
+    printf("  python visualization/animate_flow.py ..\\..\\artifacts\\output\n");
 
     return 0;
 }

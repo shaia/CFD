@@ -224,9 +224,9 @@ status() {
     fi
 
     # Check output directories
-    if [[ -d "output" ]]; then
-        local vtk_count=$(find output -name "*.vtk" 2>/dev/null | wc -l || echo 0)
-        echo "VTK files: ${vtk_count} in output/"
+    if [[ -d "artifacts/output" ]]; then
+        local vtk_count=$(find artifacts/output -name "*.vtk" 2>/dev/null | wc -l || echo 0)
+        echo "VTK files: ${vtk_count} in artifacts/output/"
     else
         echo "Output directory: ✗ Not found"
     fi

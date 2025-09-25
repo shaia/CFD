@@ -18,7 +18,7 @@ The simplest possible example showing basic library usage:
 ./minimal_example
 ```
 
-**Output:** Creates `output/minimal_step_*.vtk` files
+**Output:** Creates `artifacts/output/minimal_step_*.vtk` files
 
 ---
 
@@ -36,7 +36,7 @@ A more comprehensive example (original main.c) showing:
 ./basic_simulation
 ```
 
-**Output:** Creates `output/output_optimized_*.vtk` files every 100 iterations
+**Output:** Creates `artifacts/output/output_optimized_*.vtk` files every 100 iterations
 
 ---
 
@@ -72,7 +72,7 @@ Shows how to implement:
 ./custom_boundary_conditions
 ```
 
-**Output:** Creates `output/cylinder_flow_*.vtk` files showing flow patterns
+**Output:** Creates `artifacts/output/cylinder_flow_*.vtk` files showing flow patterns
 
 ---
 

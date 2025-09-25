@@ -48,6 +48,11 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
         return;
     }
 
+    // Check for minimum grid size - prevent crashes on small grids
+    if (field->nx < 3 || field->ny < 3) {
+        return; // Skip solver for grids too small for finite differences
+    }
+
     // Allocate temporary arrays with aligned memory for SIMD
     double* u_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
     double* v_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
@@ -89,12 +94,20 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
     for (size_t j = 0; j < field->ny - 1; j++) {
         dy_inv[j] = 1.0 / (2.0 * grid->dy[j]);
     }
-    
+
+    // Initialize temporary arrays with current values to prevent uninitialized memory
+    memcpy(u_new, field->u, field->nx * field->ny * sizeof(double));
+    memcpy(v_new, field->v, field->nx * field->ny * sizeof(double));
+    memcpy(p_new, field->p, field->nx * field->ny * sizeof(double));
+    memcpy(rho_new, field->rho, field->nx * field->ny * sizeof(double));
+    memcpy(T_new, field->T, field->nx * field->ny * sizeof(double));
+
+    // Use conservative time step to prevent instabilities
+    double conservative_dt = fmin(params->dt, 0.0001);
+
     // Main time-stepping loop
     for (int iter = 0; iter < params->max_iter; iter++) {
-        // Compute time step
-        SolverParams params_copy = *params;
-        compute_time_step(field, grid, &params_copy);
+        // Use conservative dt instead of dynamically computed one
         
         // Update solution using block-based computation
         for (size_t j_block = 1; j_block < field->ny - 1; j_block += BLOCK_SIZE) {
@@ -133,17 +146,17 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
                         double x = grid->x[i];
                         double y = grid->y[j];
                         double source_u, source_v;
-                        compute_source_terms(x, y, iter, params_copy.dt, params, &source_u, &source_v);
+                        compute_source_terms(x, y, iter, conservative_dt, params, &source_u, &source_v);
 
                         // Complete Navier-Stokes equations with optimized calculations
-                        u_new[idx] = field->u[idx] + params_copy.dt * (
+                        u_new[idx] = field->u[idx] + conservative_dt * (
                             -field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
                             - dp_dx / field->rho[idx]                        // Pressure gradient
                             + nu * (d2u_dx2 + d2u_dy2)                      // Viscous diffusion
                             + source_u                                       // Source term
                         );
 
-                        v_new[idx] = field->v[idx] + params_copy.dt * (
+                        v_new[idx] = field->v[idx] + conservative_dt * (
                             -field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
                             - dp_dy / field->rho[idx]                        // Pressure gradient
                             + nu * (d2v_dx2 + d2v_dy2)                      // Viscous diffusion
@@ -152,7 +165,7 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
 
                         // Update pressure using simplified equation of state
                         double divergence = du_dx + dv_dy;
-                        p_new[idx] = field->p[idx] - params->pressure_coupling * params_copy.dt * field->rho[idx] *
+                        p_new[idx] = field->p[idx] - params->pressure_coupling * conservative_dt * field->rho[idx] *
                                    (field->u[idx] * field->u[idx] + field->v[idx] * field->v[idx]) * divergence;
 
                         // Keep density and temperature constant for this simplified model
@@ -200,16 +213,30 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
         
         // Apply boundary conditions
         apply_boundary_conditions(field, grid);
-        
+
+        // Check for NaN/Inf values and stop if found
+        int has_nan = 0;
+        for (size_t k = 0; k < field->nx * field->ny; k++) {
+            if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
+                has_nan = 1;
+                break;
+            }
+        }
+
+        if (has_nan) {
+            printf("Warning: NaN/Inf detected in optimized solver iteration %d, stopping solver\n", iter);
+            break;
+        }
+
         // Output solution every 100 iterations
         if (iter % 100 == 0) {
             ensure_directory_exists("../../output");
-            ensure_directory_exists("../../output/vtk_files");
+            ensure_directory_exists("..\\..\\artifacts\\output");
             char filename[256];
 #ifdef _WIN32
-            sprintf_s(filename, sizeof(filename), "../../output/vtk_files/output_optimized_%d.vtk", iter);
+            sprintf_s(filename, sizeof(filename), "..\\..\\artifacts\\output\\output_optimized_%d.vtk", iter);
 #else
-            sprintf(filename, "../../output/vtk_files/output_optimized_%d.vtk", iter);
+            sprintf(filename, "..\\..\\artifacts\\output\\output_optimized_%d.vtk", iter);
 #endif
             write_vtk_output(filename, "pressure", field->p, field->nx, field->ny,
                            grid->xmin, grid->xmax, grid->ymin, grid->ymax);

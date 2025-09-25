@@ -27,7 +27,7 @@ int main() {
 
     // Create output directory
     ensure_directory_exists("../../output");
-    ensure_directory_exists("../../output/vtk_files");
+    ensure_directory_exists("..\\..\\artifacts\\output");
 
     // Enhanced simulation parameters for better dynamics
     int max_steps = 200;        // More time steps for animation
@@ -105,11 +105,11 @@ int main() {
             char filename[512];
 
             // Complete flow field for animation
-            snprintf(filename, sizeof(filename), "../../output/vtk_files/flow_field_%04d.vtk", step);
+            snprintf(filename, sizeof(filename), "..\\..\\artifacts\\output\\flow_field_%04d.vtk", step);
             write_flow_field_to_vtk(sim_data, filename);
 
             // Also save velocity vectors separately for vector field animation
-            snprintf(filename, sizeof(filename), "../../output/vtk_files/velocity_vectors_%04d.vtk", step);
+            snprintf(filename, sizeof(filename), "..\\..\\artifacts\\output\\velocity_vectors_%04d.vtk", step);
             write_velocity_vectors_to_vtk(sim_data, filename);
 
             printf("Step %4d: Animation frame saved (t = %.4f)\n", step, time);
@@ -123,8 +123,8 @@ int main() {
 
     // Final comprehensive output
     printf("\nWriting final comprehensive outputs...\n");
-    write_flow_field_to_vtk(sim_data, "../../output/vtk_files/final_complete_flow.vtk");
-    write_velocity_vectors_to_vtk(sim_data, "../../output/vtk_files/final_velocity_vectors.vtk");
+    write_flow_field_to_vtk(sim_data, "..\\..\\artifacts\\output\\final_complete_flow.vtk");
+    write_velocity_vectors_to_vtk(sim_data, "..\\..\\artifacts\\output\\final_velocity_vectors.vtk");
 
     // Cleanup
     free_simulation(sim_data);
@@ -135,7 +135,7 @@ int main() {
     printf("  - velocity_vectors_*.vtk : Velocity vector frames\n");
     printf("  - Total frames: %d\n", (max_steps / output_interval) + 1);
     printf("\nAnimation data ready for visualization!\n");
-    printf("Use: python visualization/animate_flow.py output/vtk_files\n");
+    printf("Use: python visualization/animate_flow.py artifacts\\output\n");
 
     return 0;
 }
