@@ -23,26 +23,7 @@
 #define MAX_VELOCITY_LIMIT 100.0       // Maximum allowed velocity magnitude (m/s)
 #define MAX_DIVERGENCE_LIMIT 10.0      // Maximum allowed velocity divergence (1/s)
 
-// Fallback for systems without aligned_alloc
-#ifndef _WIN32
-    #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
-        // Fallback implementation for older C standards
-        static void* aligned_alloc_fallback(size_t alignment, size_t size) {
-            void *ptr;
-            if (posix_memalign(&ptr, alignment, size) != 0) {
-                return NULL;
-            }
-            return ptr;
-        }
-        #define aligned_alloc(alignment, size) aligned_alloc_fallback(alignment, size)
-    #endif
-    #define aligned_free(ptr) free(ptr)
-#else
-    // Windows compatibility
-    #include <malloc.h>
-    #define aligned_alloc(alignment, size) _aligned_malloc(size, alignment)
-    #define aligned_free(ptr) _aligned_free(ptr)
-#endif
+// Use centralized aligned memory allocation from utils
 
 // Block size for cache-friendly memory access
 #define BLOCK_SIZE 32
@@ -63,45 +44,45 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
     const size_t field_size_bytes = field->nx * field->ny * sizeof(double);
 
     // Allocate temporary arrays with aligned memory for SIMD
-    double* u_new = (double*)aligned_alloc(32, field_size_bytes);
-    double* v_new = (double*)aligned_alloc(32, field_size_bytes);
-    double* p_new = (double*)aligned_alloc(32, field_size_bytes);
-    double* rho_new = (double*)aligned_alloc(32, field_size_bytes);
-    double* T_new = (double*)aligned_alloc(32, field_size_bytes);
+    double* u_new = (double*)cfd_aligned_malloc(field_size_bytes);
+    double* v_new = (double*)cfd_aligned_malloc(field_size_bytes);
+    double* p_new = (double*)cfd_aligned_malloc(field_size_bytes);
+    double* rho_new = (double*)cfd_aligned_malloc(field_size_bytes);
+    double* T_new = (double*)cfd_aligned_malloc(field_size_bytes);
 
     // Check if memory allocation succeeded
     if (!u_new || !v_new || !p_new || !rho_new || !T_new) {
         // Clean up any allocated memory
-        if (u_new) aligned_free(u_new);
-        if (v_new) aligned_free(v_new);
-        if (p_new) aligned_free(p_new);
-        if (rho_new) aligned_free(rho_new);
-        if (T_new) aligned_free(T_new);
+        if (u_new) cfd_aligned_free(u_new);
+        if (v_new) cfd_aligned_free(v_new);
+        if (p_new) cfd_aligned_free(p_new);
+        if (rho_new) cfd_aligned_free(rho_new);
+        if (T_new) cfd_aligned_free(T_new);
         return;
     }
 
     // Pre-compute grid spacing inverses
-    double* dx_inv = (double*)aligned_alloc(32, (field->nx - 1) * sizeof(double));
-    double* dy_inv = (double*)aligned_alloc(32, (field->ny - 1) * sizeof(double));
+    double* dx_inv = (double*)cfd_aligned_malloc(field->nx * sizeof(double));
+    double* dy_inv = (double*)cfd_aligned_malloc(field->ny * sizeof(double));
 
     // Check if grid allocation succeeded
     if (!dx_inv || !dy_inv) {
         // Clean up all allocated memory
-        aligned_free(u_new);
-        aligned_free(v_new);
-        aligned_free(p_new);
-        aligned_free(rho_new);
-        aligned_free(T_new);
-        if (dx_inv) aligned_free(dx_inv);
-        if (dy_inv) aligned_free(dy_inv);
+        cfd_aligned_free(u_new);
+        cfd_aligned_free(v_new);
+        cfd_aligned_free(p_new);
+        cfd_aligned_free(rho_new);
+        cfd_aligned_free(T_new);
+        if (dx_inv) cfd_aligned_free(dx_inv);
+        if (dy_inv) cfd_aligned_free(dy_inv);
         return;
     }
     
-    for (size_t i = 0; i < field->nx - 1; i++) {
-        dx_inv[i] = 1.0 / (2.0 * grid->dx[i]);
+    for (size_t i = 0; i < field->nx; i++) {
+        dx_inv[i] = (i < field->nx - 1) ? 1.0 / (2.0 * grid->dx[i]) : 0.0;
     }
-    for (size_t j = 0; j < field->ny - 1; j++) {
-        dy_inv[j] = 1.0 / (2.0 * grid->dy[j]);
+    for (size_t j = 0; j < field->ny; j++) {
+        dy_inv[j] = (j < field->ny - 1) ? 1.0 / (2.0 * grid->dy[j]) : 0.0;
     }
 
     // Initialize temporary arrays with current values to prevent uninitialized memory
@@ -216,21 +197,23 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
 #ifdef __AVX2__
         size_t size = field->nx * field->ny;
         size_t vec_size = size / 4 * 4;  // Process 4 doubles at a time
-        
+
+        // Use aligned SIMD operations for maximum performance
+        // Both temporary arrays and FlowField arrays are now 32-byte aligned
         for (size_t i = 0; i < vec_size; i += 4) {
             __m256d u_vec = _mm256_load_pd(&u_new[i]);
             __m256d v_vec = _mm256_load_pd(&v_new[i]);
             __m256d p_vec = _mm256_load_pd(&p_new[i]);
             __m256d rho_vec = _mm256_load_pd(&rho_new[i]);
             __m256d T_vec = _mm256_load_pd(&T_new[i]);
-            
+
             _mm256_store_pd(&field->u[i], u_vec);
             _mm256_store_pd(&field->v[i], v_vec);
             _mm256_store_pd(&field->p[i], p_vec);
             _mm256_store_pd(&field->rho[i], rho_vec);
             _mm256_store_pd(&field->T[i], T_vec);
         }
-        
+
         // Handle remaining elements
         for (size_t i = vec_size; i < size; i++) {
             field->u[i] = u_new[i];
@@ -288,11 +271,11 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
     }
     
     // Free temporary arrays
-    aligned_free(u_new);
-    aligned_free(v_new);
-    aligned_free(p_new);
-    aligned_free(rho_new);
-    aligned_free(T_new);
-    aligned_free(dx_inv);
-    aligned_free(dy_inv);
+    cfd_aligned_free(u_new);
+    cfd_aligned_free(v_new);
+    cfd_aligned_free(p_new);
+    cfd_aligned_free(rho_new);
+    cfd_aligned_free(T_new);
+    cfd_aligned_free(dx_inv);
+    cfd_aligned_free(dy_inv);
 }
