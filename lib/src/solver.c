@@ -8,6 +8,12 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+// Physical stability limits for numerical computation
+#define MAX_DERIVATIVE_LIMIT 100.0     // Maximum allowed first derivative magnitude (1/s)
+#define MAX_SECOND_DERIVATIVE_LIMIT 1000.0  // Maximum allowed second derivative magnitude (1/s²)
+#define MAX_VELOCITY_LIMIT 100.0       // Maximum allowed velocity magnitude (m/s)
+#define MAX_DIVERGENCE_LIMIT 10.0      // Maximum allowed velocity divergence (1/s)
+
 // Helper function to initialize SolverParams with default values
 SolverParams solver_params_default(void) {
     SolverParams params = {
@@ -234,16 +240,16 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
                 nu = fmin(nu, 1.0);  // Limit maximum viscosity
 
                 // Limit derivatives to prevent instabilities
-                du_dx = fmax(-100.0, fmin(100.0, du_dx));
-                du_dy = fmax(-100.0, fmin(100.0, du_dy));
-                dv_dx = fmax(-100.0, fmin(100.0, dv_dx));
-                dv_dy = fmax(-100.0, fmin(100.0, dv_dy));
-                dp_dx = fmax(-100.0, fmin(100.0, dp_dx));
-                dp_dy = fmax(-100.0, fmin(100.0, dp_dy));
-                d2u_dx2 = fmax(-1000.0, fmin(1000.0, d2u_dx2));
-                d2u_dy2 = fmax(-1000.0, fmin(1000.0, d2u_dy2));
-                d2v_dx2 = fmax(-1000.0, fmin(1000.0, d2v_dx2));
-                d2v_dy2 = fmax(-1000.0, fmin(1000.0, d2v_dy2));
+                du_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dx));
+                du_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dy));
+                dv_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dx));
+                dv_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dy));
+                dp_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dx));
+                dp_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dy));
+                d2u_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dx2));
+                d2u_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dy2));
+                d2v_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
+                d2v_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
 
                 // Conservative velocity updates with limited changes
                 double du = conservative_dt * (
@@ -266,12 +272,12 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
                 v_new[idx] = field->v[idx] + dv;
 
                 // Limit velocity magnitudes
-                u_new[idx] = fmax(-100.0, fmin(100.0, u_new[idx]));
-                v_new[idx] = fmax(-100.0, fmin(100.0, v_new[idx]));
+                u_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, u_new[idx]));
+                v_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, v_new[idx]));
 
                 // Simplified stable pressure update
                 double divergence = du_dx + dv_dy;
-                divergence = fmax(-10.0, fmin(10.0, divergence));
+                divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
 
                 double dp = -0.1 * conservative_dt * field->rho[idx] * divergence;
                 dp = fmax(-1.0, fmin(1.0, dp));  // Limit pressure changes
