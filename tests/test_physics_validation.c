@@ -160,7 +160,7 @@ void test_pressure_gradient_effects(void) {
            initial_velocity_sum, final_velocity_sum);
 
     // Pressure gradient should have induced some velocity
-    TEST_ASSERT_GREATER_THAN(initial_velocity_sum + 1e-8, final_velocity_sum);
+    TEST_ASSERT_TRUE(final_velocity_sum > initial_velocity_sum + 1e-8);
 
     // Check that pressure gradient induced flow in correct direction (negative x)
     double avg_u_velocity = 0.0;

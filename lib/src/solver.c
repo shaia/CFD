@@ -251,17 +251,25 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
                 d2v_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
                 d2v_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
 
+                // Source terms to maintain flow (prevents decay)
+                double x = grid->x[i];
+                double y = grid->y[j];
+                double source_u, source_v;
+                compute_source_terms(x, y, iter, conservative_dt, params, &source_u, &source_v);
+
                 // Conservative velocity updates with limited changes
                 double du = conservative_dt * (
                     -field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
                     - dp_dx / field->rho[idx]                        // Pressure gradient
                     + nu * (d2u_dx2 + d2u_dy2)                      // Viscous diffusion
+                    + source_u                                       // Source term
                 );
 
                 double dv = conservative_dt * (
                     -field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
                     - dp_dy / field->rho[idx]                        // Pressure gradient
                     + nu * (d2v_dx2 + d2v_dy2)                      // Viscous diffusion
+                    + source_v                                       // Source term
                 );
 
                 // Limit velocity changes
