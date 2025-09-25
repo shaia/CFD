@@ -14,6 +14,11 @@ void* cfd_malloc(size_t size);
 void* cfd_calloc(size_t count, size_t size);
 void cfd_free(void* ptr);
 
+// Aligned memory allocation for SIMD operations (32-byte aligned)
+void* cfd_aligned_malloc(size_t size);
+void* cfd_aligned_calloc(size_t count, size_t size);
+void cfd_aligned_free(void* ptr);
+
 // Mathematical utilities
 double min_double(double a, double b);
 double max_double(double a, double b);

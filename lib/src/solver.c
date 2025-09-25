@@ -33,27 +33,27 @@ SolverParams solver_params_default(void) {
 }
 FlowField* flow_field_create(size_t nx, size_t ny) {
     FlowField* field = (FlowField*)cfd_malloc(sizeof(FlowField));
-    
+
     field->nx = nx;
     field->ny = ny;
-    
-    // Allocate memory for flow variables
-    field->u = (double*)cfd_calloc(nx * ny, sizeof(double));
-    field->v = (double*)cfd_calloc(nx * ny, sizeof(double));
-    field->p = (double*)cfd_calloc(nx * ny, sizeof(double));
-    field->rho = (double*)cfd_calloc(nx * ny, sizeof(double));
-    field->T = (double*)cfd_calloc(nx * ny, sizeof(double));
-    
+
+    // Allocate 32-byte aligned memory for flow variables (optimized for SIMD operations)
+    field->u = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
+    field->v = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
+    field->p = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
+    field->rho = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
+    field->T = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
+
     return field;
 }
 
 void flow_field_destroy(FlowField* field) {
     if (field != NULL) {
-        cfd_free(field->u);
-        cfd_free(field->v);
-        cfd_free(field->p);
-        cfd_free(field->rho);
-        cfd_free(field->T);
+        cfd_aligned_free(field->u);
+        cfd_aligned_free(field->v);
+        cfd_aligned_free(field->p);
+        cfd_aligned_free(field->rho);
+        cfd_aligned_free(field->T);
         cfd_free(field);
     }
 }
