@@ -8,11 +8,23 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-// Default source term parameters for energy maintenance (can be overridden via SolverParams)
-#define DEFAULT_SOURCE_AMPLITUDE_U 0.1    // Default amplitude of u-velocity source term
-#define DEFAULT_SOURCE_AMPLITUDE_V 0.05   // Default amplitude of v-velocity source term
-#define DEFAULT_SOURCE_DECAY_RATE 0.1     // Default decay rate for source terms over time
-#define DEFAULT_PRESSURE_COUPLING 0.1     // Default coupling coefficient for pressure update
+// Helper function to initialize SolverParams with default values
+SolverParams solver_params_default(void) {
+    SolverParams params = {
+        .dt = DEFAULT_TIME_STEP,
+        .cfl = DEFAULT_CFL_NUMBER,
+        .gamma = DEFAULT_GAMMA,
+        .mu = DEFAULT_VISCOSITY,
+        .k = DEFAULT_THERMAL_CONDUCTIVITY,
+        .max_iter = DEFAULT_MAX_ITERATIONS,
+        .tolerance = DEFAULT_TOLERANCE,
+        .source_amplitude_u = DEFAULT_SOURCE_AMPLITUDE_U,
+        .source_amplitude_v = DEFAULT_SOURCE_AMPLITUDE_V,
+        .source_decay_rate = DEFAULT_SOURCE_DECAY_RATE,
+        .pressure_coupling = DEFAULT_PRESSURE_COUPLING
+    };
+    return params;
+}
 FlowField* flow_field_create(size_t nx, size_t ny) {
     FlowField* field = (FlowField*)cfd_malloc(sizeof(FlowField));
     

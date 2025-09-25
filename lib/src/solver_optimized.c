@@ -42,12 +42,6 @@
 // Block size for cache-friendly memory access
 #define BLOCK_SIZE 32
 
-// Default source term parameters for energy maintenance (can be overridden via SolverParams)
-#define DEFAULT_SOURCE_AMPLITUDE_U 0.1    // Default amplitude of u-velocity source term
-#define DEFAULT_SOURCE_AMPLITUDE_V 0.05   // Default amplitude of v-velocity source term
-#define DEFAULT_SOURCE_DECAY_RATE 0.1     // Default decay rate for source terms over time
-#define DEFAULT_PRESSURE_COUPLING 0.1     // Default coupling coefficient for pressure update
-
 // Optimized version of the solver using SIMD and cache-friendly memory access
 void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const SolverParams* params) {
     // Validate input parameters
@@ -55,7 +49,7 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
         return;
     }
 
-    // Allocate temporary arrays with aligned memory for SIMD
+    // Allocate temporary arrays with aligned memory for SIMD>>>>>>> 825be93ebbd633aa32664e1f602758398cd512e4
     size_t array_size = field->nx * field->ny * sizeof(double);
     double* u_new = (double*)aligned_alloc(32, array_size);
     double* v_new = (double*)aligned_alloc(32, array_size);
@@ -75,6 +69,7 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
     }
 
     // Pre-compute grid spacing inverses
+
     double* dx_inv = (double*)aligned_alloc(32, field->nx * sizeof(double));
     double* dy_inv = (double*)aligned_alloc(32, field->ny * sizeof(double));
 
