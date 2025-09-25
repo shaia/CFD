@@ -41,14 +41,16 @@ void solve_navier_stokes_stable(FlowField* field, const Grid* grid, const Solver
         min_dy = fmin(min_dy, grid->dy[j]);
     }
 
-    // CFL condition for stability
-    double max_velocity = 0.0;
+    // CFL condition for stability - optimized using velocity magnitude squared
+    double max_velocity_squared = 0.0;
     for (size_t i = 0; i < field->nx * field->ny; i++) {
-        double vel_mag = sqrt(field->u[i]*field->u[i] + field->v[i]*field->v[i]);
-        max_velocity = fmax(max_velocity, vel_mag);
+        double vel_mag_sq = field->u[i]*field->u[i] + field->v[i]*field->v[i];
+        max_velocity_squared = fmax(max_velocity_squared, vel_mag_sq);
     }
 
-    if (max_velocity > 1e-10) {
+    // Only compute sqrt once for the final result
+    if (max_velocity_squared > 1e-20) {  // 1e-10 squared
+        double max_velocity = sqrt(max_velocity_squared);
         double cfl_dt = 0.2 * fmin(min_dx, min_dy) / max_velocity;
         dt = fmin(dt, cfl_dt);
     }

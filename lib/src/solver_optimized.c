@@ -53,12 +53,15 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
         return; // Skip solver for grids too small for finite differences
     }
 
+    // Pre-compute memory size for better readability and maintainability
+    const size_t field_size_bytes = field->nx * field->ny * sizeof(double);
+
     // Allocate temporary arrays with aligned memory for SIMD
-    double* u_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* v_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* p_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* rho_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
-    double* T_new = (double*)aligned_alloc(32, field->nx * field->ny * sizeof(double));
+    double* u_new = (double*)aligned_alloc(32, field_size_bytes);
+    double* v_new = (double*)aligned_alloc(32, field_size_bytes);
+    double* p_new = (double*)aligned_alloc(32, field_size_bytes);
+    double* rho_new = (double*)aligned_alloc(32, field_size_bytes);
+    double* T_new = (double*)aligned_alloc(32, field_size_bytes);
 
     // Check if memory allocation succeeded
     if (!u_new || !v_new || !p_new || !rho_new || !T_new) {
@@ -96,11 +99,11 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
     }
 
     // Initialize temporary arrays with current values to prevent uninitialized memory
-    memcpy(u_new, field->u, field->nx * field->ny * sizeof(double));
-    memcpy(v_new, field->v, field->nx * field->ny * sizeof(double));
-    memcpy(p_new, field->p, field->nx * field->ny * sizeof(double));
-    memcpy(rho_new, field->rho, field->nx * field->ny * sizeof(double));
-    memcpy(T_new, field->T, field->nx * field->ny * sizeof(double));
+    memcpy(u_new, field->u, field_size_bytes);
+    memcpy(v_new, field->v, field_size_bytes);
+    memcpy(p_new, field->p, field_size_bytes);
+    memcpy(rho_new, field->rho, field_size_bytes);
+    memcpy(T_new, field->T, field_size_bytes);
 
     // Use conservative time step to prevent instabilities
     double conservative_dt = fmin(params->dt, 0.0001);
@@ -204,11 +207,11 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
             field->T[i] = T_new[i];
         }
 #else
-        memcpy(field->u, u_new, field->nx * field->ny * sizeof(double));
-        memcpy(field->v, v_new, field->nx * field->ny * sizeof(double));
-        memcpy(field->p, p_new, field->nx * field->ny * sizeof(double));
-        memcpy(field->rho, rho_new, field->nx * field->ny * sizeof(double));
-        memcpy(field->T, T_new, field->nx * field->ny * sizeof(double));
+        memcpy(field->u, u_new, field_size_bytes);
+        memcpy(field->v, v_new, field_size_bytes);
+        memcpy(field->p, p_new, field_size_bytes);
+        memcpy(field->rho, rho_new, field_size_bytes);
+        memcpy(field->T, T_new, field_size_bytes);
 #endif
         
         // Apply boundary conditions

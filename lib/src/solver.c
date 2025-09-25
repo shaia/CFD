@@ -102,7 +102,11 @@ void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params)
             double u_speed = fabs(field->u[idx]);
             double v_speed = fabs(field->v[idx]);
             double sound_speed = sqrt(params->gamma * field->p[idx] / field->rho[idx]);
-            double local_speed = sqrt(u_speed * u_speed + v_speed * v_speed) + sound_speed;
+
+            // Optimized velocity magnitude calculation - avoid sqrt when possible
+            double vel_mag_sq = u_speed * u_speed + v_speed * v_speed;
+            double vel_mag = (vel_mag_sq > 1e-20) ? sqrt(vel_mag_sq) : 0.0;
+            double local_speed = vel_mag + sound_speed;
             max_speed = max_double(max_speed, local_speed);
         }
     }
