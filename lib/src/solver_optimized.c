@@ -17,6 +17,12 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+// Physical stability limits for numerical computation (same as basic solver)
+#define MAX_DERIVATIVE_LIMIT 100.0     // Maximum allowed first derivative magnitude (1/s)
+#define MAX_SECOND_DERIVATIVE_LIMIT 1000.0  // Maximum allowed second derivative magnitude (1/s²)
+#define MAX_VELOCITY_LIMIT 100.0       // Maximum allowed velocity magnitude (m/s)
+#define MAX_DIVERGENCE_LIMIT 10.0      // Maximum allowed velocity divergence (1/s)
+
 // Fallback for systems without aligned_alloc
 #ifndef _WIN32
     #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
@@ -142,8 +148,21 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
                         double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) / dx2;
                         double d2v_dy2 = (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) / dy2;
 
-                        // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density)
-                        double nu = params->mu / field->rho[idx];
+                        // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density) with safety
+                        double nu = params->mu / fmax(field->rho[idx], 1e-10);
+                        nu = fmin(nu, 1.0);  // Limit maximum viscosity
+
+                        // Limit derivatives to prevent instabilities (same as basic solver)
+                        du_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dx));
+                        du_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dy));
+                        dv_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dx));
+                        dv_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dy));
+                        dp_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dx));
+                        dp_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dy));
+                        d2u_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dx2));
+                        d2u_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dy2));
+                        d2v_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
+                        d2v_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
 
                         // Source terms to maintain flow (prevents decay)
                         double x = grid->x[i];
@@ -151,25 +170,39 @@ void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const Sol
                         double source_u, source_v;
                         compute_source_terms(x, y, iter, conservative_dt, params, &source_u, &source_v);
 
-                        // Complete Navier-Stokes equations with optimized calculations
-                        u_new[idx] = field->u[idx] + conservative_dt * (
+                        // Conservative velocity updates with limited changes
+                        double du = conservative_dt * (
                             -field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
-                            - dp_dx / field->rho[idx]                        // Pressure gradient
+                            - dp_dx / fmax(field->rho[idx], 1e-10)          // Pressure gradient (safe division)
                             + nu * (d2u_dx2 + d2u_dy2)                      // Viscous diffusion
                             + source_u                                       // Source term
                         );
 
-                        v_new[idx] = field->v[idx] + conservative_dt * (
+                        double dv = conservative_dt * (
                             -field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
-                            - dp_dy / field->rho[idx]                        // Pressure gradient
+                            - dp_dy / fmax(field->rho[idx], 1e-10)          // Pressure gradient (safe division)
                             + nu * (d2v_dx2 + d2v_dy2)                      // Viscous diffusion
                             + source_v                                       // Source term
                         );
 
-                        // Update pressure using simplified equation of state
+                        // Limit velocity changes
+                        du = fmax(-1.0, fmin(1.0, du));
+                        dv = fmax(-1.0, fmin(1.0, dv));
+
+                        u_new[idx] = field->u[idx] + du;
+                        v_new[idx] = field->v[idx] + dv;
+
+                        // Limit velocity magnitudes
+                        u_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, u_new[idx]));
+                        v_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, v_new[idx]));
+
+                        // Simplified stable pressure update
                         double divergence = du_dx + dv_dy;
-                        p_new[idx] = field->p[idx] - params->pressure_coupling * conservative_dt * field->rho[idx] *
-                                   (field->u[idx] * field->u[idx] + field->v[idx] * field->v[idx]) * divergence;
+                        divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
+
+                        double dp = -0.1 * conservative_dt * field->rho[idx] * divergence;
+                        dp = fmax(-1.0, fmin(1.0, dp));  // Limit pressure changes
+                        p_new[idx] = field->p[idx] + dp;
 
                         // Keep density and temperature constant for this simplified model
                         rho_new[idx] = field->rho[idx];

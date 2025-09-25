@@ -40,8 +40,11 @@ void test_basic_solver_runs(void) {
     // Test that solver runs without crashing
     solve_navier_stokes(field, grid, &params);
 
-    // If we get here, the solver didn't crash
-    TEST_ASSERT_TRUE(1);
+    // Verify solver completed successfully by checking field values are finite
+    TEST_ASSERT_TRUE(isfinite(field->u[0]));
+    TEST_ASSERT_TRUE(isfinite(field->v[0]));
+    TEST_ASSERT_TRUE(isfinite(field->p[0]));
+    TEST_ASSERT_TRUE(field->rho[0] > 0.0);
 
     // Cleanup
     flow_field_destroy(field);
@@ -64,16 +67,22 @@ void test_optimized_solver_runs(void) {
     // Initialize with simple values
     initialize_flow_field(field, grid);
 
+    // Store initial density value to verify field structure remains intact
+    double initial_rho = field->rho[0];
+
     // Set up solver parameters for quick test
     SolverParams params = solver_params_default();
     params.max_iter = 2;  // Very few iterations for speed
     params.tolerance = 1e-1;  // Very relaxed tolerance
 
-    // Test that optimized solver runs without crashing
+    // Test that optimized solver runs without crashing and produces valid results
     solve_navier_stokes_optimized(field, grid, &params);
 
-    // If we get here, the solver didn't crash
-    TEST_ASSERT_TRUE(1);
+    // Verify solver completed successfully by checking field values are finite and valid
+    TEST_ASSERT_TRUE(isfinite(field->u[0]));
+    TEST_ASSERT_TRUE(isfinite(field->v[0]));
+    TEST_ASSERT_TRUE(isfinite(field->p[0]));
+    TEST_ASSERT_TRUE(field->rho[0] > 0.0);  // Density should remain positive
 
     // Cleanup
     flow_field_destroy(field);
