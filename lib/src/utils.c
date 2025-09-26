@@ -152,10 +152,12 @@ const char* cfd_get_artifacts_path(void) {
     switch (default_path_mode) {
         case CFD_PATH_CURRENT_DIR:
 #ifdef _WIN32
-            // Safe: use memcpy for compile-time known string length (includes null terminator)
-            memcpy(default_path_buffer, ".\\output", 9); // Copy 8 chars + null terminator = 9 bytes
+            // Safe: use strncpy with explicit bounds and null termination
+            strncpy(default_path_buffer, ".\\output", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #else
-            memcpy(default_path_buffer, "./output", 9); // Copy 8 chars + null terminator = 9 bytes
+            strncpy(default_path_buffer, "./output", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #endif
             break;
 
@@ -180,19 +182,23 @@ const char* cfd_get_artifacts_path(void) {
 
         case CFD_PATH_RELATIVE_BUILD:
 #ifdef _WIN32
-            // Safe: use memcpy for compile-time known string length (includes null terminator)
-            memcpy(default_path_buffer, "..\\..\\artifacts", 17); // Copy 16 chars + null terminator = 17 bytes
+            // Safe: use strncpy with explicit bounds and null termination
+            strncpy(default_path_buffer, "..\\..\\artifacts", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #else
-            memcpy(default_path_buffer, "../../artifacts", 16); // Copy 15 chars + null terminator = 16 bytes
+            strncpy(default_path_buffer, "../../artifacts", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #endif
             break;
 
         default:
 #ifdef _WIN32
-            // Safe: use memcpy for compile-time known string length (includes null terminator)
-            memcpy(default_path_buffer, ".\\output", 9); // Copy 8 chars + null terminator = 9 bytes
+            // Safe: use strncpy with explicit bounds and null termination
+            strncpy(default_path_buffer, ".\\output", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #else
-            memcpy(default_path_buffer, "./output", 9); // Copy 8 chars + null terminator = 9 bytes
+            strncpy(default_path_buffer, "./output", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #endif
             break;
     }
