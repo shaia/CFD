@@ -152,10 +152,10 @@ const char* cfd_get_artifacts_path(void) {
     switch (default_path_mode) {
         case CFD_PATH_CURRENT_DIR:
 #ifdef _WIN32
-            // Safe: use memcpy for compile-time known string length
-            memcpy(default_path_buffer, ".\\output", 9); // 8 chars + null
+            // Safe: use memcpy for compile-time known string length (includes null terminator)
+            memcpy(default_path_buffer, ".\\output", 9); // Copy 8 chars + null terminator = 9 bytes
 #else
-            memcpy(default_path_buffer, "./output", 9); // 8 chars + null
+            memcpy(default_path_buffer, "./output", 9); // Copy 8 chars + null terminator = 9 bytes
 #endif
             break;
 
@@ -180,19 +180,19 @@ const char* cfd_get_artifacts_path(void) {
 
         case CFD_PATH_RELATIVE_BUILD:
 #ifdef _WIN32
-            // Safe: use memcpy for compile-time known string length
-            memcpy(default_path_buffer, "..\\..\\artifacts", 17); // 16 chars + null
+            // Safe: use memcpy for compile-time known string length (includes null terminator)
+            memcpy(default_path_buffer, "..\\..\\artifacts", 17); // Copy 16 chars + null terminator = 17 bytes
 #else
-            memcpy(default_path_buffer, "../../artifacts", 16); // 15 chars + null
+            memcpy(default_path_buffer, "../../artifacts", 16); // Copy 15 chars + null terminator = 16 bytes
 #endif
             break;
 
         default:
 #ifdef _WIN32
-            // Safe: use memcpy for compile-time known string length
-            memcpy(default_path_buffer, ".\\output", 9); // 8 chars + null
+            // Safe: use memcpy for compile-time known string length (includes null terminator)
+            memcpy(default_path_buffer, ".\\output", 9); // Copy 8 chars + null terminator = 9 bytes
 #else
-            memcpy(default_path_buffer, "./output", 9); // 8 chars + null
+            memcpy(default_path_buffer, "./output", 9); // Copy 8 chars + null terminator = 9 bytes
 #endif
             break;
     }
