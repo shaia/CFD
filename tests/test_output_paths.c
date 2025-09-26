@@ -225,15 +225,25 @@ void test_no_scattered_output(void) {
     char old_paths[4][256];
 
 #ifdef _WIN32
-    strcpy(old_paths[0], "..\\..\\output\\animation");
-    strcpy(old_paths[1], "..\\..\\output\\animations");
-    strcpy(old_paths[2], "output\\animation");
-    strcpy(old_paths[3], "output\\animations");
+    // Safe: use strncpy with explicit bounds and null termination
+    strncpy(old_paths[0], "..\\..\\output\\animation", sizeof(old_paths[0]) - 1);
+    old_paths[0][sizeof(old_paths[0]) - 1] = '\0';
+    strncpy(old_paths[1], "..\\..\\output\\animations", sizeof(old_paths[1]) - 1);
+    old_paths[1][sizeof(old_paths[1]) - 1] = '\0';
+    strncpy(old_paths[2], "output\\animation", sizeof(old_paths[2]) - 1);
+    old_paths[2][sizeof(old_paths[2]) - 1] = '\0';
+    strncpy(old_paths[3], "output\\animations", sizeof(old_paths[3]) - 1);
+    old_paths[3][sizeof(old_paths[3]) - 1] = '\0';
 #else
-    strcpy(old_paths[0], "../../output/animation");
-    strcpy(old_paths[1], "../../output/animations");
-    strcpy(old_paths[2], "output/animation");
-    strcpy(old_paths[3], "output/animations");
+    // Safe: use strncpy with explicit bounds and null termination
+    strncpy(old_paths[0], "../../output/animation", sizeof(old_paths[0]) - 1);
+    old_paths[0][sizeof(old_paths[0]) - 1] = '\0';
+    strncpy(old_paths[1], "../../output/animations", sizeof(old_paths[1]) - 1);
+    old_paths[1][sizeof(old_paths[1]) - 1] = '\0';
+    strncpy(old_paths[2], "output/animation", sizeof(old_paths[2]) - 1);
+    old_paths[2][sizeof(old_paths[2]) - 1] = '\0';
+    strncpy(old_paths[3], "output/animations", sizeof(old_paths[3]) - 1);
+    old_paths[3][sizeof(old_paths[3]) - 1] = '\0';
 #endif
 
     size_t num_paths = sizeof(old_paths) / sizeof(old_paths[0]);

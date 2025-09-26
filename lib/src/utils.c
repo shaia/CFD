@@ -152,9 +152,12 @@ const char* cfd_get_artifacts_path(void) {
     switch (default_path_mode) {
         case CFD_PATH_CURRENT_DIR:
 #ifdef _WIN32
-            strcpy(default_path_buffer, ".\\output");
+            // Safe: use strncpy with explicit bounds and null termination
+            strncpy(default_path_buffer, ".\\output", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #else
-            strcpy(default_path_buffer, "./output");
+            strncpy(default_path_buffer, "./output", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #endif
             break;
 
@@ -179,17 +182,23 @@ const char* cfd_get_artifacts_path(void) {
 
         case CFD_PATH_RELATIVE_BUILD:
 #ifdef _WIN32
-            strcpy(default_path_buffer, "..\\..\\artifacts");
+            // Safe: use strncpy with explicit bounds and null termination
+            strncpy(default_path_buffer, "..\\..\\artifacts", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #else
-            strcpy(default_path_buffer, "../../artifacts");
+            strncpy(default_path_buffer, "../../artifacts", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #endif
             break;
 
         default:
 #ifdef _WIN32
-            strcpy(default_path_buffer, ".\\output");
+            // Safe: use strncpy with explicit bounds and null termination
+            strncpy(default_path_buffer, ".\\output", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #else
-            strcpy(default_path_buffer, "./output");
+            strncpy(default_path_buffer, "./output", sizeof(default_path_buffer) - 1);
+            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
 #endif
             break;
     }
