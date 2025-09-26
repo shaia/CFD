@@ -152,9 +152,10 @@ const char* cfd_get_artifacts_path(void) {
     switch (default_path_mode) {
         case CFD_PATH_CURRENT_DIR:
 #ifdef _WIN32
-            strcpy(default_path_buffer, ".\\output");
+            // Safe: use memcpy for compile-time known string length
+            memcpy(default_path_buffer, ".\\output", 9); // 8 chars + null
 #else
-            strcpy(default_path_buffer, "./output");
+            memcpy(default_path_buffer, "./output", 9); // 8 chars + null
 #endif
             break;
 
@@ -179,17 +180,19 @@ const char* cfd_get_artifacts_path(void) {
 
         case CFD_PATH_RELATIVE_BUILD:
 #ifdef _WIN32
-            strcpy(default_path_buffer, "..\\..\\artifacts");
+            // Safe: use memcpy for compile-time known string length
+            memcpy(default_path_buffer, "..\\..\\artifacts", 17); // 16 chars + null
 #else
-            strcpy(default_path_buffer, "../../artifacts");
+            memcpy(default_path_buffer, "../../artifacts", 16); // 15 chars + null
 #endif
             break;
 
         default:
 #ifdef _WIN32
-            strcpy(default_path_buffer, ".\\output");
+            // Safe: use memcpy for compile-time known string length
+            memcpy(default_path_buffer, ".\\output", 9); // 8 chars + null
 #else
-            strcpy(default_path_buffer, "./output");
+            memcpy(default_path_buffer, "./output", 9); // 8 chars + null
 #endif
             break;
     }
