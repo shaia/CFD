@@ -105,6 +105,7 @@ __pycache__/
 nul
 %USERPROFILE%.actrc
 %USERPROFILE%/
+%LOCALAPPDATA%/
 Dockerfile.act
 artifacts/
 test_frames/
