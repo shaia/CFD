@@ -1,0 +1,167 @@
+name: PR Validation
+
+# Validates PRs by building all platforms and checking for version changes
+# If version changed, keeps artifacts for 30 days, otherwise discards after 7 days
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-version:
+    name: Check Version Changes
+    runs-on: ubuntu-latest
+    outputs:
+      version_changed: ${{ steps.version_check.outputs.version_changed }}
+      new_version: ${{ steps.version_check.outputs.new_version }}
+      old_version: ${{ steps.version_check.outputs.old_version }}
+
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if VERSION file changed
+        id: version_check
+        run: |
+          # Get the base branch (target of PR)
+          git fetch origin ${{ github.base_ref }}
+
+          # Check if VERSION file was modified in this PR
+          if git diff origin/${{ github.base_ref }}...HEAD --name-only | grep -q "^VERSION$"; then
+            echo "VERSION file was modified in this PR"
+
+            # Get old and new versions
+            OLD_VERSION=$(git show origin/${{ github.base_ref }}:VERSION | tr -d '\n\r' | xargs)
+            NEW_VERSION=$(cat VERSION | tr -d '\n\r' | xargs)
+
+            echo "Old version: $OLD_VERSION"
+            echo "New version: $NEW_VERSION"
+
+            # Check if version actually changed (not just whitespace)
+            if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+              echo "Version changed from $OLD_VERSION to $NEW_VERSION"
+              echo "version_changed=true" >> $GITHUB_OUTPUT
+              echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+              echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
+
+              # Validate version format (basic semver check)
+              if [[ ! "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "❌ Invalid version format: $NEW_VERSION"
+                echo "Version must follow semantic versioning (x.y.z)"
+                exit 1
+              fi
+
+              # Check if version is higher than old version
+              if [ "$(printf '%s\n' "$OLD_VERSION" "$NEW_VERSION" | sort -V | tail -n1)" = "$OLD_VERSION" ]; then
+                echo "❌ New version $NEW_VERSION is not higher than old version $OLD_VERSION"
+                exit 1
+              fi
+
+              echo "✅ Version validation passed"
+            else
+              echo "VERSION file modified but version didn't change"
+              echo "version_changed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "VERSION file not modified in this PR"
+            echo "version_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Add PR comment for version change
+        if: steps.version_check.outputs.version_changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('🎉 Version Update Detected')
+            );
+
+            const commentBody = `🎉 **Version Update Detected**
+
+            This PR updates the version from \`${{ steps.version_check.outputs.old_version }}\` to \`${{ steps.version_check.outputs.new_version }}\`.
+
+            ✅ **What happens next:**
+            - All platforms will be built and tested
+            - Artifacts will be kept for 30 days (instead of 7 days)
+            - When this PR is merged, a release will be automatically created
+
+            📦 **Release artifacts will include:**
+            - Windows binaries (x64, x86)
+            - Linux binaries (GCC, Clang)
+            - macOS binaries (Intel, Apple Silicon)`;
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+
+  build-and-test:
+    name: Build and Test
+    needs: check-version
+    uses: ./.github/workflows/build-and-release.yml
+    with:
+      create_release: false
+      version: ${{ needs.check-version.outputs.new_version || 'dev' }}
+      retention_days: ${{ needs.check-version.outputs.version_changed == 'true' && 30 || 7 }}
+
+  pr-summary:
+    name: PR Summary
+    runs-on: ubuntu-latest
+    needs: [check-version, build-and-test]
+    if: always()
+
+    steps:
+      - name: Generate PR summary
+        run: |
+          echo "# PR Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.check-version.outputs.version_changed }}" == "true" ]]; then
+            echo "## 🎉 Version Update" >> $GITHUB_STEP_SUMMARY
+            echo "- **Old Version:** \`${{ needs.check-version.outputs.old_version }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **New Version:** \`${{ needs.check-version.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Artifact Retention:** 30 days (extended for version updates)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🚀 **When merged:** A release will be automatically created with binaries for all platforms." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## 📦 Regular PR" >> $GITHUB_STEP_SUMMARY
+            echo "- **Version:** No version changes detected" >> $GITHUB_STEP_SUMMARY
+            echo "- **Artifact Retention:** 7 days (standard)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔧 Build Status" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.build-and-test.result }}" == "success" ]]; then
+            echo "✅ **All builds passed successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All platforms have been built and tested:" >> $GITHUB_STEP_SUMMARY
+            echo "- Windows (x64, x86)" >> $GITHUB_STEP_SUMMARY
+            echo "- Linux (GCC, Clang)" >> $GITHUB_STEP_SUMMARY
+            echo "- macOS (Intel, Apple Silicon)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Build failed!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the build logs for details." >> $GITHUB_STEP_SUMMARY
+          fi

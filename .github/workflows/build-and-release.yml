@@ -1,23 +1,24 @@
-name: Build and Release Binaries
+name: Build and Release Artifacts
 
-# This workflow serves two purposes:
-# 1. PR Validation: Build and test all platforms when PRs are opened/updated to master/main
-#    - If any build fails, the PR cannot be merged (GitHub branch protection rules)
-#    - Artifacts are uploaded temporarily for PR review (7 days retention)
-# 2. Release Creation: When version tags (v*) are pushed, create GitHub releases
-#    - Build all platforms and create downloadable release archives
-#    - Users can find releases at: https://github.com/USER/REPO/releases
-
+# Reusable workflow for building binaries and optionally creating releases
 on:
-  push:
-    tags:
-      - 'v*'  # Only trigger on version tags like v1.0.0
-  pull_request:
-    branches:
-      - master
-      - main
-    types: [opened, synchronize, reopened]  # Trigger on PR events
-  workflow_dispatch:  # Allow manual trigger for testing
+  workflow_call:
+    inputs:
+      create_release:
+        description: 'Whether to create a GitHub release'
+        required: false
+        type: boolean
+        default: false
+      version:
+        description: 'Version for the release'
+        required: false
+        type: string
+        default: ''
+      retention_days:
+        description: 'Artifact retention days'
+        required: false
+        type: number
+        default: 7
 
 env:
   BUILD_TYPE: Release
@@ -195,6 +196,7 @@ jobs:
             echo "CFD Library - Windows ${{ matrix.config.arch }} Release" > README.txt
             echo "Built on: $(date)" >> README.txt
             echo "Compiler: MSVC" >> README.txt
+            echo "Version: ${{ inputs.version || 'dev' }}" >> README.txt
             echo "" >> README.txt
             echo "Files included:" >> README.txt
             echo "- cfd_library.lib (static library)" >> README.txt
@@ -214,7 +216,6 @@ jobs:
             # Copy static libraries
             find ../../build -name "*.a" -exec cp {} . \;
 
-
             # Copy headers
             mkdir -p include
             cp -r ../../lib/include/* include/
@@ -223,6 +224,7 @@ jobs:
             echo "CFD Library - ${{ matrix.config.name }} Release" > README.txt
             echo "Built on: $(date)" >> README.txt
             echo "Compiler: ${{ matrix.config.cc }}" >> README.txt
+            echo "Version: ${{ inputs.version || 'dev' }}" >> README.txt
             echo "" >> README.txt
             echo "Files included:" >> README.txt
             echo "- libcfd_library.a (static library)" >> README.txt
@@ -258,8 +260,7 @@ jobs:
           name: ${{ matrix.config.artifact_name }}
           path: |
             dist/${{ matrix.config.artifact_name }}.*
-          # Longer retention for tag builds (releases), shorter for PR validation
-          retention-days: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && 90 || 7 }}
+          retention-days: ${{ inputs.retention_days }}
 
       - name: Generate build summary
         run: |
@@ -269,6 +270,7 @@ jobs:
           echo "- **Compiler**: ${{ matrix.config.cc }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Architecture**: ${{ matrix.config.arch || 'x64' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: ${{ matrix.config.build_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ inputs.version || 'dev' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Show binary info
@@ -279,17 +281,15 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
   # Status check job - Required for PR merges
-  # This job will fail if any of the build-matrix jobs fail
   build-status:
     name: Build Status Check
     runs-on: ubuntu-latest
     needs: build-matrix
-    if: always()  # Run even if some builds fail
+    if: always()
 
     steps:
       - name: Check build results
         run: |
-          # Check if all builds succeeded
           if [[ "${{ needs.build-matrix.result }}" == "success" ]]; then
             echo "✅ All builds passed successfully!"
             echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
@@ -305,11 +305,10 @@ jobs:
     name: Create GitHub Release
     needs: build-matrix
     runs-on: ubuntu-latest
-    # Only create releases when building from tags, not PRs
-    if: startsWith(github.ref, 'refs/tags/') && github.event_name == 'push'
+    if: inputs.create_release == true
 
     permissions:
-      contents: write  # Required for creating releases
+      contents: write
 
     steps:
       - name: Checkout code
@@ -327,7 +326,6 @@ jobs:
 
           # Create a release directory and move all archives
           mkdir -p release-files
-          # Use find -exec for safe file handling (handles spaces and special characters)
           find artifacts \( -name "*.zip" -o -name "*.tar.gz" \) -exec sh -c '
             for file do
               cp "$file" release-files/
@@ -341,9 +339,10 @@ jobs:
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v1
         with:
-          name: CFD Library ${{ github.ref_name }}
+          name: CFD Library v${{ inputs.version }}
+          tag_name: v${{ inputs.version }}
           body: |
-            ## CFD Library Release ${{ github.ref_name }}
+            ## CFD Library Release v${{ inputs.version }}
 
             🚀 **Cross-platform binaries for the CFD simulation library**
 
