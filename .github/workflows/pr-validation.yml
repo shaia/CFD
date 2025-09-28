@@ -9,6 +9,10 @@ on:
       - main
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   check-version:
     name: Check Version Changes
@@ -125,8 +129,6 @@ jobs:
       create_release: false
       version: ${{ needs.check-version.outputs.new_version || 'dev' }}
       retention_days: ${{ needs.check-version.outputs.version_changed == 'true' && 30 || 7 }}
-    permissions:
-      contents: write
     secrets: inherit
 
   pr-summary:
