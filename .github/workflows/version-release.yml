@@ -66,6 +66,8 @@ jobs:
       version: ${{ needs.check-version.outputs.version }}
       retention_days: 90
     secrets: inherit
+    permissions:
+      contents: write
 
   notify-success:
     name: Notify Release Success
