@@ -10,6 +10,9 @@ on:
     paths:
       - 'VERSION'
 
+permissions:
+  contents: write
+
 jobs:
   check-version:
     name: Validate Version Update
@@ -66,8 +69,6 @@ jobs:
       version: ${{ needs.check-version.outputs.version }}
       retention_days: 90
     secrets: inherit
-    permissions:
-      contents: write
 
   notify-success:
     name: Notify Release Success
