@@ -10,6 +10,9 @@ on:
     paths:
       - 'VERSION'
 
+permissions:
+  contents: write
+
 jobs:
   check-version:
     name: Validate Version Update
