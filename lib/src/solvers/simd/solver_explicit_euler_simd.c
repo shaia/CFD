@@ -2,7 +2,7 @@
 #define _POSIX_C_SOURCE 200112L
 #define _ISOC11_SOURCE
 
-#include "solver.h"
+#include "solver_interface.h"
 #include "utils.h"
 #include <math.h>
 #include <string.h>
@@ -29,7 +29,7 @@
 #define BLOCK_SIZE 32
 
 // Optimized version of the solver using SIMD and cache-friendly memory access
-void solve_navier_stokes_optimized(FlowField* field, const Grid* grid, const SolverParams* params) {
+void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const SolverParams* params) {
     // Validate input parameters
     if (!field || !grid || !params) {
         return;

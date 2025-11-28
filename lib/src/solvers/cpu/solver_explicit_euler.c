@@ -1,4 +1,4 @@
-#include "solver.h"
+#include "solver_interface.h"
 #include "utils.h"
 #include <math.h>
 #include <string.h>
@@ -174,7 +174,9 @@ void compute_source_terms(double x, double y, int iter, double dt, const SolverP
     *source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) * exp(-params->source_decay_rate * iter * dt);
 }
 
-void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams* params) {
+// Internal explicit Euler implementation
+// This is called by the solver registry - not part of public API
+void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams* params) {
     // Check for minimum grid size - prevent crashes on small grids
     if (field->nx < 3 || field->ny < 3) {
         return; // Skip solver for grids too small for finite differences

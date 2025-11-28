@@ -1,29 +1,92 @@
 # CFD Library CMake Configuration
 cmake_minimum_required(VERSION 3.10)
 
-# Define the library project
-project(cfd_library VERSION 1.0.0 LANGUAGES C)
+# Option for CUDA support
+option(CFD_ENABLE_CUDA "Enable CUDA GPU acceleration" OFF)
+
+# Define the library project with optional CUDA
+if(CFD_ENABLE_CUDA)
+    project(cfd_library VERSION 1.0.0 LANGUAGES C CUDA)
+    message(STATUS "CUDA support enabled")
+else()
+    project(cfd_library VERSION 1.0.0 LANGUAGES C)
+    message(STATUS "CUDA support disabled (use -DCFD_ENABLE_CUDA=ON to enable)")
+endif()
 
 # Set C standard
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Collect all source files
-set(CFD_LIBRARY_SOURCES
-    src/grid.c
-    src/solver.c
-    src/solver_optimized.c
-    src/utils.c
-    src/vtk_output.c
-    src/simulation_api.c
+# Collect core source files
+set(CFD_CORE_SOURCES
+    src/core/grid.c
+    src/core/utils.c
 )
+
+# Collect I/O source files
+set(CFD_IO_SOURCES
+    src/io/csv_output.c
+    src/io/vtk_output.c
+)
+
+# Collect API source files
+set(CFD_API_SOURCES
+    src/api/simulation_api.c
+    src/api/solver_registry.c
+    src/api/output_registry.c
+)
+
+# Collect CPU solver source files
+set(CFD_CPU_SOLVER_SOURCES
+    src/solvers/cpu/solver_explicit_euler.c
+    src/solvers/cpu/solver_projection.c
+)
+
+# Collect SIMD-optimized solver source files
+set(CFD_SIMD_SOLVER_SOURCES
+    src/solvers/simd/solver_explicit_euler_simd.c
+    src/solvers/simd/solver_projection_simd.c
+)
+
+# Combine all source files
+set(CFD_LIBRARY_SOURCES
+    ${CFD_CORE_SOURCES}
+    ${CFD_IO_SOURCES}
+    ${CFD_API_SOURCES}
+    ${CFD_CPU_SOLVER_SOURCES}
+    ${CFD_SIMD_SOLVER_SOURCES}
+)
+
+# Add GPU sources based on CUDA availability
+if(CFD_ENABLE_CUDA)
+    # Check if CUDA toolkit is actually available
+    include(CheckLanguage)
+    check_language(CUDA)
+
+    if(CMAKE_CUDA_COMPILER)
+        list(APPEND CFD_LIBRARY_SOURCES src/solvers/gpu/solver_projection_jacobi_gpu.cu)
+        set(CFD_HAS_CUDA TRUE)
+        message(STATUS "CUDA compiler found: ${CMAKE_CUDA_COMPILER}")
+    else()
+        message(WARNING "CUDA requested but no CUDA compiler found, using CPU stub")
+        list(APPEND CFD_LIBRARY_SOURCES src/solvers/gpu/solver_gpu_stub.c)
+        set(CFD_HAS_CUDA FALSE)
+    endif()
+else()
+    # Use CPU stub when CUDA is disabled
+    list(APPEND CFD_LIBRARY_SOURCES src/solvers/gpu/solver_gpu_stub.c)
+    set(CFD_HAS_CUDA FALSE)
+endif()
 
 # Collect all header files
 set(CFD_LIBRARY_HEADERS
     include/grid.h
-    include/solver.h
+    include/solver_interface.h
+    include/solver_gpu.h
     include/utils.h
     include/vtk_output.h
+    include/csv_output.h
+    include/output_registry.h
     include/simulation_api.h
 )
 
@@ -37,6 +100,29 @@ if(BUILD_SHARED_LIBS)
 else()
     # Create static library only
     add_library(cfd_library STATIC ${CFD_LIBRARY_SOURCES})
+endif()
+
+# Set CUDA properties if enabled
+if(CFD_HAS_CUDA)
+    find_package(CUDAToolkit REQUIRED)
+
+    set_target_properties(cfd_library PROPERTIES
+        CUDA_SEPARABLE_COMPILATION OFF
+        CUDA_RESOLVE_DEVICE_SYMBOLS ON
+        CUDA_ARCHITECTURES "80;86;89;90"  # Ada/Ampere/Hopper (CUDA 13.0+)
+    )
+    target_compile_definitions(cfd_library PRIVATE CFD_HAS_CUDA=1)
+    target_link_libraries(cfd_library PUBLIC CUDA::cudart)
+
+    if(BUILD_SHARED_LIBS)
+        set_target_properties(cfd_library_static PROPERTIES
+            CUDA_SEPARABLE_COMPILATION OFF
+            CUDA_RESOLVE_DEVICE_SYMBOLS ON
+            CUDA_ARCHITECTURES "80;86;89;90"
+        )
+        target_compile_definitions(cfd_library_static PRIVATE CFD_HAS_CUDA=1)
+        target_link_libraries(cfd_library_static PUBLIC CUDA::cudart)
+    endif()
 endif()
 
 # Set library properties
@@ -74,22 +160,30 @@ endif()
 # Function to apply compiler options to a target
 function(apply_compiler_options target_name)
     if(MSVC)
-        target_compile_options(${target_name} PRIVATE /W3)
+        # Only apply MSVC flags to C/CXX, not CUDA
+        target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/W3>)
         # Enable AVX2 if available on x86/x64
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
-            target_compile_options(${target_name} PRIVATE /arch:AVX2)
+            target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/arch:AVX2>)
         endif()
     else()
-        target_compile_options(${target_name} PRIVATE -Wall -Wextra -O3)
+        target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:-Wall -Wextra -O3>)
         # Enable AVX2 and other optimizations if available on x86/x64
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
-            target_compile_options(${target_name} PRIVATE -mavx2 -mfma)
+            target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:-mavx2 -mfma>)
         elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
             # ARM64-specific optimizations
-            target_compile_options(${target_name} PRIVATE -mcpu=native)
+            target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:-mcpu=native>)
         endif()
         # Link math library on Unix systems
         target_link_libraries(${target_name} PUBLIC m)
+    endif()
+
+    # CUDA-specific options
+    if(CFD_HAS_CUDA)
+        target_compile_options(${target_name} PRIVATE
+            $<$<COMPILE_LANGUAGE:CUDA>:-O3 --use_fast_math>
+        )
     endif()
 endfunction()
 
@@ -145,3 +239,8 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/cfd_libraryConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cfd_library
 )
+
+# Print summary
+message(STATUS "CFD Library Configuration:")
+message(STATUS "  CUDA Support: ${CFD_HAS_CUDA}")
+message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
