@@ -43,6 +43,18 @@ if(BUILD_EXAMPLES)
     # Custom source terms example
     add_executable(custom_source_terms examples/custom_source_terms.c)
     target_link_libraries(custom_source_terms PRIVATE CFD::Library)
+
+    # Solver selection example - demonstrates pluggable solver architecture
+    add_executable(solver_selection examples/solver_selection.c)
+    target_link_libraries(solver_selection PRIVATE CFD::Library)
+
+    # Runtime comparison - benchmarks CUDA vs SIMD implementations
+    add_executable(runtime_comparison examples/runtime_comparison.c)
+    target_link_libraries(runtime_comparison PRIVATE CFD::Library)
+
+    # CSV data export example - demonstrates CSV output capabilities
+    add_executable(csv_data_export examples/csv_data_export.c)
+    target_link_libraries(csv_data_export PRIVATE CFD::Library)
 endif()
 
 # Optionally build tests
