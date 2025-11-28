@@ -1,23 +1,60 @@
 #include "grid.h"
 #include "utils.h"
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 Grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin, double ymax) {
-    Grid* grid = (Grid*)cfd_malloc(sizeof(Grid));
-    
+    // Validate input parameters
+    // Need at least 2 points in each direction for a valid grid (to compute dx/dy)
+    if (nx < 2) {
+        fprintf(stderr, "ERROR: grid_create: nx must be at least 2 (got %zu)\n", nx);
+        return NULL;
+    }
+    if (ny < 2) {
+        fprintf(stderr, "ERROR: grid_create: ny must be at least 2 (got %zu)\n", ny);
+        return NULL;
+    }
+    if (xmax <= xmin) {
+        fprintf(stderr, "ERROR: grid_create: xmax must be greater than xmin\n");
+        return NULL;
+    }
+    if (ymax <= ymin) {
+        fprintf(stderr, "ERROR: grid_create: ymax must be greater than ymin\n");
+        return NULL;
+    }
+
+    Grid* grid = (Grid*)malloc(sizeof(Grid));
+    if (grid == NULL) {
+        fprintf(stderr, "ERROR: grid_create: failed to allocate Grid structure\n");
+        return NULL;
+    }
+
     grid->nx = nx;
     grid->ny = ny;
     grid->xmin = xmin;
     grid->xmax = xmax;
     grid->ymin = ymin;
     grid->ymax = ymax;
-    
+
     // Allocate memory for grid arrays
-    grid->x = (double*)cfd_calloc(nx, sizeof(double));
-    grid->y = (double*)cfd_calloc(ny, sizeof(double));
-    grid->dx = (double*)cfd_calloc(nx - 1, sizeof(double));
-    grid->dy = (double*)cfd_calloc(ny - 1, sizeof(double));
-    
+    grid->x = (double*)calloc(nx, sizeof(double));
+    grid->y = (double*)calloc(ny, sizeof(double));
+    grid->dx = (double*)calloc(nx - 1, sizeof(double));
+    grid->dy = (double*)calloc(ny - 1, sizeof(double));
+
+    // Check all allocations succeeded
+    if (grid->x == NULL || grid->y == NULL || grid->dx == NULL || grid->dy == NULL) {
+        fprintf(stderr, "ERROR: grid_create: failed to allocate grid arrays\n");
+        // Clean up partial allocations
+        free(grid->x);
+        free(grid->y);
+        free(grid->dx);
+        free(grid->dy);
+        free(grid);
+        return NULL;
+    }
+
     return grid;
 }
 
