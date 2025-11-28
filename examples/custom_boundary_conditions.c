@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "grid.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "vtk_output.h"
 #include "utils.h"
 
@@ -122,9 +122,11 @@ int main() {
     printf("  Time step: %.6f\n", params.dt);
     printf("  Viscosity: %.6f\n", params.mu);
 
-    // Ensure output directory exists
-    ensure_directory_exists("../../output");
-    ensure_directory_exists("..\\..\\artifacts\\output");
+    // Configure output directory
+    cfd_set_output_base_dir("../../artifacts");
+    char run_dir[512];
+    cfd_create_run_directory_ex(run_dir, sizeof(run_dir), "cylinder_flow", nx, ny);
+    printf("\nOutput directory: %s\n", run_dir);
 
     printf("\nRunning simulation...\n");
     for (int iter = 0; iter < params.max_iter; iter++) {

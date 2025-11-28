@@ -76,6 +76,9 @@ int main() {
     printf("Grid size: %zu x %zu\n", nx, ny);
     printf("Domain: [%.1f, %.1f] x [%.1f, %.1f]\n", xmin, xmax, ymin, ymax);
 
+    // Configure output directory
+    simulation_set_output_dir("../../artifacts");
+
     // Initialize simulation
     SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
     if (!sim_data) {
@@ -83,14 +86,16 @@ int main() {
         return 1;
     }
 
-    // Create output directory
-    ensure_directory_exists("../../output");
-    ensure_directory_exists("..\\..\\artifacts\\output");
+    // Set run prefix
+    simulation_set_run_prefix(sim_data, "simple_flow");
 
     // Animation parameters
     int max_steps = 100;
     int output_interval = 2;
     double dt = 0.05;
+
+    // Register output
+    simulation_register_output(sim_data, OUTPUT_FULL_FIELD, output_interval, "flow");
 
     printf("\nRunning simple analytical flow animation...\n");
     printf("Total steps: %d\n", max_steps);
@@ -104,14 +109,10 @@ int main() {
         // Set analytical flow field based on current time
         set_analytical_flow(sim_data->field, sim_data->grid, time);
 
-        // Output visualization data at intervals
+        // Automatically write registered outputs
+        simulation_write_outputs(sim_data, step);
+
         if (step % output_interval == 0) {
-            char filename[512];
-
-            // Complete flow field for animation
-            snprintf(filename, sizeof(filename), "..\\..\\artifacts\\output\\simple_flow_%04d.vtk", step);
-            write_flow_field_to_vtk(sim_data, filename);
-
             printf("Step %4d: Animation frame saved (t = %.3f)\n", step, time);
         }
 
@@ -126,9 +127,9 @@ int main() {
 
     printf("\nSimple animation completed successfully!\n");
     printf("\nGenerated animation files:\n");
-    printf("  - simple_flow_*.vtk : %d frames\n", (max_steps / output_interval) + 1);
+    printf("  - flow_*.vtk : %d frames\n", (max_steps / output_interval) + 1);
     printf("\nTo create animation:\n");
-    printf("  python visualization/animate_flow.py ..\\..\\artifacts\\output\n");
+    printf("  python visualization/animate_flow.py artifacts\\output\n");
 
     return 0;
 }

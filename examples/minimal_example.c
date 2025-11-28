@@ -7,47 +7,50 @@
 
 #include <stdio.h>
 #include "simulation_api.h"
-#include "utils.h"
 
 int main() {
     printf("Minimal CFD Library Example\n");
     printf("===========================\n");
 
-    // Step 1: Initialize simulation
-    // Parameters: nx, ny, xmin, xmax, ymin, ymax
-    SimulationData* sim = init_simulation(50, 25, 0.0, 1.0, 0.0, 0.5);
+    // Step 1: Configure output directory (optional)
+    simulation_set_output_dir("../../artifacts");
+    printf("✓ Output directory: ../../artifacts\n");
+
+    // Step 2: Initialize simulation
+    size_t nx = 50, ny = 25;
+    SimulationData* sim = init_simulation(nx, ny, 0.0, 1.0, 0.0, 0.5);
 
     if (!sim) {
         printf("Error: Failed to initialize simulation\n");
         return 1;
     }
 
-    printf("✓ Simulation initialized (50x25 grid)\n");
+    printf("✓ Simulation initialized (%zux%zu grid)\n", nx, ny);
     printf("✓ Domain: [0,1] x [0,0.5]\n");
 
-    // Step 2: Ensure output directory exists
-    ensure_directory_exists("../../output");
-    ensure_directory_exists("..\\..\\artifacts\\output");
+    // Step 3: Set run prefix for organized output
+    simulation_set_run_prefix(sim, "minimal");
 
-    // Step 3: Run a few simulation steps
+    // Step 4: Register automatic output every 5 steps
+    simulation_register_output(sim, OUTPUT_PRESSURE, 5, "pressure");
+    printf("✓ Registered pressure output every 5 steps\n");
+
+    // Step 5: Run simulation with automatic output
     printf("\nRunning simulation...\n");
 
     for (int step = 0; step < 10; step++) {
         run_simulation_step(sim);
+        simulation_write_outputs(sim, step);
 
-        if (step % 5 == 0) {  // Output every 5 steps
-            char filename[256];
-            snprintf(filename, sizeof(filename), "..\\..\\artifacts\\output\\minimal_step_%02d.vtk", step);
-            write_simulation_to_vtk(sim, filename);
-            printf("  Step %d completed, saved: %s\n", step, filename);
+        if (step % 5 == 0) {
+            printf("  Step %d completed\n", step);
         }
     }
 
-    // Step 4: Cleanup
+    // Step 6: Cleanup
     free_simulation(sim);
 
     printf("\n✓ Simulation completed successfully!\n");
-    printf("✓ Check output/ directory for VTK files\n");
     printf("\nNext steps:\n");
     printf("- Visualize VTK files with ParaView, VisIt, or Python\n");
     printf("- Try the other examples for more advanced features\n");
