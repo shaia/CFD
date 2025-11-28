@@ -1,5 +1,5 @@
 #include "unity.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "grid.h"
 #include "utils.h"
 #include <stdio.h>
@@ -72,8 +72,12 @@ void test_viscous_diffusion(void) {
         .pressure_coupling = 0.1
     };
 
-    // Run solver
-    solve_navier_stokes(field, grid, &params);
+    // Run solver using modern interface
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Calculate final gradient
     double final_gradient = 0.0;
@@ -147,8 +151,12 @@ void test_pressure_gradient_effects(void) {
         .pressure_coupling = 0.1
     };
 
-    // Run solver
-    solve_navier_stokes(field, grid, &params);
+    // Run solver using modern interface
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Calculate final velocity
     double final_velocity_sum = 0.0;
@@ -219,8 +227,12 @@ void test_conservation_properties(void) {
         .pressure_coupling = 0.1
     };
 
-    // Run solver
-    solve_navier_stokes(field, grid, &params);
+    // Run solver using modern interface
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Calculate final totals
     double final_mass = 0.0;

@@ -2,40 +2,50 @@
  * Performance Comparison Example
  *
  * Demonstrates the performance difference between basic and optimized solvers
- * and measures execution time for different grid sizes.
+ * using the modern pluggable solver interface.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include "grid.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "utils.h"
 
-void benchmark_solver(const char* solver_name,
-                     void (*solver_func)(FlowField*, const Grid*, const SolverParams*),
+void benchmark_solver(const char* solver_name, const char* solver_type,
                      size_t nx, size_t ny, int iterations) {
     printf("\n=== %s Benchmark ===\n", solver_name);
     printf("Grid size: %zux%zu, Iterations: %d\n", nx, ny, iterations);
 
+    // Create solver using modern interface
+    Solver* solver = solver_create(solver_type);
+    if (!solver) {
+        fprintf(stderr, "Failed to create solver: %s\n", solver_type);
+        return;
+    }
+
     // Create grid and flow field
     Grid* grid = grid_create(nx, ny, 0.0, 1.0, 0.0, 0.5);
     FlowField* field = flow_field_create(nx, ny);
+    initialize_flow_field(field, grid);
 
     // Initialize solver parameters
-    SolverParams params = {
-        .max_iter = iterations,
-        .dt = 0.001,
-        .cfl = 0.5,
-        .gamma = 1.4,
-        .mu = 0.01,
-        .k = 0.1,
-        .tolerance = 1e-6
-    };
+    SolverParams params = solver_params_default();
+    params.dt = 0.001;
+    params.cfl = 0.5;
+    params.tolerance = 1e-6;
+
+    // Initialize solver
+    solver_init(solver, grid, &params);
 
     // Measure execution time
     clock_t start = clock();
-    solver_func(field, grid, &params);
+    SolverStats stats = solver_stats_default();
+
+    for (int i = 0; i < iterations; i++) {
+        solver_step(solver, field, grid, &params, &stats);
+    }
+
     clock_t end = clock();
 
     double cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
@@ -47,6 +57,7 @@ void benchmark_solver(const char* solver_name,
            (double)(nx * ny * 5 * sizeof(double)) / (1024 * 1024));
 
     // Cleanup
+    solver_destroy(solver);
     flow_field_destroy(field);
     grid_destroy(grid);
 }
@@ -77,10 +88,10 @@ int main() {
         printf("\n");
 
         // Benchmark basic solver
-        benchmark_solver("Basic Solver", solve_navier_stokes, nx, ny, iterations);
+        benchmark_solver("Basic Solver", SOLVER_TYPE_EXPLICIT_EULER, nx, ny, iterations);
 
         // Benchmark optimized solver
-        benchmark_solver("Optimized Solver", solve_navier_stokes_optimized, nx, ny, iterations);
+        benchmark_solver("Optimized Solver", SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, nx, ny, iterations);
 
         // Calculate speedup
         // Note: This is a simplified example - for accurate benchmarking,
@@ -93,6 +104,10 @@ int main() {
     printf("Benchmark completed!\n");
     printf("Note: Performance varies by hardware and system load.\n");
     printf("For production use, consider the optimized solver for large grids.\n");
+    printf("\nModern Solver Interface Benefits:\n");
+    printf("- Easy to switch between solver types\n");
+    printf("- Consistent API across all solvers\n");
+    printf("- Access to detailed solver statistics\n");
 
     return 0;
 }

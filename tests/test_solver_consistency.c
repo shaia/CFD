@@ -1,5 +1,5 @@
 #include "unity.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "grid.h"
 #include "utils.h"
 #include <stdio.h>
@@ -62,8 +62,17 @@ void test_solver_consistency(void) {
     };
 
     // Run both solvers for same number of iterations
-    solve_navier_stokes(field1, grid1, &params);
-    solve_navier_stokes_optimized(field2, grid2, &params);
+    Solver* solver1 = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver1, grid1, &params);
+    SolverStats stats1 = solver_stats_default();
+    solver_step(solver1, field1, grid1, &params, &stats1);
+    solver_destroy(solver1);
+
+    Solver* solver2 = solver_create(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    solver_init(solver2, grid2, &params);
+    SolverStats stats2 = solver_stats_default();
+    solver_step(solver2, field2, grid2, &params, &stats2);
+    solver_destroy(solver2);
 
     // Compare results - they should be very close
     double max_u_diff = 0.0, max_v_diff = 0.0, max_p_diff = 0.0;
@@ -153,7 +162,11 @@ void test_solver_stability(void) {
     };
 
     // Test basic solver
-    solve_navier_stokes(field, grid, &params);
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Check that solution didn't blow up
     int stable_count = 0;
@@ -175,7 +188,11 @@ void test_solver_stability(void) {
         field->p[i] = 1.0 + 0.5 * sin(M_PI * i / (nx * ny));
     }
 
-    solve_navier_stokes_optimized(field, grid, &params);
+    Solver* solver2 = solver_create(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    solver_init(solver2, grid, &params);
+    SolverStats stats2 = solver_stats_default();
+    solver_step(solver2, field, grid, &params, &stats2);
+    solver_destroy(solver2);
 
     stable_count = 0;
     for (size_t i = 0; i < nx * ny; i++) {

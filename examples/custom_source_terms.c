@@ -2,13 +2,13 @@
 #include <stdlib.h>
 #include <math.h>
 #include "grid.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "utils.h"
 #include "vtk_output.h"
 
 /**
  * Example demonstrating how to customize source term parameters
- * for different flow control scenarios
+ * for different flow control scenarios using the modern solver interface
  */
 
 // Helper function to calculate max velocity
@@ -19,6 +19,17 @@ double calculate_max_velocity(const FlowField* field, size_t nx, size_t ny) {
         if (vel_mag > max_vel) max_vel = vel_mag;
     }
     return max_vel;
+}
+
+// Helper function to run simulation with given parameters
+void run_simulation_case(Solver* solver, FlowField* field, Grid* grid,
+                         SolverParams* params, int steps) {
+    initialize_flow_field(field, grid);
+
+    SolverStats stats = solver_stats_default();
+    for (int step = 0; step < steps; step++) {
+        solver_step(solver, field, grid, params, &stats);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -36,9 +47,18 @@ int main(int argc, char* argv[]) {
     FlowField* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
-    // Create output directory
-    ensure_directory_exists("../../output");
-    ensure_directory_exists("..\\..\\artifacts\\output");
+    // Create solver using modern interface
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    if (!solver) {
+        fprintf(stderr, "Failed to create solver\n");
+        return 1;
+    }
+
+    // Configure output directory
+    cfd_set_output_base_dir("../../artifacts");
+    char run_dir[512];
+    cfd_create_run_directory_ex(run_dir, sizeof(run_dir), "source_terms", nx, ny);
+    printf("Output directory: %s\n\n", run_dir);
 
     // Example 1: Default parameters
     printf("1. Running simulation with DEFAULT source term parameters:\n");
@@ -48,10 +68,11 @@ int main(int argc, char* argv[]) {
     printf("   - Source decay rate:  %.3f\n", params_default.source_decay_rate);
     printf("   - Pressure coupling:  %.3f\n", params_default.pressure_coupling);
 
-    // Reset field for clean start
-    initialize_flow_field(field, grid);
-    params_default.max_iter = 10;  // Short run for demonstration
-    solve_navier_stokes(field, grid, &params_default);
+    // Initialize solver
+    solver_init(solver, grid, &params_default);
+
+    // Run simulation
+    run_simulation_case(solver, field, grid, &params_default, 10);
 
     // Save default case
     write_vtk_output("..\\..\\artifacts\\output\\default_source_terms.vtk", "u_velocity",
@@ -67,16 +88,14 @@ int main(int argc, char* argv[]) {
     params_high_energy.source_amplitude_v = 0.15;  // 3x stronger V source
     params_high_energy.source_decay_rate = 0.05;   // Slower decay (more persistent)
     params_high_energy.pressure_coupling = 0.15;   // Stronger pressure coupling
-    params_high_energy.max_iter = 10;
 
     printf("   - Source amplitude U: %.3f (3x stronger)\n", params_high_energy.source_amplitude_u);
     printf("   - Source amplitude V: %.3f (3x stronger)\n", params_high_energy.source_amplitude_v);
     printf("   - Source decay rate:  %.3f (slower decay)\n", params_high_energy.source_decay_rate);
     printf("   - Pressure coupling:  %.3f (stronger)\n", params_high_energy.pressure_coupling);
 
-    // Reset field and run with high energy parameters
-    initialize_flow_field(field, grid);
-    solve_navier_stokes(field, grid, &params_high_energy);
+    // Run with high energy parameters
+    run_simulation_case(solver, field, grid, &params_high_energy, 10);
 
     // Save high energy case
     write_vtk_output("..\\..\\artifacts\\output\\high_energy_source_terms.vtk", "u_velocity",
@@ -92,16 +111,14 @@ int main(int argc, char* argv[]) {
     params_low_energy.source_amplitude_v = 0.015;  // 30% of default
     params_low_energy.source_decay_rate = 0.2;     // Faster decay
     params_low_energy.pressure_coupling = 0.05;    // Weaker pressure coupling
-    params_low_energy.max_iter = 10;
 
     printf("   - Source amplitude U: %.3f (30%% of default)\n", params_low_energy.source_amplitude_u);
     printf("   - Source amplitude V: %.3f (30%% of default)\n", params_low_energy.source_amplitude_v);
     printf("   - Source decay rate:  %.3f (faster decay)\n", params_low_energy.source_decay_rate);
     printf("   - Pressure coupling:  %.3f (weaker)\n", params_low_energy.pressure_coupling);
 
-    // Reset field and run with low energy parameters
-    initialize_flow_field(field, grid);
-    solve_navier_stokes(field, grid, &params_low_energy);
+    // Run with low energy parameters
+    run_simulation_case(solver, field, grid, &params_low_energy, 10);
 
     // Save low energy case
     write_vtk_output("..\\..\\artifacts\\output\\low_energy_source_terms.vtk", "u_velocity",
@@ -117,16 +134,14 @@ int main(int argc, char* argv[]) {
     params_asymmetric.source_amplitude_v = 0.01;   // Weak vertical flow
     params_asymmetric.source_decay_rate = 0.08;    // Medium decay
     params_asymmetric.pressure_coupling = 0.12;    // Medium coupling
-    params_asymmetric.max_iter = 10;
 
     printf("   - Source amplitude U: %.3f (strong horizontal)\n", params_asymmetric.source_amplitude_u);
     printf("   - Source amplitude V: %.3f (weak vertical)\n", params_asymmetric.source_amplitude_v);
     printf("   - Source decay rate:  %.3f (medium decay)\n", params_asymmetric.source_decay_rate);
     printf("   - Pressure coupling:  %.3f (medium)\n", params_asymmetric.pressure_coupling);
 
-    // Reset field and run with asymmetric parameters
-    initialize_flow_field(field, grid);
-    solve_navier_stokes(field, grid, &params_asymmetric);
+    // Run with asymmetric parameters
+    run_simulation_case(solver, field, grid, &params_asymmetric, 10);
 
     // Save asymmetric case
     write_vtk_output("..\\..\\artifacts\\output\\asymmetric_source_terms.vtk", "u_velocity",
@@ -143,9 +158,7 @@ int main(int argc, char* argv[]) {
     SolverParams* all_params[] = {&params_default, &params_high_energy, &params_low_energy, &params_asymmetric};
 
     for (int case_idx = 0; case_idx < 4; case_idx++) {
-        initialize_flow_field(field, grid);
-        all_params[case_idx]->max_iter = 5;  // Quick run for stats
-        solve_navier_stokes(field, grid, all_params[case_idx]);
+        run_simulation_case(solver, field, grid, all_params[case_idx], 5);
         max_velocities[case_idx] = calculate_max_velocity(field, nx, ny);
 
         printf("%s case: Max velocity = %.4f m/s\n",
@@ -161,15 +174,18 @@ int main(int argc, char* argv[]) {
     printf("- Flow directionality (U vs V amplitudes)\n\n");
 
     printf("Users can customize these parameters in their code:\n");
+    printf("  Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);\n");
     printf("  SolverParams params = solver_params_default();\n");
     printf("  params.source_amplitude_u = 0.2;  // Custom value\n");
     printf("  params.source_amplitude_v = 0.1;  // Custom value\n");
-    printf("  // ... then use params in solve_navier_stokes()\n\n");
+    printf("  solver_init(solver, grid, &params);\n");
+    printf("  solver_step(solver, field, grid, &params, &stats);\n\n");
 
     printf("All output files saved to ..\\..\\artifacts\\output\\\n");
     printf("Use visualization tools to compare the different cases.\n");
 
     // Clean up
+    solver_destroy(solver);
     flow_field_destroy(field);
     grid_destroy(grid);
 

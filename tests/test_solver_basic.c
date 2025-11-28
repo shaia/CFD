@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "unity.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "grid.h"
 #include "utils.h"
 
@@ -37,8 +37,12 @@ void test_basic_solver_runs(void) {
     params.max_iter = 2;  // Very few iterations for speed
     params.tolerance = 1e-1;  // Very relaxed tolerance
 
-    // Test that solver runs without crashing
-    solve_navier_stokes(field, grid, &params);
+    // Test that solver runs without crashing using modern interface
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Verify solver completed successfully by checking field values are finite
     TEST_ASSERT_TRUE(isfinite(field->u[0]));
@@ -76,7 +80,11 @@ void test_optimized_solver_runs(void) {
     params.tolerance = 1e-1;  // Very relaxed tolerance
 
     // Test that optimized solver runs without crashing and produces valid results
-    solve_navier_stokes_optimized(field, grid, &params);
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Verify solver completed successfully by checking field values are finite and valid
     TEST_ASSERT_TRUE(isfinite(field->u[0]));

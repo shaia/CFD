@@ -18,6 +18,9 @@ int main() {
     printf("Grid size: %zu x %zu\n", nx, ny);
     printf("Domain: [%.1f, %.1f] x [%.1f, %.1f]\n", xmin, xmax, ymin, ymax);
 
+    // Configure output directory (optional)
+    simulation_set_output_dir("../../artifacts");
+
     // Initialize simulation
     SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
     if (!sim_data) {
@@ -25,13 +28,16 @@ int main() {
         return 1;
     }
 
-    // Create output directory
-    ensure_directory_exists("../../output");
-    ensure_directory_exists("..\\..\\artifacts\\output");
+    // Set run prefix
+    simulation_set_run_prefix(sim_data, "animated_flow");
 
     // Enhanced simulation parameters for better dynamics
     int max_steps = 200;        // More time steps for animation
     int output_interval = 5;    // Output every 5 steps for smooth animation
+
+    // Register outputs
+    simulation_register_output(sim_data, OUTPUT_FULL_FIELD, output_interval, "flow_field");
+    simulation_register_output(sim_data, OUTPUT_VELOCITY, output_interval, "velocity_vectors");
 
     printf("\nRunning enhanced simulation for animation...\n");
     printf("Total steps: %d\n", max_steps);
@@ -100,18 +106,10 @@ int main() {
             time += dt;  // Increment time manually
         }
 
-        // Output visualization data at intervals
+        // Automatically write registered outputs
+        simulation_write_outputs(sim_data, step);
+
         if (step % output_interval == 0) {
-            char filename[512];
-
-            // Complete flow field for animation
-            snprintf(filename, sizeof(filename), "..\\..\\artifacts\\output\\flow_field_%04d.vtk", step);
-            write_flow_field_to_vtk(sim_data, filename);
-
-            // Also save velocity vectors separately for vector field animation
-            snprintf(filename, sizeof(filename), "..\\..\\artifacts\\output\\velocity_vectors_%04d.vtk", step);
-            write_velocity_vectors_to_vtk(sim_data, filename);
-
             printf("Step %4d: Animation frame saved (t = %.4f)\n", step, time);
         }
 
@@ -121,16 +119,11 @@ int main() {
         }
     }
 
-    // Final comprehensive output
-    printf("\nWriting final comprehensive outputs...\n");
-    write_flow_field_to_vtk(sim_data, "..\\..\\artifacts\\output\\final_complete_flow.vtk");
-    write_velocity_vectors_to_vtk(sim_data, "..\\..\\artifacts\\output\\final_velocity_vectors.vtk");
-
     // Cleanup
     free_simulation(sim_data);
 
     printf("\nAnimated simulation completed successfully!\n");
-    printf("\nGenerated animation files:\n");
+    printf("\nGenerated animation files automatically:\n");
     printf("  - flow_field_*.vtk       : Complete flow field frames\n");
     printf("  - velocity_vectors_*.vtk : Velocity vector frames\n");
     printf("  - Total frames: %d\n", (max_steps / output_interval) + 1);

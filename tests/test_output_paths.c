@@ -1,5 +1,5 @@
 #include "unity.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "grid.h"
 #include "utils.h"
 #include "vtk_output.h"
@@ -142,7 +142,8 @@ void test_vtk_output_paths(void) {
     grid_destroy(grid);
 }
 
-// Test that solver output goes to correct directory
+// Test that solvers don't create unwanted output files
+// and that manual output works correctly
 void test_solver_output_paths(void) {
     size_t nx = 8, ny = 6;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
@@ -153,67 +154,46 @@ void test_solver_output_paths(void) {
     FlowField* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
-    // Set up parameters to force output (iter % 100 == 0)
-    SolverParams params = {
-        .dt = 0.001,
-        .cfl = 0.2,
-        .gamma = 1.4,
-        .mu = 0.01,
-        .k = 0.0242,
-        .max_iter = 1,  // Will output at iteration 0
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.1,
-        .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1,
-        .pressure_coupling = 0.1
-    };
+    SolverParams params = solver_params_default();
+    params.max_iter = 1;
 
-    // Clean up any existing files
-    char basic_output[256], optimized_output[256];
-    make_output_path(basic_output, sizeof(basic_output), "output_0.vtk");
-    make_output_path(optimized_output, sizeof(optimized_output), "output_optimized_0.vtk");
+    // Test that solvers NO LONGER create automatic output files
+    char unwanted_output[256];
+    make_output_path(unwanted_output, sizeof(unwanted_output), "output_0.vtk");
+    remove(unwanted_output);  // Clean up any existing file
 
-    remove(basic_output);
-    remove(optimized_output);
+    // Run solver
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
-    // Test basic solver output
-    solve_navier_stokes(field, grid, &params);
+    // Verify solver did NOT create automatic output
+    TEST_ASSERT_FALSE(file_exists(unwanted_output));
 
-    // Check that output file was created in correct location
-    TEST_ASSERT_TRUE(file_exists(basic_output));
+    // Now test that manual output DOES work when we explicitly call it
+    char test_output[256];
+    make_output_path(test_output, sizeof(test_output), "test_manual_output.vtk");
+    remove(test_output);  // Clean up any existing file
 
-    // Reset field for optimized solver test
-    initialize_flow_field(field, grid);
+    // Write output manually (this is how output should be done now)
+    write_vtk_output(test_output, "pressure", field->p, field->nx, field->ny,
+                     grid->xmin, grid->xmax, grid->ymin, grid->ymax);
 
-    // Test optimized solver output
-    solve_navier_stokes_optimized(field, grid, &params);
+    // Verify manual output file was created
+    TEST_ASSERT_TRUE(file_exists(test_output));
 
-    // Check that optimized output file was created in correct location
-    TEST_ASSERT_TRUE(file_exists(optimized_output));
-
-    // Verify files have reasonable content
-    FILE* file1 = fopen(basic_output, "r");
-    FILE* file2 = fopen(optimized_output, "r");
-
-    TEST_ASSERT_NOT_NULL(file1);
-    TEST_ASSERT_NOT_NULL(file2);
-
-    // Check files are not empty
-    fseek(file1, 0, SEEK_END);
-    fseek(file2, 0, SEEK_END);
-    long size1 = ftell(file1);
-    long size2 = ftell(file2);
-
-    TEST_ASSERT_GREATER_THAN(50, size1);
-    TEST_ASSERT_GREATER_THAN(50, size2);
-
-    fclose(file1);
-    fclose(file2);
+    // Verify file has reasonable content
+    FILE* file = fopen(test_output, "r");
+    TEST_ASSERT_NOT_NULL(file);
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    TEST_ASSERT_GREATER_THAN(50, size);
+    fclose(file);
 
     // Clean up
-    remove(basic_output);
-    remove(optimized_output);
-
+    remove(test_output);
     flow_field_destroy(field);
     grid_destroy(grid);
 }
@@ -272,8 +252,12 @@ void test_no_scattered_output(void) {
         .pressure_coupling = 0.1
     };
 
-    // Run solver
-    solve_navier_stokes(field, grid, &params);
+    // Run solver using modern interface
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Check that old scattered directories were NOT created
     for (size_t i = 0; i < num_paths; i++) {

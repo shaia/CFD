@@ -58,6 +58,78 @@ clean() {
     fi
 }
 
+# Clean all build and output directories
+clean_all() {
+    print_status "Cleaning all build and output directories..."
+
+    local cleaned_count=0
+    local dirs_to_clean=("build" "build-release" "install" "packages" "output")
+
+    for dir in "${dirs_to_clean[@]}"; do
+        if [[ -d "$dir" ]]; then
+            print_status "Removing $dir/..."
+            if rm -rf "$dir" 2>/dev/null; then
+                cleaned_count=$((cleaned_count + 1))
+            else
+                print_warning "Could not remove $dir (may be in use)"
+            fi
+        fi
+    done
+
+    # Clean artifacts/output but keep artifacts directory structure
+    if [[ -d "artifacts/output" ]]; then
+        # Use ls to check if directory has contents (more portable than find)
+        if ls artifacts/output/* >/dev/null 2>&1; then
+            print_status "Cleaning artifacts/output/..."
+            if rm -rf artifacts/output/* 2>/dev/null; then
+                cleaned_count=$((cleaned_count + 1))
+            else
+                print_warning "Could not clean artifacts/output (may be in use)"
+            fi
+        fi
+    fi
+
+    if [[ $cleaned_count -gt 0 ]]; then
+        print_success "Cleaned $cleaned_count directories"
+    else
+        print_warning "No directories to clean"
+    fi
+}
+
+# Clean only output/artifact directories (keep build)
+clean_output() {
+    print_status "Cleaning output directories..."
+
+    local cleaned_count=0
+
+    if [[ -d "output" ]]; then
+        print_status "Removing output/..."
+        if rm -rf "output" 2>/dev/null; then
+            cleaned_count=$((cleaned_count + 1))
+        else
+            print_warning "Could not remove output (may be in use)"
+        fi
+    fi
+
+    if [[ -d "artifacts/output" ]]; then
+        # Use ls to check if directory has contents (more portable than find)
+        if ls artifacts/output/* >/dev/null 2>&1; then
+            print_status "Cleaning artifacts/output/..."
+            if rm -rf artifacts/output/* 2>/dev/null; then
+                cleaned_count=$((cleaned_count + 1))
+            else
+                print_warning "Could not clean artifacts/output (may be in use)"
+            fi
+        fi
+    fi
+
+    if [[ $cleaned_count -gt 0 ]]; then
+        print_success "Cleaned $cleaned_count output directories"
+    else
+        print_warning "No output directories to clean"
+    fi
+}
+
 # Create build directory
 create_build_dir() {
     if [[ ! -d "$BUILD_DIR" ]]; then
@@ -154,15 +226,24 @@ run_examples() {
         exit 1
     fi
 
-    # Find and run available examples
-    local examples=(
-        "minimal_example"
-        "basic_simulation"
-        "performance_comparison"
-        "custom_boundary_conditions"
-    )
+    # Auto-discover examples from the examples/ directory
+    local example_files=()
+    if [[ -d "examples" ]]; then
+        while IFS= read -r -d '' file; do
+            local basename=$(basename "$file" .c)
+            example_files+=("$basename")
+        done < <(find examples -maxdepth 1 -name "*.c" -print0 2>/dev/null | sort -z)
+    fi
 
-    for example in "${examples[@]}"; do
+    if [[ ${#example_files[@]} -eq 0 ]]; then
+        print_warning "No example files found in examples/ directory"
+        return
+    fi
+
+    local ran_count=0
+    local skipped_count=0
+
+    for example in "${example_files[@]}"; do
         local exe_name="$example"
         if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
             exe_name="${example}.exe"
@@ -174,10 +255,19 @@ run_examples() {
             ./"$exe_name"
             cd - > /dev/null
             echo ""
+            ran_count=$((ran_count + 1))
+        else
+            print_warning "Skipping $example (not built or not executable)"
+            skipped_count=$((skipped_count + 1))
         fi
     done
 
-    print_success "Examples completed"
+    if [[ $ran_count -gt 0 ]]; then
+        print_success "Ran $ran_count example(s)"
+    fi
+    if [[ $skipped_count -gt 0 ]]; then
+        print_warning "Skipped $skipped_count example(s)"
+    fi
 }
 
 # Package the project
@@ -249,6 +339,8 @@ help() {
     echo ""
     echo "Commands:"
     echo "  clean              Clean build directory"
+    echo "  clean-all          Clean all build and output directories"
+    echo "  clean-output       Clean only output/artifact directories"
     echo "  configure          Configure CMake"
     echo "  build              Build project (library + examples)"
     echo "  build-tests        Build project with tests enabled"
@@ -267,6 +359,7 @@ help() {
     echo "Examples:"
     echo "  $0 build                    # Build in Debug mode"
     echo "  CMAKE_BUILD_TYPE=Release $0 build  # Build in Release mode"
+    echo "  $0 clean-all                # Clean everything (build + output)"
     echo "  $0 full                     # Complete clean build with tests"
     echo "  $0 run                      # Run all example programs"
     echo ""
@@ -279,6 +372,12 @@ main() {
     case "${1:-help}" in
         clean)
             clean
+            ;;
+        clean-all)
+            clean_all
+            ;;
+        clean-output)
+            clean_output
             ;;
         configure)
             shift

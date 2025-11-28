@@ -1,4 +1,4 @@
-#include "solver.h"
+#include "solver_interface.h"
 #include "utils.h"
 #include <math.h>
 #include <string.h>
@@ -174,7 +174,9 @@ void compute_source_terms(double x, double y, int iter, double dt, const SolverP
     *source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) * exp(-params->source_decay_rate * iter * dt);
 }
 
-void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams* params) {
+// Internal explicit Euler implementation
+// This is called by the solver registry - not part of public API
+void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams* params) {
     // Check for minimum grid size - prevent crashes on small grids
     if (field->nx < 3 || field->ny < 3) {
         return; // Skip solver for grids too small for finite differences
@@ -319,28 +321,6 @@ void solve_navier_stokes(FlowField* field, const Grid* grid, const SolverParams*
         if (has_nan) {
             printf("Warning: NaN/Inf detected in iteration %d, stopping solver\n", iter);
             break;
-        }
-
-        // Output solution every 100 iterations
-        if (iter % 100 == 0) {
-            char artifacts_path[256];
-            char output_path[256];
-            char filename[256];
-
-            // Create cross-platform paths
-            make_artifacts_path(artifacts_path, sizeof(artifacts_path), "");
-            make_artifacts_path(output_path, sizeof(output_path), "output");
-
-            ensure_directory_exists(artifacts_path);
-            ensure_directory_exists(output_path);
-
-            // Create output filename with proper path separator
-            char base_filename[128];
-            snprintf(base_filename, sizeof(base_filename), "output_%d.vtk", iter);
-            make_output_path(filename, sizeof(filename), base_filename);
-
-            write_vtk_output(filename, "pressure", field->p, field->nx, field->ny,
-                           grid->xmin, grid->xmax, grid->ymin, grid->ymax);
         }
     }
     
