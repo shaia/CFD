@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "unity.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "grid.h"
 #include "utils.h"
 
@@ -76,8 +76,12 @@ void test_solver_step_by_step_debug(void) {
     printf("Solver parameters: dt=%.6f, mu=%.6f, pressure_coupling=%.6f\n",
            params.dt, params.mu, params.pressure_coupling);
 
-    // Run solver
-    solve_navier_stokes(field, grid, &params);
+    // Run solver using modern interface
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
     check_field_validity(field, "After 1 solver iteration");
     print_field_debug(field, "After solver");
 

@@ -1,5 +1,5 @@
 #include "unity.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "grid.h"
 #include "utils.h"
 #include "vtk_output.h"
@@ -177,7 +177,11 @@ void test_solver_output_paths(void) {
     remove(optimized_output);
 
     // Test basic solver output
-    solve_navier_stokes(field, grid, &params);
+    Solver* solver1 = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver1, grid, &params);
+    SolverStats stats1 = solver_stats_default();
+    solver_step(solver1, field, grid, &params, &stats1);
+    solver_destroy(solver1);
 
     // Check that output file was created in correct location
     TEST_ASSERT_TRUE(file_exists(basic_output));
@@ -186,7 +190,11 @@ void test_solver_output_paths(void) {
     initialize_flow_field(field, grid);
 
     // Test optimized solver output
-    solve_navier_stokes_optimized(field, grid, &params);
+    Solver* solver2 = solver_create(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    solver_init(solver2, grid, &params);
+    SolverStats stats2 = solver_stats_default();
+    solver_step(solver2, field, grid, &params, &stats2);
+    solver_destroy(solver2);
 
     // Check that optimized output file was created in correct location
     TEST_ASSERT_TRUE(file_exists(optimized_output));
@@ -272,8 +280,12 @@ void test_no_scattered_output(void) {
         .pressure_coupling = 0.1
     };
 
-    // Run solver
-    solve_navier_stokes(field, grid, &params);
+    // Run solver using modern interface
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Check that old scattered directories were NOT created
     for (size_t i = 0; i < num_paths; i++) {

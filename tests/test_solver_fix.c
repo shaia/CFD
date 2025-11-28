@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "unity.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "grid.h"
 #include "utils.h"
 

@@ -1,5 +1,5 @@
 #include "unity.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "grid.h"
 #include "utils.h"
 #include <stdio.h>
@@ -55,12 +55,17 @@ void test_flow_energy_maintenance(void) {
     double kinetic_energies[5];
     int measurement_steps[] = {0, 5, 10, 15, 20};
 
+    // Create solver once and reuse it for all steps
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+
     for (int step = 0; step < 5; step++) {
         // Run to next measurement point
         if (step > 0) {
             SolverParams step_params = params;
             step_params.max_iter = measurement_steps[step] - measurement_steps[step-1];
-            solve_navier_stokes(field, grid, &step_params);
+            solver_step(solver, field, grid, &step_params, &stats);
         }
 
         // Measure kinetic energy
@@ -82,6 +87,8 @@ void test_flow_energy_maintenance(void) {
         }
         TEST_ASSERT_GREATER_THAN((int)(0.95 * nx * ny), finite_count);
     }
+
+    solver_destroy(solver);
 
     // Test that energy doesn't decay too rapidly
     // With source terms, energy should be maintained or decay slowly
@@ -146,8 +153,12 @@ void test_source_term_effectiveness(void) {
         .pressure_coupling = 0.1
     };
 
-    // Run solver
-    solve_navier_stokes(field, grid, &params);
+    // Run solver using modern interface
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Calculate final velocity magnitude squared (avoid expensive sqrt)
     double final_velocity_mag_sq = 0.0;
@@ -217,9 +228,18 @@ void test_decay_prevention_both_solvers(void) {
         .pressure_coupling = 0.1
     };
 
-    // Run both solvers
-    solve_navier_stokes(field1, grid1, &params);
-    solve_navier_stokes_optimized(field2, grid2, &params);
+    // Run both solvers using modern interface
+    Solver* solver1 = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver1, grid1, &params);
+    SolverStats stats1 = solver_stats_default();
+    solver_step(solver1, field1, grid1, &params, &stats1);
+    solver_destroy(solver1);
+
+    Solver* solver2 = solver_create(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    solver_init(solver2, grid2, &params);
+    SolverStats stats2 = solver_stats_default();
+    solver_step(solver2, field2, grid2, &params, &stats2);
+    solver_destroy(solver2);
 
     // Calculate final energies
     double final_energy1 = 0.0, final_energy2 = 0.0;

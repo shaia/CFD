@@ -1,6 +1,6 @@
 #include "unity.h"
 #include "simulation_api.h"
-#include "solver.h"
+#include "solver_interface.h"
 #include "grid.h"
 #include "utils.h"
 #include "vtk_output.h"
@@ -91,9 +91,18 @@ void test_solver_consistency(void) {
         .source_decay_rate = 0.1, .pressure_coupling = 0.1
     };
 
-    // Run both solvers
-    solve_navier_stokes(field1, grid1, &params);
-    solve_navier_stokes_optimized(field2, grid2, &params);
+    // Run both solvers using modern interface
+    Solver* solver1 = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver1, grid1, &params);
+    SolverStats stats1 = solver_stats_default();
+    solver_step(solver1, field1, grid1, &params, &stats1);
+    solver_destroy(solver1);
+
+    Solver* solver2 = solver_create(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    solver_init(solver2, grid2, &params);
+    SolverStats stats2 = solver_stats_default();
+    solver_step(solver2, field2, grid2, &params, &stats2);
+    solver_destroy(solver2);
 
     // Both should produce finite results
     int finite1 = 0, finite2 = 0;
@@ -152,7 +161,11 @@ void test_physics_improvements(void) {
         .source_decay_rate = 0.1, .pressure_coupling = 0.1
     };
 
-    solve_navier_stokes(field, grid, &params);
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Check that pressure gradient induced some velocity
     double final_velocity = 0.0;
@@ -193,7 +206,11 @@ void test_decay_prevention(void) {
         .source_decay_rate = 0.1, .pressure_coupling = 0.1
     };
 
-    solve_navier_stokes(field, grid, &params);
+    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(solver, grid, &params);
+    SolverStats stats = solver_stats_default();
+    solver_step(solver, field, grid, &params, &stats);
+    solver_destroy(solver);
 
     // Calculate final energy
     double final_energy = 0.0;
