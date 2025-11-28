@@ -4,6 +4,14 @@ cmake_minimum_required(VERSION 3.10)
 # Option for CUDA support
 option(CFD_ENABLE_CUDA "Enable CUDA GPU acceleration" OFF)
 
+# CUDA architecture configuration
+# Default: Support wide range of GPUs from Pascal (GTX 10xx) onwards
+# Users can override with -DCFD_CUDA_ARCHITECTURES="70;75" etc.
+if(NOT DEFINED CFD_CUDA_ARCHITECTURES)
+    set(CFD_CUDA_ARCHITECTURES "60;70;75;80;86;89;90" CACHE STRING
+        "CUDA architectures to build for (60=Pascal, 70=Volta, 75=Turing, 80=Ampere, 86=Ampere, 89=Ada, 90=Hopper)")
+endif()
+
 # Define the library project with optional CUDA
 if(CFD_ENABLE_CUDA)
     project(cfd_library VERSION 1.0.0 LANGUAGES C CUDA)
@@ -109,7 +117,7 @@ if(CFD_HAS_CUDA)
     set_target_properties(cfd_library PROPERTIES
         CUDA_SEPARABLE_COMPILATION OFF
         CUDA_RESOLVE_DEVICE_SYMBOLS ON
-        CUDA_ARCHITECTURES "80;86;89;90"  # Ada/Ampere/Hopper (CUDA 13.0+)
+        CUDA_ARCHITECTURES "${CFD_CUDA_ARCHITECTURES}"
     )
     target_compile_definitions(cfd_library PRIVATE CFD_HAS_CUDA=1)
     target_link_libraries(cfd_library PUBLIC CUDA::cudart)
@@ -118,7 +126,7 @@ if(CFD_HAS_CUDA)
         set_target_properties(cfd_library_static PROPERTIES
             CUDA_SEPARABLE_COMPILATION OFF
             CUDA_RESOLVE_DEVICE_SYMBOLS ON
-            CUDA_ARCHITECTURES "80;86;89;90"
+            CUDA_ARCHITECTURES "${CFD_CUDA_ARCHITECTURES}"
         )
         target_compile_definitions(cfd_library_static PRIVATE CFD_HAS_CUDA=1)
         target_link_libraries(cfd_library_static PUBLIC CUDA::cudart)
@@ -243,4 +251,7 @@ install(FILES
 # Print summary
 message(STATUS "CFD Library Configuration:")
 message(STATUS "  CUDA Support: ${CFD_HAS_CUDA}")
+if(CFD_HAS_CUDA)
+    message(STATUS "  CUDA Architectures: ${CFD_CUDA_ARCHITECTURES}")
+endif()
 message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")

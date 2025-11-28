@@ -322,28 +322,6 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
             printf("Warning: NaN/Inf detected in iteration %d, stopping solver\n", iter);
             break;
         }
-
-        // Output solution every 100 iterations
-        if (iter % 100 == 0) {
-            char artifacts_path[256];
-            char output_path[256];
-            char filename[256];
-
-            // Create cross-platform paths
-            make_artifacts_path(artifacts_path, sizeof(artifacts_path), "");
-            make_artifacts_path(output_path, sizeof(output_path), "output");
-
-            ensure_directory_exists(artifacts_path);
-            ensure_directory_exists(output_path);
-
-            // Create output filename with proper path separator
-            char base_filename[128];
-            snprintf(base_filename, sizeof(base_filename), "output_%d.vtk", iter);
-            make_output_path(filename, sizeof(filename), base_filename);
-
-            write_vtk_output(filename, "pressure", field->p, field->nx, field->ny,
-                           grid->xmin, grid->xmax, grid->ymin, grid->ymax);
-        }
     }
     
     // Free temporary arrays

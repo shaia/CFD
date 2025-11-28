@@ -71,14 +71,27 @@ A computational fluid dynamics (CFD) framework implemented in C. This project pr
 │           ├── solver_registry.c
 │           └── output_registry.c
 ├── examples/                   # Example programs
-│   ├── minimal_example.c       # Simplest usage example
-│   ├── basic_simulation.c      # Complete simulation workflow
-│   ├── solver_selection.c      # Demonstrates solver switching
-│   ├── performance_comparison.c
-│   └── custom_boundary_conditions.c
-├── tests/                      # Unit tests
-│   ├── test_simulation_basic.c
-│   └── test_runner.c
+│   ├── minimal_example.c              # Simplest usage example
+│   ├── basic_simulation.c             # Complete simulation workflow
+│   ├── solver_selection.c             # Demonstrates solver switching
+│   ├── performance_comparison.c       # Solver performance benchmarks
+│   ├── runtime_comparison.c           # GPU vs CPU comprehensive benchmarks
+│   ├── custom_boundary_conditions.c   # Flow around cylinder with custom BCs
+│   ├── custom_source_terms.c          # Adding source terms to simulations
+│   ├── csv_data_export.c              # CSV output for data analysis
+│   ├── velocity_visualization.c       # Velocity field visualization
+│   ├── animated_flow_simulation.c     # Animated flow output
+│   └── simple_animated_flow.c         # Simple animation example
+├── tests/                      # Comprehensive test suite
+│   ├── test_runner.c                  # Unity test framework runner
+│   ├── test_simulation_basic.c        # Basic simulation tests
+│   ├── test_solver_basic.c            # Solver correctness tests
+│   ├── test_solver_consistency.c      # Solver consistency validation
+│   ├── test_physics_validation.c      # Physics accuracy tests
+│   ├── test_output_paths.c            # Output path management tests
+│   ├── test_core_functionality.c      # Core API tests
+│   ├── test_comprehensive.c           # Comprehensive integration tests
+│   └── ... (additional test files)
 ├── output/                     # VTK output files
 ├── visualization/              # Visualization scripts
 │   ├── visualize_cfd.py        # Main visualization script
@@ -148,7 +161,19 @@ cmake --build build --config Release
    cmake --build .
    ```
 
-3. Run examples:
+3. Customize CUDA architectures (default supports Pascal through Hopper):
+   ```bash
+   # Default: 60;70;75;80;86;89;90 (Pascal, Volta, Turing, Ampere, Ada, Hopper)
+   cmake -DCFD_ENABLE_CUDA=ON ..
+
+   # Build only for newer GPUs (Ampere and later):
+   cmake -DCFD_ENABLE_CUDA=ON -DCFD_CUDA_ARCHITECTURES="80;86;89;90" ..
+
+   # Build for specific GPU (e.g., RTX 3080 = compute capability 86):
+   cmake -DCFD_ENABLE_CUDA=ON -DCFD_CUDA_ARCHITECTURES="86" ..
+   ```
+
+4. Run examples:
    ```bash
    cd build/Debug  # or build/ on Linux/macOS
    ./minimal_example.exe
@@ -403,6 +428,54 @@ This organization makes it easy to:
 - Understand the separation between core utilities, solvers, and I/O
 - Add new solvers in the appropriate category
 - Maintain clean public/private API boundaries
+
+## Design Principles
+
+The CFD library follows several key architectural principles:
+
+### Separation of Concerns
+
+**Solvers focus solely on solving** - They don't decide when or where to write output files. This design:
+
+- Makes solvers more testable and reusable
+- Gives callers full control over output timing and location
+- Prevents file pollution from automatic solver output
+- Enables flexible output strategies (batch processing, streaming, etc.)
+
+### Zero-Branch Dispatch
+
+The modern `Solver` interface uses function pointers for dispatch instead of switch statements:
+
+- No branch misprediction overhead
+- Optimal CPU pipeline utilization
+- Compiler can inline hot paths
+- Extensible without modifying core code
+
+### Pluggable Architecture
+
+All components use registry patterns:
+
+- **Solver Registry** - Register new solvers without touching existing code
+- **Output Registry** - Support multiple output formats (VTK, CSV, custom)
+- Factory functions provide clean instantiation
+- Runtime solver discovery and selection
+
+### Memory Efficiency
+
+- Contiguous array storage for optimal cache locality
+- SIMD-friendly memory layouts (aligned, structure-of-arrays pattern)
+- Explicit memory management with clear ownership
+- No hidden allocations in hot paths
+
+### Output Organization
+
+All simulation output is organized in timestamped subdirectories:
+
+- Pattern: `artifacts/output/<name>_<grid>_<timestamp>/`
+- Example: `artifacts/output/cylinder_flow_200x100_20251128_115220/`
+- Prevents file conflicts between runs
+- Easy to manage and archive results
+- Configurable base path via `cfd_set_output_base_dir()`
 
 ## Solver Details
 

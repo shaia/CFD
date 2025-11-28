@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 #include "solver_interface.h"
-#include "solver_interface.h"
+
 #include "grid.h"
 
 #ifdef __cplusplus

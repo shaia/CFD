@@ -136,18 +136,26 @@ int main() {
         // Single solver step (you'd implement this in the actual solver)
         // For this example, we'll just output at intervals
         if (iter % 200 == 0) {
-            char filename[256];
-            snprintf(filename, sizeof(filename), "..\\..\\artifacts\\output\\cylinder_flow_%d.vtk", iter);
+            char filename[512];
+            char basename[128];
+            snprintf(basename, sizeof(basename), "cylinder_flow_%d.vtk", iter);
+
+            // Build full path: run_dir/basename
+#ifdef _WIN32
+            snprintf(filename, sizeof(filename), "%s\\%s", run_dir, basename);
+#else
+            snprintf(filename, sizeof(filename), "%s/%s", run_dir, basename);
+#endif
 
             write_vtk_output(filename, "velocity_magnitude", field->u, nx, ny,
                            grid->xmin, grid->xmax, grid->ymin, grid->ymax);
 
-            printf("  Iteration %d, output: %s\n", iter, filename);
+            printf("  Iteration %d, output: %s\n", iter, basename);
         }
     }
 
     printf("\nSimulation completed!\n");
-    printf("Output files saved to ..\\..\\artifacts\\output\\cylinder_flow_*.vtk\n");
+    printf("Output files saved to %s\\cylinder_flow_*.vtk\n", run_dir);
     printf("Use visualization tools to view the flow pattern around the cylinder.\n");
 
     // Cleanup
