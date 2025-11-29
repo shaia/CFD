@@ -110,6 +110,14 @@ else()
     add_library(cfd_library STATIC ${CFD_LIBRARY_SOURCES})
 endif()
 
+# Enable Position Independent Code for all library targets
+# This is required when building Python extensions that link the static library
+# Being explicit ensures consistent behavior across all platforms
+set_target_properties(cfd_library PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(BUILD_SHARED_LIBS)
+    set_target_properties(cfd_library_static PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
+
 # Set CUDA properties if enabled
 if(CFD_HAS_CUDA)
     find_package(CUDAToolkit REQUIRED)
