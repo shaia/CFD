@@ -1,19 +1,14 @@
-name: Build and Release Artifacts
+name: Build and Test
 
-# Reusable workflow for building binaries and optionally creating releases
+# Reusable workflow for building and testing binaries (no release creation)
 on:
   workflow_call:
     inputs:
-      create_release:
-        description: 'Whether to create a GitHub release'
-        required: false
-        type: boolean
-        default: false
       version:
-        description: 'Version for the release'
+        description: 'Version label for artifacts'
         required: false
         type: string
-        default: ''
+        default: 'dev'
       retention_days:
         description: 'Artifact retention days'
         required: false
@@ -300,87 +295,3 @@ jobs:
             echo "Check individual build jobs for details." >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
-
-  create-release:
-    name: Create GitHub Release
-    needs: build-matrix
-    runs-on: ubuntu-latest
-    if: inputs.create_release == true
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Prepare release files
-        run: |
-          echo "Downloaded artifacts structure:"
-          ls -la artifacts/
-
-          # Create a release directory and move all archives
-          mkdir -p release-files
-          find artifacts \( -name "*.zip" -o -name "*.tar.gz" \) -exec sh -c '
-            for file do
-              cp "$file" release-files/
-              echo "Prepared: $(basename "$file")"
-            done
-          ' sh {} +
-
-          echo "Release files prepared:"
-          ls -la release-files/
-
-      - name: Create Release and Upload Assets
-        uses: softprops/action-gh-release@v1
-        with:
-          name: CFD Library v${{ inputs.version }}
-          tag_name: v${{ inputs.version }}
-          body: |
-            ## CFD Library Release v${{ inputs.version }}
-
-            🚀 **Cross-platform binaries for the CFD simulation library**
-
-            ### 📥 Available Downloads:
-
-            **Windows:**
-            - `cfd-windows-x64.zip` - Windows 64-bit (MSVC)
-            - `cfd-windows-x86.zip` - Windows 32-bit (MSVC)
-
-            **Linux:**
-            - `cfd-linux-x64.tar.gz` - Linux 64-bit (GCC)
-            - `cfd-linux-clang-x64.tar.gz` - Linux 64-bit (Clang)
-
-            **macOS:**
-            - `cfd-macos-x64.tar.gz` - macOS Intel (x64)
-            - `cfd-macos-arm64.tar.gz` - macOS Apple Silicon (ARM64)
-
-            ### 📦 What's Included:
-            - Static libraries (`.a`, `.lib`)
-            - Shared libraries (`.so`, `.dylib`, `.dll`)
-            - Header files for C/C++ integration
-            - Build documentation and examples
-
-            ### 🔧 Quick Start:
-            1. Download the appropriate archive for your platform
-            2. Extract to your project directory
-            3. Link against the library files
-            4. Include the header files in your project
-
-            📖 See `README.txt` in each archive for detailed integration instructions.
-
-            ### ✅ Tested Platforms:
-            - Windows 10/11 (x64, x86)
-            - Ubuntu Linux (GCC, Clang)
-            - macOS (Intel & Apple Silicon)
-
-            ---
-            *Built with GitHub Actions • All binaries tested before release*
-          files: release-files/*
-          draft: false
-          prerelease: false
