@@ -72,27 +72,57 @@ jobs:
     permissions:
       contents: write
 
-  notify-success:
-    name: Notify Release Success
+  trigger-python-release:
+    name: Trigger Python Package Build
     runs-on: ubuntu-latest
     needs: [check-version, build-and-release]
     if: success()
 
     steps:
+      - name: Create tag in cfd-python and trigger build
+        env:
+          GH_TOKEN: ${{ secrets.REPO_DISPATCH_TOKEN }}
+        run: |
+          TAG="v${{ needs.check-version.outputs.version }}"
+          REPO="${{ github.repository_owner }}/cfd-python"
+
+          # Get the latest commit SHA from cfd-python main branch
+          SHA=$(gh api repos/$REPO/git/refs/heads/main --jq '.object.sha')
+          echo "Latest cfd-python commit: $SHA"
+
+          # Create the tag (ignore error if it already exists)
+          echo "Creating tag $TAG in cfd-python..."
+          gh api repos/$REPO/git/refs \
+            -f ref="refs/tags/$TAG" \
+            -f sha="$SHA" 2>/dev/null || echo "Tag already exists, continuing..."
+
+          # Trigger the build workflow
+          echo "Triggering cfd-python build for tag $TAG"
+          gh workflow run build-wheels.yml --repo $REPO --ref $TAG
+
+          echo "Python package build triggered for $TAG" >> $GITHUB_STEP_SUMMARY
+
+  notify-success:
+    name: Notify Release Success
+    runs-on: ubuntu-latest
+    needs: [check-version, build-and-release, trigger-python-release]
+    if: success()
+
+    steps:
       - name: Generate success summary
         run: |
-          echo "# 🚀 Release v${{ needs.check-version.outputs.version }} Created Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "# Release v${{ needs.check-version.outputs.version }} Created Successfully!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 📦 What was created:" >> $GITHUB_STEP_SUMMARY
+          echo "## What was created:" >> $GITHUB_STEP_SUMMARY
           echo "- **GitHub Release:** [v${{ needs.check-version.outputs.version }}](https://github.com/${{ github.repository }}/releases/tag/v${{ needs.check-version.outputs.version }})" >> $GITHUB_STEP_SUMMARY
           echo "- **Git Tag:** \`v${{ needs.check-version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 📥 Available Downloads:" >> $GITHUB_STEP_SUMMARY
+          echo "## Available Downloads:" >> $GITHUB_STEP_SUMMARY
           echo "- Windows binaries (x64, x86)" >> $GITHUB_STEP_SUMMARY
           echo "- Linux binaries (GCC, Clang)" >> $GITHUB_STEP_SUMMARY
           echo "- macOS binaries (Intel, Apple Silicon)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🎉 **Users can now download the latest binaries from the releases page!**" >> $GITHUB_STEP_SUMMARY
+          echo "**Users can now download the latest binaries from the releases page!**" >> $GITHUB_STEP_SUMMARY
 
   notify-failure:
     name: Notify Release Failure
