@@ -1,9 +1,9 @@
-#include "unity.h"
-#include "solver_interface.h"
 #include "grid.h"
+#include "solver_interface.h"
+#include "unity.h"
 #include "utils.h"
-#include <stdio.h>
 #include <math.h>
+#include <stdio.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -31,8 +31,8 @@ void test_flow_energy_maintenance(void) {
     // Calculate initial kinetic energy
     double initial_kinetic_energy = 0.0;
     for (size_t i = 0; i < nx * ny; i++) {
-        initial_kinetic_energy += 0.5 * field->rho[i] *
-                                 (field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+        initial_kinetic_energy +=
+            0.5 * field->rho[i] * (field->u[i] * field->u[i] + field->v[i] * field->v[i]);
     }
 
     printf("Initial kinetic energy: %.6f\n", initial_kinetic_energy);
@@ -48,8 +48,7 @@ void test_flow_energy_maintenance(void) {
         .source_amplitude_u = 0.1,
         .source_amplitude_v = 0.05,
         .source_decay_rate = 0.1,
-        .pressure_coupling = 0.1
-    };
+        .pressure_coupling = 0.1};
 
     // Store kinetic energy at different time steps
     double kinetic_energies[5];
@@ -64,15 +63,15 @@ void test_flow_energy_maintenance(void) {
         // Run to next measurement point
         if (step > 0) {
             SolverParams step_params = params;
-            step_params.max_iter = measurement_steps[step] - measurement_steps[step-1];
+            step_params.max_iter = measurement_steps[step] - measurement_steps[step - 1];
             solver_step(solver, field, grid, &step_params, &stats);
         }
 
         // Measure kinetic energy
         double kinetic_energy = 0.0;
         for (size_t i = 0; i < nx * ny; i++) {
-            kinetic_energy += 0.5 * field->rho[i] *
-                            (field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+            kinetic_energy +=
+                0.5 * field->rho[i] * (field->u[i] * field->u[i] + field->v[i] * field->v[i]);
         }
         kinetic_energies[step] = kinetic_energy;
 
@@ -139,19 +138,17 @@ void test_source_term_effectiveness(void) {
     initial_velocity_mag_sq /= (nx * ny);
     double initial_velocity_mag = sqrt(initial_velocity_mag_sq);
 
-    SolverParams params = {
-        .dt = 0.001,
-        .cfl = 0.2,
-        .gamma = 1.4,
-        .mu = 0.01,
-        .k = 0.0242,
-        .max_iter = 15,  // Enough time for source terms to act
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.1,
-        .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1,
-        .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.01,
+                           .k = 0.0242,
+                           .max_iter = 15,  // Enough time for source terms to act
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     // Run solver using modern interface
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
@@ -168,8 +165,8 @@ void test_source_term_effectiveness(void) {
     final_velocity_mag_sq /= (nx * ny);
     double final_velocity_mag = sqrt(final_velocity_mag_sq);
 
-    printf("Source term test - Initial avg velocity: %.6f, Final: %.6f\n",
-           initial_velocity_mag, final_velocity_mag);
+    printf("Source term test - Initial avg velocity: %.6f, Final: %.6f\n", initial_velocity_mag,
+           final_velocity_mag);
 
     // Source terms should have increased velocity from near-zero
     TEST_ASSERT_TRUE(final_velocity_mag > initial_velocity_mag);
@@ -214,19 +211,17 @@ void test_decay_prevention_both_solvers(void) {
         initial_energy2 += field2->u[i] * field2->u[i] + field2->v[i] * field2->v[i];
     }
 
-    SolverParams params = {
-        .dt = 0.001,
-        .cfl = 0.2,
-        .gamma = 1.4,
-        .mu = 0.01,
-        .k = 0.0242,
-        .max_iter = 10,
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.1,
-        .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1,
-        .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.01,
+                           .k = 0.0242,
+                           .max_iter = 10,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     // Run both solvers using modern interface
     Solver* solver1 = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
@@ -253,7 +248,8 @@ void test_decay_prevention_both_solvers(void) {
 
     printf("Decay prevention test:\n");
     printf("  Basic solver: %.6f -> %.6f (ratio: %.3f)\n", initial_energy1, final_energy1, ratio1);
-    printf("  Optimized solver: %.6f -> %.6f (ratio: %.3f)\n", initial_energy2, final_energy2, ratio2);
+    printf("  Optimized solver: %.6f -> %.6f (ratio: %.3f)\n", initial_energy2, final_energy2,
+           ratio2);
 
     // Both solvers should prevent rapid decay (source terms working)
     TEST_ASSERT_TRUE(ratio1 > 0.95);  // Energy should be maintained
@@ -265,7 +261,8 @@ void test_decay_prevention_both_solvers(void) {
 
     // Results should be reasonably similar between solvers
     double ratio_difference = fabs(ratio1 - ratio2);
-    TEST_ASSERT_TRUE(ratio_difference < 5.0);  // Allow some difference due to numerical implementation
+    TEST_ASSERT_TRUE(ratio_difference <
+                     5.0);  // Allow some difference due to numerical implementation
 
     flow_field_destroy(field1);
     flow_field_destroy(field2);

@@ -1,9 +1,9 @@
-#include "unity.h"
-#include "solver_interface.h"
 #include "grid.h"
+#include "solver_interface.h"
+#include "unity.h"
 #include "utils.h"
-#include <stdio.h>
 #include <math.h>
+#include <stdio.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -47,19 +47,17 @@ void test_solver_consistency(void) {
     }
 
     // Set up identical solver parameters
-    SolverParams params = {
-        .dt = 0.001,
-        .cfl = 0.2,
-        .gamma = 1.4,
-        .mu = 0.01,
-        .k = 0.0242,
-        .max_iter = 5,  // Small number for quick test
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.1,
-        .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1,
-        .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.01,
+                           .k = 0.0242,
+                           .max_iter = 5,  // Small number for quick test
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     // Run both solvers for same number of iterations
     Solver* solver1 = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
@@ -110,7 +108,8 @@ void test_solver_consistency(void) {
 
     // Print some diagnostics
     printf("Max differences - U: %.2e, V: %.2e, P: %.2e\n", max_u_diff, max_v_diff, max_p_diff);
-    printf("Close values: %d/%d (%.1f%%)\n", close_values, (int)(nx*ny), 100.0*close_values/(nx*ny));
+    printf("Close values: %d/%d (%.1f%%)\n", close_values, (int)(nx * ny),
+           100.0 * close_values / (nx * ny));
 
     // At least 90% of values should be very close between solvers
     TEST_ASSERT_GREATER_THAN((int)(0.9 * nx * ny), close_values);
@@ -147,19 +146,17 @@ void test_solver_stability(void) {
         field->T[i] = 300.0;
     }
 
-    SolverParams params = {
-        .dt = 0.0001,  // Very small time step for stability
-        .cfl = 0.1,
-        .gamma = 1.4,
-        .mu = 0.01,
-        .k = 0.0242,
-        .max_iter = 3,
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.1,
-        .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1,
-        .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.0001,  // Very small time step for stability
+                           .cfl = 0.1,
+                           .gamma = 1.4,
+                           .mu = 0.01,
+                           .k = 0.0242,
+                           .max_iter = 3,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     // Test basic solver
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);

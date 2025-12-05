@@ -1,61 +1,59 @@
 #include "solver_interface.h"
 #include "utils.h"
+#include "vtk_output.h"
 #include <math.h>
 #include <string.h>
-#include "vtk_output.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
 // Physical stability limits for numerical computation
-#define MAX_DERIVATIVE_LIMIT 100.0     // Maximum allowed first derivative magnitude (1/s)
+#define MAX_DERIVATIVE_LIMIT        100.0   // Maximum allowed first derivative magnitude (1/s)
 #define MAX_SECOND_DERIVATIVE_LIMIT 1000.0  // Maximum allowed second derivative magnitude (1/s²)
-#define MAX_VELOCITY_LIMIT 100.0       // Maximum allowed velocity magnitude (m/s)
-#define MAX_DIVERGENCE_LIMIT 10.0      // Maximum allowed velocity divergence (1/s)
+#define MAX_VELOCITY_LIMIT          100.0   // Maximum allowed velocity magnitude (m/s)
+#define MAX_DIVERGENCE_LIMIT        10.0    // Maximum allowed velocity divergence (1/s)
 
 // Initial condition constants
-#define INIT_U_BASE 1.0
-#define INIT_U_VAR 0.1
-#define INIT_V_VAR 0.05
+#define INIT_U_BASE   1.0
+#define INIT_U_VAR    0.1
+#define INIT_V_VAR    0.05
 #define INIT_PRESSURE 1.0
-#define INIT_DENSITY 1.0
-#define INIT_TEMP 300.0
+#define INIT_DENSITY  1.0
+#define INIT_TEMP     300.0
 
 // Perturbation constants
-#define PERTURB_CENTER_X 1.0
-#define PERTURB_CENTER_Y 0.5
-#define PERTURB_RADIUS 0.2
-#define PERTURB_WIDTH_SQ 0.02
-#define PERTURB_MAG 0.1
+#define PERTURB_CENTER_X    1.0
+#define PERTURB_CENTER_Y    0.5
+#define PERTURB_RADIUS      0.2
+#define PERTURB_WIDTH_SQ    0.02
+#define PERTURB_MAG         0.1
 #define PERTURB_GRAD_FACTOR 2.0
 
 // Time stepping and stability constants
-#define VELOCITY_EPSILON 1e-20
-#define SPEED_EPSILON 1e-10
-#define DT_MAX_LIMIT 0.01
-#define DT_MIN_LIMIT 1e-6
+#define VELOCITY_EPSILON      1e-20
+#define SPEED_EPSILON         1e-10
+#define DT_MAX_LIMIT          0.01
+#define DT_MIN_LIMIT          1e-6
 #define DT_CONSERVATIVE_LIMIT 0.0001
 
 // Update limits
-#define UPDATE_LIMIT 1.0
+#define UPDATE_LIMIT           1.0
 #define PRESSURE_UPDATE_FACTOR 0.1
 
 // Helper function to initialize SolverParams with default values
 SolverParams solver_params_default(void) {
-    SolverParams params = {
-        .dt = DEFAULT_TIME_STEP,
-        .cfl = DEFAULT_CFL_NUMBER,
-        .gamma = DEFAULT_GAMMA,
-        .mu = DEFAULT_VISCOSITY,
-        .k = DEFAULT_THERMAL_CONDUCTIVITY,
-        .max_iter = DEFAULT_MAX_ITERATIONS,
-        .tolerance = DEFAULT_TOLERANCE,
-        .source_amplitude_u = DEFAULT_SOURCE_AMPLITUDE_U,
-        .source_amplitude_v = DEFAULT_SOURCE_AMPLITUDE_V,
-        .source_decay_rate = DEFAULT_SOURCE_DECAY_RATE,
-        .pressure_coupling = DEFAULT_PRESSURE_COUPLING
-    };
+    SolverParams params = {.dt = DEFAULT_TIME_STEP,
+                           .cfl = DEFAULT_CFL_NUMBER,
+                           .gamma = DEFAULT_GAMMA,
+                           .mu = DEFAULT_VISCOSITY,
+                           .k = DEFAULT_THERMAL_CONDUCTIVITY,
+                           .max_iter = DEFAULT_MAX_ITERATIONS,
+                           .tolerance = DEFAULT_TOLERANCE,
+                           .source_amplitude_u = DEFAULT_SOURCE_AMPLITUDE_U,
+                           .source_amplitude_v = DEFAULT_SOURCE_AMPLITUDE_V,
+                           .source_decay_rate = DEFAULT_SOURCE_DECAY_RATE,
+                           .pressure_coupling = DEFAULT_PRESSURE_COUPLING};
     return params;
 }
 FlowField* flow_field_create(size_t nx, size_t ny) {
@@ -94,11 +92,12 @@ void initialize_flow_field(FlowField* field, const Grid* grid) {
             double y = grid->y[j];
 
             // Set initial conditions with more interesting flow
-            field->u[idx] = INIT_U_BASE + INIT_U_VAR * sin(M_PI * y);  // Slightly varying u-velocity
-            field->v[idx] = INIT_V_VAR * sin(2.0 * M_PI * x); // Small v-velocity variation
-            field->p[idx] = INIT_PRESSURE;  // Reference pressure
-            field->rho[idx] = INIT_DENSITY;  // Reference density
-            field->T[idx] = INIT_TEMP;  // Reference temperature (K)
+            field->u[idx] =
+                INIT_U_BASE + INIT_U_VAR * sin(M_PI * y);      // Slightly varying u-velocity
+            field->v[idx] = INIT_V_VAR * sin(2.0 * M_PI * x);  // Small v-velocity variation
+            field->p[idx] = INIT_PRESSURE;                     // Reference pressure
+            field->rho[idx] = INIT_DENSITY;                    // Reference density
+            field->T[idx] = INIT_TEMP;                         // Reference temperature (K)
 
             // Add a pressure perturbation for interesting flow
             double cx = PERTURB_CENTER_X, cy = PERTURB_CENTER_Y;  // Center of perturbation
@@ -106,8 +105,10 @@ void initialize_flow_field(FlowField* field, const Grid* grid) {
             if (r < PERTURB_RADIUS) {
                 field->p[idx] += PERTURB_MAG * exp(-r * r / PERTURB_WIDTH_SQ);
                 // Adjust velocities based on pressure gradient
-                double dp_dx = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (x - cx) / PERTURB_WIDTH_SQ * exp(-r * r / PERTURB_WIDTH_SQ);
-                double dp_dy = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (y - cy) / PERTURB_WIDTH_SQ * exp(-r * r / PERTURB_WIDTH_SQ);
+                double dp_dx = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (x - cx) / PERTURB_WIDTH_SQ *
+                               exp(-r * r / PERTURB_WIDTH_SQ);
+                double dp_dy = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (y - cy) / PERTURB_WIDTH_SQ *
+                               exp(-r * r / PERTURB_WIDTH_SQ);
                 field->u[idx] += -PERTURB_MAG * dp_dx;  // Simple pressure-velocity coupling
                 field->v[idx] += -PERTURB_MAG * dp_dy;
             }
@@ -196,9 +197,11 @@ void apply_boundary_conditions(FlowField* field, const Grid* grid) {
 
 // Helper function to compute source terms consistently across all solvers
 void compute_source_terms(double x, double y, int iter, double dt, const SolverParams* params,
-                         double* source_u, double* source_v) {
-    *source_u = params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * dt);
-    *source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) * exp(-params->source_decay_rate * iter * dt);
+                          double* source_u, double* source_v) {
+    *source_u =
+        params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * dt);
+    *source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) *
+                exp(-params->source_decay_rate * iter * dt);
 }
 
 // Internal explicit Euler implementation
@@ -206,7 +209,7 @@ void compute_source_terms(double x, double y, int iter, double dt, const SolverP
 void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams* params) {
     // Check for minimum grid size - prevent crashes on small grids
     if (field->nx < 3 || field->ny < 3) {
-        return; // Skip solver for grids too small for finite differences
+        return;  // Skip solver for grids too small for finite differences
     }
 
     // Allocate temporary arrays for the solution update
@@ -228,43 +231,44 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
 
     // Main time-stepping loop
     for (int iter = 0; iter < params->max_iter; iter++) {
-        
         // Update solution using explicit Euler method
         for (size_t j = 1; j < field->ny - 1; j++) {
             for (size_t i = 1; i < field->nx - 1; i++) {
                 size_t idx = j * field->nx + i;
 
                 // Compute spatial derivatives
-                double du_dx = (field->u[idx + 1] - field->u[idx - 1]) /
-                             (2.0 * grid->dx[i]);
-                double du_dy = (field->u[idx + field->nx] - field->u[idx - field->nx]) /
-                             (2.0 * grid->dy[j]);
-                double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) /
-                             (2.0 * grid->dx[i]);
-                double dv_dy = (field->v[idx + field->nx] - field->v[idx - field->nx]) /
-                             (2.0 * grid->dy[j]);
+                double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
+                double du_dy =
+                    (field->u[idx + field->nx] - field->u[idx - field->nx]) / (2.0 * grid->dy[j]);
+                double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) / (2.0 * grid->dx[i]);
+                double dv_dy =
+                    (field->v[idx + field->nx] - field->v[idx - field->nx]) / (2.0 * grid->dy[j]);
 
                 // Pressure gradients
-                double dp_dx = (field->p[idx + 1] - field->p[idx - 1]) /
-                             (2.0 * grid->dx[i]);
-                double dp_dy = (field->p[idx + field->nx] - field->p[idx - field->nx]) /
-                             (2.0 * grid->dy[j]);
+                double dp_dx = (field->p[idx + 1] - field->p[idx - 1]) / (2.0 * grid->dx[i]);
+                double dp_dy =
+                    (field->p[idx + field->nx] - field->p[idx - field->nx]) / (2.0 * grid->dy[j]);
 
                 // Second derivatives for viscous terms
                 double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) /
-                               (grid->dx[i] * grid->dx[i]);
-                double d2u_dy2 = (field->u[idx + field->nx] - 2.0 * field->u[idx] + field->u[idx - field->nx]) /
-                               (grid->dy[j] * grid->dy[j]);
+                                 (grid->dx[i] * grid->dx[i]);
+                double d2u_dy2 =
+                    (field->u[idx + field->nx] - 2.0 * field->u[idx] + field->u[idx - field->nx]) /
+                    (grid->dy[j] * grid->dy[j]);
                 double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) /
-                               (grid->dx[i] * grid->dx[i]);
-                double d2v_dy2 = (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) /
-                               (grid->dy[j] * grid->dy[j]);
+                                 (grid->dx[i] * grid->dx[i]);
+                double d2v_dy2 =
+                    (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) /
+                    (grid->dy[j] * grid->dy[j]);
 
                 // Safety checks to prevent division by zero
-                if (field->rho[idx] <= 1e-10) continue;
-                if (fabs(grid->dx[i]) < 1e-10 || fabs(grid->dy[j]) < 1e-10) continue;
+                if (field->rho[idx] <= 1e-10)
+                    continue;
+                if (fabs(grid->dx[i]) < 1e-10 || fabs(grid->dy[j]) < 1e-10)
+                    continue;
 
-                // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density) with safety
+                // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density) with
+                // safety
                 double nu = params->mu / fmax(field->rho[idx], 1e-10);
                 nu = fmin(nu, 1.0);  // Limit maximum viscosity
 
@@ -275,10 +279,14 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
                 dv_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dy));
                 dp_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dx));
                 dp_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dy));
-                d2u_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dx2));
-                d2u_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dy2));
-                d2v_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
-                d2v_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
+                d2u_dx2 =
+                    fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dx2));
+                d2u_dy2 =
+                    fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dy2));
+                d2v_dx2 =
+                    fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
+                d2v_dy2 =
+                    fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
 
                 // Source terms to maintain flow (prevents decay)
                 double x = grid->x[i];
@@ -287,19 +295,19 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
                 compute_source_terms(x, y, iter, conservative_dt, params, &source_u, &source_v);
 
                 // Conservative velocity updates with limited changes
-                double du = conservative_dt * (
-                    -field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
-                    - dp_dx / field->rho[idx]                        // Pressure gradient
-                    + nu * (d2u_dx2 + d2u_dy2)                      // Viscous diffusion
-                    + source_u                                       // Source term
-                );
+                double du =
+                    conservative_dt * (-field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
+                                       - dp_dx / field->rho[idx]   // Pressure gradient
+                                       + nu * (d2u_dx2 + d2u_dy2)  // Viscous diffusion
+                                       + source_u                  // Source term
+                                      );
 
-                double dv = conservative_dt * (
-                    -field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
-                    - dp_dy / field->rho[idx]                        // Pressure gradient
-                    + nu * (d2v_dx2 + d2v_dy2)                      // Viscous diffusion
-                    + source_v                                       // Source term
-                );
+                double dv =
+                    conservative_dt * (-field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
+                                       - dp_dy / field->rho[idx]   // Pressure gradient
+                                       + nu * (d2v_dx2 + d2v_dy2)  // Viscous diffusion
+                                       + source_v                  // Source term
+                                      );
 
                 // Limit velocity changes
                 du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));
@@ -316,7 +324,8 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
                 double divergence = du_dx + dv_dy;
                 divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
 
-                double dp = -PRESSURE_UPDATE_FACTOR * conservative_dt * field->rho[idx] * divergence;
+                double dp =
+                    -PRESSURE_UPDATE_FACTOR * conservative_dt * field->rho[idx] * divergence;
                 dp = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dp));  // Limit pressure changes
                 p_new[idx] = field->p[idx] + dp;
 
@@ -325,14 +334,14 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
                 T_new[idx] = field->T[idx];
             }
         }
-        
+
         // Copy new solution to old solution
         memcpy(field->u, u_new, field->nx * field->ny * sizeof(double));
         memcpy(field->v, v_new, field->nx * field->ny * sizeof(double));
         memcpy(field->p, p_new, field->nx * field->ny * sizeof(double));
         memcpy(field->rho, rho_new, field->nx * field->ny * sizeof(double));
         memcpy(field->T, T_new, field->nx * field->ny * sizeof(double));
-        
+
         // Apply boundary conditions
         apply_boundary_conditions(field, grid);
 
@@ -350,7 +359,7 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
             break;
         }
     }
-    
+
     // Free temporary arrays
     cfd_free(u_new);
     cfd_free(v_new);
@@ -358,4 +367,3 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
     cfd_free(rho_new);
     cfd_free(T_new);
 }
-

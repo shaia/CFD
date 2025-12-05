@@ -1,10 +1,10 @@
+#include "grid.h"
+#include "solver_interface.h"
+#include "unity.h"
+#include "utils.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
-#include "unity.h"
-#include "solver_interface.h"
-#include "grid.h"
-#include "utils.h"
 
 void setUp(void) {
     // Setup for each test - ensure output directory exists
@@ -34,7 +34,7 @@ void test_basic_solver_runs(void) {
 
     // Set up solver parameters for quick test
     SolverParams params = solver_params_default();
-    params.max_iter = 2;  // Very few iterations for speed
+    params.max_iter = 2;      // Very few iterations for speed
     params.tolerance = 1e-1;  // Very relaxed tolerance
 
     // Test that solver runs without crashing using modern interface
@@ -76,7 +76,7 @@ void test_optimized_solver_runs(void) {
 
     // Set up solver parameters for quick test
     SolverParams params = solver_params_default();
-    params.max_iter = 2;  // Very few iterations for speed
+    params.max_iter = 2;      // Very few iterations for speed
     params.tolerance = 1e-1;  // Very relaxed tolerance
 
     // Test that optimized solver runs without crashing and produces valid results

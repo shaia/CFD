@@ -1,19 +1,19 @@
-#include "unity.h"
+#include "grid.h"
 #include "simulation_api.h"
 #include "solver_interface.h"
-#include "grid.h"
+#include "unity.h"
 #include "utils.h"
 #include "vtk_output.h"
-#include <stdio.h>
 #include <math.h>
+#include <stdio.h>
 
 #ifdef _WIN32
-    #include <direct.h>
-    #include <io.h>
-    #define access _access
-    #define F_OK 0
+#include <direct.h>
+#include <io.h>
+#define access _access
+#define F_OK   0
 #else
-    #include <unistd.h>
+#include <unistd.h>
 #endif
 
 #ifndef M_PI
@@ -84,12 +84,17 @@ void test_solver_consistency(void) {
         field2->T[i] = field1->T[i];
     }
 
-    SolverParams params = {
-        .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.01, .k = 0.0242,
-        .max_iter = 2, .tolerance = 1e-6,
-        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1, .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.01,
+                           .k = 0.0242,
+                           .max_iter = 2,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     // Run both solvers using modern interface
     Solver* solver1 = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
@@ -118,8 +123,8 @@ void test_solver_consistency(void) {
     TEST_ASSERT_GREATER_THAN((int)(0.9 * nx * ny), finite1);
     TEST_ASSERT_GREATER_THAN((int)(0.9 * nx * ny), finite2);
 
-    printf("Solver results: Basic=%d/%d finite, Optimized=%d/%d finite\n",
-           finite1, (int)(nx*ny), finite2, (int)(nx*ny));
+    printf("Solver results: Basic=%d/%d finite, Optimized=%d/%d finite\n", finite1, (int)(nx * ny),
+           finite2, (int)(nx * ny));
 
     flow_field_destroy(field1);
     flow_field_destroy(field2);
@@ -154,12 +159,17 @@ void test_physics_improvements(void) {
         initial_velocity += fabs(field->u[i]) + fabs(field->v[i]);
     }
 
-    SolverParams params = {
-        .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.001, .k = 0.0242,
-        .max_iter = 3, .tolerance = 1e-6,
-        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1, .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.001,
+                           .k = 0.0242,
+                           .max_iter = 3,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
@@ -173,8 +183,8 @@ void test_physics_improvements(void) {
         final_velocity += fabs(field->u[i]) + fabs(field->v[i]);
     }
 
-    printf("Physics test: Initial velocity sum=%.6f, Final=%.6f\n",
-           initial_velocity, final_velocity);
+    printf("Physics test: Initial velocity sum=%.6f, Final=%.6f\n", initial_velocity,
+           final_velocity);
 
     // Pressure gradient should induce velocity (final > initial)
     TEST_ASSERT_GREATER_THAN(initial_velocity, final_velocity);
@@ -199,12 +209,17 @@ void test_decay_prevention(void) {
         initial_energy += field->u[i] * field->u[i] + field->v[i] * field->v[i];
     }
 
-    SolverParams params = {
-        .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.01, .k = 0.0242,
-        .max_iter = 10, .tolerance = 1e-6,
-        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1, .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.01,
+                           .k = 0.0242,
+                           .max_iter = 10,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
@@ -220,8 +235,8 @@ void test_decay_prevention(void) {
 
     double energy_ratio = final_energy / initial_energy;
 
-    printf("Decay prevention: Initial=%.3f, Final=%.3f, Ratio=%.3f\n",
-           initial_energy, final_energy, energy_ratio);
+    printf("Decay prevention: Initial=%.3f, Final=%.3f, Ratio=%.3f\n", initial_energy, final_energy,
+           energy_ratio);
 
     // With source terms, energy should be maintained or grow (not decay rapidly)
     TEST_ASSERT_TRUE(energy_ratio > 0.5);  // Should not decay to <50%
@@ -251,7 +266,8 @@ void test_output_paths(void) {
     // Test VTK file creation
     size_t nx = 5, ny = 5;
     double data[25];
-    for (int i = 0; i < 25; i++) data[i] = i * 0.1;
+    for (int i = 0; i < 25; i++)
+        data[i] = i * 0.1;
 
     make_output_path(test_file, sizeof(test_file), "test_fixed.vtk");
     remove(test_file);

@@ -1,9 +1,9 @@
 #ifndef CFD_UTILS_H
 #define CFD_UTILS_H
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,11 +62,11 @@ FieldStats calculate_field_statistics(const double* data, size_t count);
 
 // Cross-platform path separators
 #ifdef _WIN32
-    #define PATH_SEPARATOR "\\"
-    #define PATH_SEPARATOR_CHAR '\\'
+#define PATH_SEPARATOR      "\\"
+#define PATH_SEPARATOR_CHAR '\\'
 #else
-    #define PATH_SEPARATOR "/"
-    #define PATH_SEPARATOR_CHAR '/'
+#define PATH_SEPARATOR      "/"
+#define PATH_SEPARATOR_CHAR '/'
 #endif
 
 // Create directory if it doesn't exist (returns 1 on success)
@@ -78,9 +78,9 @@ int ensure_directory_exists(const char* path);
 
 // Path mode options for default output location
 typedef enum {
-    CFD_PATH_CURRENT_DIR,     // "./output" (default)
-    CFD_PATH_TEMP_DIR,        // System temp directory
-    CFD_PATH_RELATIVE_BUILD   // "../../artifacts" (for build tree)
+    CFD_PATH_CURRENT_DIR,    // "./output" (default)
+    CFD_PATH_TEMP_DIR,       // System temp directory
+    CFD_PATH_RELATIVE_BUILD  // "../../artifacts" (for build tree)
 } cfd_default_path_mode_t;
 
 // Set custom base directory for all output (e.g., "../../artifacts")
@@ -115,13 +115,12 @@ void cfd_create_run_directory(char* buffer, size_t buffer_size);
 
 // Create timestamped run directory with custom prefix
 // Example: "output/{prefix}_20250127_153045"
-void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size,
-                                          const char* prefix);
+void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size, const char* prefix);
 
 // Create run directory with simulation context
 // Example: "output/explicit_euler_100x50_20250127_153045"
-void cfd_create_run_directory_ex(char* buffer, size_t buffer_size,
-                                 const char* solver_name, size_t nx, size_t ny);
+void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* solver_name,
+                                 size_t nx, size_t ny);
 
 // Get current run directory (NULL if not yet created)
 const char* cfd_get_run_directory(void);
@@ -140,4 +139,4 @@ void cfd_set_artifacts_path(const char* path);
 }
 #endif
 
-#endif // CFD_UTILS_H
+#endif  // CFD_UTILS_H

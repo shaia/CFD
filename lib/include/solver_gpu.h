@@ -27,22 +27,22 @@ typedef struct {
     int enable_gpu;
 
     // Automatic selection thresholds
-    size_t min_grid_size;        // Minimum grid points for GPU (default: 10000)
-    int min_steps;               // Minimum steps to amortize transfer cost (default: 10)
+    size_t min_grid_size;  // Minimum grid points for GPU (default: 10000)
+    int min_steps;         // Minimum steps to amortize transfer cost (default: 10)
 
     // Performance tuning
-    int block_size_x;            // CUDA block size X (default: 16)
-    int block_size_y;            // CUDA block size Y (default: 16)
-    int poisson_max_iter;        // Max Poisson iterations on GPU (default: 1000)
-    double poisson_tolerance;    // Poisson convergence tolerance (default: 1e-6)
+    int block_size_x;          // CUDA block size X (default: 16)
+    int block_size_y;          // CUDA block size Y (default: 16)
+    int poisson_max_iter;      // Max Poisson iterations on GPU (default: 1000)
+    double poisson_tolerance;  // Poisson convergence tolerance (default: 1e-6)
 
     // Memory management
-    int persistent_memory;       // Keep GPU memory allocated between steps (default: 1)
-    int async_transfers;         // Use async memory transfers (default: 1)
+    int persistent_memory;  // Keep GPU memory allocated between steps (default: 1)
+    int async_transfers;    // Use async memory transfers (default: 1)
 
     // Debug options
-    int sync_after_kernel;       // Synchronize after each kernel for debugging (default: 0)
-    int verbose;                 // Print GPU info and timing (default: 0)
+    int sync_after_kernel;  // Synchronize after each kernel for debugging (default: 0)
+    int verbose;            // Print GPU info and timing (default: 0)
 } GPUConfig;
 
 /**
@@ -65,13 +65,13 @@ typedef struct {
  * GPU Solver Statistics
  */
 typedef struct {
-    double kernel_time_ms;           // Total kernel execution time
-    double transfer_time_ms;         // Total host-device transfer time
-    double poisson_time_ms;          // Time spent in Poisson solver
-    int poisson_iterations;          // Poisson solver iterations
-    double poisson_residual;         // Final Poisson residual
-    size_t memory_allocated;         // GPU memory allocated (bytes)
-    int kernels_launched;            // Number of kernels launched
+    double kernel_time_ms;    // Total kernel execution time
+    double transfer_time_ms;  // Total host-device transfer time
+    double poisson_time_ms;   // Time spent in Poisson solver
+    int poisson_iterations;   // Poisson solver iterations
+    double poisson_residual;  // Final Poisson residual
+    size_t memory_allocated;  // GPU memory allocated (bytes)
+    int kernels_launched;     // Number of kernels launched
 } GPUSolverStats;
 
 /**
@@ -134,8 +134,8 @@ int gpu_solver_download(GPUSolverContext* ctx, FlowField* field);
 /**
  * Run one solver step on GPU
  */
-int gpu_solver_step(GPUSolverContext* ctx, const Grid* grid,
-                    const SolverParams* params, GPUSolverStats* stats);
+int gpu_solver_step(GPUSolverContext* ctx, const Grid* grid, const SolverParams* params,
+                    GPUSolverStats* stats);
 
 /**
  * Get GPU solver statistics
@@ -151,17 +151,17 @@ void gpu_solver_reset_stats(GPUSolverContext* ctx);
  * High-level GPU-accelerated Navier-Stokes solver
  * Automatically handles data transfer and GPU selection
  */
-void solve_navier_stokes_gpu(FlowField* field, const Grid* grid,
-                             const SolverParams* params, const GPUConfig* config);
+void solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
+                             const GPUConfig* config);
 
 /**
  * GPU-accelerated projection method solver
  */
-void solve_projection_method_gpu(FlowField* field, const Grid* grid,
-                                 const SolverParams* params, const GPUConfig* config);
+void solve_projection_method_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
+                                 const GPUConfig* config);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // CFD_SOLVER_GPU_H
+#endif  // CFD_SOLVER_GPU_H

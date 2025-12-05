@@ -4,12 +4,12 @@
 #include <string.h>
 #include <time.h>
 #ifdef _WIN32
-    #include <direct.h>
-    #include <io.h>
-    #include <malloc.h>
+#include <direct.h>
+#include <io.h>
+#include <malloc.h>
 #else
-    #include <sys/stat.h>
-    #include <unistd.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 //=============================================================================
@@ -67,7 +67,8 @@ void* cfd_aligned_malloc(size_t size) {
     // Round alignment up to next power of 2 if needed
     if ((alignment & (alignment - 1)) != 0) {
         size_t power = 1;
-        while (power < alignment) power <<= 1;
+        while (power < alignment)
+            power <<= 1;
         alignment = power;
     }
 
@@ -138,8 +139,10 @@ FieldStats calculate_field_statistics(const double* data, size_t count) {
 
     for (size_t i = 0; i < count; i++) {
         double val = data[i];
-        if (val < stats.min_val) stats.min_val = val;
-        if (val > stats.max_val) stats.max_val = val;
+        if (val < stats.min_val)
+            stats.min_val = val;
+        if (val > stats.max_val)
+            stats.max_val = val;
         stats.sum_val += val;
     }
 
@@ -154,13 +157,13 @@ FieldStats calculate_field_statistics(const double* data, size_t count) {
 int ensure_directory_exists(const char* path) {
 #ifdef _WIN32
     if (_access(path, 0) == 0) {
-        return 1; // Directory exists
+        return 1;  // Directory exists
     }
     return _mkdir(path) == 0;
 #else
     struct stat st = {0};
     if (stat(path, &st) == 0) {
-        return 1; // Directory exists
+        return 1;  // Directory exists
     }
     return mkdir(path, 0755) == 0;
 #endif
@@ -178,7 +181,7 @@ void cfd_set_output_base_dir(const char* path) {
         strncpy(artifacts_base_path, path, sizeof(artifacts_base_path) - 1);
         artifacts_base_path[sizeof(artifacts_base_path) - 1] = '\0';
     } else {
-        artifacts_base_path[0] = '\0'; // Reset to default
+        artifacts_base_path[0] = '\0';  // Reset to default
     }
 }
 
@@ -207,20 +210,23 @@ const char* cfd_get_artifacts_path(void) {
 
         case CFD_PATH_TEMP_DIR:
 #ifdef _WIN32
-            {
-                char* temp_dir = getenv("TEMP");
-                if (!temp_dir) temp_dir = getenv("TMP");
-                if (!temp_dir) temp_dir = "C:\\temp";
-                snprintf(default_path_buffer, sizeof(default_path_buffer), "%s", temp_dir);
-            }
+        {
+            char* temp_dir = getenv("TEMP");
+            if (!temp_dir)
+                temp_dir = getenv("TMP");
+            if (!temp_dir)
+                temp_dir = "C:\\temp";
+            snprintf(default_path_buffer, sizeof(default_path_buffer), "%s", temp_dir);
+        }
 #else
-            {
-                char* temp_dir = getenv("TMPDIR");
-                if (!temp_dir) temp_dir = "/tmp";
-                snprintf(default_path_buffer, sizeof(default_path_buffer), "%s", temp_dir);
-            }
+        {
+            char* temp_dir = getenv("TMPDIR");
+            if (!temp_dir)
+                temp_dir = "/tmp";
+            snprintf(default_path_buffer, sizeof(default_path_buffer), "%s", temp_dir);
+        }
 #endif
-            break;
+        break;
 
         case CFD_PATH_RELATIVE_BUILD:
 #ifdef _WIN32
@@ -290,14 +296,12 @@ void cfd_create_run_directory(char* buffer, size_t buffer_size) {
 
 void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size, const char* prefix) {
     time_t now = time(NULL);
-    struct tm *t = localtime(&now);
+    struct tm* t = localtime(&now);
 
     // Format: prefix_YYYYMMDD_HHMMSS
     char timestamp[64];
-    snprintf(timestamp, sizeof(timestamp), "%s_%04d%02d%02d_%02d%02d%02d",
-             prefix,
-             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
-             t->tm_hour, t->tm_min, t->tm_sec);
+    snprintf(timestamp, sizeof(timestamp), "%s_%04d%02d%02d_%02d%02d%02d", prefix,
+             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
 
     // Create full path
     const char* base_path = cfd_get_artifacts_path();
@@ -328,18 +332,16 @@ void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size, cons
     current_run_directory[sizeof(current_run_directory) - 1] = '\0';
 }
 
-void cfd_create_run_directory_ex(char* buffer, size_t buffer_size,
-                                 const char* solver_name, size_t nx, size_t ny) {
+void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* solver_name,
+                                 size_t nx, size_t ny) {
     time_t now = time(NULL);
-    struct tm *t = localtime(&now);
+    struct tm* t = localtime(&now);
 
     // Format: solvername_gridsize_YYYYMMDD_HHMMSS
     char timestamp[128];
     snprintf(timestamp, sizeof(timestamp), "%s_%zux%zu_%04d%02d%02d_%02d%02d%02d",
-             solver_name ? solver_name : "sim",
-             nx, ny,
-             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
-             t->tm_hour, t->tm_min, t->tm_sec);
+             solver_name ? solver_name : "sim", nx, ny, t->tm_year + 1900, t->tm_mon + 1,
+             t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
 
     // Create full path
     const char* base_path = cfd_get_artifacts_path();

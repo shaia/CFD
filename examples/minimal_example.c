@@ -5,8 +5,8 @@
  * Perfect for getting started and understanding the basic API.
  */
 
-#include <stdio.h>
 #include "simulation_api.h"
+#include <stdio.h>
 
 int main() {
     printf("Minimal CFD Library Example\n");

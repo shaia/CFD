@@ -1,20 +1,20 @@
-#include "unity.h"
-#include "solver_interface.h"
 #include "grid.h"
+#include "solver_interface.h"
+#include "unity.h"
 #include "utils.h"
 #include "vtk_output.h"
-#include <stdio.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifdef _WIN32
-    #include <direct.h>
-    #include <io.h>
-    #define access _access
-    #define rmdir _rmdir
-    #define F_OK 0
+#include <direct.h>
+#include <io.h>
+#define access _access
+#define rmdir  _rmdir
+#define F_OK   0
 #else
-    #include <unistd.h>
+#include <unistd.h>
 #endif
 
 void setUp(void) {
@@ -108,8 +108,7 @@ void test_vtk_output_paths(void) {
     remove(test_filename);
 
     // Write VTK output
-    write_vtk_output(test_filename, "test_field", field->u, nx, ny,
-                    xmin, xmax, ymin, ymax);
+    write_vtk_output(test_filename, "test_field", field->u, nx, ny, xmin, xmax, ymin, ymax);
 
     // Check that file was created
     TEST_ASSERT_TRUE(file_exists(test_filename));
@@ -129,8 +128,8 @@ void test_vtk_output_paths(void) {
     make_output_path(vector_filename, sizeof(vector_filename), "test_vectors.vtk");
     remove(vector_filename);
 
-    write_vtk_vector_output(vector_filename, "velocity", field->u, field->v,
-                           nx, ny, xmin, xmax, ymin, ymax);
+    write_vtk_vector_output(vector_filename, "velocity", field->u, field->v, nx, ny, xmin, xmax,
+                            ymin, ymax);
 
     TEST_ASSERT_TRUE(file_exists(vector_filename));
 
@@ -178,8 +177,8 @@ void test_solver_output_paths(void) {
     remove(test_output);  // Clean up any existing file
 
     // Write output manually (this is how output should be done now)
-    write_vtk_output(test_output, "pressure", field->p, field->nx, field->ny,
-                     grid->xmin, grid->xmax, grid->ymin, grid->ymax);
+    write_vtk_output(test_output, "pressure", field->p, field->nx, field->ny, grid->xmin,
+                     grid->xmax, grid->ymin, grid->ymax);
 
     // Verify manual output file was created
     TEST_ASSERT_TRUE(file_exists(test_output));
@@ -238,19 +237,17 @@ void test_no_scattered_output(void) {
     FlowField* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
-    SolverParams params = {
-        .dt = 0.001,
-        .cfl = 0.2,
-        .gamma = 1.4,
-        .mu = 0.01,
-        .k = 0.0242,
-        .max_iter = 1,
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.1,
-        .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1,
-        .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.01,
+                           .k = 0.0242,
+                           .max_iter = 1,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     // Run solver using modern interface
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);

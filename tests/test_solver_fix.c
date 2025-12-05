@@ -1,18 +1,17 @@
+#include "grid.h"
+#include "solver_interface.h"
+#include "unity.h"
+#include "utils.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
-#include "unity.h"
-#include "solver_interface.h"
-#include "grid.h"
-#include "utils.h"
 
 void setUp(void) {
     ensure_directory_exists("../../artifacts");
     ensure_directory_exists("../../artifacts/output");
 }
 
-void tearDown(void) {
-}
+void tearDown(void) {}
 
 // Simple fixed solver with better stability
 void solve_navier_stokes_fixed(FlowField* field, const Grid* grid, const SolverParams* params) {
@@ -20,7 +19,8 @@ void solve_navier_stokes_fixed(FlowField* field, const Grid* grid, const SolverP
 
     // For small grids, just make minimal stable updates
     if (field->nx < 5 || field->ny < 5) {
-        printf("Small grid detected (%zux%zu), using stable minimal solver\n", field->nx, field->ny);
+        printf("Small grid detected (%zux%zu), using stable minimal solver\n", field->nx,
+               field->ny);
 
         // Very conservative update - just slight adjustment to pressure
         for (size_t j = 0; j < field->ny; j++) {
@@ -55,8 +55,9 @@ void solve_navier_stokes_fixed(FlowField* field, const Grid* grid, const SolverP
             size_t idx = j * field->nx + i;
 
             // Simple pressure diffusion to prevent instabilities
-            double p_avg = (field->p[idx-1] + field->p[idx+1] +
-                          field->p[idx-field->nx] + field->p[idx+field->nx]) * 0.25;
+            double p_avg = (field->p[idx - 1] + field->p[idx + 1] + field->p[idx - field->nx] +
+                            field->p[idx + field->nx]) *
+                           0.25;
             p_new[idx] = field->p[idx] * 0.9 + p_avg * 0.1;
 
             // Gentle velocity updates
@@ -118,7 +119,8 @@ void test_fixed_solver(void) {
     // Final check - no NaN values should exist
     int final_nan_count = 0;
     for (size_t i = 0; i < nx * ny; i++) {
-        if (isnan(field->p[i])) final_nan_count++;
+        if (isnan(field->p[i]))
+            final_nan_count++;
     }
 
     printf("Final NaN count: %d\n", final_nan_count);

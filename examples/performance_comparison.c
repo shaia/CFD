@@ -5,15 +5,15 @@
  * using the modern pluggable solver interface.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
 #include "grid.h"
 #include "solver_interface.h"
 #include "utils.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
-void benchmark_solver(const char* solver_name, const char* solver_type,
-                     size_t nx, size_t ny, int iterations) {
+void benchmark_solver(const char* solver_name, const char* solver_type, size_t nx, size_t ny,
+                      int iterations) {
     printf("\n=== %s Benchmark ===\n", solver_name);
     printf("Grid size: %zux%zu, Iterations: %d\n", nx, ny, iterations);
 
@@ -53,8 +53,7 @@ void benchmark_solver(const char* solver_name, const char* solver_type,
 
     printf("Execution time: %.3f seconds\n", cpu_time);
     printf("Performance: %.0f cell-updates/second\n", cells_per_second);
-    printf("Memory usage: %.2f MB\n",
-           (double)(nx * ny * 5 * sizeof(double)) / (1024 * 1024));
+    printf("Memory usage: %.2f MB\n", (double)(nx * ny * 5 * sizeof(double)) / (1024 * 1024));
 
     // Cleanup
     solver_destroy(solver);
@@ -81,17 +80,20 @@ int main() {
         size_t ny = grid_sizes[i][1];
 
         printf("\n");
-        for(int j = 0; j < 50; j++) printf("=");
+        for (int j = 0; j < 50; j++)
+            printf("=");
         printf("\n");
-        printf("Grid Size: %zux%zu (%zu total cells)\n", nx, ny, nx*ny);
-        for(int j = 0; j < 50; j++) printf("=");
+        printf("Grid Size: %zux%zu (%zu total cells)\n", nx, ny, nx * ny);
+        for (int j = 0; j < 50; j++)
+            printf("=");
         printf("\n");
 
         // Benchmark basic solver
         benchmark_solver("Basic Solver", SOLVER_TYPE_EXPLICIT_EULER, nx, ny, iterations);
 
         // Benchmark optimized solver
-        benchmark_solver("Optimized Solver", SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, nx, ny, iterations);
+        benchmark_solver("Optimized Solver", SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, nx, ny,
+                         iterations);
 
         // Calculate speedup
         // Note: This is a simplified example - for accurate benchmarking,
@@ -99,7 +101,8 @@ int main() {
     }
 
     printf("\n");
-    for(int j = 0; j < 50; j++) printf("=");
+    for (int j = 0; j < 50; j++)
+        printf("=");
     printf("\n");
     printf("Benchmark completed!\n");
     printf("Note: Performance varies by hardware and system load.\n");

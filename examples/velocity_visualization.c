@@ -59,7 +59,8 @@ int main() {
     printf("\nGenerated visualization files automatically in timestamped directory\n");
     printf("  - velocity_magnitude_*.vtk  : Velocity magnitude contours\n");
     printf("  - velocity_vectors_*.vtk    : Velocity vector field\n");
-    printf("  - flow_field_*.vtk          : Complete flow field (vectors + magnitude + pressure)\n");
+    printf(
+        "  - flow_field_*.vtk          : Complete flow field (vectors + magnitude + pressure)\n");
     printf("\nUse ParaView, VisIt, or Python visualization scripts to view the results.\n");
 
     return 0;

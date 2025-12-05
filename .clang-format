@@ -1,7 +1,7 @@
 # CFD Project - clang-format configuration
 # Run: clang-format -i <file> or ./build.sh format
 
-Language: C
+Language: Cpp
 BasedOnStyle: LLVM
 
 # Indentation

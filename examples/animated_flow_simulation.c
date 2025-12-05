@@ -1,7 +1,7 @@
 #include "simulation_api.h"
 #include "utils.h"
-#include <stdio.h>
 #include <math.h>
+#include <stdio.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -32,8 +32,8 @@ int main() {
     simulation_set_run_prefix(sim_data, "animated_flow");
 
     // Enhanced simulation parameters for better dynamics
-    int max_steps = 200;        // More time steps for animation
-    int output_interval = 5;    // Output every 5 steps for smooth animation
+    int max_steps = 200;      // More time steps for animation
+    int output_interval = 5;  // Output every 5 steps for smooth animation
 
     // Register outputs
     simulation_register_output(sim_data, OUTPUT_FULL_FIELD, output_interval, "flow_field");
