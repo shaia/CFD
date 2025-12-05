@@ -14,6 +14,33 @@
 #define MAX_VELOCITY_LIMIT 100.0       // Maximum allowed velocity magnitude (m/s)
 #define MAX_DIVERGENCE_LIMIT 10.0      // Maximum allowed velocity divergence (1/s)
 
+// Initial condition constants
+#define INIT_U_BASE 1.0
+#define INIT_U_VAR 0.1
+#define INIT_V_VAR 0.05
+#define INIT_PRESSURE 1.0
+#define INIT_DENSITY 1.0
+#define INIT_TEMP 300.0
+
+// Perturbation constants
+#define PERTURB_CENTER_X 1.0
+#define PERTURB_CENTER_Y 0.5
+#define PERTURB_RADIUS 0.2
+#define PERTURB_WIDTH_SQ 0.02
+#define PERTURB_MAG 0.1
+#define PERTURB_GRAD_FACTOR 2.0
+
+// Time stepping and stability constants
+#define VELOCITY_EPSILON 1e-20
+#define SPEED_EPSILON 1e-10
+#define DT_MAX_LIMIT 0.01
+#define DT_MIN_LIMIT 1e-6
+#define DT_CONSERVATIVE_LIMIT 0.0001
+
+// Update limits
+#define UPDATE_LIMIT 1.0
+#define PRESSURE_UPDATE_FACTOR 0.1
+
 // Helper function to initialize SolverParams with default values
 SolverParams solver_params_default(void) {
     SolverParams params = {
@@ -67,22 +94,22 @@ void initialize_flow_field(FlowField* field, const Grid* grid) {
             double y = grid->y[j];
 
             // Set initial conditions with more interesting flow
-            field->u[idx] = 1.0 + 0.1 * sin(M_PI * y);  // Slightly varying u-velocity
-            field->v[idx] = 0.05 * sin(2.0 * M_PI * x); // Small v-velocity variation
-            field->p[idx] = 1.0;  // Reference pressure
-            field->rho[idx] = 1.0;  // Reference density
-            field->T[idx] = 300.0;  // Reference temperature (K)
+            field->u[idx] = INIT_U_BASE + INIT_U_VAR * sin(M_PI * y);  // Slightly varying u-velocity
+            field->v[idx] = INIT_V_VAR * sin(2.0 * M_PI * x); // Small v-velocity variation
+            field->p[idx] = INIT_PRESSURE;  // Reference pressure
+            field->rho[idx] = INIT_DENSITY;  // Reference density
+            field->T[idx] = INIT_TEMP;  // Reference temperature (K)
 
             // Add a pressure perturbation for interesting flow
-            double cx = 1.0, cy = 0.5;  // Center of perturbation
+            double cx = PERTURB_CENTER_X, cy = PERTURB_CENTER_Y;  // Center of perturbation
             double r = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
-            if (r < 0.2) {
-                field->p[idx] += 0.1 * exp(-r * r / 0.02);
+            if (r < PERTURB_RADIUS) {
+                field->p[idx] += PERTURB_MAG * exp(-r * r / PERTURB_WIDTH_SQ);
                 // Adjust velocities based on pressure gradient
-                double dp_dx = -0.1 * 2.0 * (x - cx) / 0.02 * exp(-r * r / 0.02);
-                double dp_dy = -0.1 * 2.0 * (y - cy) / 0.02 * exp(-r * r / 0.02);
-                field->u[idx] += -0.1 * dp_dx;  // Simple pressure-velocity coupling
-                field->v[idx] += -0.1 * dp_dy;
+                double dp_dx = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (x - cx) / PERTURB_WIDTH_SQ * exp(-r * r / PERTURB_WIDTH_SQ);
+                double dp_dy = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (y - cy) / PERTURB_WIDTH_SQ * exp(-r * r / PERTURB_WIDTH_SQ);
+                field->u[idx] += -PERTURB_MAG * dp_dx;  // Simple pressure-velocity coupling
+                field->v[idx] += -PERTURB_MAG * dp_dy;
             }
         }
     }
@@ -111,14 +138,14 @@ void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params)
 
             // Optimized velocity magnitude calculation - avoid sqrt when possible
             double vel_mag_sq = u_speed * u_speed + v_speed * v_speed;
-            double vel_mag = (vel_mag_sq > 1e-20) ? sqrt(vel_mag_sq) : 0.0;
+            double vel_mag = (vel_mag_sq > VELOCITY_EPSILON) ? sqrt(vel_mag_sq) : 0.0;
             double local_speed = vel_mag + sound_speed;
             max_speed = max_double(max_speed, local_speed);
         }
     }
 
     // Prevent division by zero and ensure reasonable time step
-    if (max_speed < 1e-10) {
+    if (max_speed < SPEED_EPSILON) {
         max_speed = 1.0;  // Use default if speeds are too small
     }
 
@@ -126,8 +153,8 @@ void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params)
     double dt_cfl = params->cfl * min_double(dx_min, dy_min) / max_speed;
 
     // Limit time step to reasonable bounds
-    double dt_max = 0.01;  // Maximum allowed time step
-    double dt_min = 1e-6;  // Minimum allowed time step
+    double dt_max = DT_MAX_LIMIT;  // Maximum allowed time step
+    double dt_min = DT_MIN_LIMIT;  // Minimum allowed time step
 
     params->dt = max_double(dt_min, min_double(dt_max, dt_cfl));
 }
@@ -197,7 +224,7 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
     memcpy(T_new, field->T, field->nx * field->ny * sizeof(double));
 
     // Use conservative time step to prevent instabilities
-    double conservative_dt = fmin(params->dt, 0.0001);
+    double conservative_dt = fmin(params->dt, DT_CONSERVATIVE_LIMIT);
 
     // Main time-stepping loop
     for (int iter = 0; iter < params->max_iter; iter++) {
@@ -275,8 +302,8 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
                 );
 
                 // Limit velocity changes
-                du = fmax(-1.0, fmin(1.0, du));
-                dv = fmax(-1.0, fmin(1.0, dv));
+                du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));
+                dv = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dv));
 
                 u_new[idx] = field->u[idx] + du;
                 v_new[idx] = field->v[idx] + dv;
@@ -289,8 +316,8 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
                 double divergence = du_dx + dv_dy;
                 divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
 
-                double dp = -0.1 * conservative_dt * field->rho[idx] * divergence;
-                dp = fmax(-1.0, fmin(1.0, dp));  // Limit pressure changes
+                double dp = -PRESSURE_UPDATE_FACTOR * conservative_dt * field->rho[idx] * divergence;
+                dp = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dp));  // Limit pressure changes
                 p_new[idx] = field->p[idx] + dp;
 
                 // Keep density and temperature constant for this simplified model
