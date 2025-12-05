@@ -1,0 +1,77 @@
+# CFD Project - clang-tidy configuration
+# Run: clang-tidy <file> or ./build.sh lint
+
+---
+# Enable specific check categories
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  cert-*,
+  -cert-err33-c,
+  clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  concurrency-*,
+  misc-*,
+  -misc-no-recursion,
+  -misc-unused-parameters,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-isolate-declaration,
+
+# Treat warnings as errors (optional - set to true for CI)
+WarningsAsErrors: ''
+
+# Header filter - only check project headers, not system headers
+HeaderFilterRegex: '.*/(lib|examples|tests)/.*\.h$'
+
+# Format style for fix suggestions
+FormatStyle: file
+
+# Check options
+CheckOptions:
+  # bugprone checks
+  - key: bugprone-argument-comment.StrictMode
+    value: false
+  - key: bugprone-assert-side-effect.AssertMacros
+    value: 'assert'
+  - key: bugprone-sizeof-expression.WarnOnSizeOfPointerToAggregate
+    value: true
+
+  # readability checks
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.GlobalVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.LocalVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-function-size.LineThreshold
+    value: 200
+  - key: readability-function-size.StatementThreshold
+    value: 100
+  - key: readability-function-size.ParameterThreshold
+    value: 10
+
+  # performance checks
+  - key: performance-unnecessary-value-param.AllowedTypes
+    value: ''
+
+  # misc checks
+  - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: true
+...
