@@ -210,11 +210,19 @@ install() {
     print_success "Installation complete"
 }
 
+# Find all C/C++ source files in the project
+# Populates the SOURCE_FILES array
+find_source_files() {
+    SOURCE_FILES=()
+    while IFS= read -r -d '' file; do
+        SOURCE_FILES+=("$file")
+    done < <(find lib examples tests \( -name "*.c" -o -name "*.h" \) -print0 2>/dev/null)
+}
+
 # Format source code with clang-format
 format() {
     print_status "Formatting source code..."
 
-    # Check if clang-format is available
     if ! command -v clang-format &> /dev/null; then
         print_error "clang-format not found. Please install it:"
         echo "  - Windows: choco install llvm"
@@ -223,20 +231,15 @@ format() {
         exit 1
     fi
 
-    local format_count=0
-    local file_list=()
+    find_source_files
 
-    # Find all C/H files in lib/, examples/, tests/
-    while IFS= read -r -d '' file; do
-        file_list+=("$file")
-    done < <(find lib examples tests -name "*.c" -o -name "*.h" -print0 2>/dev/null)
-
-    if [[ ${#file_list[@]} -eq 0 ]]; then
+    if [[ ${#SOURCE_FILES[@]} -eq 0 ]]; then
         print_warning "No source files found to format"
         return
     fi
 
-    for file in "${file_list[@]}"; do
+    local format_count=0
+    for file in "${SOURCE_FILES[@]}"; do
         clang-format -i "$file"
         format_count=$((format_count + 1))
     done
@@ -253,14 +256,15 @@ format_check() {
         exit 1
     fi
 
+    find_source_files
+
+    if [[ ${#SOURCE_FILES[@]} -eq 0 ]]; then
+        print_warning "No source files found to check"
+        return
+    fi
+
     local bad_format=0
-    local file_list=()
-
-    while IFS= read -r -d '' file; do
-        file_list+=("$file")
-    done < <(find lib examples tests -name "*.c" -o -name "*.h" -print0 2>/dev/null)
-
-    for file in "${file_list[@]}"; do
+    for file in "${SOURCE_FILES[@]}"; do
         if ! clang-format --dry-run --Werror "$file" 2>/dev/null; then
             print_warning "Needs formatting: $file"
             bad_format=$((bad_format + 1))
