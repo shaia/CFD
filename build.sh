@@ -210,6 +210,74 @@ install() {
     print_success "Installation complete"
 }
 
+# Find all C/C++ source files in the project
+# Populates the SOURCE_FILES array
+find_source_files() {
+    SOURCE_FILES=()
+    while IFS= read -r -d '' file; do
+        SOURCE_FILES+=("$file")
+    done < <(find lib examples tests \( -name "*.c" -o -name "*.h" \) -print0 2>/dev/null)
+}
+
+# Format source code with clang-format
+format() {
+    print_status "Formatting source code..."
+
+    if ! command -v clang-format &> /dev/null; then
+        print_error "clang-format not found. Please install it:"
+        echo "  - Windows: choco install llvm"
+        echo "  - macOS: brew install clang-format"
+        echo "  - Linux: apt install clang-format"
+        exit 1
+    fi
+
+    find_source_files
+
+    if [[ ${#SOURCE_FILES[@]} -eq 0 ]]; then
+        print_warning "No source files found to format"
+        return
+    fi
+
+    local format_count=0
+    for file in "${SOURCE_FILES[@]}"; do
+        clang-format -i "$file"
+        format_count=$((format_count + 1))
+    done
+
+    print_success "Formatted $format_count file(s)"
+}
+
+# Check formatting without modifying files
+format_check() {
+    print_status "Checking code formatting..."
+
+    if ! command -v clang-format &> /dev/null; then
+        print_error "clang-format not found"
+        exit 1
+    fi
+
+    find_source_files
+
+    if [[ ${#SOURCE_FILES[@]} -eq 0 ]]; then
+        print_warning "No source files found to check"
+        return
+    fi
+
+    local bad_format=0
+    for file in "${SOURCE_FILES[@]}"; do
+        if ! clang-format --dry-run --Werror "$file" 2>/dev/null; then
+            print_warning "Needs formatting: $file"
+            bad_format=$((bad_format + 1))
+        fi
+    done
+
+    if [[ $bad_format -gt 0 ]]; then
+        print_error "$bad_format file(s) need formatting. Run '$0 format' to fix."
+        exit 1
+    else
+        print_success "All files are properly formatted"
+    fi
+}
 # Run examples
 run_examples() {
     print_status "Running examples..."
@@ -350,6 +418,8 @@ help() {
     echo "  package            Create distribution package"
     echo "  rebuild            Clean and build"
     echo "  full               Full clean, configure, build, and test"
+    echo "  format             Format source code with clang-format"
+    echo "  format-check       Check formatting without modifying files"
     echo "  status             Show project status"
     echo "  help               Show this help message"
     echo ""
@@ -413,6 +483,12 @@ main() {
             build_with_tests
             test
             print_success "Full build cycle complete!"
+            ;;
+        format)
+            format
+            ;;
+        format-check)
+            format_check
             ;;
         status)
             status
