@@ -26,7 +26,7 @@
 #define PERTURB_CENTER_X 1.0
 #define PERTURB_CENTER_Y 0.5
 #define PERTURB_RADIUS 0.2
-#define PERTURB_DECAY 0.02
+#define PERTURB_WIDTH_SQ 0.02
 #define PERTURB_MAG 0.1
 #define PERTURB_GRAD_FACTOR 2.0
 
@@ -104,10 +104,10 @@ void initialize_flow_field(FlowField* field, const Grid* grid) {
             double cx = PERTURB_CENTER_X, cy = PERTURB_CENTER_Y;  // Center of perturbation
             double r = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
             if (r < PERTURB_RADIUS) {
-                field->p[idx] += PERTURB_MAG * exp(-r * r / PERTURB_DECAY);
+                field->p[idx] += PERTURB_MAG * exp(-r * r / PERTURB_WIDTH_SQ);
                 // Adjust velocities based on pressure gradient
-                double dp_dx = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (x - cx) / PERTURB_DECAY * exp(-r * r / PERTURB_DECAY);
-                double dp_dy = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (y - cy) / PERTURB_DECAY * exp(-r * r / PERTURB_DECAY);
+                double dp_dx = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (x - cx) / PERTURB_WIDTH_SQ * exp(-r * r / PERTURB_WIDTH_SQ);
+                double dp_dy = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (y - cy) / PERTURB_WIDTH_SQ * exp(-r * r / PERTURB_WIDTH_SQ);
                 field->u[idx] += -PERTURB_MAG * dp_dx;  // Simple pressure-velocity coupling
                 field->v[idx] += -PERTURB_MAG * dp_dy;
             }
