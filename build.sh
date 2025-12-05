@@ -278,6 +278,54 @@ format_check() {
         print_success "All files are properly formatted"
     fi
 }
+
+# Run clang-tidy static analysis
+lint() {
+    print_status "Running static analysis with clang-tidy..."
+
+    if ! command -v clang-tidy &> /dev/null; then
+        print_error "clang-tidy not found. Please install it:"
+        echo "  - Windows: choco install llvm"
+        echo "  - macOS: brew install llvm"
+        echo "  - Linux: apt install clang-tidy"
+        exit 1
+    fi
+
+    # Need compile_commands.json for clang-tidy
+    if [[ ! -f "$BUILD_DIR/compile_commands.json" ]]; then
+        print_status "Generating compile_commands.json..."
+        create_build_dir
+        cd "$BUILD_DIR"
+        cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+        cd ..
+    fi
+
+    find_source_files
+
+    if [[ ${#SOURCE_FILES[@]} -eq 0 ]]; then
+        print_warning "No source files found to analyze"
+        return
+    fi
+
+    local lint_count=0
+    local error_count=0
+    for file in "${SOURCE_FILES[@]}"; do
+        # Only lint .c files, not headers
+        if [[ "$file" == *.c ]]; then
+            print_status "Checking $file..."
+            if ! clang-tidy -p "$BUILD_DIR" "$file" 2>/dev/null; then
+                error_count=$((error_count + 1))
+            fi
+            lint_count=$((lint_count + 1))
+        fi
+    done
+
+    if [[ $error_count -gt 0 ]]; then
+        print_warning "Found issues in $error_count of $lint_count file(s)"
+    else
+        print_success "All $lint_count file(s) passed static analysis"
+    fi
+}
 # Run examples
 run_examples() {
     print_status "Running examples..."
@@ -420,6 +468,7 @@ help() {
     echo "  full               Full clean, configure, build, and test"
     echo "  format             Format source code with clang-format"
     echo "  format-check       Check formatting without modifying files"
+    echo "  lint               Run clang-tidy static analysis"
     echo "  status             Show project status"
     echo "  help               Show this help message"
     echo ""
@@ -489,6 +538,9 @@ main() {
             ;;
         format-check)
             format_check
+            ;;
+        lint)
+            lint
             ;;
         status)
             status
