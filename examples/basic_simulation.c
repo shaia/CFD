@@ -1,10 +1,10 @@
+#include "grid.h"
+#include "simulation_api.h"
+#include "solver_interface.h"
+#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include "grid.h"
-#include "solver_interface.h"
-#include "utils.h"
-#include "simulation_api.h"
 
 int main(int argc, char* argv[]) {
     // Initialize simulation parameters

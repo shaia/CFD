@@ -1,8 +1,8 @@
 #include "solver_interface.h"
 #include "utils.h"
-#include <string.h>
-#include <stdlib.h>
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
 
 // Forward declarations for internal solver implementations
 // These are not part of the public API
@@ -40,7 +40,8 @@ static Solver* create_projection_gpu_solver(void);
 
 // External projection method solver functions
 extern void solve_projection_method(FlowField* field, const Grid* grid, const SolverParams* params);
-extern void solve_projection_method_optimized(FlowField* field, const Grid* grid, const SolverParams* params);
+extern void solve_projection_method_optimized(FlowField* field, const Grid* grid,
+                                              const SolverParams* params);
 
 // External GPU solver functions (from solver_gpu.cu or solver_gpu_stub.c)
 #include "solver_gpu.h"
@@ -64,7 +65,8 @@ static double get_time_ms(void) {
  */
 
 void solver_registry_init(void) {
-    if (g_registry_initialized) return;
+    if (g_registry_initialized)
+        return;
 
     // Clear registry
     memset(g_solver_registry, 0, sizeof(g_solver_registry));
@@ -72,7 +74,8 @@ void solver_registry_init(void) {
 
     // Register built-in solvers
     solver_registry_register(SOLVER_TYPE_EXPLICIT_EULER, create_explicit_euler_solver);
-    solver_registry_register(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, create_explicit_euler_optimized_solver);
+    solver_registry_register(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+                             create_explicit_euler_optimized_solver);
 
     // Register projection method solvers
     solver_registry_register(SOLVER_TYPE_PROJECTION, create_projection_solver);
@@ -91,8 +94,10 @@ void solver_registry_cleanup(void) {
 }
 
 int solver_registry_register(const char* type_name, SolverFactoryFunc factory) {
-    if (!type_name || !factory) return -1;
-    if (g_solver_registry_count >= MAX_REGISTERED_SOLVERS) return -1;
+    if (!type_name || !factory)
+        return -1;
+    if (g_solver_registry_count >= MAX_REGISTERED_SOLVERS)
+        return -1;
 
     // Check if already registered
     for (int i = 0; i < g_solver_registry_count; i++) {
@@ -113,7 +118,8 @@ int solver_registry_register(const char* type_name, SolverFactoryFunc factory) {
 }
 
 int solver_registry_unregister(const char* type_name) {
-    if (!type_name) return -1;
+    if (!type_name)
+        return -1;
 
     for (int i = 0; i < g_solver_registry_count; i++) {
         if (strcmp(g_solver_registry[i].name, type_name) == 0) {
@@ -143,7 +149,8 @@ int solver_registry_list(const char** names, int max_count) {
 }
 
 int solver_registry_has(const char* type_name) {
-    if (!type_name) return 0;
+    if (!type_name)
+        return 0;
     if (!g_registry_initialized) {
         solver_registry_init();
     }
@@ -157,7 +164,8 @@ int solver_registry_has(const char* type_name) {
 }
 
 const char* solver_registry_get_description(const char* type_name) {
-    if (!type_name) return NULL;
+    if (!type_name)
+        return NULL;
     if (!g_registry_initialized) {
         solver_registry_init();
     }
@@ -177,7 +185,8 @@ const char* solver_registry_get_description(const char* type_name) {
  */
 
 Solver* solver_create(const char* type_name) {
-    if (!type_name) return NULL;
+    if (!type_name)
+        return NULL;
     if (!g_registry_initialized) {
         solver_registry_init();
     }
@@ -191,7 +200,8 @@ Solver* solver_create(const char* type_name) {
 }
 
 void solver_destroy(Solver* solver) {
-    if (!solver) return;
+    if (!solver)
+        return;
 
     if (solver->destroy) {
         solver->destroy(solver);
@@ -200,8 +210,10 @@ void solver_destroy(Solver* solver) {
 }
 
 SolverStatus solver_init(Solver* solver, const Grid* grid, const SolverParams* params) {
-    if (!solver) return SOLVER_STATUS_INVALID_INPUT;
-    if (!solver->init) return SOLVER_STATUS_OK; // Optional
+    if (!solver)
+        return SOLVER_STATUS_INVALID_INPUT;
+    if (!solver->init)
+        return SOLVER_STATUS_OK;  // Optional
 
     return solver->init(solver, grid, params);
 }
@@ -249,7 +261,8 @@ SolverStatus solver_solve(Solver* solver, FlowField* field, const Grid* grid,
 }
 
 void solver_apply_boundary(Solver* solver, FlowField* field, const Grid* grid) {
-    if (!solver || !field || !grid) return;
+    if (!solver || !field || !grid)
+        return;
 
     if (solver->apply_boundary) {
         solver->apply_boundary(solver, field, grid);
@@ -259,9 +272,10 @@ void solver_apply_boundary(Solver* solver, FlowField* field, const Grid* grid) {
     }
 }
 
-double solver_compute_dt(Solver* solver, const FlowField* field,
-                         const Grid* grid, const SolverParams* params) {
-    if (!solver || !field || !grid || !params) return 0.0;
+double solver_compute_dt(Solver* solver, const FlowField* field, const Grid* grid,
+                         const SolverParams* params) {
+    if (!solver || !field || !grid || !params)
+        return 0.0;
 
     if (solver->compute_dt) {
         return solver->compute_dt(solver, field, grid, params);
@@ -273,18 +287,22 @@ double solver_compute_dt(Solver* solver, const FlowField* field,
     double min_dy = grid->dy[0];
 
     for (size_t i = 0; i < grid->nx - 1; i++) {
-        if (grid->dx[i] < min_dx) min_dx = grid->dx[i];
+        if (grid->dx[i] < min_dx)
+            min_dx = grid->dx[i];
     }
     for (size_t j = 0; j < grid->ny - 1; j++) {
-        if (grid->dy[j] < min_dy) min_dy = grid->dy[j];
+        if (grid->dy[j] < min_dy)
+            min_dy = grid->dy[j];
     }
 
     for (size_t i = 0; i < field->nx * field->ny; i++) {
         double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-        if (vel > max_vel) max_vel = vel;
+        if (vel > max_vel)
+            max_vel = vel;
     }
 
-    if (max_vel < 1e-10) max_vel = 1.0;
+    if (max_vel < 1e-10)
+        max_vel = 1.0;
 
     double dt = params->cfl * fmin(min_dx, min_dy) / max_vel;
     return fmin(fmax(dt, 1e-6), 0.01);
@@ -299,12 +317,14 @@ typedef struct {
     int initialized;
 } ExplicitEulerContext;
 
-static SolverStatus explicit_euler_init(Solver* solver, const Grid* grid, const SolverParams* params) {
+static SolverStatus explicit_euler_init(Solver* solver, const Grid* grid,
+                                        const SolverParams* params) {
     (void)grid;
     (void)params;
 
     ExplicitEulerContext* ctx = (ExplicitEulerContext*)cfd_malloc(sizeof(ExplicitEulerContext));
-    if (!ctx) return SOLVER_STATUS_ERROR;
+    if (!ctx)
+        return SOLVER_STATUS_ERROR;
 
     ctx->initialized = 1;
     solver->context = ctx;
@@ -319,7 +339,7 @@ static void explicit_euler_destroy(Solver* solver) {
 }
 
 static SolverStatus explicit_euler_step(Solver* solver, FlowField* field, const Grid* grid,
-                                         const SolverParams* params, SolverStats* stats) {
+                                        const SolverParams* params, SolverStats* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -340,8 +360,10 @@ static SolverStatus explicit_euler_step(Solver* solver, FlowField* field, const 
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -351,7 +373,7 @@ static SolverStatus explicit_euler_step(Solver* solver, FlowField* field, const 
 }
 
 static SolverStatus explicit_euler_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                          const SolverParams* params, SolverStats* stats) {
+                                         const SolverParams* params, SolverStats* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -367,8 +389,10 @@ static SolverStatus explicit_euler_solve(Solver* solver, FlowField* field, const
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -379,7 +403,8 @@ static SolverStatus explicit_euler_solve(Solver* solver, FlowField* field, const
 
 static Solver* create_explicit_euler_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_EXPLICIT_EULER;
     solver->description = "Basic explicit Euler finite difference solver for 2D Navier-Stokes";
@@ -390,8 +415,8 @@ static Solver* create_explicit_euler_solver(void) {
     solver->destroy = explicit_euler_destroy;
     solver->step = explicit_euler_step;
     solver->solve = explicit_euler_solve;
-    solver->apply_boundary = NULL; // Use default
-    solver->compute_dt = NULL;     // Use default
+    solver->apply_boundary = NULL;  // Use default
+    solver->compute_dt = NULL;      // Use default
 
     return solver;
 }
@@ -401,8 +426,9 @@ static Solver* create_explicit_euler_solver(void) {
  * Wraps the existing solve_navier_stokes_optimized function
  */
 
-static SolverStatus explicit_euler_optimized_step(Solver* solver, FlowField* field, const Grid* grid,
-                                                   const SolverParams* params, SolverStats* stats) {
+static SolverStatus explicit_euler_optimized_step(Solver* solver, FlowField* field,
+                                                  const Grid* grid, const SolverParams* params,
+                                                  SolverStats* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -420,8 +446,10 @@ static SolverStatus explicit_euler_optimized_step(Solver* solver, FlowField* fie
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -430,8 +458,9 @@ static SolverStatus explicit_euler_optimized_step(Solver* solver, FlowField* fie
     return SOLVER_STATUS_OK;
 }
 
-static SolverStatus explicit_euler_optimized_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                                    const SolverParams* params, SolverStats* stats) {
+static SolverStatus explicit_euler_optimized_solve(Solver* solver, FlowField* field,
+                                                   const Grid* grid, const SolverParams* params,
+                                                   SolverStats* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -446,8 +475,10 @@ static SolverStatus explicit_euler_optimized_solve(Solver* solver, FlowField* fi
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -458,7 +489,8 @@ static SolverStatus explicit_euler_optimized_solve(Solver* solver, FlowField* fi
 
 static Solver* create_explicit_euler_optimized_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED;
     solver->description = "SIMD-optimized explicit Euler solver with AVX2/FMA support";
@@ -491,7 +523,8 @@ static SolverStatus projection_init(Solver* solver, const Grid* grid, const Solv
     (void)params;
 
     ProjectionContext* ctx = (ProjectionContext*)cfd_malloc(sizeof(ProjectionContext));
-    if (!ctx) return SOLVER_STATUS_ERROR;
+    if (!ctx)
+        return SOLVER_STATUS_ERROR;
 
     ctx->initialized = 1;
     solver->context = ctx;
@@ -506,7 +539,7 @@ static void projection_destroy(Solver* solver) {
 }
 
 static SolverStatus projection_step(Solver* solver, FlowField* field, const Grid* grid,
-                                     const SolverParams* params, SolverStats* stats) {
+                                    const SolverParams* params, SolverStats* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -524,8 +557,10 @@ static SolverStatus projection_step(Solver* solver, FlowField* field, const Grid
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -535,7 +570,7 @@ static SolverStatus projection_step(Solver* solver, FlowField* field, const Grid
 }
 
 static SolverStatus projection_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                      const SolverParams* params, SolverStats* stats) {
+                                     const SolverParams* params, SolverStats* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -550,8 +585,10 @@ static SolverStatus projection_solve(Solver* solver, FlowField* field, const Gri
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -562,7 +599,8 @@ static SolverStatus projection_solve(Solver* solver, FlowField* field, const Gri
 
 static Solver* create_projection_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_PROJECTION;
     solver->description = "Projection method (Chorin's method) with Poisson pressure solver";
@@ -585,7 +623,7 @@ static Solver* create_projection_solver(void) {
  */
 
 static SolverStatus projection_optimized_step(Solver* solver, FlowField* field, const Grid* grid,
-                                               const SolverParams* params, SolverStats* stats) {
+                                              const SolverParams* params, SolverStats* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -603,8 +641,10 @@ static SolverStatus projection_optimized_step(Solver* solver, FlowField* field, 
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -614,7 +654,7 @@ static SolverStatus projection_optimized_step(Solver* solver, FlowField* field, 
 }
 
 static SolverStatus projection_optimized_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                                const SolverParams* params, SolverStats* stats) {
+                                               const SolverParams* params, SolverStats* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -629,8 +669,10 @@ static SolverStatus projection_optimized_solve(Solver* solver, FlowField* field,
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -641,7 +683,8 @@ static SolverStatus projection_optimized_solve(Solver* solver, FlowField* field,
 
 static Solver* create_projection_optimized_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_PROJECTION_OPTIMIZED;
     solver->description = "SIMD-optimized projection method with AVX2/FMA support";
@@ -670,8 +713,10 @@ typedef struct {
 } GPUSolverWrapperContext;
 
 static SolverStatus gpu_euler_init(Solver* solver, const Grid* grid, const SolverParams* params) {
-    GPUSolverWrapperContext* ctx = (GPUSolverWrapperContext*)cfd_malloc(sizeof(GPUSolverWrapperContext));
-    if (!ctx) return SOLVER_STATUS_ERROR;
+    GPUSolverWrapperContext* ctx =
+        (GPUSolverWrapperContext*)cfd_malloc(sizeof(GPUSolverWrapperContext));
+    if (!ctx)
+        return SOLVER_STATUS_ERROR;
 
     ctx->gpu_config = gpu_config_default();
     ctx->use_gpu = gpu_should_use(&ctx->gpu_config, grid->nx, grid->ny, params->max_iter);
@@ -700,7 +745,7 @@ static void gpu_euler_destroy(Solver* solver) {
 }
 
 static SolverStatus gpu_euler_step(Solver* solver, FlowField* field, const Grid* grid,
-                                    const SolverParams* params, SolverStats* stats) {
+                                   const SolverParams* params, SolverStats* stats) {
     GPUSolverWrapperContext* ctx = (GPUSolverWrapperContext*)solver->context;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -724,8 +769,10 @@ static SolverStatus gpu_euler_step(Solver* solver, FlowField* field, const Grid*
                     double max_vel = 0.0, max_p = 0.0;
                     for (size_t i = 0; i < field->nx * field->ny; i++) {
                         double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-                        if (vel > max_vel) max_vel = vel;
-                        if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+                        if (vel > max_vel)
+                            max_vel = vel;
+                        if (fabs(field->p[i]) > max_p)
+                            max_p = fabs(field->p[i]);
                     }
                     stats->max_velocity = max_vel;
                     stats->max_pressure = max_p;
@@ -744,8 +791,10 @@ static SolverStatus gpu_euler_step(Solver* solver, FlowField* field, const Grid*
         double max_vel = 0.0, max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -755,7 +804,7 @@ static SolverStatus gpu_euler_step(Solver* solver, FlowField* field, const Grid*
 }
 
 static SolverStatus gpu_euler_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                     const SolverParams* params, SolverStats* stats) {
+                                    const SolverParams* params, SolverStats* stats) {
     GPUSolverWrapperContext* ctx = (GPUSolverWrapperContext*)solver->context;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -774,8 +823,10 @@ static SolverStatus gpu_euler_solve(Solver* solver, FlowField* field, const Grid
             double max_vel = 0.0, max_p = 0.0;
             for (size_t i = 0; i < field->nx * field->ny; i++) {
                 double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-                if (vel > max_vel) max_vel = vel;
-                if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+                if (vel > max_vel)
+                    max_vel = vel;
+                if (fabs(field->p[i]) > max_p)
+                    max_p = fabs(field->p[i]);
             }
             stats->max_velocity = max_vel;
             stats->max_pressure = max_p;
@@ -791,8 +842,10 @@ static SolverStatus gpu_euler_solve(Solver* solver, FlowField* field, const Grid
         double max_vel = 0.0, max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -803,7 +856,8 @@ static SolverStatus gpu_euler_solve(Solver* solver, FlowField* field, const Grid
 
 static Solver* create_explicit_euler_gpu_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_EXPLICIT_EULER_GPU;
     solver->description = "GPU-accelerated explicit Euler solver (CUDA) with automatic fallback";
@@ -825,7 +879,7 @@ static Solver* create_explicit_euler_gpu_solver(void) {
  */
 
 static SolverStatus gpu_projection_step(Solver* solver, FlowField* field, const Grid* grid,
-                                         const SolverParams* params, SolverStats* stats) {
+                                        const SolverParams* params, SolverStats* stats) {
     GPUSolverWrapperContext* ctx = (GPUSolverWrapperContext*)solver->context;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -846,8 +900,10 @@ static SolverStatus gpu_projection_step(Solver* solver, FlowField* field, const 
         double max_vel = 0.0, max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -857,7 +913,7 @@ static SolverStatus gpu_projection_step(Solver* solver, FlowField* field, const 
 }
 
 static SolverStatus gpu_projection_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                          const SolverParams* params, SolverStats* stats) {
+                                         const SolverParams* params, SolverStats* stats) {
     GPUSolverWrapperContext* ctx = (GPUSolverWrapperContext*)solver->context;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -875,8 +931,10 @@ static SolverStatus gpu_projection_solve(Solver* solver, FlowField* field, const
         double max_vel = 0.0, max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
@@ -887,7 +945,8 @@ static SolverStatus gpu_projection_solve(Solver* solver, FlowField* field, const
 
 static Solver* create_projection_gpu_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_PROJECTION_JACOBI_GPU;
     solver->description = "GPU-accelerated projection method with Jacobi iteration (CUDA)";

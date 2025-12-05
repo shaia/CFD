@@ -32,15 +32,12 @@ typedef struct {
 //=============================================================================
 
 // Initialize simulation with default solver
-SimulationData* init_simulation(size_t nx, size_t ny,
-                                double xmin, double xmax,
-                                double ymin, double ymax);
+SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, double ymin,
+                                double ymax);
 
 // Initialize simulation with specific solver type
-SimulationData* init_simulation_with_solver(size_t nx, size_t ny,
-                                            double xmin, double xmax,
-                                            double ymin, double ymax,
-                                            const char* solver_type);
+SimulationData* init_simulation_with_solver(size_t nx, size_t ny, double xmin, double xmax,
+                                            double ymin, double ymax, const char* solver_type);
 
 // Free all simulation resources
 void free_simulation(SimulationData* sim_data);
@@ -85,9 +82,9 @@ const SolverStats* simulation_get_stats(const SimulationData* sim_data);
 // Field types for output
 typedef enum {
     // VTK outputs (3D visualization)
-    OUTPUT_PRESSURE,      // Pressure/velocity magnitude field (VTK)
-    OUTPUT_VELOCITY,      // Velocity vector field (VTK)
-    OUTPUT_FULL_FIELD,    // Complete flow field (VTK)
+    OUTPUT_PRESSURE,    // Pressure/velocity magnitude field (VTK)
+    OUTPUT_VELOCITY,    // Velocity vector field (VTK)
+    OUTPUT_FULL_FIELD,  // Complete flow field (VTK)
 
     // CSV outputs (data analysis)
     OUTPUT_CSV_TIMESERIES,  // Time series: step, time, max_vel, max_p, residual, etc.
@@ -97,9 +94,9 @@ typedef enum {
 
 // Output configuration for automatic file generation
 typedef struct {
-    OutputFieldType field_type;    // What to output
-    int interval;                  // Output every N steps (0 = disabled)
-    const char* prefix;            // Optional filename prefix (NULL = use field type name)
+    OutputFieldType field_type;  // What to output
+    int interval;                // Output every N steps (0 = disabled)
+    const char* prefix;          // Optional filename prefix (NULL = use field type name)
 } OutputConfig;
 
 //=============================================================================
@@ -109,10 +106,8 @@ typedef struct {
 // Register output for automatic generation
 // Example: simulation_register_output(sim, OUTPUT_PRESSURE, 10, "pressure");
 //          Automatically writes pressure_000.vtk, pressure_010.vtk, etc.
-void simulation_register_output(SimulationData* sim_data,
-                                 OutputFieldType field_type,
-                                 int interval,
-                                 const char* prefix);
+void simulation_register_output(SimulationData* sim_data, OutputFieldType field_type, int interval,
+                                const char* prefix);
 
 // Clear all registered outputs
 void simulation_clear_outputs(SimulationData* sim_data);
@@ -137,4 +132,4 @@ void simulation_write_outputs(SimulationData* sim_data, int step);
 }
 #endif
 
-#endif // SIMULATION_API_H
+#endif  // SIMULATION_API_H

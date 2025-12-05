@@ -1,19 +1,19 @@
-#include "unity.h"
+#include "grid.h"
 #include "simulation_api.h"
 #include "solver_interface.h"
-#include "grid.h"
+#include "unity.h"
 #include "utils.h"
 #include "vtk_output.h"
-#include <stdio.h>
 #include <math.h>
+#include <stdio.h>
 
 #ifdef _WIN32
-    #include <direct.h>
-    #include <io.h>
-    #define access _access
-    #define F_OK 0
+#include <direct.h>
+#include <io.h>
+#define access _access
+#define F_OK   0
 #else
-    #include <unistd.h>
+#include <unistd.h>
 #endif
 
 #ifndef M_PI
@@ -91,12 +91,17 @@ void test_solver_consistency(void) {
         field2->T[i] = field1->T[i];
     }
 
-    SolverParams params = {
-        .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.01, .k = 0.0242,
-        .max_iter = 3, .tolerance = 1e-6,
-        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1, .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.01,
+                           .k = 0.0242,
+                           .max_iter = 3,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     // Run both solvers using modern interface
     Solver* solver1 = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
@@ -154,12 +159,17 @@ void test_physics_improvements(void) {
         }
     }
 
-    SolverParams params = {
-        .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.001, .k = 0.0242,
-        .max_iter = 5, .tolerance = 1e-6,
-        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1, .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.001,
+                           .k = 0.0242,
+                           .max_iter = 5,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
@@ -198,12 +208,17 @@ void test_decay_prevention(void) {
         initial_energy += field->u[i] * field->u[i] + field->v[i] * field->v[i];
     }
 
-    SolverParams params = {
-        .dt = 0.001, .cfl = 0.2, .gamma = 1.4, .mu = 0.01, .k = 0.0242,
-        .max_iter = 15, .tolerance = 1e-6,
-        .source_amplitude_u = 0.1, .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1, .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.01,
+                           .k = 0.0242,
+                           .max_iter = 15,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
@@ -247,7 +262,8 @@ void test_output_paths(void) {
     // Test VTK file creation
     size_t nx = 5, ny = 5;
     double data[25];
-    for (int i = 0; i < 25; i++) data[i] = i * 0.1;
+    for (int i = 0; i < 25; i++)
+        data[i] = i * 0.1;
 
     make_output_path(test_file, sizeof(test_file), "test_comprehensive.vtk");
     remove(test_file);  // Clean up first

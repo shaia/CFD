@@ -1,7 +1,7 @@
-#include "unity.h"
 #include "simulation_api.h"
-#include <stdio.h>
+#include "unity.h"
 #include <math.h>
+#include <stdio.h>
 
 void setUp(void) {
     // Set up code (if needed)
@@ -72,10 +72,8 @@ void test_simulation_basic(void) {
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
             size_t idx = j * nx + i;
-            if (isfinite(sim_data->field->u[idx]) &&
-                isfinite(sim_data->field->v[idx]) &&
-                isfinite(sim_data->field->p[idx]) &&
-                isfinite(sim_data->field->rho[idx]) &&
+            if (isfinite(sim_data->field->u[idx]) && isfinite(sim_data->field->v[idx]) &&
+                isfinite(sim_data->field->p[idx]) && isfinite(sim_data->field->rho[idx]) &&
                 isfinite(sim_data->field->T[idx])) {
                 finite_count++;
             }

@@ -20,8 +20,8 @@
 #include "solver_interface.h"
 #include "utils.h"
 #include <math.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -29,19 +29,19 @@
 
 // Try to use SIMD intrinsics
 #if defined(__AVX2__) || defined(__AVX__)
-    #include <immintrin.h>
-    #define USE_AVX 1
+#include <immintrin.h>
+#define USE_AVX 1
 #elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
-    #include <immintrin.h>
-    #define USE_AVX 1
+#include <immintrin.h>
+#define USE_AVX 1
 #else
-    #define USE_AVX 0
+#define USE_AVX 0
 #endif
 
 // Poisson solver parameters
-#define POISSON_MAX_ITER 1000
+#define POISSON_MAX_ITER  1000
 #define POISSON_TOLERANCE 1e-6
-#define POISSON_OMEGA 1.5  // SOR relaxation parameter
+#define POISSON_OMEGA     1.5  // SOR relaxation parameter
 
 // Physical limits
 #define MAX_VELOCITY 100.0
@@ -81,15 +81,14 @@ static inline __m256d abs_avx(__m256d v) {
 /**
  * SIMD-optimized Poisson solver using SOR with AVX2
  */
-static int solve_poisson_sor_simd(double* p, const double* rhs,
-                                   size_t nx, size_t ny,
-                                   double dx, double dy,
-                                   int max_iter, double tolerance) {
+static int solve_poisson_sor_simd(double* p, const double* rhs, size_t nx, size_t ny, double dx,
+                                  double dy, int max_iter, double tolerance) {
     double dx2 = dx * dx;
     double dy2 = dy * dy;
-    double factor = 2.0 * (1.0/dx2 + 1.0/dy2);
+    double factor = 2.0 * (1.0 / dx2 + 1.0 / dy2);
 
-    if (factor < 1e-10) return -1;
+    if (factor < 1e-10)
+        return -1;
 
     double inv_factor = 1.0 / factor;
     double inv_dx2 = 1.0 / dx2;
@@ -129,37 +128,41 @@ static int solve_poisson_sor_simd(double* p, const double* rhs,
                     __m256d p_curr = _mm256_set_pd(p[idx3], p[idx2], p[idx1], p[idx0]);
 
                     // Load neighbors for Laplacian
-                    __m256d p_xp = _mm256_set_pd(p[idx3 + 1], p[idx2 + 1], p[idx1 + 1], p[idx0 + 1]);
-                    __m256d p_xm = _mm256_set_pd(p[idx3 - 1], p[idx2 - 1], p[idx1 - 1], p[idx0 - 1]);
-                    __m256d p_yp = _mm256_set_pd(p[idx3 + nx], p[idx2 + nx], p[idx1 + nx], p[idx0 + nx]);
-                    __m256d p_ym = _mm256_set_pd(p[idx3 - nx], p[idx2 - nx], p[idx1 - nx], p[idx0 - nx]);
+                    __m256d p_xp =
+                        _mm256_set_pd(p[idx3 + 1], p[idx2 + 1], p[idx1 + 1], p[idx0 + 1]);
+                    __m256d p_xm =
+                        _mm256_set_pd(p[idx3 - 1], p[idx2 - 1], p[idx1 - 1], p[idx0 - 1]);
+                    __m256d p_yp =
+                        _mm256_set_pd(p[idx3 + nx], p[idx2 + nx], p[idx1 + nx], p[idx0 + nx]);
+                    __m256d p_ym =
+                        _mm256_set_pd(p[idx3 - nx], p[idx2 - nx], p[idx1 - nx], p[idx0 - nx]);
 
                     // Load RHS
                     __m256d rhs_vec = _mm256_set_pd(rhs[idx3], rhs[idx2], rhs[idx1], rhs[idx0]);
 
                     // Compute Laplacian: (p_xp - 2*p + p_xm)/dx² + (p_yp - 2*p + p_ym)/dy²
                     __m256d two = _mm256_set1_pd(2.0);
-                    __m256d p_xx = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(p_xp, p_xm),
-                                                               _mm256_mul_pd(two, p_curr)),
-                                                 inv_dx2_vec);
-                    __m256d p_yy = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(p_yp, p_ym),
-                                                               _mm256_mul_pd(two, p_curr)),
-                                                 inv_dy2_vec);
+                    __m256d p_xx = _mm256_mul_pd(
+                        _mm256_sub_pd(_mm256_add_pd(p_xp, p_xm), _mm256_mul_pd(two, p_curr)),
+                        inv_dx2_vec);
+                    __m256d p_yy = _mm256_mul_pd(
+                        _mm256_sub_pd(_mm256_add_pd(p_yp, p_ym), _mm256_mul_pd(two, p_curr)),
+                        inv_dy2_vec);
 
                     // Residual
                     __m256d residual = _mm256_sub_pd(_mm256_add_pd(p_xx, p_yy), rhs_vec);
                     max_residual_vec = _mm256_max_pd(max_residual_vec, abs_avx(residual));
 
                     // SOR update
-                    __m256d sum_neighbors = _mm256_add_pd(
-                        _mm256_mul_pd(_mm256_add_pd(p_xp, p_xm), inv_dx2_vec),
-                        _mm256_mul_pd(_mm256_add_pd(p_yp, p_ym), inv_dy2_vec));
-                    __m256d p_new = _mm256_mul_pd(_mm256_sub_pd(rhs_vec, sum_neighbors), neg_inv_factor);
+                    __m256d sum_neighbors =
+                        _mm256_add_pd(_mm256_mul_pd(_mm256_add_pd(p_xp, p_xm), inv_dx2_vec),
+                                      _mm256_mul_pd(_mm256_add_pd(p_yp, p_ym), inv_dy2_vec));
+                    __m256d p_new =
+                        _mm256_mul_pd(_mm256_sub_pd(rhs_vec, sum_neighbors), neg_inv_factor);
 
                     // Apply relaxation: p = (1-omega)*p + omega*p_new
-                    __m256d p_updated = _mm256_add_pd(
-                        _mm256_mul_pd(one_minus_omega, p_curr),
-                        _mm256_mul_pd(omega_vec, p_new));
+                    __m256d p_updated = _mm256_add_pd(_mm256_mul_pd(one_minus_omega, p_curr),
+                                                      _mm256_mul_pd(omega_vec, p_new));
 
                     // Store results
                     p[idx0] = ((double*)&p_updated)[0];
@@ -180,8 +183,9 @@ static int solve_poisson_sor_simd(double* p, const double* rhs,
                         max_residual_scalar = fabs(residual);
                     }
 
-                    double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2
-                                             - (p[idx + nx] + p[idx - nx]) / dy2) * (-inv_factor);
+                    double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2 -
+                                    (p[idx + nx] + p[idx - nx]) / dy2) *
+                                   (-inv_factor);
                     p[idx] = p[idx] + POISSON_OMEGA * (p_new - p[idx]);
                 }
             }
@@ -210,15 +214,14 @@ static int solve_poisson_sor_simd(double* p, const double* rhs,
 
 #else
 // Fallback scalar Poisson solver
-static int solve_poisson_sor_simd(double* p, const double* rhs,
-                                   size_t nx, size_t ny,
-                                   double dx, double dy,
-                                   int max_iter, double tolerance) {
+static int solve_poisson_sor_simd(double* p, const double* rhs, size_t nx, size_t ny, double dx,
+                                  double dy, int max_iter, double tolerance) {
     double dx2 = dx * dx;
     double dy2 = dy * dy;
-    double factor = 2.0 * (1.0/dx2 + 1.0/dy2);
+    double factor = 2.0 * (1.0 / dx2 + 1.0 / dy2);
 
-    if (factor < 1e-10) return -1;
+    if (factor < 1e-10)
+        return -1;
 
     double inv_factor = 1.0 / factor;
 
@@ -231,7 +234,8 @@ static int solve_poisson_sor_simd(double* p, const double* rhs,
         for (int color = 0; color < 2; color++) {
             for (size_t j = 1; j < ny - 1; j++) {
                 for (size_t i = 1; i < nx - 1; i++) {
-                    if ((i + j) % 2 != color) continue;
+                    if ((i + j) % 2 != color)
+                        continue;
 
                     size_t idx = j * nx + i;
 
@@ -243,8 +247,9 @@ static int solve_poisson_sor_simd(double* p, const double* rhs,
                         max_residual = fabs(residual);
                     }
 
-                    double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2
-                                             - (p[idx + nx] + p[idx - nx]) / dy2) * (-inv_factor);
+                    double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2 -
+                                    (p[idx + nx] + p[idx - nx]) / dy2) *
+                                   (-inv_factor);
                     p[idx] = p[idx] + POISSON_OMEGA * (p_new - p[idx]);
                 }
             }
@@ -272,9 +277,12 @@ static int solve_poisson_sor_simd(double* p, const double* rhs,
 /**
  * SIMD-optimized Projection Method Solver
  */
-void solve_projection_method_optimized(FlowField* field, const Grid* grid, const SolverParams* params) {
-    if (!field || !grid || !params) return;
-    if (field->nx < 3 || field->ny < 3) return;
+void solve_projection_method_optimized(FlowField* field, const Grid* grid,
+                                       const SolverParams* params) {
+    if (!field || !grid || !params)
+        return;
+    if (field->nx < 3 || field->ny < 3)
+        return;
 
     size_t nx = field->nx;
     size_t ny = field->ny;
@@ -316,7 +324,6 @@ void solve_projection_method_optimized(FlowField* field, const Grid* grid, const
 #endif
 
     for (int iter = 0; iter < params->max_iter; iter++) {
-
         // ============================================================
         // STEP 1: Predictor - Compute intermediate velocity u*
         // ============================================================
@@ -365,10 +372,10 @@ void solve_projection_method_optimized(FlowField* field, const Grid* grid, const
                 __m256d visc_v = _mm256_mul_pd(nu_vec, _mm256_add_pd(d2v_dx2, d2v_dy2));
 
                 // Intermediate velocity
-                __m256d u_star_new = _mm256_add_pd(u,
-                    _mm256_mul_pd(dt_vec, _mm256_sub_pd(visc_u, conv_u)));
-                __m256d v_star_new = _mm256_add_pd(v,
-                    _mm256_mul_pd(dt_vec, _mm256_sub_pd(visc_v, conv_v)));
+                __m256d u_star_new =
+                    _mm256_add_pd(u, _mm256_mul_pd(dt_vec, _mm256_sub_pd(visc_u, conv_u)));
+                __m256d v_star_new =
+                    _mm256_add_pd(v, _mm256_mul_pd(dt_vec, _mm256_sub_pd(visc_v, conv_v)));
 
                 // Clamp velocities
                 u_star_new = _mm256_max_pd(neg_max_vel_vec, _mm256_min_pd(max_vel_vec, u_star_new));
@@ -393,9 +400,11 @@ void solve_projection_method_optimized(FlowField* field, const Grid* grid, const
                 double conv_v = u_val * dv_dx + v_val * dv_dy;
 
                 double d2u_dx2 = (field->u[idx + 1] - 2.0 * u_val + field->u[idx - 1]) / (dx * dx);
-                double d2u_dy2 = (field->u[idx + nx] - 2.0 * u_val + field->u[idx - nx]) / (dy * dy);
+                double d2u_dy2 =
+                    (field->u[idx + nx] - 2.0 * u_val + field->u[idx - nx]) / (dy * dy);
                 double d2v_dx2 = (field->v[idx + 1] - 2.0 * v_val + field->v[idx - 1]) / (dx * dx);
-                double d2v_dy2 = (field->v[idx + nx] - 2.0 * v_val + field->v[idx - nx]) / (dy * dy);
+                double d2v_dy2 =
+                    (field->v[idx + nx] - 2.0 * v_val + field->v[idx - nx]) / (dy * dy);
 
                 double visc_u = nu * (d2u_dx2 + d2u_dy2);
                 double visc_v = nu * (d2v_dx2 + d2v_dy2);
@@ -421,9 +430,11 @@ void solve_projection_method_optimized(FlowField* field, const Grid* grid, const
                 double conv_v = u_val * dv_dx + v_val * dv_dy;
 
                 double d2u_dx2 = (field->u[idx + 1] - 2.0 * u_val + field->u[idx - 1]) / (dx * dx);
-                double d2u_dy2 = (field->u[idx + nx] - 2.0 * u_val + field->u[idx - nx]) / (dy * dy);
+                double d2u_dy2 =
+                    (field->u[idx + nx] - 2.0 * u_val + field->u[idx - nx]) / (dy * dy);
                 double d2v_dx2 = (field->v[idx + 1] - 2.0 * v_val + field->v[idx - 1]) / (dx * dx);
-                double d2v_dy2 = (field->v[idx + nx] - 2.0 * v_val + field->v[idx - nx]) / (dy * dy);
+                double d2v_dy2 =
+                    (field->v[idx + nx] - 2.0 * v_val + field->v[idx - nx]) / (dy * dy);
 
                 double visc_u = nu * (d2u_dx2 + d2u_dy2);
                 double visc_v = nu * (d2v_dx2 + d2v_dy2);
@@ -455,7 +466,8 @@ void solve_projection_method_optimized(FlowField* field, const Grid* grid, const
         // STEP 2: Solve Poisson equation for pressure
         // ============================================================
         double rho = field->rho[0];
-        if (rho < 1e-10) rho = 1.0;
+        if (rho < 1e-10)
+            rho = 1.0;
 
         // Compute RHS: divergence of intermediate velocity
         for (size_t j = 1; j < ny - 1; j++) {
@@ -497,8 +509,8 @@ void solve_projection_method_optimized(FlowField* field, const Grid* grid, const
         }
 
         // Solve Poisson equation using optimized SOR
-        int poisson_iters = solve_poisson_sor_simd(p_new, rhs, nx, ny, dx, dy,
-                                                    POISSON_MAX_ITER, POISSON_TOLERANCE);
+        int poisson_iters =
+            solve_poisson_sor_simd(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
 
         if (poisson_iters < 0) {
             for (size_t idx = 0; idx < size; idx++) {

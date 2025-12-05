@@ -4,10 +4,10 @@
 
 #include "solver_interface.h"
 #include "utils.h"
-#include <math.h>
-#include <string.h>
-#include <stdlib.h>
 #include "vtk_output.h"
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifdef __AVX2__
 #include <immintrin.h>
@@ -18,10 +18,10 @@
 #endif
 
 // Physical stability limits for numerical computation (same as basic solver)
-#define MAX_DERIVATIVE_LIMIT 100.0     // Maximum allowed first derivative magnitude (1/s)
+#define MAX_DERIVATIVE_LIMIT        100.0   // Maximum allowed first derivative magnitude (1/s)
 #define MAX_SECOND_DERIVATIVE_LIMIT 1000.0  // Maximum allowed second derivative magnitude (1/s²)
-#define MAX_VELOCITY_LIMIT 100.0       // Maximum allowed velocity magnitude (m/s)
-#define MAX_DIVERGENCE_LIMIT 10.0      // Maximum allowed velocity divergence (1/s)
+#define MAX_VELOCITY_LIMIT          100.0   // Maximum allowed velocity magnitude (m/s)
+#define MAX_DIVERGENCE_LIMIT        10.0    // Maximum allowed velocity divergence (1/s)
 
 // Use centralized aligned memory allocation from utils
 
@@ -37,7 +37,7 @@ void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const Sol
 
     // Check for minimum grid size - prevent crashes on small grids
     if (field->nx < 3 || field->ny < 3) {
-        return; // Skip solver for grids too small for finite differences
+        return;  // Skip solver for grids too small for finite differences
     }
 
     // Pre-compute memory size for better readability and maintainability
@@ -53,11 +53,16 @@ void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const Sol
     // Check if memory allocation succeeded
     if (!u_new || !v_new || !p_new || !rho_new || !T_new) {
         // Clean up any allocated memory
-        if (u_new) cfd_aligned_free(u_new);
-        if (v_new) cfd_aligned_free(v_new);
-        if (p_new) cfd_aligned_free(p_new);
-        if (rho_new) cfd_aligned_free(rho_new);
-        if (T_new) cfd_aligned_free(T_new);
+        if (u_new)
+            cfd_aligned_free(u_new);
+        if (v_new)
+            cfd_aligned_free(v_new);
+        if (p_new)
+            cfd_aligned_free(p_new);
+        if (rho_new)
+            cfd_aligned_free(rho_new);
+        if (T_new)
+            cfd_aligned_free(T_new);
         return;
     }
 
@@ -73,11 +78,13 @@ void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const Sol
         cfd_aligned_free(p_new);
         cfd_aligned_free(rho_new);
         cfd_aligned_free(T_new);
-        if (dx_inv) cfd_aligned_free(dx_inv);
-        if (dy_inv) cfd_aligned_free(dy_inv);
+        if (dx_inv)
+            cfd_aligned_free(dx_inv);
+        if (dy_inv)
+            cfd_aligned_free(dy_inv);
         return;
     }
-    
+
     for (size_t i = 0; i < field->nx; i++) {
         dx_inv[i] = (i < field->nx - 1) ? 1.0 / (2.0 * grid->dx[i]) : 0.0;
     }
@@ -98,38 +105,50 @@ void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const Sol
     // Main time-stepping loop
     for (int iter = 0; iter < params->max_iter; iter++) {
         // Use conservative dt instead of dynamically computed one
-        
+
         // Update solution using block-based computation
         for (size_t j_block = 1; j_block < field->ny - 1; j_block += BLOCK_SIZE) {
-            size_t j_end = (j_block + BLOCK_SIZE < field->ny - 1) ? j_block + BLOCK_SIZE : field->ny - 1;
+            size_t j_end =
+                (j_block + BLOCK_SIZE < field->ny - 1) ? j_block + BLOCK_SIZE : field->ny - 1;
 
             for (size_t i_block = 1; i_block < field->nx - 1; i_block += BLOCK_SIZE) {
-                size_t i_end = (i_block + BLOCK_SIZE < field->nx - 1) ? i_block + BLOCK_SIZE : field->nx - 1;
-                
+                size_t i_end =
+                    (i_block + BLOCK_SIZE < field->nx - 1) ? i_block + BLOCK_SIZE : field->nx - 1;
+
                 // Process each block
                 for (size_t j = j_block; j < j_end; j++) {
                     for (size_t i = i_block; i < i_end; i++) {
                         size_t idx = j * field->nx + i;
-                        
+
                         // Compute spatial derivatives using pre-computed inverses
                         double du_dx = (field->u[idx + 1] - field->u[idx - 1]) * dx_inv[i];
-                        double du_dy = (field->u[idx + field->nx] - field->u[idx - field->nx]) * dy_inv[j];
+                        double du_dy =
+                            (field->u[idx + field->nx] - field->u[idx - field->nx]) * dy_inv[j];
                         double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) * dx_inv[i];
-                        double dv_dy = (field->v[idx + field->nx] - field->v[idx - field->nx]) * dy_inv[j];
+                        double dv_dy =
+                            (field->v[idx + field->nx] - field->v[idx - field->nx]) * dy_inv[j];
 
                         // Pressure gradients
                         double dp_dx = (field->p[idx + 1] - field->p[idx - 1]) * dx_inv[i];
-                        double dp_dy = (field->p[idx + field->nx] - field->p[idx - field->nx]) * dy_inv[j];
+                        double dp_dy =
+                            (field->p[idx + field->nx] - field->p[idx - field->nx]) * dy_inv[j];
 
                         // Second derivatives for viscous terms
                         double dx2 = grid->dx[i] * grid->dx[i];
                         double dy2 = grid->dy[j] * grid->dy[j];
-                        double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) / dx2;
-                        double d2u_dy2 = (field->u[idx + field->nx] - 2.0 * field->u[idx] + field->u[idx - field->nx]) / dy2;
-                        double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) / dx2;
-                        double d2v_dy2 = (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) / dy2;
+                        double d2u_dx2 =
+                            (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) / dx2;
+                        double d2u_dy2 = (field->u[idx + field->nx] - 2.0 * field->u[idx] +
+                                          field->u[idx - field->nx]) /
+                                         dy2;
+                        double d2v_dx2 =
+                            (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) / dx2;
+                        double d2v_dy2 = (field->v[idx + field->nx] - 2.0 * field->v[idx] +
+                                          field->v[idx - field->nx]) /
+                                         dy2;
 
-                        // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density) with safety
+                        // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density)
+                        // with safety
                         double nu = params->mu / fmax(field->rho[idx], 1e-10);
                         nu = fmin(nu, 1.0);  // Limit maximum viscosity
 
@@ -140,31 +159,38 @@ void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const Sol
                         dv_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dy));
                         dp_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dx));
                         dp_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dy));
-                        d2u_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dx2));
-                        d2u_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dy2));
-                        d2v_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
-                        d2v_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
+                        d2u_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT,
+                                       fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dx2));
+                        d2u_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT,
+                                       fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dy2));
+                        d2v_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT,
+                                       fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
+                        d2v_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT,
+                                       fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
 
                         // Source terms to maintain flow (prevents decay)
                         double x = grid->x[i];
                         double y = grid->y[j];
                         double source_u, source_v;
-                        compute_source_terms(x, y, iter, conservative_dt, params, &source_u, &source_v);
+                        compute_source_terms(x, y, iter, conservative_dt, params, &source_u,
+                                             &source_v);
 
                         // Conservative velocity updates with limited changes
-                        double du = conservative_dt * (
-                            -field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
-                            - dp_dx / fmax(field->rho[idx], 1e-10)          // Pressure gradient (safe division)
-                            + nu * (d2u_dx2 + d2u_dy2)                      // Viscous diffusion
-                            + source_u                                       // Source term
-                        );
+                        double du = conservative_dt *
+                                    (-field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
+                                     - dp_dx / fmax(field->rho[idx],
+                                                    1e-10)  // Pressure gradient (safe division)
+                                     + nu * (d2u_dx2 + d2u_dy2)  // Viscous diffusion
+                                     + source_u                  // Source term
+                                    );
 
-                        double dv = conservative_dt * (
-                            -field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
-                            - dp_dy / fmax(field->rho[idx], 1e-10)          // Pressure gradient (safe division)
-                            + nu * (d2v_dx2 + d2v_dy2)                      // Viscous diffusion
-                            + source_v                                       // Source term
-                        );
+                        double dv = conservative_dt *
+                                    (-field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
+                                     - dp_dy / fmax(field->rho[idx],
+                                                    1e-10)  // Pressure gradient (safe division)
+                                     + nu * (d2v_dx2 + d2v_dy2)  // Viscous diffusion
+                                     + source_v                  // Source term
+                                    );
 
                         // Limit velocity changes
                         du = fmax(-1.0, fmin(1.0, du));
@@ -174,12 +200,15 @@ void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const Sol
                         v_new[idx] = field->v[idx] + dv;
 
                         // Limit velocity magnitudes
-                        u_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, u_new[idx]));
-                        v_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, v_new[idx]));
+                        u_new[idx] =
+                            fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, u_new[idx]));
+                        v_new[idx] =
+                            fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, v_new[idx]));
 
                         // Simplified stable pressure update
                         double divergence = du_dx + dv_dy;
-                        divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
+                        divergence =
+                            fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
 
                         double dp = -0.1 * conservative_dt * field->rho[idx] * divergence;
                         dp = fmax(-1.0, fmin(1.0, dp));  // Limit pressure changes
@@ -192,7 +221,7 @@ void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const Sol
                 }
             }
         }
-        
+
         // Copy new solution to old solution using SIMD if available
 #ifdef __AVX2__
         size_t size = field->nx * field->ny;
@@ -229,7 +258,7 @@ void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const Sol
         memcpy(field->rho, rho_new, field_size_bytes);
         memcpy(field->T, T_new, field_size_bytes);
 #endif
-        
+
         // Apply boundary conditions
         apply_boundary_conditions(field, grid);
 
@@ -243,11 +272,12 @@ void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const Sol
         }
 
         if (has_nan) {
-            printf("Warning: NaN/Inf detected in optimized solver iteration %d, stopping solver\n", iter);
+            printf("Warning: NaN/Inf detected in optimized solver iteration %d, stopping solver\n",
+                   iter);
             break;
         }
     }
-    
+
     // Free temporary arrays
     cfd_aligned_free(u_new);
     cfd_aligned_free(v_new);

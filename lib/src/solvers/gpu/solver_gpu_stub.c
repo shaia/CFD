@@ -79,8 +79,8 @@ int gpu_solver_download(GPUSolverContext* ctx, FlowField* field) {
     return -1;
 }
 
-int gpu_solver_step(GPUSolverContext* ctx, const Grid* grid,
-                    const SolverParams* params, GPUSolverStats* stats) {
+int gpu_solver_step(GPUSolverContext* ctx, const Grid* grid, const SolverParams* params,
+                    GPUSolverStats* stats) {
     (void)ctx;
     (void)grid;
     (void)params;
@@ -99,8 +99,8 @@ void gpu_solver_reset_stats(GPUSolverContext* ctx) {
     (void)ctx;
 }
 
-void solve_navier_stokes_gpu(FlowField* field, const Grid* grid,
-                             const SolverParams* params, const GPUConfig* config) {
+void solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
+                             const GPUConfig* config) {
     (void)config;
 
     // Fall back to CPU implementation
@@ -111,8 +111,8 @@ void solve_navier_stokes_gpu(FlowField* field, const Grid* grid,
     explicit_euler_impl(field, grid, params);
 }
 
-void solve_projection_method_gpu(FlowField* field, const Grid* grid,
-                                 const SolverParams* params, const GPUConfig* config) {
+void solve_projection_method_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
+                                 const GPUConfig* config) {
     (void)config;
 
     // Fall back to CPU implementation

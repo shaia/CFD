@@ -1,10 +1,10 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
 #include "grid.h"
 #include "solver_interface.h"
 #include "utils.h"
 #include "vtk_output.h"
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /**
  * Example demonstrating how to customize source term parameters
@@ -15,15 +15,16 @@
 double calculate_max_velocity(const FlowField* field, size_t nx, size_t ny) {
     double max_vel = 0.0;
     for (size_t i = 0; i < nx * ny; i++) {
-        double vel_mag = sqrt(field->u[i]*field->u[i] + field->v[i]*field->v[i]);
-        if (vel_mag > max_vel) max_vel = vel_mag;
+        double vel_mag = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+        if (vel_mag > max_vel)
+            max_vel = vel_mag;
     }
     return max_vel;
 }
 
 // Helper function to run simulation with given parameters
-void run_simulation_case(Solver* solver, FlowField* field, Grid* grid,
-                         SolverParams* params, int steps) {
+void run_simulation_case(Solver* solver, FlowField* field, Grid* grid, SolverParams* params,
+                         int steps) {
     initialize_flow_field(field, grid);
 
     SolverStats stats = solver_stats_default();
@@ -75,8 +76,8 @@ int main(int argc, char* argv[]) {
     run_simulation_case(solver, field, grid, &params_default, 10);
 
     // Save default case
-    write_vtk_output("..\\..\\artifacts\\output\\default_source_terms.vtk", "u_velocity",
-                     field->u, nx, ny, xmin, xmax, ymin, ymax);
+    write_vtk_output("..\\..\\artifacts\\output\\default_source_terms.vtk", "u_velocity", field->u,
+                     nx, ny, xmin, xmax, ymin, ymax);
     printf("   Output saved to: default_source_terms.vtk\n\n");
 
     // Example 2: High energy injection (stronger sources)
@@ -112,8 +113,10 @@ int main(int argc, char* argv[]) {
     params_low_energy.source_decay_rate = 0.2;     // Faster decay
     params_low_energy.pressure_coupling = 0.05;    // Weaker pressure coupling
 
-    printf("   - Source amplitude U: %.3f (30%% of default)\n", params_low_energy.source_amplitude_u);
-    printf("   - Source amplitude V: %.3f (30%% of default)\n", params_low_energy.source_amplitude_v);
+    printf("   - Source amplitude U: %.3f (30%% of default)\n",
+           params_low_energy.source_amplitude_u);
+    printf("   - Source amplitude V: %.3f (30%% of default)\n",
+           params_low_energy.source_amplitude_v);
     printf("   - Source decay rate:  %.3f (faster decay)\n", params_low_energy.source_decay_rate);
     printf("   - Pressure coupling:  %.3f (weaker)\n", params_low_energy.pressure_coupling);
 
@@ -130,12 +133,13 @@ int main(int argc, char* argv[]) {
     SolverParams params_asymmetric = solver_params_default();
 
     // Create asymmetric flow pattern
-    params_asymmetric.source_amplitude_u = 0.2;    // Strong horizontal flow
-    params_asymmetric.source_amplitude_v = 0.01;   // Weak vertical flow
-    params_asymmetric.source_decay_rate = 0.08;    // Medium decay
-    params_asymmetric.pressure_coupling = 0.12;    // Medium coupling
+    params_asymmetric.source_amplitude_u = 0.2;   // Strong horizontal flow
+    params_asymmetric.source_amplitude_v = 0.01;  // Weak vertical flow
+    params_asymmetric.source_decay_rate = 0.08;   // Medium decay
+    params_asymmetric.pressure_coupling = 0.12;   // Medium coupling
 
-    printf("   - Source amplitude U: %.3f (strong horizontal)\n", params_asymmetric.source_amplitude_u);
+    printf("   - Source amplitude U: %.3f (strong horizontal)\n",
+           params_asymmetric.source_amplitude_u);
     printf("   - Source amplitude V: %.3f (weak vertical)\n", params_asymmetric.source_amplitude_v);
     printf("   - Source decay rate:  %.3f (medium decay)\n", params_asymmetric.source_decay_rate);
     printf("   - Pressure coupling:  %.3f (medium)\n", params_asymmetric.pressure_coupling);
@@ -155,14 +159,15 @@ int main(int argc, char* argv[]) {
     // Re-run each case briefly to get statistics
     double max_velocities[4];
     const char* case_names[] = {"Default", "High Energy", "Low Energy", "Asymmetric"};
-    SolverParams* all_params[] = {&params_default, &params_high_energy, &params_low_energy, &params_asymmetric};
+    SolverParams* all_params[] = {&params_default, &params_high_energy, &params_low_energy,
+                                  &params_asymmetric};
 
     for (int case_idx = 0; case_idx < 4; case_idx++) {
         run_simulation_case(solver, field, grid, all_params[case_idx], 5);
         max_velocities[case_idx] = calculate_max_velocity(field, nx, ny);
 
-        printf("%s case: Max velocity = %.4f m/s\n",
-               case_names[case_idx], max_velocities[case_idx]);
+        printf("%s case: Max velocity = %.4f m/s\n", case_names[case_idx],
+               max_velocities[case_idx]);
     }
 
     printf("\nConclusion:\n");

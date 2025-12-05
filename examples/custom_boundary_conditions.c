@@ -5,13 +5,13 @@
  * and solve a flow around a cylinder problem.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
 #include "grid.h"
 #include "solver_interface.h"
-#include "vtk_output.h"
 #include "utils.h"
+#include "vtk_output.h"
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 void setup_cylinder_flow(FlowField* field, Grid* grid) {
     printf("Setting up flow around cylinder...\n");
@@ -33,7 +33,7 @@ void setup_cylinder_flow(FlowField* field, Grid* grid) {
     // Add cylinder obstacle in the center
     double cx = (grid->xmax + grid->xmin) / 2.0;
     double cy = (grid->ymax + grid->ymin) / 2.0;
-    double radius = 0.05; // 5% of domain width
+    double radius = 0.05;  // 5% of domain width
 
     printf("Cylinder center: (%.3f, %.3f), radius: %.3f\n", cx, cy, radius);
 
@@ -57,16 +57,16 @@ void setup_cylinder_flow(FlowField* field, Grid* grid) {
 void apply_inlet_outlet_bc(FlowField* field, Grid* grid) {
     // Inlet boundary (left side): fixed velocity
     for (size_t j = 0; j < field->ny; j++) {
-        size_t idx = j * field->nx + 0; // i = 0 (left boundary)
-        field->u[idx] = 1.0;  // Inlet velocity
+        size_t idx = j * field->nx + 0;  // i = 0 (left boundary)
+        field->u[idx] = 1.0;             // Inlet velocity
         field->v[idx] = 0.0;
         field->p[idx] = 0.0;
     }
 
     // Outlet boundary (right side): zero gradient
     for (size_t j = 0; j < field->ny; j++) {
-        size_t idx_out = j * field->nx + (field->nx - 1); // i = nx-1 (right boundary)
-        size_t idx_in = j * field->nx + (field->nx - 2);  // i = nx-2 (interior)
+        size_t idx_out = j * field->nx + (field->nx - 1);  // i = nx-1 (right boundary)
+        size_t idx_in = j * field->nx + (field->nx - 2);   // i = nx-2 (interior)
 
         field->u[idx_out] = field->u[idx_in];
         field->v[idx_out] = field->v[idx_in];
@@ -96,8 +96,7 @@ int main() {
     double xmin = 0.0, xmax = 2.0;  // Longer domain
     double ymin = 0.0, ymax = 1.0;
 
-    printf("Grid: %zux%zu, Domain: [%.1f,%.1f] x [%.1f,%.1f]\n",
-           nx, ny, xmin, xmax, ymin, ymax);
+    printf("Grid: %zux%zu, Domain: [%.1f,%.1f] x [%.1f,%.1f]\n", nx, ny, xmin, xmax, ymin, ymax);
 
     // Create grid and flow field
     Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
@@ -147,8 +146,8 @@ int main() {
             snprintf(filename, sizeof(filename), "%s/%s", run_dir, basename);
 #endif
 
-            write_vtk_output(filename, "velocity_magnitude", field->u, nx, ny,
-                           grid->xmin, grid->xmax, grid->ymin, grid->ymax);
+            write_vtk_output(filename, "velocity_magnitude", field->u, nx, ny, grid->xmin,
+                             grid->xmax, grid->ymin, grid->ymax);
 
             printf("  Iteration %d, output: %s\n", iter, basename);
         }

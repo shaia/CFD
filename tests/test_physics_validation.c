@@ -1,9 +1,9 @@
-#include "unity.h"
-#include "solver_interface.h"
 #include "grid.h"
+#include "solver_interface.h"
+#include "unity.h"
 #include "utils.h"
-#include <stdio.h>
 #include <math.h>
+#include <stdio.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -50,27 +50,25 @@ void test_viscous_diffusion(void) {
 
     // Record initial sharpness (gradient magnitude)
     double initial_gradient = 0.0;
-    for (size_t j = 1; j < ny-1; j++) {
-        for (size_t i = 1; i < nx-1; i++) {
+    for (size_t j = 1; j < ny - 1; j++) {
+        for (size_t i = 1; i < nx - 1; i++) {
             size_t idx = j * nx + i;
-            double du_dx = (field->u[idx+1] - field->u[idx-1]) / (2.0 * grid->dx[i]);
+            double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
             initial_gradient += fabs(du_dx);
         }
     }
 
-    SolverParams params = {
-        .dt = 0.001,
-        .cfl = 0.2,
-        .gamma = 1.4,
-        .mu = 0.1,  // High viscosity for visible diffusion
-        .k = 0.0242,
-        .max_iter = 10,
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.1,
-        .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1,
-        .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.1,  // High viscosity for visible diffusion
+                           .k = 0.0242,
+                           .max_iter = 10,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     // Run solver using modern interface
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
@@ -81,16 +79,16 @@ void test_viscous_diffusion(void) {
 
     // Calculate final gradient
     double final_gradient = 0.0;
-    for (size_t j = 1; j < ny-1; j++) {
-        for (size_t i = 1; i < nx-1; i++) {
+    for (size_t j = 1; j < ny - 1; j++) {
+        for (size_t i = 1; i < nx - 1; i++) {
             size_t idx = j * nx + i;
-            double du_dx = (field->u[idx+1] - field->u[idx-1]) / (2.0 * grid->dx[i]);
+            double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
             final_gradient += fabs(du_dx);
         }
     }
 
-    printf("Viscous test - Initial gradient: %.4f, Final gradient: %.4f\n",
-           initial_gradient, final_gradient);
+    printf("Viscous test - Initial gradient: %.4f, Final gradient: %.4f\n", initial_gradient,
+           final_gradient);
 
     // Viscosity should have affected the gradient (diffusion effect active)
     // Note: Initial steps may show increase as viscous terms activate
@@ -137,19 +135,17 @@ void test_pressure_gradient_effects(void) {
         initial_velocity_sum += fabs(field->u[i]) + fabs(field->v[i]);
     }
 
-    SolverParams params = {
-        .dt = 0.001,
-        .cfl = 0.2,
-        .gamma = 1.4,
-        .mu = 0.001,  // Low viscosity so pressure gradient dominates
-        .k = 0.0242,
-        .max_iter = 5,
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.1,
-        .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1,
-        .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.001,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.001,  // Low viscosity so pressure gradient dominates
+                           .k = 0.0242,
+                           .max_iter = 5,
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     // Run solver using modern interface
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
@@ -173,8 +169,8 @@ void test_pressure_gradient_effects(void) {
     // Check that pressure gradient induced flow in correct direction (negative x)
     double avg_u_velocity = 0.0;
     int count = 0;
-    for (size_t j = 2; j < ny-2; j++) {  // Check interior points
-        for (size_t i = 2; i < nx-2; i++) {
+    for (size_t j = 2; j < ny - 2; j++) {  // Check interior points
+        for (size_t i = 2; i < nx - 2; i++) {
             size_t idx = j * nx + i;
             avg_u_velocity += field->u[idx];
             count++;
@@ -182,7 +178,8 @@ void test_pressure_gradient_effects(void) {
     }
     avg_u_velocity /= count;
 
-    printf("Average u-velocity: %.6f (should be negative due to positive pressure gradient)\n", avg_u_velocity);
+    printf("Average u-velocity: %.6f (should be negative due to positive pressure gradient)\n",
+           avg_u_velocity);
 
     // With positive pressure gradient in x, u-velocity should become negative
     TEST_ASSERT_TRUE(avg_u_velocity < 0.0);
@@ -213,19 +210,17 @@ void test_conservation_properties(void) {
         initial_momentum_y += field->rho[i] * field->v[i];
     }
 
-    SolverParams params = {
-        .dt = 0.0005,
-        .cfl = 0.2,
-        .gamma = 1.4,
-        .mu = 0.01,
-        .k = 0.0242,
-        .max_iter = 3,  // Short run to check conservation
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.1,
-        .source_amplitude_v = 0.05,
-        .source_decay_rate = 0.1,
-        .pressure_coupling = 0.1
-    };
+    SolverParams params = {.dt = 0.0005,
+                           .cfl = 0.2,
+                           .gamma = 1.4,
+                           .mu = 0.01,
+                           .k = 0.0242,
+                           .max_iter = 3,  // Short run to check conservation
+                           .tolerance = 1e-6,
+                           .source_amplitude_u = 0.1,
+                           .source_amplitude_v = 0.05,
+                           .source_decay_rate = 0.1,
+                           .pressure_coupling = 0.1};
 
     // Run solver using modern interface
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
@@ -246,12 +241,12 @@ void test_conservation_properties(void) {
     }
 
     printf("Conservation test:\n");
-    printf("  Mass: %.6f -> %.6f (change: %.2e)\n",
-           initial_mass, final_mass, fabs(final_mass - initial_mass));
-    printf("  Momentum X: %.6f -> %.6f (change: %.2e)\n",
-           initial_momentum_x, final_momentum_x, fabs(final_momentum_x - initial_momentum_x));
-    printf("  Momentum Y: %.6f -> %.6f (change: %.2e)\n",
-           initial_momentum_y, final_momentum_y, fabs(final_momentum_y - initial_momentum_y));
+    printf("  Mass: %.6f -> %.6f (change: %.2e)\n", initial_mass, final_mass,
+           fabs(final_mass - initial_mass));
+    printf("  Momentum X: %.6f -> %.6f (change: %.2e)\n", initial_momentum_x, final_momentum_x,
+           fabs(final_momentum_x - initial_momentum_x));
+    printf("  Momentum Y: %.6f -> %.6f (change: %.2e)\n", initial_momentum_y, final_momentum_y,
+           fabs(final_momentum_y - initial_momentum_y));
 
     // Mass should be exactly conserved (we keep density constant)
     TEST_ASSERT_FLOAT_WITHIN(1e-10, initial_mass, final_mass);

@@ -8,16 +8,16 @@
  * - Accessing solver statistics
  */
 
-#include <stdio.h>
-#include <string.h>
 #include "simulation_api.h"
 #include "solver_interface.h"
-#include "vtk_output.h"
 #include "utils.h"
+#include "vtk_output.h"
+#include <stdio.h>
+#include <string.h>
 
 // Grid parameters
-#define NX 100
-#define NY 50
+#define NX   100
+#define NY   50
 #define XMIN 0.0
 #define XMAX 2.0
 #define YMIN 0.0
@@ -41,19 +41,27 @@ void print_solver_info(const Solver* solver) {
     printf("  Version: %s\n", solver->version);
     printf("  Capabilities: ");
 
-    if (solver->capabilities & SOLVER_CAP_INCOMPRESSIBLE) printf("incompressible ");
-    if (solver->capabilities & SOLVER_CAP_COMPRESSIBLE) printf("compressible ");
-    if (solver->capabilities & SOLVER_CAP_TRANSIENT) printf("transient ");
-    if (solver->capabilities & SOLVER_CAP_STEADY_STATE) printf("steady-state ");
-    if (solver->capabilities & SOLVER_CAP_SIMD) printf("SIMD ");
-    if (solver->capabilities & SOLVER_CAP_PARALLEL) printf("parallel ");
-    if (solver->capabilities & SOLVER_CAP_GPU) printf("GPU ");
+    if (solver->capabilities & SOLVER_CAP_INCOMPRESSIBLE)
+        printf("incompressible ");
+    if (solver->capabilities & SOLVER_CAP_COMPRESSIBLE)
+        printf("compressible ");
+    if (solver->capabilities & SOLVER_CAP_TRANSIENT)
+        printf("transient ");
+    if (solver->capabilities & SOLVER_CAP_STEADY_STATE)
+        printf("steady-state ");
+    if (solver->capabilities & SOLVER_CAP_SIMD)
+        printf("SIMD ");
+    if (solver->capabilities & SOLVER_CAP_PARALLEL)
+        printf("parallel ");
+    if (solver->capabilities & SOLVER_CAP_GPU)
+        printf("GPU ");
 
     printf("\n");
 }
 
 void print_stats(const SolverStats* stats) {
-    if (!stats) return;
+    if (!stats)
+        return;
 
     printf("  Iterations: %d\n", stats->iterations);
     printf("  Max velocity: %.4f\n", stats->max_velocity);
@@ -84,7 +92,8 @@ void run_solver_comparison(void) {
         print_separator();
 
         // Create simulation with this solver
-        SimulationData* sim = init_simulation_with_solver(NX, NY, XMIN, XMAX, YMIN, YMAX, solver_type);
+        SimulationData* sim =
+            init_simulation_with_solver(NX, NY, XMIN, XMAX, YMIN, YMAX, solver_type);
         if (!sim) {
             printf("  ERROR: Failed to create simulation\n");
             continue;
@@ -204,8 +213,8 @@ void run_direct_solver_usage(void) {
         status = solver_step(solver, field, grid, &params, &stats);
 
         if (step % 5 == 0) {
-            printf("  Step %d: max_vel=%.4f, max_p=%.4f, time=%.2fms\n",
-                   step, stats.max_velocity, stats.max_pressure, stats.elapsed_time_ms);
+            printf("  Step %d: max_vel=%.4f, max_p=%.4f, time=%.2fms\n", step, stats.max_velocity,
+                   stats.max_pressure, stats.elapsed_time_ms);
         }
     }
 

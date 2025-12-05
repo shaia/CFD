@@ -1,13 +1,12 @@
 #include "simulation_api.h"
-#include "solver_interface.h"
-#include "solver_interface.h"
-#include "output_registry.h"
 #include "grid.h"
+#include "output_registry.h"
+#include "solver_interface.h"
 #include "utils.h"
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 // SimulationData struct is defined in simulation_api.h
 
@@ -30,11 +29,13 @@ static void ensure_registry_initialized(void) {
 
 // Internal helper to create simulation with a specific solver
 static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, double xmin, double xmax,
-                                                      double ymin, double ymax, const char* solver_type) {
+                                                     double ymin, double ymax,
+                                                     const char* solver_type) {
     ensure_registry_initialized();
 
     SimulationData* sim_data = (SimulationData*)cfd_malloc(sizeof(SimulationData));
-    if (!sim_data) return NULL;
+    if (!sim_data)
+        return NULL;
 
     // Create and initialize grid
     sim_data->grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
@@ -76,7 +77,8 @@ static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, doubl
 }
 
 // Initialize simulation data with default solver
-SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, double ymin, double ymax) {
+SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, double ymin,
+                                double ymax) {
     return create_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, DEFAULT_SOLVER_TYPE);
 }
 
@@ -91,7 +93,8 @@ SimulationData* init_simulation_with_solver(size_t nx, size_t ny, double xmin, d
 
 // Set the solver for an existing simulation
 void simulation_set_solver(SimulationData* sim_data, Solver* solver) {
-    if (!sim_data || !solver) return;
+    if (!sim_data || !solver)
+        return;
 
     // Destroy existing solver
     if (sim_data->solver) {
@@ -104,12 +107,14 @@ void simulation_set_solver(SimulationData* sim_data, Solver* solver) {
 
 // Set the solver by type name
 int simulation_set_solver_by_name(SimulationData* sim_data, const char* solver_type) {
-    if (!sim_data || !solver_type) return -1;
+    if (!sim_data || !solver_type)
+        return -1;
 
     ensure_registry_initialized();
 
     Solver* solver = solver_create(solver_type);
-    if (!solver) return -1;
+    if (!solver)
+        return -1;
 
     simulation_set_solver(sim_data, solver);
     return 0;
@@ -127,26 +132,28 @@ const SolverStats* simulation_get_stats(const SimulationData* sim_data) {
 
 // Run simulation step
 void run_simulation_step(SimulationData* sim_data) {
-    if (!sim_data || !sim_data->solver) return;
+    if (!sim_data || !sim_data->solver)
+        return;
 
     // Use fixed time step for animation stability
     sim_data->params.dt = 0.005;
 
-    solver_step(sim_data->solver, sim_data->field, sim_data->grid,
-                &sim_data->params, &sim_data->last_stats);
+    solver_step(sim_data->solver, sim_data->field, sim_data->grid, &sim_data->params,
+                &sim_data->last_stats);
 
     // Accumulate simulation time
     sim_data->current_time += sim_data->params.dt;
 }
 
 void run_simulation_solve(SimulationData* sim_data) {
-    if (!sim_data || !sim_data->solver) return;
+    if (!sim_data || !sim_data->solver)
+        return;
 
     // Use fixed time step for animation stability
     sim_data->params.dt = 0.005;
 
-    solver_solve(sim_data->solver, sim_data->field, sim_data->grid,
-                 &sim_data->params, &sim_data->last_stats);
+    solver_solve(sim_data->solver, sim_data->field, sim_data->grid, &sim_data->params,
+                 &sim_data->last_stats);
 
     // Accumulate simulation time based on iterations performed
     sim_data->current_time += sim_data->params.dt * sim_data->last_stats.iterations;
@@ -154,7 +161,8 @@ void run_simulation_solve(SimulationData* sim_data) {
 
 // Free simulation data
 void free_simulation(SimulationData* sim_data) {
-    if (!sim_data) return;
+    if (!sim_data)
+        return;
 
     if (sim_data->solver) {
         solver_destroy(sim_data->solver);
@@ -192,17 +200,17 @@ int simulation_has_solver(const char* solver_type) {
 //=============================================================================
 
 // Register output for automatic generation
-void simulation_register_output(SimulationData* sim_data,
-                                 OutputFieldType field_type,
-                                 int interval,
-                                 const char* prefix) {
-    if (!sim_data || !sim_data->outputs) return;
+void simulation_register_output(SimulationData* sim_data, OutputFieldType field_type, int interval,
+                                const char* prefix) {
+    if (!sim_data || !sim_data->outputs)
+        return;
     output_registry_add(sim_data->outputs, field_type, interval, prefix);
 }
 
 // Clear all registered outputs
 void simulation_clear_outputs(SimulationData* sim_data) {
-    if (!sim_data || !sim_data->outputs) return;
+    if (!sim_data || !sim_data->outputs)
+        return;
     output_registry_clear(sim_data->outputs);
 }
 
@@ -216,7 +224,8 @@ void simulation_set_output_dir(const char* base_dir) {
 
 // Set run name prefix
 void simulation_set_run_prefix(SimulationData* sim_data, const char* prefix) {
-    if (!sim_data) return;
+    if (!sim_data)
+        return;
 
     // Free existing prefix
     if (sim_data->run_prefix) {
@@ -238,18 +247,16 @@ void simulation_set_run_prefix(SimulationData* sim_data, const char* prefix) {
 
 // Automatically write all registered outputs for current step
 void simulation_write_outputs(SimulationData* sim_data, int step) {
-    if (!sim_data || !sim_data->outputs) return;
+    if (!sim_data || !sim_data->outputs)
+        return;
 
     // Get run directory (creates it if needed)
-    const char* run_dir = output_registry_get_run_dir(sim_data->outputs,
-                                                       s_base_output_dir,
-                                                       sim_data->run_prefix,
-                                                       sim_data->grid->nx,
-                                                       sim_data->grid->ny);
+    const char* run_dir =
+        output_registry_get_run_dir(sim_data->outputs, s_base_output_dir, sim_data->run_prefix,
+                                    sim_data->grid->nx, sim_data->grid->ny);
 
     // Write all registered outputs
-    output_registry_write_outputs(sim_data->outputs, run_dir, step,
-                                  sim_data->current_time,
-                                  sim_data->field, sim_data->grid,
-                                  &sim_data->params, &sim_data->last_stats);
+    output_registry_write_outputs(sim_data->outputs, run_dir, step, sim_data->current_time,
+                                  sim_data->field, sim_data->grid, &sim_data->params,
+                                  &sim_data->last_stats);
 }

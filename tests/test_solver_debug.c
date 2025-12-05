@@ -1,10 +1,10 @@
+#include "grid.h"
+#include "solver_interface.h"
+#include "unity.h"
+#include "utils.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
-#include "unity.h"
-#include "solver_interface.h"
-#include "grid.h"
-#include "utils.h"
 
 void setUp(void) {
     // Setup for each test
@@ -22,9 +22,8 @@ void print_field_debug(FlowField* field, const char* name) {
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
             size_t idx = j * field->nx + i;
-            printf("(%zu,%zu): u=%.3f v=%.3f p=%.3f rho=%.3f T=%.3f\n",
-                   i, j, field->u[idx], field->v[idx], field->p[idx],
-                   field->rho[idx], field->T[idx]);
+            printf("(%zu,%zu): u=%.3f v=%.3f p=%.3f rho=%.3f T=%.3f\n", i, j, field->u[idx],
+                   field->v[idx], field->p[idx], field->rho[idx], field->T[idx]);
         }
     }
 }
@@ -70,11 +69,11 @@ void test_solver_step_by_step_debug(void) {
     params.max_iter = 1;  // Only 1 iteration
     params.dt = 0.0001;   // Very small timestep
     params.tolerance = 1e-1;
-    params.mu = 0.001;    // Small viscosity
+    params.mu = 0.001;                // Small viscosity
     params.pressure_coupling = 0.01;  // Small pressure coupling
 
-    printf("Solver parameters: dt=%.6f, mu=%.6f, pressure_coupling=%.6f\n",
-           params.dt, params.mu, params.pressure_coupling);
+    printf("Solver parameters: dt=%.6f, mu=%.6f, pressure_coupling=%.6f\n", params.dt, params.mu,
+           params.pressure_coupling);
 
     // Run solver using modern interface
     Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);

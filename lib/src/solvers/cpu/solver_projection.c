@@ -19,17 +19,17 @@
 #include "solver_interface.h"
 #include "utils.h"
 #include <math.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
 // Poisson solver parameters
-#define POISSON_MAX_ITER 1000
+#define POISSON_MAX_ITER  1000
 #define POISSON_TOLERANCE 1e-6
-#define POISSON_OMEGA 1.5  // SOR relaxation parameter (1 < omega < 2)
+#define POISSON_OMEGA     1.5  // SOR relaxation parameter (1 < omega < 2)
 
 // Physical limits
 #define MAX_VELOCITY 100.0
@@ -42,15 +42,14 @@
  *
  * With Neumann boundary conditions (dp/dn = 0)
  */
-static int solve_poisson_sor(double* p, const double* rhs,
-                              size_t nx, size_t ny,
-                              double dx, double dy,
-                              int max_iter, double tolerance) {
+static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny, double dx,
+                             double dy, int max_iter, double tolerance) {
     double dx2 = dx * dx;
     double dy2 = dy * dy;
-    double factor = 2.0 * (1.0/dx2 + 1.0/dy2);
+    double factor = 2.0 * (1.0 / dx2 + 1.0 / dy2);
 
-    if (factor < 1e-10) return -1;
+    if (factor < 1e-10)
+        return -1;
 
     double inv_factor = 1.0 / factor;
 
@@ -65,7 +64,8 @@ static int solve_poisson_sor(double* p, const double* rhs,
             for (size_t j = 1; j < ny - 1; j++) {
                 for (size_t i = 1; i < nx - 1; i++) {
                     // Red-black ordering
-                    if ((i + j) % 2 != color) continue;
+                    if ((i + j) % 2 != color)
+                        continue;
 
                     size_t idx = j * nx + i;
 
@@ -82,8 +82,9 @@ static int solve_poisson_sor(double* p, const double* rhs,
                     }
 
                     // SOR update
-                    double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2
-                                            - (p[idx + nx] + p[idx - nx]) / dy2) * (-inv_factor);
+                    double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2 -
+                                    (p[idx + nx] + p[idx - nx]) / dy2) *
+                                   (-inv_factor);
 
                     p[idx] = p[idx] + POISSON_OMEGA * (p_new - p[idx]);
                 }
@@ -117,8 +118,10 @@ static int solve_poisson_sor(double* p, const double* rhs,
  * Projection Method Solver
  */
 void solve_projection_method(FlowField* field, const Grid* grid, const SolverParams* params) {
-    if (!field || !grid || !params) return;
-    if (field->nx < 3 || field->ny < 3) return;
+    if (!field || !grid || !params)
+        return;
+    if (field->nx < 3 || field->ny < 3)
+        return;
 
     size_t nx = field->nx;
     size_t ny = field->ny;
@@ -151,7 +154,6 @@ void solve_projection_method(FlowField* field, const Grid* grid, const SolverPar
 
     // Main iteration loop
     for (int iter = 0; iter < params->max_iter; iter++) {
-
         // ============================================================
         // STEP 1: Predictor - Compute intermediate velocity u*
         // ============================================================
@@ -223,7 +225,8 @@ void solve_projection_method(FlowField* field, const Grid* grid, const SolverPar
 
         // Compute RHS: divergence of intermediate velocity
         double rho = field->rho[0];  // Assume constant density
-        if (rho < 1e-10) rho = 1.0;
+        if (rho < 1e-10)
+            rho = 1.0;
 
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
@@ -238,8 +241,8 @@ void solve_projection_method(FlowField* field, const Grid* grid, const SolverPar
         }
 
         // Solve Poisson equation
-        int poisson_iters = solve_poisson_sor(p_new, rhs, nx, ny, dx, dy,
-                                               POISSON_MAX_ITER, POISSON_TOLERANCE);
+        int poisson_iters =
+            solve_poisson_sor(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
 
         if (poisson_iters < 0) {
             // Poisson solver didn't converge - use simple pressure update

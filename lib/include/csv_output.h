@@ -1,8 +1,8 @@
 #ifndef CSV_OUTPUT_H
 #define CSV_OUTPUT_H
 
-#include <stddef.h>
 #include "solver_interface.h"
+#include <stddef.h>
 
 #include "grid.h"
 
@@ -39,14 +39,9 @@ extern "C" {
 // Write or append timeseries data to CSV file
 // Creates: step,time,dt,max_u,max_v,max_p,avg_u,avg_v,avg_p,iterations
 // On first write, creates file with header. Subsequent writes append data.
-void write_csv_timeseries(const char* filename,
-                          int step,
-                          double time,
-                          const FlowField* field,
-                          const SolverParams* params,
-                          const SolverStats* stats,
-                          size_t nx, size_t ny,
-                          int create_new);
+void write_csv_timeseries(const char* filename, int step, double time, const FlowField* field,
+                          const SolverParams* params, const SolverStats* stats, size_t nx,
+                          size_t ny, int create_new);
 
 //=============================================================================
 // CSV CENTERLINE PROFILE OUTPUT
@@ -60,12 +55,8 @@ typedef enum {
     PROFILE_VERTICAL     // Along y-axis at x = domain_width/2
 } ProfileDirection;
 
-void write_csv_centerline(const char* filename,
-                          const FlowField* field,
-                          const double* x_coords,
-                          const double* y_coords,
-                          size_t nx, size_t ny,
-                          ProfileDirection direction);
+void write_csv_centerline(const char* filename, const FlowField* field, const double* x_coords,
+                          const double* y_coords, size_t nx, size_t ny, ProfileDirection direction);
 
 //=============================================================================
 // CSV STATISTICS OUTPUT
@@ -74,15 +65,11 @@ void write_csv_centerline(const char* filename,
 // Write or append global statistics to CSV file
 // Creates: step,time,min_u,max_u,avg_u,min_v,max_v,avg_v,min_p,max_p,avg_p,...
 // On first write, creates file with header. Subsequent writes append data.
-void write_csv_statistics(const char* filename,
-                          int step,
-                          double time,
-                          const FlowField* field,
-                          size_t nx, size_t ny,
-                          int create_new);
+void write_csv_statistics(const char* filename, int step, double time, const FlowField* field,
+                          size_t nx, size_t ny, int create_new);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // CSV_OUTPUT_H
+#endif  // CSV_OUTPUT_H

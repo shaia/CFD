@@ -1,5 +1,5 @@
-#include "unity.h"
 #include "simulation_api.h"
+#include "unity.h"
 #include <math.h>
 
 void setUp(void) {
@@ -101,7 +101,7 @@ void test_simulation_step_execution(void) {
     SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
 
     // Store initial values to verify the solver runs
-    double initial_u = sim_data->field->u[12]; // middle point
+    double initial_u = sim_data->field->u[12];  // middle point
     double initial_v = sim_data->field->v[12];
     double initial_p = sim_data->field->p[12];
 
