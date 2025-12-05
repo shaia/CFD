@@ -294,10 +294,7 @@ lint() {
     # Need compile_commands.json for clang-tidy
     if [[ ! -f "$BUILD_DIR/compile_commands.json" ]]; then
         print_status "Generating compile_commands.json..."
-        create_build_dir
-        cd "$BUILD_DIR"
-        cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
-        cd ..
+        configure -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     fi
 
     find_source_files
@@ -313,7 +310,7 @@ lint() {
         # Only lint .c files, not headers
         if [[ "$file" == *.c ]]; then
             print_status "Checking $file..."
-            if ! clang-tidy -p "$BUILD_DIR" "$file" 2>/dev/null; then
+            if ! clang-tidy -p "$BUILD_DIR" "$file"; then
                 error_count=$((error_count + 1))
             fi
             lint_count=$((lint_count + 1))

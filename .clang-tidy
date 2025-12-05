@@ -16,8 +16,6 @@ Checks: >
   misc-*,
   -misc-no-recursion,
   -misc-unused-parameters,
-  modernize-*,
-  -modernize-use-trailing-return-type,
   performance-*,
   portability-*,
   readability-*,
