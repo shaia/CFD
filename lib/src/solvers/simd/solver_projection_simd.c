@@ -175,8 +175,15 @@ SolverStatus projection_simd_step(Solver* solver, FlowField* field, const Grid* 
             double visc_u = params->mu * (d2u_dx2 + d2u_dy2);
             double visc_v = params->mu * (d2v_dx2 + d2v_dy2);
             
-            ctx->u_star[idx] = u + dt * (-conv_u + visc_u);
-            ctx->v_star[idx] = v + dt * (-conv_v + visc_v);
+            double source_u = 0.0;
+            double source_v = 0.0;
+            if (params->source_amplitude_u > 0) {
+                 source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]);
+                 source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]);
+            }
+
+            ctx->u_star[idx] = u + dt * (-conv_u + visc_u + source_u);
+            ctx->v_star[idx] = v + dt * (-conv_v + visc_v + source_v);
         }
     }
     
@@ -209,6 +216,7 @@ SolverStatus projection_simd_step(Solver* solver, FlowField* field, const Grid* 
     if (poisson_iters < 0) {
         // Fallback if Poisson solver fails to converge
         double fallback_factor = 0.1 * dt;
+#if USE_AVX
         __m256d v_factor = _mm256_set1_pd(fallback_factor);
         size_t total_cells = ctx->nx * ctx->ny;
         size_t aligned_n = (total_cells / 4) * 4;
@@ -222,6 +230,11 @@ SolverStatus projection_simd_step(Solver* solver, FlowField* field, const Grid* 
         for (size_t i = aligned_n; i < total_cells; i++) {
             ctx->p_new[i] = field->p[i] - fallback_factor * ctx->rhs[i];
         }
+#else
+        for (size_t i = 0; i < ctx->nx * ctx->ny; i++) {
+            ctx->p_new[i] = field->p[i] - fallback_factor * ctx->rhs[i];
+        }
+#endif
     }
 
     // Step 3: Corrector
@@ -231,8 +244,11 @@ SolverStatus projection_simd_step(Solver* solver, FlowField* field, const Grid* 
             double dp_dx = (ctx->p_new[idx+1] - ctx->p_new[idx-1]) / (2*dx);
             double dp_dy = (ctx->p_new[idx+ctx->nx] - ctx->p_new[idx-ctx->nx]) / (2*dy);
             
-            ctx->u_new[idx] = ctx->u_star[idx] - (dt/rho) * dp_dx;
-            ctx->v_new[idx] = ctx->v_star[idx] - (dt/rho) * dp_dy;
+            double u_corr = ctx->u_star[idx] - (dt/rho) * dp_dx;
+            double v_corr = ctx->v_star[idx] - (dt/rho) * dp_dy;
+            
+            ctx->u_new[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, u_corr));
+            ctx->v_new[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, v_corr));
         }
     }
 
