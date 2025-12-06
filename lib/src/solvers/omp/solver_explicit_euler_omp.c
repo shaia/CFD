@@ -119,8 +119,10 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
 
         // Check for NaN/Inf values
         int has_nan = 0;
+        int k;
+        int limit = (int)(field->nx * field->ny);
         #pragma omp parallel for reduction(|:has_nan)
-        for (int k = 0; k < field->nx * field->ny; k++) {
+        for (k = 0; k < limit; k++) {
             if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
                 has_nan = 1;
             }
