@@ -41,7 +41,7 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
             {
                 double thread_max_res = 0.0;
                 
-                #pragma omp for
+                #pragma omp for schedule(static)
                 for (j = 1; j < (int)ny - 1; j++) {
                     for (i = 1; i < (int)nx - 1; i++) {
                         if ((i + j) % 2 != color) continue;
@@ -76,12 +76,12 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
 
         // Apply BCs
         int i, j;
-        #pragma omp parallel for private(j)
+        #pragma omp parallel for private(j) schedule(static)
         for (j = 0; j < (int)ny; j++) {
             p[j * nx + 0] = p[j * nx + 1];
             p[j * nx + nx - 1] = p[j * nx + nx - 2];
         }
-        #pragma omp parallel for private(i)
+        #pragma omp parallel for private(i) schedule(static)
         for (i = 0; i < (int)nx; i++) {
             p[i] = p[nx + i];
             p[(ny - 1) * nx + i] = p[(ny - 2) * nx + i];
@@ -126,7 +126,8 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
     for (int iter = 0; iter < params->max_iter; iter++) {
         // STEP 1: Predictor
         int i, j;
-        #pragma omp parallel for private(i)
+        // Use static scheduling for uniform grid load balancing
+        #pragma omp parallel for private(i) schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
             for (i = 1; i < (int)nx - 1; i++) {
                 size_t idx = j * nx + i;
@@ -168,14 +169,14 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
         }
 
         // BCs for intermediate velocity
-        #pragma omp parallel for private(j)
+        #pragma omp parallel for private(j) schedule(static)
         for (j = 0; j < (int)ny; j++) {
             u_star[j * nx + 0] = u_star[j * nx + 1];
             u_star[j * nx + nx - 1] = u_star[j * nx + nx - 2];
             v_star[j * nx + 0] = v_star[j * nx + 1];
             v_star[j * nx + nx - 1] = v_star[j * nx + nx - 2];
         }
-        #pragma omp parallel for private(i)
+        #pragma omp parallel for private(i) schedule(static)
         for (i = 0; i < (int)nx; i++) {
             u_star[i] = u_star[nx + i];
             u_star[(ny - 1) * nx + i] = u_star[(ny - 2) * nx + i];
@@ -186,7 +187,7 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
         // STEP 2: Pressure
         double rho = field->rho[0] < 1e-10 ? 1.0 : field->rho[0];
         
-        #pragma omp parallel for private(i)
+        #pragma omp parallel for private(i) schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
             for (i = 1; i < (int)nx - 1; i++) {
                 size_t idx = j * nx + i;
@@ -201,14 +202,14 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
         if (poisson_iters < 0) {
             // Fallback
              long long idx;
-             #pragma omp parallel for private(idx)
+             #pragma omp parallel for private(idx) schedule(static)
              for (idx = 0; idx < (long long)size; idx++) {
                 p_new[idx] = field->p[idx] - 0.1 * dt * rhs[idx];
             }
         }
 
         // STEP 3: Corrector
-        #pragma omp parallel for private(i)
+        #pragma omp parallel for private(i) schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
             for (i = 1; i < (int)nx - 1; i++) {
                 size_t idx = j * nx + i;
