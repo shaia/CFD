@@ -8,8 +8,10 @@
 // These are not part of the public API
 void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams* params);
 void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const SolverParams* params);
+#ifdef CFD_ENABLE_OPENMP
 void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverParams* params);
 void solve_projection_method_omp(FlowField* field, const Grid* grid, const SolverParams* params);
+#endif
 
 // SIMD Solver functions
 SolverStatus explicit_euler_simd_init(Solver* solver, const Grid* grid, const SolverParams* params);
@@ -47,10 +49,11 @@ static Solver* create_explicit_euler_optimized_solver(void);
 static Solver* create_projection_solver(void);
 static Solver* create_projection_optimized_solver(void);
 static Solver* create_explicit_euler_gpu_solver(void);
-static Solver* create_explicit_euler_gpu_solver(void);
 static Solver* create_projection_gpu_solver(void);
+#ifdef CFD_ENABLE_OPENMP
 static Solver* create_explicit_euler_omp_solver(void);
 static Solver* create_projection_omp_solver(void);
+#endif
 
 // External projection method solver functions
 extern void solve_projection_method(FlowField* field, const Grid* grid, const SolverParams* params);
@@ -100,8 +103,10 @@ void solver_registry_init(void) {
     solver_registry_register(SOLVER_TYPE_PROJECTION_JACOBI_GPU, create_projection_gpu_solver);
 
     // Register OpenMP solvers
+#ifdef CFD_ENABLE_OPENMP
     solver_registry_register(SOLVER_TYPE_EXPLICIT_EULER_OMP, create_explicit_euler_omp_solver);
     solver_registry_register(SOLVER_TYPE_PROJECTION_OMP, create_projection_omp_solver);
+#endif
 
     g_registry_initialized = 1;
 }
@@ -830,6 +835,7 @@ static Solver* create_projection_gpu_solver(void) {
     return solver;
 }
 
+#ifdef CFD_ENABLE_OPENMP
 /**
  * Built-in Solver: Explicit Euler OpenMP
  */
@@ -965,3 +971,4 @@ static Solver* create_projection_omp_solver(void) {
 
     return solver;
 }
+#endif

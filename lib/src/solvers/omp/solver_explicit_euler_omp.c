@@ -28,6 +28,13 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
     double* v_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
     double* p_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
 
+    if (!u_new || !v_new || !p_new) {
+        cfd_free(u_new);
+        cfd_free(v_new);
+        cfd_free(p_new);
+        return;
+    }
+
     // Initialize with current values
     memcpy(u_new, field->u, field->nx * field->ny * sizeof(double));
     memcpy(v_new, field->v, field->nx * field->ny * sizeof(double));
@@ -109,6 +116,20 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
 
         // Boundary conditions - applied sequentially in this implementation (O(N) vs O(N^2))
         apply_boundary_conditions(field, grid);
+
+        // Check for NaN/Inf values
+        int has_nan = 0;
+        #pragma omp parallel for reduction(|:has_nan)
+        for (int k = 0; k < field->nx * field->ny; k++) {
+            if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
+                has_nan = 1;
+            }
+        }
+
+        if (has_nan) {
+            printf("Warning: NaN/Inf detected in iteration %d, stopping solver\n", iter);
+            break;
+        }
     }
 
     cfd_free(u_new);

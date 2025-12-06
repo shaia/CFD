@@ -277,5 +277,19 @@ SolverStatus explicit_euler_simd_step(Solver* solver, FlowField* field, const Gr
         stats->iterations = 1;
     }
 
+    // Check for NaN/Inf values
+    int has_nan = 0;
+    for (size_t k = 0; k < field->nx * field->ny; k++) {
+        if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
+            has_nan = 1;
+            break;
+        }
+    }
+
+    if (has_nan) {
+        printf("Warning: NaN/Inf detected in SIMD solver, stopping\n");
+        return SOLVER_STATUS_ERROR;
+    }
+
     return SOLVER_STATUS_OK;
 }

@@ -22,12 +22,15 @@ else()
 endif()
 
 # OpenMP Support
+set(CFD_OMP_SOLVER_SOURCES "")
 find_package(OpenMP)
 if(OpenMP_C_FOUND)
     message(STATUS "OpenMP found. Multithreading support enabled.")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
     add_compile_definitions(CFD_ENABLE_OPENMP)
+    set(CFD_OMP_SOLVER_SOURCES
+        src/solvers/omp/solver_explicit_euler_omp.c
+        src/solvers/omp/solver_projection_omp.c
+    )
 else()
     message(WARNING "OpenMP not found. Multithreaded solvers will run in serial.")
 endif()
@@ -67,11 +70,7 @@ set(CFD_SIMD_SOLVER_SOURCES
     src/solvers/simd/solver_projection_simd.c
 )
 
-# Collect OpenMP solver source files
-set(CFD_OMP_SOLVER_SOURCES
-    src/solvers/omp/solver_explicit_euler_omp.c
-    src/solvers/omp/solver_projection_omp.c
-)
+
 
 
 # Combine all source files
@@ -212,6 +211,11 @@ function(apply_compiler_options target_name)
         endif()
         # Link math library on Unix systems
         target_link_libraries(${target_name} PUBLIC m)
+    endif()
+
+    # OpenMP linkage
+    if(OpenMP_C_FOUND)
+        target_link_libraries(${target_name} PUBLIC OpenMP::OpenMP_C)
     endif()
 
     # CUDA-specific options

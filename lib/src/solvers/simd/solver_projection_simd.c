@@ -188,10 +188,10 @@ SolverStatus projection_simd_step(Solver* solver, FlowField* field, const Grid* 
         ctx->v_star[j*ctx->nx+ctx->nx-1] = ctx->v_star[j*ctx->nx+ctx->nx-2];
     }
     for(size_t i=0; i<ctx->nx; i++) {
-            ctx->u_star[i] = ctx->u_star[ctx->nx+i];
-            ctx->u_star[(ctx->ny-1)*ctx->nx+i] = ctx->u_star[(ctx->ny-2)*ctx->nx+i];
-            ctx->v_star[i] = ctx->v_star[ctx->nx+i];
-            ctx->v_star[(ctx->ny-1)*ctx->nx+i] = ctx->v_star[(ctx->ny-2)*ctx->nx+i];
+        ctx->u_star[i] = ctx->u_star[ctx->nx+i];
+        ctx->u_star[(ctx->ny-1)*ctx->nx+i] = ctx->u_star[(ctx->ny-2)*ctx->nx+i];
+        ctx->v_star[i] = ctx->v_star[ctx->nx+i];
+        ctx->v_star[(ctx->ny-1)*ctx->nx+i] = ctx->v_star[(ctx->ny-2)*ctx->nx+i];
     }
 
     // Step 2: RHS
@@ -206,7 +206,23 @@ SolverStatus projection_simd_step(Solver* solver, FlowField* field, const Grid* 
     
     // Poisson
     int poisson_iters = solve_poisson_sor(ctx->p_new, ctx->rhs, ctx->nx, ctx->ny, dx, dy);
-    (void)poisson_iters; // Unused for now
+    if (poisson_iters < 0) {
+        // Fallback if Poisson solver fails to converge
+        double fallback_factor = 0.1 * dt;
+        __m256d v_factor = _mm256_set1_pd(fallback_factor);
+        size_t total_cells = ctx->nx * ctx->ny;
+        size_t aligned_n = (total_cells / 4) * 4;
+
+        for (size_t i = 0; i < aligned_n; i += 4) {
+            __m256d v_p = _mm256_loadu_pd(&field->p[i]); // field->p might not be aligned
+            __m256d v_rhs = _mm256_loadu_pd(&ctx->rhs[i]); // Safe unaligned load
+            __m256d v_res = _mm256_sub_pd(v_p, _mm256_mul_pd(v_factor, v_rhs));
+            _mm256_storeu_pd(&ctx->p_new[i], v_res);
+        }
+        for (size_t i = aligned_n; i < total_cells; i++) {
+            ctx->p_new[i] = field->p[i] - fallback_factor * ctx->rhs[i];
+        }
+    }
 
     // Step 3: Corrector
     for(size_t j=1; j<ctx->ny-1; j++) {
