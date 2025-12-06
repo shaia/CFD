@@ -107,7 +107,7 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
         memcpy(field->v, v_new, field->nx * field->ny * sizeof(double));
         memcpy(field->p, p_new, field->nx * field->ny * sizeof(double));
 
-        // Boundary conditions - must be done sequentially or carefully parallelized (usually sequential is fine for BCs as they are O(N) vs O(N^2))
+        // Boundary conditions - applied sequentially in this implementation (O(N) vs O(N^2))
         apply_boundary_conditions(field, grid);
     }
 
