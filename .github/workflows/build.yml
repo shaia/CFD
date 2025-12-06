@@ -371,15 +371,13 @@ jobs:
           lcov --remove coverage.info '/usr/*' '*/Unity/*' '*/tests/*' --output-file coverage.info --ignore-errors unused
           # Generate HTML report
           genhtml coverage.info --output-directory coverage-report
-          # Generate summary
-          lcov --summary coverage.info
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: build/coverage-report/
-          retention-days: 7
+          retention-days: ${{ inputs.retention_days }}
 
       - name: Generate summary
         run: |
