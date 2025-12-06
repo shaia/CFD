@@ -21,6 +21,17 @@ else()
     message(STATUS "CUDA support disabled (use -DCFD_ENABLE_CUDA=ON to enable)")
 endif()
 
+# OpenMP Support
+find_package(OpenMP)
+if(OpenMP_C_FOUND)
+    message(STATUS "OpenMP found. Multithreading support enabled.")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    add_compile_definitions(CFD_ENABLE_OPENMP)
+else()
+    message(WARNING "OpenMP not found. Multithreaded solvers will run in serial.")
+endif()
+
 # Set C standard
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -56,6 +67,13 @@ set(CFD_SIMD_SOLVER_SOURCES
     src/solvers/simd/solver_projection_simd.c
 )
 
+# Collect OpenMP solver source files
+set(CFD_OMP_SOLVER_SOURCES
+    src/solvers/omp/solver_explicit_euler_omp.c
+    src/solvers/omp/solver_projection_omp.c
+)
+
+
 # Combine all source files
 set(CFD_LIBRARY_SOURCES
     ${CFD_CORE_SOURCES}
@@ -63,6 +81,7 @@ set(CFD_LIBRARY_SOURCES
     ${CFD_API_SOURCES}
     ${CFD_CPU_SOLVER_SOURCES}
     ${CFD_SIMD_SOLVER_SOURCES}
+    ${CFD_OMP_SOLVER_SOURCES}
 )
 
 # Add GPU sources based on CUDA availability

@@ -94,6 +94,16 @@ int main() {
         // Benchmark optimized solver
         benchmark_solver("Optimized Solver", SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, nx, ny,
                          iterations);
+        
+        // Benchmark OpenMP solver
+        benchmark_solver("OpenMP Solver", SOLVER_TYPE_EXPLICIT_EULER_OMP, nx, ny, iterations);
+
+        // Benchmark Projection solvers
+        benchmark_solver("Projection Solver", SOLVER_TYPE_PROJECTION, nx, ny, iterations);
+        benchmark_solver("Projection Optimized", SOLVER_TYPE_PROJECTION_OPTIMIZED, nx, ny, iterations);
+        benchmark_solver("Projection OpenMP", SOLVER_TYPE_PROJECTION_OMP, nx, ny, iterations);
+
+
 
         // Calculate speedup
         // Note: This is a simplified example - for accurate benchmarking,
