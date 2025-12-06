@@ -34,9 +34,7 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
         
         // Red-Black Gauss-Seidel
         for (int color = 0; color < 2; color++) {
-            double local_max_res = 0.0;
             int i, j;
-            
             #pragma omp parallel private(i, j) shared(max_residual)
             {
                 double thread_max_res = 0.0;
@@ -51,7 +49,7 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
                         double p_xx = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / dx2;
                         double p_yy = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / dy2;
                         double residual = p_xx + p_yy - rhs[idx];
-
+                        
                         if (fabs(residual) > thread_max_res) {
                             thread_max_res = fabs(residual);
                         }
@@ -65,13 +63,11 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
                 
                 #pragma omp critical
                 {
-                    if (thread_max_res > local_max_res) {
-                        local_max_res = thread_max_res;
+                    if (thread_max_res > max_residual) {
+                        max_residual = thread_max_res;
                     }
                 }
             } // end parallel
-            
-            if (local_max_res > max_residual) max_residual = local_max_res;
         }
 
         // Apply BCs
