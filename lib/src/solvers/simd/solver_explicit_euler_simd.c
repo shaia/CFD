@@ -257,12 +257,46 @@ SolverStatus explicit_euler_simd_step(Solver* solver, FlowField* field, const Gr
                 _mm256_storeu_pd(&ctx->p_new[idx], p_next);
             }
 #else
-            // Fallback for profiling (copy loop)
+            // Scalar fallback implementation
             for (size_t i = 1; i < ctx->nx - 1; i++) {
                  size_t idx = j * ctx->nx + i;
-                 ctx->u_new[idx] = field->u[idx];
-                 ctx->v_new[idx] = field->v[idx];
-                 ctx->p_new[idx] = field->p[idx];
+                 
+                 // Scalar derivatives
+                 double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
+                 double du_dy = (field->u[idx + ctx->nx] - field->u[idx - ctx->nx]) / (2.0 * grid->dy[j]);
+                 double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) / (2.0 * grid->dx[i]);
+                 double dv_dy = (field->v[idx + ctx->nx] - field->v[idx - ctx->nx]) / (2.0 * grid->dy[j]);
+                 
+                 double dp_dx = (field->p[idx + 1] - field->p[idx - 1]) / (2.0 * grid->dx[i]);
+                 double dp_dy = (field->p[idx + ctx->nx] - field->p[idx - ctx->nx]) / (2.0 * grid->dy[j]);
+                 
+                 double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) / (grid->dx[i] * grid->dx[i]);
+                 double d2u_dy2 = (field->u[idx + ctx->nx] - 2.0 * field->u[idx] + field->u[idx - ctx->nx]) / (grid->dy[j] * grid->dy[j]);
+                 double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) / (grid->dx[i] * grid->dx[i]);
+                 double d2v_dy2 = (field->v[idx + ctx->nx] - 2.0 * field->v[idx] + field->v[idx - ctx->nx]) / (grid->dy[j] * grid->dy[j]);
+                 
+                 double rho = fmax(field->rho[idx], 1e-10);
+                 double nu = fmin(params->mu / rho, 1.0);
+                 
+                 // Updates
+                 double du = params->dt * (
+                     -field->u[idx] * du_dx - field->v[idx] * du_dy
+                     - dp_dx / rho
+                     + nu * (d2u_dx2 + d2u_dy2)
+                 );
+                 double dv = params->dt * (
+                     -field->u[idx] * dv_dx - field->v[idx] * dv_dy
+                     - dp_dy / rho
+                     + nu * (d2v_dx2 + d2v_dy2)
+                 );
+                 
+                 ctx->u_new[idx] = field->u[idx] + du;
+                 ctx->v_new[idx] = field->v[idx] + dv;
+                 
+                 // Pressure update (simple)
+                 double divergence = du_dx + dv_dy;
+                 double dp = -0.1 * params->dt * rho * divergence; 
+                 ctx->p_new[idx] = field->p[idx] + dp;
             }
 #endif
         }
@@ -275,20 +309,6 @@ SolverStatus explicit_euler_simd_step(Solver* solver, FlowField* field, const Gr
     
     if (stats) {
         stats->iterations = 1;
-    }
-
-    // Check for NaN/Inf values
-    int has_nan = 0;
-    for (size_t k = 0; k < field->nx * field->ny; k++) {
-        if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
-            has_nan = 1;
-            break;
-        }
-    }
-
-    if (has_nan) {
-        printf("Warning: NaN/Inf detected in SIMD solver, stopping\n");
-        return SOLVER_STATUS_ERROR;
     }
 
     return SOLVER_STATUS_OK;

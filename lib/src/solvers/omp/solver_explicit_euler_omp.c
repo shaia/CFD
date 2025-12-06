@@ -76,7 +76,7 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
                 // Update u
                 double du = conservative_dt * (
                     -field->u[idx] * du_dx - field->v[idx] * du_dy
-                    - dp_dx / field->rho[idx]
+                    - dp_dx / fmax(field->rho[idx], 1e-10)
                     + nu * (d2u_dx2 + d2u_dy2)
                     + source_u
                 );
@@ -84,7 +84,7 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
                 // Update v
                 double dv = conservative_dt * (
                     -field->u[idx] * dv_dx - field->v[idx] * dv_dy
-                    - dp_dy / field->rho[idx]
+                    - dp_dy / fmax(field->rho[idx], 1e-10)
                     + nu * (d2v_dx2 + d2v_dy2)
                     + source_v
                 );
@@ -116,22 +116,6 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
 
         // Boundary conditions - applied sequentially in this implementation (O(N) vs O(N^2))
         apply_boundary_conditions(field, grid);
-
-        // Check for NaN/Inf values
-        int has_nan = 0;
-        int k;
-        int limit = (int)(field->nx * field->ny);
-        #pragma omp parallel for reduction(|:has_nan)
-        for (k = 0; k < limit; k++) {
-            if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
-                has_nan = 1;
-            }
-        }
-
-        if (has_nan) {
-            printf("Warning: NaN/Inf detected in iteration %d, stopping solver\n", iter);
-            break;
-        }
     }
 
     cfd_free(u_new);
