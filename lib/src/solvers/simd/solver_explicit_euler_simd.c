@@ -278,16 +278,25 @@ SolverStatus explicit_euler_simd_step(Solver* solver, FlowField* field, const Gr
                  double rho = fmax(field->rho[idx], 1e-10);
                  double nu = fmin(params->mu / rho, 1.0);
                  
+                 double source_u = 0.0;
+                 double source_v = 0.0;
+                 if (params->source_amplitude_u > 0) {
+                     source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]);
+                     source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]);
+                 }
+
                  // Updates
                  double du = params->dt * (
                      -field->u[idx] * du_dx - field->v[idx] * du_dy
                      - dp_dx / rho
                      + nu * (d2u_dx2 + d2u_dy2)
+                     + source_u
                  );
                  double dv = params->dt * (
                      -field->u[idx] * dv_dx - field->v[idx] * dv_dy
                      - dp_dy / rho
                      + nu * (d2v_dx2 + d2v_dy2)
+                     + source_v
                  );
                  
                  ctx->u_new[idx] = field->u[idx] + du;
