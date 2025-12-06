@@ -138,12 +138,6 @@ SolverStatus explicit_euler_simd_step(Solver* solver, FlowField* field, const Gr
     __m256d zero = _mm256_setzero_pd();
 #endif
     
-    // Check if grid size changed (simple re-init check)
-    if (field->nx != ctx->nx || field->ny != ctx->ny) {
-        // Re-allocation logic could go here, for now just error
-        return SOLVER_STATUS_INVALID_INPUT;
-    }
-
     double max_vel = 0.0;
     double max_p = 0.0;
 
