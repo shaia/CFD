@@ -5,6 +5,35 @@ project(cfd_framework C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# Sanitizer options (for Debug builds on GCC/Clang)
+option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
+option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+
+if(ENABLE_ASAN OR ENABLE_UBSAN)
+    if(MSVC)
+        message(WARNING "Sanitizers are not fully supported with MSVC, skipping")
+    else()
+        set(SANITIZER_FLAGS "")
+
+        if(ENABLE_ASAN)
+            set(SANITIZER_FLAGS "${SANITIZER_FLAGS} -fsanitize=address")
+            message(STATUS "AddressSanitizer enabled")
+        endif()
+
+        if(ENABLE_UBSAN)
+            set(SANITIZER_FLAGS "${SANITIZER_FLAGS} -fsanitize=undefined")
+            message(STATUS "UndefinedBehaviorSanitizer enabled")
+        endif()
+
+        # Add common sanitizer flags
+        set(SANITIZER_FLAGS "${SANITIZER_FLAGS} -fno-omit-frame-pointer -g")
+
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SANITIZER_FLAGS}")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${SANITIZER_FLAGS}")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${SANITIZER_FLAGS}")
+    endif()
+endif()
+
 # Add the library subdirectory
 add_subdirectory(lib)
 
