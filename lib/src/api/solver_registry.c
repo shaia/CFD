@@ -445,6 +445,29 @@ static Solver* create_explicit_euler_solver(void) {
 }
 
 
+static SolverStatus explicit_euler_simd_solve(Solver* solver, FlowField* field, const Grid* grid, const SolverParams* params, SolverStats* stats) {
+    if (!solver || !field || !grid || !params) return SOLVER_STATUS_INVALID_INPUT;
+
+    for (int i = 0; i < params->max_iter; i++) {
+        SolverStatus status = explicit_euler_simd_step(solver, field, grid, params, NULL);
+        if (status != SOLVER_STATUS_OK) return status;
+    }
+
+    if (stats) {
+        stats->iterations = params->max_iter;
+        double max_vel = 0.0;
+        double max_p = 0.0;
+        for (size_t i = 0; i < field->nx * field->ny; i++) {
+            double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+            if (vel > max_vel) max_vel = vel;
+            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+        }
+        stats->max_velocity = max_vel;
+        stats->max_pressure = max_p;
+    }
+    return SOLVER_STATUS_OK;
+}
+
 static Solver* create_explicit_euler_optimized_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
     if (!solver) return NULL;
@@ -457,7 +480,7 @@ static Solver* create_explicit_euler_optimized_solver(void) {
     solver->init = explicit_euler_simd_init;
     solver->destroy = explicit_euler_simd_destroy;
     solver->step = explicit_euler_simd_step;
-    solver->solve = explicit_euler_solve; 
+    solver->solve = explicit_euler_simd_solve; 
     solver->apply_boundary = NULL;
     solver->compute_dt = NULL;
 
@@ -554,6 +577,31 @@ static Solver* create_projection_solver(void) {
     return solver;
 }
 
+static SolverStatus projection_simd_solve(Solver* solver, FlowField* field, const Grid* grid, const SolverParams* params, SolverStats* stats) {
+    if (!solver || !field || !grid || !params) return SOLVER_STATUS_INVALID_INPUT;
+    
+    // Use the step function which utilizes the persistent context
+    for (int i = 0; i < params->max_iter; i++) {
+        SolverStatus status = projection_simd_step(solver, field, grid, params, NULL); // Pass NULL stats for individual steps
+        if (status != SOLVER_STATUS_OK) return status;
+    }
+
+    if (stats) {
+        stats->iterations = params->max_iter;
+         // Compute max velocity/pressure
+        double max_vel = 0.0;
+        double max_p = 0.0;
+        for (size_t i = 0; i < field->nx * field->ny; i++) {
+            double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+            if (vel > max_vel) max_vel = vel;
+            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+        }
+        stats->max_velocity = max_vel;
+        stats->max_pressure = max_p;
+    }
+    return SOLVER_STATUS_OK;
+}
+
 static Solver* create_projection_optimized_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
     if (!solver) return NULL;
@@ -566,7 +614,7 @@ static Solver* create_projection_optimized_solver(void) {
     solver->init = projection_simd_init;
     solver->destroy = projection_simd_destroy;
     solver->step = projection_simd_step;
-    solver->solve = projection_solve; 
+    solver->solve = projection_simd_solve; 
     solver->apply_boundary = NULL;
     solver->compute_dt = NULL;
 
