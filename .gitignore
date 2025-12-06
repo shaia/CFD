@@ -83,6 +83,9 @@ test/test_runner
 output/
 visualization/visualization_output/
 
+# Generated documentation
+docs/
+
 
 #vscode
 .vscode/

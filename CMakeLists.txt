@@ -151,3 +151,22 @@ if(BUILD_TESTS)
     add_test(NAME ComprehensiveTest COMMAND test_comprehensive)
     add_test(NAME SolverBasicTest COMMAND test_solver_basic)
 endif()
+
+# Documentation target (Doxygen)
+option(BUILD_DOCS "Build API documentation with Doxygen" OFF)
+
+if(BUILD_DOCS)
+    find_package(Doxygen)
+    if(DOXYGEN_FOUND)
+        set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile)
+        add_custom_target(docs
+            COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_IN}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            COMMENT "Generating API documentation with Doxygen"
+            VERBATIM
+        )
+        message(STATUS "Doxygen found - 'docs' target available")
+    else()
+        message(WARNING "Doxygen not found - documentation will not be built")
+    endif()
+endif()
