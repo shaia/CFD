@@ -209,8 +209,6 @@ SolverStatus projection_simd_step(Solver* solver, FlowField* field, const Grid* 
     if (poisson_iters < 0) {
         // Fallback if Poisson solver fails to converge
         double fallback_factor = 0.1 * dt;
-        
-#if USE_AVX
         __m256d v_factor = _mm256_set1_pd(fallback_factor);
         size_t total_cells = ctx->nx * ctx->ny;
         size_t aligned_n = (total_cells / 4) * 4;
@@ -224,11 +222,6 @@ SolverStatus projection_simd_step(Solver* solver, FlowField* field, const Grid* 
         for (size_t i = aligned_n; i < total_cells; i++) {
             ctx->p_new[i] = field->p[i] - fallback_factor * ctx->rhs[i];
         }
-#else
-        for (size_t i = 0; i < ctx->nx * ctx->ny; i++) {
-            ctx->p_new[i] = field->p[i] - fallback_factor * ctx->rhs[i];
-        }
-#endif
     }
 
     // Step 3: Corrector
