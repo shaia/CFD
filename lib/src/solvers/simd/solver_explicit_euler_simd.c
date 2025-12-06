@@ -210,11 +210,13 @@ SolverStatus explicit_euler_simd_step(Solver* solver, FlowField* field, const Gr
                 dp_dy = vector_fmax(min_deriv, vector_fmin(max_deriv, dp_dy));
 
                 // Second derivatives
-                __m256d dx_inv_sq_4 = _mm256_mul_pd(four, _mm256_mul_pd(dx_inv_val, dx_inv_val));
+                // dx_inv stores 1/(2*dx). We need 1/(dx^2) for second derivative.
+                // (1/(2*dx))^2 * 4 = 1/(4*dx^2) * 4 = 1/(dx^2)
+                __m256d inv_dx_sq = _mm256_mul_pd(four, _mm256_mul_pd(dx_inv_val, dx_inv_val));
                 
-                __m256d d2u_dx2 = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(u_xp, u_xm), _mm256_mul_pd(two, u)), dx_inv_sq_4);
+                __m256d d2u_dx2 = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(u_xp, u_xm), _mm256_mul_pd(two, u)), inv_dx_sq);
                 __m256d d2u_dy2 = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(u_yp, u_ym), _mm256_mul_pd(two, u)), dy2_recip);
-                __m256d d2v_dx2 = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(v_xp, v_xm), _mm256_mul_pd(two, v)), dx_inv_sq_4);
+                __m256d d2v_dx2 = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(v_xp, v_xm), _mm256_mul_pd(two, v)), inv_dx_sq);
                 __m256d d2v_dy2 = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(v_yp, v_ym), _mm256_mul_pd(two, v)), dy2_recip);
 
                 // Nu
