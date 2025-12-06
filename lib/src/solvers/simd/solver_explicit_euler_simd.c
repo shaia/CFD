@@ -21,6 +21,9 @@
 #define MAX_SECOND_DERIVATIVE_LIMIT 1000.0
 #define MAX_VELOCITY_LIMIT          100.0
 #define MAX_DIVERGENCE_LIMIT        10.0
+#define DT_CONSERVATIVE_LIMIT       0.0001
+#define UPDATE_LIMIT                1.0
+#define PRESSURE_UPDATE_FACTOR      0.1
 
 typedef struct {
     double* u_new;
@@ -114,19 +117,20 @@ SolverStatus explicit_euler_simd_step(Solver* solver, FlowField* field, const Gr
         return SOLVER_STATUS_INVALID_INPUT;
     }
 
-    double dt = fmin(params->dt, 0.0001); // Conservative dt
+    // Use conservative time step to match basic solver stability
+    double conservative_dt = fmin(params->dt, DT_CONSERVATIVE_LIMIT);
     
 #if USE_AVX
-    __m256d dt_vec = _mm256_set1_pd(dt);
+    __m256d dt_vec = _mm256_set1_pd(conservative_dt);
     __m256d max_deriv = _mm256_set1_pd(MAX_DERIVATIVE_LIMIT);
     __m256d min_deriv = _mm256_set1_pd(-MAX_DERIVATIVE_LIMIT);
     __m256d max_diverg = _mm256_set1_pd(MAX_DIVERGENCE_LIMIT);
     __m256d min_diverg = _mm256_set1_pd(-MAX_DIVERGENCE_LIMIT);
     __m256d max_vel_limit = _mm256_set1_pd(MAX_VELOCITY_LIMIT);
     __m256d min_vel_limit = _mm256_set1_pd(-MAX_VELOCITY_LIMIT);
-    __m256d one_vec = _mm256_set1_pd(1.0);
-    __m256d neg_one_vec = _mm256_set1_pd(-1.0);
-    __m256d pressure_factor = _mm256_set1_pd(-0.1);
+    __m256d one_vec = _mm256_set1_pd(UPDATE_LIMIT);
+    __m256d neg_one_vec = _mm256_set1_pd(-UPDATE_LIMIT);
+    __m256d pressure_factor = _mm256_set1_pd(-PRESSURE_UPDATE_FACTOR);
     __m256d two = _mm256_set1_pd(2.0);
     __m256d four = _mm256_set1_pd(4.0);
     __m256d epsilon = _mm256_set1_pd(1e-10);
@@ -286,25 +290,35 @@ SolverStatus explicit_euler_simd_step(Solver* solver, FlowField* field, const Gr
                  }
 
                  // Updates
-                 double du = params->dt * (
+                 double du = conservative_dt * (
                      -field->u[idx] * du_dx - field->v[idx] * du_dy
                      - dp_dx / rho
                      + nu * (d2u_dx2 + d2u_dy2)
                      + source_u
                  );
-                 double dv = params->dt * (
+                 double dv = conservative_dt * (
                      -field->u[idx] * dv_dx - field->v[idx] * dv_dy
                      - dp_dy / rho
                      + nu * (d2v_dx2 + d2v_dy2)
                      + source_v
                  );
                  
+                 // Limit changes
+                 du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));
+                 dv = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dv));
+
                  ctx->u_new[idx] = field->u[idx] + du;
                  ctx->v_new[idx] = field->v[idx] + dv;
                  
+                 // Limit velocity
+                 ctx->u_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, ctx->u_new[idx]));
+                 ctx->v_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, ctx->v_new[idx]));
+                 
                  // Pressure update (simple)
                  double divergence = du_dx + dv_dy;
-                 double dp = -0.1 * params->dt * rho * divergence; 
+                 divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
+                 double dp = -PRESSURE_UPDATE_FACTOR * conservative_dt * rho * divergence; 
+                 dp = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dp));
                  ctx->p_new[idx] = field->p[idx] + dp;
             }
 #endif
