@@ -138,8 +138,7 @@ SolverStatus explicit_euler_simd_step(Solver* solver, FlowField* field, const Gr
     __m256d zero = _mm256_setzero_pd();
 #endif
     
-    double max_vel = 0.0;
-    double max_p = 0.0;
+
 
     
     // Copy current state to temp buffers (SIMD copy)
