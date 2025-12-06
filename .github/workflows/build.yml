@@ -327,17 +327,80 @@ jobs:
           echo "- **Compiler**: GCC" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Debug" >> $GITHUB_STEP_SUMMARY
 
+  # Code coverage build
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake lcov
+
+      - name: Configure with coverage
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=gcc \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON \
+            -DENABLE_COVERAGE=ON
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --parallel $(nproc)
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure
+
+      - name: Generate coverage report
+        run: |
+          cd build
+          # Capture coverage data
+          lcov --capture --directory . --output-file coverage.info --ignore-errors mismatch
+          # Remove external dependencies from coverage
+          lcov --remove coverage.info '/usr/*' '*/Unity/*' '*/tests/*' --output-file coverage.info --ignore-errors unused
+          # Generate HTML report
+          genhtml coverage.info --output-directory coverage-report
+          # Generate summary
+          lcov --summary coverage.info
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/coverage-report/
+          retention-days: 7
+
+      - name: Generate summary
+        run: |
+          echo "## Code Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Coverage report generated. Download the artifact for detailed HTML report." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cd build
+          lcov --summary coverage.info 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+
   # Status check job - Required for PR merges
   build-status:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: [build-matrix, sanitizers]
+    needs: [build-matrix, sanitizers, coverage]
     if: always()
 
     steps:
       - name: Check build results
         run: |
-          if [[ "${{ needs.build-matrix.result }}" == "success" && "${{ needs.sanitizers.result }}" == "success" ]]; then
+          if [[ "${{ needs.build-matrix.result }}" == "success" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" ]]; then
             echo "✅ All builds passed successfully!"
             echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
             echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
