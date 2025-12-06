@@ -323,6 +323,35 @@ lint() {
         print_success "All $lint_count file(s) passed static analysis"
     fi
 }
+
+# Generate API documentation with Doxygen
+docs() {
+    print_status "Generating API documentation..."
+
+    if ! command -v doxygen &> /dev/null; then
+        print_error "doxygen not found. Please install it:"
+        echo "  - Windows: choco install doxygen.install"
+        echo "  - macOS: brew install doxygen"
+        echo "  - Linux: apt install doxygen"
+        exit 1
+    fi
+
+    if [[ ! -f "Doxyfile" ]]; then
+        print_error "Doxyfile not found in project root"
+        exit 1
+    fi
+
+    doxygen Doxyfile
+
+    if [[ -d "docs/html" ]]; then
+        print_success "Documentation generated in docs/html/"
+        echo "Open docs/html/index.html in a browser to view"
+    else
+        print_error "Documentation generation failed"
+        exit 1
+    fi
+}
+
 # Run examples
 run_examples() {
     print_status "Running examples..."
@@ -466,6 +495,7 @@ help() {
     echo "  format             Format source code with clang-format"
     echo "  format-check       Check formatting without modifying files"
     echo "  lint               Run clang-tidy static analysis"
+    echo "  docs               Generate API documentation with Doxygen"
     echo "  status             Show project status"
     echo "  help               Show this help message"
     echo ""
@@ -538,6 +568,9 @@ main() {
             ;;
         lint)
             lint
+            ;;
+        docs)
+            docs
             ;;
         status)
             status
