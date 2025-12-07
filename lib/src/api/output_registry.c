@@ -112,8 +112,7 @@ const char* output_registry_get_run_dir(OutputRegistry* reg, const char* base_di
 // OUTPUT DISPATCH
 //=============================================================================
 
-// Function pointer type for output dispatchers
-// Includes derived fields for pre-computed quantities
+// Function pointer type for output dispatchers (with derived fields)
 typedef void (*OutputDispatchFunc)(const char* run_dir, const char* prefix, int step,
                                    double current_time, const FlowField* field,
                                    const DerivedFields* derived, const Grid* grid,
@@ -128,11 +127,9 @@ static void dispatch_vtk_velocity_magnitude(const char* run_dir, const char* pre
     (void)field;
     (void)params;
     (void)stats;
-
     // Use pre-computed velocity magnitude from derived fields
     if (derived && derived->velocity_magnitude) {
-        const char* name = prefix ? prefix : "velocity_magnitude";
-        vtk_write_scalar_field(run_dir, name, step, "velocity_magnitude",
+        vtk_write_scalar_field(run_dir, prefix, step, "velocity_magnitude",
                                derived->velocity_magnitude, grid);
     }
 }
@@ -159,32 +156,29 @@ static void dispatch_vtk_full_field(const char* run_dir, const char* prefix, int
     vtk_dispatch_output(VTK_OUTPUT_FULL_FIELD, run_dir, prefix, step, field, grid);
 }
 
-// CSV output wrappers
+// CSV output wrappers (pass derived fields)
 static void dispatch_csv_timeseries(const char* run_dir, const char* prefix, int step,
                                     double current_time, const FlowField* field,
                                     const DerivedFields* derived, const Grid* grid,
                                     const SolverParams* params, const SolverStats* stats) {
-    (void)derived;
-    csv_dispatch_output(CSV_OUTPUT_TIMESERIES, run_dir, prefix, step, current_time, field, grid,
-                        params, stats);
+    csv_dispatch_output(CSV_OUTPUT_TIMESERIES, run_dir, prefix, step, current_time, field, derived,
+                        grid, params, stats);
 }
 
 static void dispatch_csv_centerline(const char* run_dir, const char* prefix, int step,
                                     double current_time, const FlowField* field,
                                     const DerivedFields* derived, const Grid* grid,
                                     const SolverParams* params, const SolverStats* stats) {
-    (void)derived;
-    csv_dispatch_output(CSV_OUTPUT_CENTERLINE, run_dir, prefix, step, current_time, field, grid,
-                        params, stats);
+    csv_dispatch_output(CSV_OUTPUT_CENTERLINE, run_dir, prefix, step, current_time, field, derived,
+                        grid, params, stats);
 }
 
 static void dispatch_csv_statistics(const char* run_dir, const char* prefix, int step,
                                     double current_time, const FlowField* field,
                                     const DerivedFields* derived, const Grid* grid,
                                     const SolverParams* params, const SolverStats* stats) {
-    (void)derived;
-    csv_dispatch_output(CSV_OUTPUT_STATISTICS, run_dir, prefix, step, current_time, field, grid,
-                        params, stats);
+    csv_dispatch_output(CSV_OUTPUT_STATISTICS, run_dir, prefix, step, current_time, field, derived,
+                        grid, params, stats);
 }
 
 // Output dispatch table - indexed by OutputFieldType
