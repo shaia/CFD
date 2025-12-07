@@ -69,6 +69,18 @@ int output_registry_count(const OutputRegistry* reg) {
     return reg ? reg->count : 0;
 }
 
+int output_registry_has_type(const OutputRegistry* reg, OutputFieldType field_type) {
+    if (!reg)
+        return 0;
+
+    for (int i = 0; i < reg->count; i++) {
+        if (reg->configs[i].field_type == field_type) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 //=============================================================================
 // RUN DIRECTORY MANAGEMENT
 //=============================================================================

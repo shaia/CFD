@@ -256,11 +256,14 @@ void simulation_write_outputs(SimulationData* sim_data, int step) {
         output_registry_get_run_dir(sim_data->outputs, s_base_output_dir, sim_data->run_prefix,
                                     sim_data->grid->nx, sim_data->grid->ny);
 
-    // Compute derived fields (e.g., velocity magnitude) before output
-    // This is the solver level - computation happens here, not in output functions
-    DerivedFields* derived = derived_fields_create(sim_data->grid->nx, sim_data->grid->ny);
-    if (derived) {
-        derived_fields_compute_velocity_magnitude(derived, sim_data->field);
+    // Compute derived fields only when needed
+    // This avoids unnecessary computation when output types don't require it
+    DerivedFields* derived = NULL;
+    if (output_registry_has_type(sim_data->outputs, OUTPUT_VELOCITY_MAGNITUDE)) {
+        derived = derived_fields_create(sim_data->grid->nx, sim_data->grid->ny);
+        if (derived) {
+            derived_fields_compute_velocity_magnitude(derived, sim_data->field);
+        }
     }
 
     // Write all registered outputs with pre-computed derived fields

@@ -31,6 +31,9 @@ void output_registry_clear(OutputRegistry* reg);
 // Get count of registered outputs
 int output_registry_count(const OutputRegistry* reg);
 
+// Check if a specific output type is registered
+int output_registry_has_type(const OutputRegistry* reg, OutputFieldType field_type);
+
 // Get run directory (creates it if needed)
 const char* output_registry_get_run_dir(OutputRegistry* reg, const char* base_dir,
                                         const char* run_prefix, size_t nx, size_t ny);
