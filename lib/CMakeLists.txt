@@ -21,6 +21,20 @@ else()
     message(STATUS "CUDA support disabled (use -DCFD_ENABLE_CUDA=ON to enable)")
 endif()
 
+# OpenMP Support
+set(CFD_OMP_SOLVER_SOURCES "")
+find_package(OpenMP)
+if(OpenMP_C_FOUND)
+    message(STATUS "OpenMP found. Multithreading support enabled.")
+    add_compile_definitions(CFD_ENABLE_OPENMP)
+    set(CFD_OMP_SOLVER_SOURCES
+        src/solvers/omp/solver_explicit_euler_omp.c
+        src/solvers/omp/solver_projection_omp.c
+    )
+else()
+    message(WARNING "OpenMP not found. Multithreaded solvers will run in serial.")
+endif()
+
 # Set C standard
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -63,6 +77,7 @@ set(CFD_LIBRARY_SOURCES
     ${CFD_API_SOURCES}
     ${CFD_CPU_SOLVER_SOURCES}
     ${CFD_SIMD_SOLVER_SOURCES}
+    ${CFD_OMP_SOLVER_SOURCES}
 )
 
 # Add GPU sources based on CUDA availability
@@ -195,6 +210,14 @@ function(apply_compiler_options target_name)
         target_link_libraries(${target_name} PUBLIC m)
     endif()
 
+    # OpenMP linkage
+    if(OpenMP_C_FOUND)
+        target_link_libraries(${target_name} PUBLIC OpenMP::OpenMP_C)
+        # Attempt to enable modern LLVM-based OpenMP for MSVC to support newer standards (OpenMP 3.1+)
+        if(MSVC)
+            target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/openmp:llvm>)
+        endif()
+    endif()
     # CUDA-specific options
     if(CFD_HAS_CUDA)
         target_compile_options(${target_name} PRIVATE
