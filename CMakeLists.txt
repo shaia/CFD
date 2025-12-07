@@ -129,6 +129,7 @@ if(BUILD_TESTS)
     add_executable(test_solver_debug tests/test_solver_debug.c)
     add_executable(test_csv_output tests/test_csv_output.c)
     add_executable(test_vtk_output tests/test_vtk_output.c)
+    add_executable(test_derived_fields tests/test_derived_fields.c)
 
     # Link test executables with CFD library and Unity
     target_link_libraries(test_simulation_basic PRIVATE CFD::Library unity)
@@ -143,6 +144,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_solver_debug PRIVATE CFD::Library unity)
     target_link_libraries(test_csv_output PRIVATE CFD::Library unity)
     target_link_libraries(test_vtk_output PRIVATE CFD::Library unity)
+    target_link_libraries(test_derived_fields PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
     enable_testing()
@@ -156,6 +158,7 @@ if(BUILD_TESTS)
     add_test(NAME SolverBasicTest COMMAND test_solver_basic)
     add_test(NAME CsvOutputTest COMMAND test_csv_output)
     add_test(NAME VtkOutputTest COMMAND test_vtk_output)
+    add_test(NAME DerivedFieldsTest COMMAND test_derived_fields)
 endif()
 
 # Documentation target (Doxygen)

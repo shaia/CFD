@@ -79,12 +79,12 @@ const SolverStats* simulation_get_stats(const SimulationData* sim_data);
 // OUTPUT CONTROL
 //=============================================================================
 
-// Field types for output
+// Field types for automatic output (registry-based)
 typedef enum {
     // VTK outputs (3D visualization)
-    OUTPUT_PRESSURE,    // Pressure/velocity magnitude field (VTK)
-    OUTPUT_VELOCITY,    // Velocity vector field (VTK)
-    OUTPUT_FULL_FIELD,  // Complete flow field (VTK)
+    OUTPUT_VELOCITY_MAGNITUDE,  // Velocity magnitude scalar field (VTK) - derived from u,v
+    OUTPUT_VELOCITY,            // Velocity vector field (VTK)
+    OUTPUT_FULL_FIELD,          // Complete flow field (VTK)
 
     // CSV outputs (data analysis)
     OUTPUT_CSV_TIMESERIES,  // Time series: step, time, max_vel, max_p, residual, etc.
@@ -104,8 +104,8 @@ typedef struct {
 //=============================================================================
 
 // Register output for automatic generation
-// Example: simulation_register_output(sim, OUTPUT_PRESSURE, 10, "pressure");
-//          Automatically writes pressure_000.vtk, pressure_010.vtk, etc.
+// Example: simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, 10, "velocity_mag");
+//          Automatically writes velocity_mag_000.vtk, velocity_mag_010.vtk, etc.
 void simulation_register_output(SimulationData* sim_data, OutputFieldType field_type, int interval,
                                 const char* prefix);
 
