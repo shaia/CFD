@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny) {
-    if (!field)
+    if (!field || !field->u || !field->v)
         return NULL;
 
     double* velocity_magnitude = (double*)cfd_malloc(nx * ny * sizeof(double));

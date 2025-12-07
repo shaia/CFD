@@ -100,7 +100,6 @@ void write_vtk_output(const char* filename, const char* field_name, const double
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
         cfd_error("Failed to open VTK output file");
-        return;
     }
 
     // Write VTK header
@@ -137,7 +136,6 @@ void write_vtk_vector_output(const char* filename, const char* field_name, const
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
         cfd_error("Failed to open VTK vector output file");
-        return;
     }
 
     // Write VTK header
@@ -171,7 +169,6 @@ void write_vtk_flow_field(const char* filename, const FlowField* field, size_t n
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
         cfd_error("Failed to open VTK flow field output file");
-        return;
     }
 
     // Write VTK header

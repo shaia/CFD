@@ -1,7 +1,6 @@
 #ifndef VTK_OUTPUT_H
 #define VTK_OUTPUT_H
 
-#include "field_ops.h"
 #include "solver_interface.h"
 #include <stddef.h>
 
