@@ -368,7 +368,7 @@ jobs:
           # Capture coverage data
           lcov --capture --directory . --output-file coverage.info --ignore-errors mismatch
           # Remove external dependencies from coverage
-          lcov --remove coverage.info '/usr/*' '*/Unity/*' '*/tests/*' --output-file coverage.info --ignore-errors unused
+          lcov --remove coverage.info '/usr/*' '*/Unity/*' '*/_deps/*' '*/tests/*' --output-file coverage.info --ignore-errors unused
           # Generate HTML report
           genhtml coverage.info --output-directory coverage-report
 
