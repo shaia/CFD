@@ -203,9 +203,10 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
         
         if (poisson_iters < 0) {
             // Fallback
-             long long idx;
+            // Fallback
+             size_t idx;
              #pragma omp parallel for private(idx) schedule(static)
-             for (idx = 0; idx < (long long)size; idx++) {
+             for (idx = 0; idx < size; idx++) {
                 p_new[idx] = field->p[idx] - 0.1 * dt * rhs[idx];
             }
         }
