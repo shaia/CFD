@@ -56,7 +56,6 @@ void grid_initialize_uniform(Grid* grid) {
 
 void grid_initialize_stretched(Grid* grid, double beta) {
     // Initialize x-direction with stretching
-    double dx = (grid->xmax - grid->xmin) / (grid->nx - 1);
     for (size_t i = 0; i < grid->nx; i++) {
         double xi = (double)i / (grid->nx - 1);
         grid->x[i] = grid->xmin +
@@ -64,7 +63,6 @@ void grid_initialize_stretched(Grid* grid, double beta) {
     }
 
     // Initialize y-direction with stretching
-    double dy = (grid->ymax - grid->ymin) / (grid->ny - 1);
     for (size_t j = 0; j < grid->ny; j++) {
         double eta = (double)j / (grid->ny - 1);
         grid->y[j] = grid->ymin + (grid->ymax - grid->ymin) *
