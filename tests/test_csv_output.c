@@ -1,4 +1,5 @@
 #include "csv_output.h"
+#include "derived_fields.h"
 #include "grid.h"
 #include "solver_interface.h"
 #include "unity.h"
@@ -19,6 +20,7 @@
 // Test fixtures
 static Grid* test_grid = NULL;
 static FlowField* test_field = NULL;
+static DerivedFields* test_derived = NULL;
 static char test_output_dir[256];
 
 void setUp(void) {
@@ -41,12 +43,21 @@ void setUp(void) {
         test_field->T[i] = 300.0 + 10.0 * sin((double)i);
     }
 
+    // Create derived fields and compute statistics
+    test_derived = derived_fields_create(nx, ny);
+    derived_fields_compute_velocity_magnitude(test_derived, test_field);
+    derived_fields_compute_statistics(test_derived, test_field);
+
     // Set up output directory
     make_artifacts_path(test_output_dir, sizeof(test_output_dir), "output");
     ensure_directory_exists(test_output_dir);
 }
 
 void tearDown(void) {
+    if (test_derived) {
+        derived_fields_destroy(test_derived);
+        test_derived = NULL;
+    }
     if (test_field) {
         flow_field_destroy(test_field);
         test_field = NULL;
@@ -107,7 +118,7 @@ void test_csv_timeseries_creates_file(void) {
     stats.residual = 1e-5;
     stats.elapsed_time_ms = 12.5;
 
-    write_csv_timeseries(filename, 0, 0.0, test_field, &params, &stats,
+    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats,
                          test_grid->nx, test_grid->ny, 1);
 
     TEST_ASSERT_TRUE(file_exists(filename));
@@ -122,7 +133,7 @@ void test_csv_timeseries_has_header(void) {
     SolverParams params = solver_params_default();
     SolverStats stats = solver_stats_default();
 
-    write_csv_timeseries(filename, 0, 0.0, test_field, &params, &stats,
+    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats,
                          test_grid->nx, test_grid->ny, 1);
 
     TEST_ASSERT_TRUE(file_contains(filename, "step,time,dt"));
@@ -141,15 +152,15 @@ void test_csv_timeseries_appends_data(void) {
     SolverStats stats = solver_stats_default();
 
     // Write first entry (creates file with header)
-    write_csv_timeseries(filename, 0, 0.0, test_field, &params, &stats,
+    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats,
                          test_grid->nx, test_grid->ny, 1);
 
     // Write second entry (appends)
-    write_csv_timeseries(filename, 1, 0.001, test_field, &params, &stats,
+    write_csv_timeseries(filename, 1, 0.001, test_field, test_derived, &params, &stats,
                          test_grid->nx, test_grid->ny, 0);
 
     // Write third entry (appends)
-    write_csv_timeseries(filename, 2, 0.002, test_field, &params, &stats,
+    write_csv_timeseries(filename, 2, 0.002, test_field, test_derived, &params, &stats,
                          test_grid->nx, test_grid->ny, 0);
 
     // Should have 1 header + 3 data lines = 4 lines
@@ -167,13 +178,13 @@ void test_csv_timeseries_null_safety(void) {
     SolverParams params = solver_params_default();
     SolverStats stats = solver_stats_default();
 
-    // These should not crash
-    write_csv_timeseries(NULL, 0, 0.0, test_field, &params, &stats, 10, 10, 1);
-    write_csv_timeseries(filename, 0, 0.0, NULL, &params, &stats, 10, 10, 1);
-    write_csv_timeseries(filename, 0, 0.0, test_field, NULL, &stats, 10, 10, 1);
-    write_csv_timeseries(filename, 0, 0.0, test_field, &params, NULL, 10, 10, 1);
+    // These should not crash - derived is required for stats
+    write_csv_timeseries(NULL, 0, 0.0, test_field, test_derived, &params, &stats, 10, 10, 1);
+    write_csv_timeseries(filename, 0, 0.0, test_field, NULL, &params, &stats, 10, 10, 1);
+    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, NULL, &stats, 10, 10, 1);
+    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, NULL, 10, 10, 1);
 
-    // File should not exist since all calls had NULL params
+    // File should not exist since all calls had NULL required params
     TEST_ASSERT_FALSE(file_exists(filename));
 }
 
@@ -186,7 +197,7 @@ void test_csv_centerline_horizontal(void) {
     make_output_path(filename, sizeof(filename), "test_centerline_h.csv");
     remove(filename);
 
-    write_csv_centerline(filename, test_field, test_grid->x, test_grid->y,
+    write_csv_centerline(filename, test_field, test_derived, test_grid->x, test_grid->y,
                          test_grid->nx, test_grid->ny, PROFILE_HORIZONTAL);
 
     TEST_ASSERT_TRUE(file_exists(filename));
@@ -204,7 +215,7 @@ void test_csv_centerline_vertical(void) {
     make_output_path(filename, sizeof(filename), "test_centerline_v.csv");
     remove(filename);
 
-    write_csv_centerline(filename, test_field, test_grid->x, test_grid->y,
+    write_csv_centerline(filename, test_field, test_derived, test_grid->x, test_grid->y,
                          test_grid->nx, test_grid->ny, PROFILE_VERTICAL);
 
     TEST_ASSERT_TRUE(file_exists(filename));
@@ -223,10 +234,14 @@ void test_csv_centerline_null_safety(void) {
     remove(filename);
 
     // These should not crash
-    write_csv_centerline(NULL, test_field, test_grid->x, test_grid->y, 10, 10, PROFILE_HORIZONTAL);
-    write_csv_centerline(filename, NULL, test_grid->x, test_grid->y, 10, 10, PROFILE_HORIZONTAL);
-    write_csv_centerline(filename, test_field, NULL, test_grid->y, 10, 10, PROFILE_HORIZONTAL);
-    write_csv_centerline(filename, test_field, test_grid->x, NULL, 10, 10, PROFILE_HORIZONTAL);
+    write_csv_centerline(NULL, test_field, test_derived, test_grid->x, test_grid->y, 10, 10,
+                         PROFILE_HORIZONTAL);
+    write_csv_centerline(filename, NULL, test_derived, test_grid->x, test_grid->y, 10, 10,
+                         PROFILE_HORIZONTAL);
+    write_csv_centerline(filename, test_field, test_derived, NULL, test_grid->y, 10, 10,
+                         PROFILE_HORIZONTAL);
+    write_csv_centerline(filename, test_field, test_derived, test_grid->x, NULL, 10, 10,
+                         PROFILE_HORIZONTAL);
 
     TEST_ASSERT_FALSE(file_exists(filename));
 }
@@ -240,7 +255,7 @@ void test_csv_statistics_creates_file(void) {
     make_output_path(filename, sizeof(filename), "test_statistics.csv");
     remove(filename);
 
-    write_csv_statistics(filename, 0, 0.0, test_field,
+    write_csv_statistics(filename, 0, 0.0, test_field, test_derived,
                          test_grid->nx, test_grid->ny, 1);
 
     TEST_ASSERT_TRUE(file_exists(filename));
@@ -252,7 +267,7 @@ void test_csv_statistics_has_header(void) {
     make_output_path(filename, sizeof(filename), "test_statistics_header.csv");
     remove(filename);
 
-    write_csv_statistics(filename, 0, 0.0, test_field,
+    write_csv_statistics(filename, 0, 0.0, test_field, test_derived,
                          test_grid->nx, test_grid->ny, 1);
 
     TEST_ASSERT_TRUE(file_contains(filename, "step,time"));
@@ -271,10 +286,14 @@ void test_csv_statistics_appends_data(void) {
     remove(filename);
 
     // Write multiple entries
-    write_csv_statistics(filename, 0, 0.0, test_field, test_grid->nx, test_grid->ny, 1);
-    write_csv_statistics(filename, 1, 0.001, test_field, test_grid->nx, test_grid->ny, 0);
-    write_csv_statistics(filename, 2, 0.002, test_field, test_grid->nx, test_grid->ny, 0);
-    write_csv_statistics(filename, 3, 0.003, test_field, test_grid->nx, test_grid->ny, 0);
+    write_csv_statistics(filename, 0, 0.0, test_field, test_derived, test_grid->nx, test_grid->ny,
+                         1);
+    write_csv_statistics(filename, 1, 0.001, test_field, test_derived, test_grid->nx, test_grid->ny,
+                         0);
+    write_csv_statistics(filename, 2, 0.002, test_field, test_derived, test_grid->nx, test_grid->ny,
+                         0);
+    write_csv_statistics(filename, 3, 0.003, test_field, test_derived, test_grid->nx, test_grid->ny,
+                         0);
 
     // Should have 1 header + 4 data lines = 5 lines
     int lines = count_file_lines(filename);
@@ -288,9 +307,9 @@ void test_csv_statistics_null_safety(void) {
     make_output_path(filename, sizeof(filename), "test_stats_null.csv");
     remove(filename);
 
-    // These should not crash
-    write_csv_statistics(NULL, 0, 0.0, test_field, 10, 10, 1);
-    write_csv_statistics(filename, 0, 0.0, NULL, 10, 10, 1);
+    // These should not crash - derived is required for stats
+    write_csv_statistics(NULL, 0, 0.0, test_field, test_derived, 10, 10, 1);
+    write_csv_statistics(filename, 0, 0.0, test_field, NULL, 10, 10, 1);
 
     TEST_ASSERT_FALSE(file_exists(filename));
 }
@@ -312,7 +331,7 @@ void test_csv_timeseries_data_values(void) {
     stats.residual = 1.5e-6;
     stats.elapsed_time_ms = 25.5;
 
-    write_csv_timeseries(filename, 5, 0.005, test_field, &params, &stats,
+    write_csv_timeseries(filename, 5, 0.005, test_field, test_derived, &params, &stats,
                          test_grid->nx, test_grid->ny, 1);
 
     // Check that specific values appear in the file

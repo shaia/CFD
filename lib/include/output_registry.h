@@ -1,6 +1,7 @@
 #ifndef OUTPUT_REGISTRY_H
 #define OUTPUT_REGISTRY_H
 
+#include "derived_fields.h"
 #include "simulation_api.h"
 
 #ifdef __cplusplus
@@ -34,9 +35,13 @@ int output_registry_count(const OutputRegistry* reg);
 const char* output_registry_get_run_dir(OutputRegistry* reg, const char* base_dir,
                                         const char* run_prefix, size_t nx, size_t ny);
 
-// Process all registered outputs for current step
+// Check if any output of given type is registered
+int output_registry_has_type(const OutputRegistry* reg, OutputFieldType field_type);
+
+// Process all registered outputs for current step (with pre-computed derived fields)
 void output_registry_write_outputs(OutputRegistry* reg, const char* run_dir, int step,
-                                   double current_time, const FlowField* field, const Grid* grid,
+                                   double current_time, const FlowField* field,
+                                   const DerivedFields* derived, const Grid* grid,
                                    const SolverParams* params, const SolverStats* stats);
 
 #ifdef __cplusplus

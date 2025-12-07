@@ -69,6 +69,18 @@ int output_registry_count(const OutputRegistry* reg) {
     return reg ? reg->count : 0;
 }
 
+int output_registry_has_type(const OutputRegistry* reg, OutputFieldType field_type) {
+    if (!reg)
+        return 0;
+
+    for (int i = 0; i < reg->count; i++) {
+        if (reg->configs[i].field_type == field_type) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 //=============================================================================
 // RUN DIRECTORY MANAGEMENT
 //=============================================================================
@@ -100,59 +112,69 @@ const char* output_registry_get_run_dir(OutputRegistry* reg, const char* base_di
 // OUTPUT DISPATCH
 //=============================================================================
 
-// Function pointer type for output dispatchers
+// Function pointer type for output dispatchers (with derived fields)
 typedef void (*OutputDispatchFunc)(const char* run_dir, const char* prefix, int step,
-                                   double current_time, const FlowField* field, const Grid* grid,
+                                   double current_time, const FlowField* field,
+                                   const DerivedFields* derived, const Grid* grid,
                                    const SolverParams* params, const SolverStats* stats);
 
-// VTK output wrappers
+// VTK output wrappers (ignore derived for VTK)
 static void dispatch_vtk_pressure(const char* run_dir, const char* prefix, int step,
-                                  double current_time, const FlowField* field, const Grid* grid,
+                                  double current_time, const FlowField* field,
+                                  const DerivedFields* derived, const Grid* grid,
                                   const SolverParams* params, const SolverStats* stats) {
     (void)current_time;
+    (void)derived;
     (void)params;
-    (void)stats;  // Unused for VTK
+    (void)stats;
     vtk_dispatch_output(VTK_OUTPUT_PRESSURE, run_dir, prefix, step, field, grid);
 }
 
 static void dispatch_vtk_velocity(const char* run_dir, const char* prefix, int step,
-                                  double current_time, const FlowField* field, const Grid* grid,
+                                  double current_time, const FlowField* field,
+                                  const DerivedFields* derived, const Grid* grid,
                                   const SolverParams* params, const SolverStats* stats) {
     (void)current_time;
+    (void)derived;
     (void)params;
-    (void)stats;  // Unused for VTK
+    (void)stats;
     vtk_dispatch_output(VTK_OUTPUT_VELOCITY, run_dir, prefix, step, field, grid);
 }
 
 static void dispatch_vtk_full_field(const char* run_dir, const char* prefix, int step,
-                                    double current_time, const FlowField* field, const Grid* grid,
+                                    double current_time, const FlowField* field,
+                                    const DerivedFields* derived, const Grid* grid,
                                     const SolverParams* params, const SolverStats* stats) {
     (void)current_time;
+    (void)derived;
     (void)params;
-    (void)stats;  // Unused for VTK
+    (void)stats;
     vtk_dispatch_output(VTK_OUTPUT_FULL_FIELD, run_dir, prefix, step, field, grid);
 }
 
-// CSV output wrappers
+// CSV output wrappers (pass derived fields)
 static void dispatch_csv_timeseries(const char* run_dir, const char* prefix, int step,
-                                    double current_time, const FlowField* field, const Grid* grid,
+                                    double current_time, const FlowField* field,
+                                    const DerivedFields* derived, const Grid* grid,
                                     const SolverParams* params, const SolverStats* stats) {
-    csv_dispatch_output(CSV_OUTPUT_TIMESERIES, run_dir, prefix, step, current_time, field, grid,
-                        params, stats);
+    csv_dispatch_output(CSV_OUTPUT_TIMESERIES, run_dir, prefix, step, current_time, field, derived,
+                        grid, params, stats);
 }
 
 static void dispatch_csv_centerline(const char* run_dir, const char* prefix, int step,
-                                    double current_time, const FlowField* field, const Grid* grid,
+                                    double current_time, const FlowField* field,
+                                    const DerivedFields* derived, const Grid* grid,
                                     const SolverParams* params, const SolverStats* stats) {
-    csv_dispatch_output(CSV_OUTPUT_CENTERLINE, run_dir, prefix, step, current_time, field, grid,
-                        params, stats);
+    csv_dispatch_output(CSV_OUTPUT_CENTERLINE, run_dir, prefix, step, current_time, field, derived,
+                        grid, params, stats);
 }
 
 static void dispatch_csv_statistics(const char* run_dir, const char* prefix, int step,
-                                    double current_time, const FlowField* field, const Grid* grid,
+                                    double current_time, const FlowField* field,
+                                    const DerivedFields* derived, const Grid* grid,
                                     const SolverParams* params, const SolverStats* stats) {
-    csv_dispatch_output(CSV_OUTPUT_STATISTICS, run_dir, prefix, step, current_time, field, grid,
-                        params, stats);
+    csv_dispatch_output(CSV_OUTPUT_STATISTICS, run_dir, prefix, step, current_time, field, derived,
+                        grid, params, stats);
 }
 
 // Output dispatch table - indexed by OutputFieldType
@@ -174,7 +196,8 @@ static const OutputDispatchFunc output_dispatch_table[] = {
 //=============================================================================
 
 void output_registry_write_outputs(OutputRegistry* reg, const char* run_dir, int step,
-                                   double current_time, const FlowField* field, const Grid* grid,
+                                   double current_time, const FlowField* field,
+                                   const DerivedFields* derived, const Grid* grid,
                                    const SolverParams* params, const SolverStats* stats) {
     if (!reg || !run_dir)
         return;
@@ -192,7 +215,7 @@ void output_registry_write_outputs(OutputRegistry* reg, const char* run_dir, int
         // This is cacheable and avoids branch prediction issues
         if (config->field_type < OUTPUT_DISPATCH_TABLE_SIZE) {
             output_dispatch_table[config->field_type](run_dir, config->prefix, step, current_time,
-                                                      field, grid, params, stats);
+                                                      field, derived, grid, params, stats);
         } else {
             cfd_warning("Unknown output type, skipping");
         }

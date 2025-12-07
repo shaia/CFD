@@ -1,4 +1,5 @@
 #include "simulation_api.h"
+#include "derived_fields.h"
 #include "grid.h"
 #include "output_registry.h"
 #include "solver_interface.h"
@@ -245,6 +246,19 @@ void simulation_set_run_prefix(SimulationData* sim_data, const char* prefix) {
 // AUTOMATIC OUTPUT GENERATION
 //=============================================================================
 
+// Check if any output type that uses velocity magnitude is registered
+static int needs_velocity_magnitude(const OutputRegistry* outputs) {
+    return output_registry_has_type(outputs, OUTPUT_CSV_TIMESERIES) ||
+           output_registry_has_type(outputs, OUTPUT_CSV_CENTERLINE) ||
+           output_registry_has_type(outputs, OUTPUT_CSV_STATISTICS);
+}
+
+// Check if any output type that uses statistics is registered
+static int needs_statistics(const OutputRegistry* outputs) {
+    return output_registry_has_type(outputs, OUTPUT_CSV_TIMESERIES) ||
+           output_registry_has_type(outputs, OUTPUT_CSV_STATISTICS);
+}
+
 // Automatically write all registered outputs for current step
 void simulation_write_outputs(SimulationData* sim_data, int step) {
     if (!sim_data || !sim_data->outputs)
@@ -255,8 +269,32 @@ void simulation_write_outputs(SimulationData* sim_data, int step) {
         output_registry_get_run_dir(sim_data->outputs, s_base_output_dir, sim_data->run_prefix,
                                     sim_data->grid->nx, sim_data->grid->ny);
 
-    // Write all registered outputs
+    // Compute derived fields only when needed
+    DerivedFields* derived = NULL;
+    int compute_vel_mag = needs_velocity_magnitude(sim_data->outputs);
+    int compute_stats = needs_statistics(sim_data->outputs);
+
+    if (compute_vel_mag || compute_stats) {
+        derived = derived_fields_create(sim_data->grid->nx, sim_data->grid->ny);
+        if (derived) {
+            // Compute velocity magnitude if needed (VTK or CSV outputs)
+            if (compute_vel_mag) {
+                derived_fields_compute_velocity_magnitude(derived, sim_data->field);
+            }
+            // Compute statistics if needed (CSV timeseries or statistics outputs)
+            if (compute_stats) {
+                derived_fields_compute_statistics(derived, sim_data->field);
+            }
+        }
+    }
+
+    // Write all registered outputs with pre-computed derived fields
     output_registry_write_outputs(sim_data->outputs, run_dir, step, sim_data->current_time,
-                                  sim_data->field, sim_data->grid, &sim_data->params,
+                                  sim_data->field, derived, sim_data->grid, &sim_data->params,
                                   &sim_data->last_stats);
+
+    // Clean up derived fields
+    if (derived) {
+        derived_fields_destroy(derived);
+    }
 }

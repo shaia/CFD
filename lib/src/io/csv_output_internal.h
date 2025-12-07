@@ -2,6 +2,7 @@
 #define CSV_OUTPUT_INTERNAL_H
 
 #include "csv_output.h"
+#include "derived_fields.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,9 +17,10 @@ typedef enum { CSV_OUTPUT_TIMESERIES, CSV_OUTPUT_CENTERLINE, CSV_OUTPUT_STATISTI
 
 // Dispatch CSV output based on type
 // This is an internal function called by output_registry.c
+// The derived parameter contains pre-computed fields like velocity magnitude (can be NULL)
 void csv_dispatch_output(CsvOutputType csv_type, const char* run_dir, const char* prefix, int step,
-                         double current_time, const FlowField* field, const Grid* grid,
-                         const SolverParams* params, const SolverStats* stats);
+                         double current_time, const FlowField* field, const DerivedFields* derived,
+                         const Grid* grid, const SolverParams* params, const SolverStats* stats);
 
 #ifdef __cplusplus
 }
