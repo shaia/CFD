@@ -123,34 +123,6 @@ double sign(double x) {
 }
 
 //=============================================================================
-// FIELD STATISTICS
-//=============================================================================
-
-FieldStats calculate_field_statistics(const double* data, size_t count) {
-    FieldStats stats = {0};
-
-    if (!data || count == 0) {
-        return stats;
-    }
-
-    stats.min_val = data[0];
-    stats.max_val = data[0];
-    stats.sum_val = 0.0;
-
-    for (size_t i = 0; i < count; i++) {
-        double val = data[i];
-        if (val < stats.min_val)
-            stats.min_val = val;
-        if (val > stats.max_val)
-            stats.max_val = val;
-        stats.sum_val += val;
-    }
-
-    stats.avg_val = stats.sum_val / (double)count;
-    return stats;
-}
-
-//=============================================================================
 // FILE SYSTEM
 //=============================================================================
 

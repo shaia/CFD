@@ -3,11 +3,27 @@
 
 #include "grid.h"
 #include "solver_interface.h"
-#include "utils.h"
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+//=============================================================================
+// FIELD STATISTICS
+//=============================================================================
+
+// Statistical measures for field data (min, max, avg, sum)
+typedef struct {
+    double min_val;
+    double max_val;
+    double avg_val;
+    double sum_val;
+} FieldStats;
+
+// Calculate statistics for a field array (OpenMP parallelized for large arrays)
+// Returns FieldStats with min, max, avg, sum computed
+FieldStats calculate_field_statistics(const double* data, size_t count);
 
 //=============================================================================
 // DERIVED FIELDS
