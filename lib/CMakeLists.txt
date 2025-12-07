@@ -70,9 +70,6 @@ set(CFD_SIMD_SOLVER_SOURCES
     src/solvers/simd/solver_projection_simd.c
 )
 
-
-
-
 # Combine all source files
 set(CFD_LIBRARY_SOURCES
     ${CFD_CORE_SOURCES}
@@ -216,8 +213,11 @@ function(apply_compiler_options target_name)
     # OpenMP linkage
     if(OpenMP_C_FOUND)
         target_link_libraries(${target_name} PUBLIC OpenMP::OpenMP_C)
+        # Attempt to enable modern LLVM-based OpenMP for MSVC to support newer standards (OpenMP 3.1+)
+        if(MSVC)
+            target_compile_options(${target_name} PRIVATE $<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:/openmp:llvm>)
+        endif()
     endif()
-
     # CUDA-specific options
     if(CFD_HAS_CUDA)
         target_compile_options(${target_name} PRIVATE

@@ -29,45 +29,49 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
     int iter;
     int converged = 0;
 
+    // Allocate temporary buffer to avoid race conditions
+    double* p_temp = (double*)cfd_calloc(nx * ny, sizeof(double));
+    if (!p_temp) return -1;
+
     for (iter = 0; iter < max_iter; iter++) {
         double max_residual = 0.0;
         
-        // Red-Black Gauss-Seidel
+        // Red-Black Gauss-Seidel with Double Buffering
         for (int color = 0; color < 2; color++) {
             int i, j;
-            #pragma omp parallel private(i, j) shared(max_residual)
-            {
-                double thread_max_res = 0.0;
-                
-                #pragma omp for schedule(static)
-                for (j = 1; j < (int)ny - 1; j++) {
-                    for (i = 1; i < (int)nx - 1; i++) {
-                        if ((i + j) % 2 != color) continue;
 
-                        size_t idx = j * nx + i;
+            // Phase 1: Compute updates into temporary buffer
+            #pragma omp parallel for reduction(max:max_residual) private(i) schedule(static)
+            for (j = 1; j < (int)ny - 1; j++) {
+                for (i = 1; i < (int)nx - 1; i++) {
+                    if ((i + j) % 2 != color) continue;
 
-                        double p_xx = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / dx2;
-                        double p_yy = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / dy2;
-                        double residual = p_xx + p_yy - rhs[idx];
-                        
-                        if (fabs(residual) > thread_max_res) {
-                            thread_max_res = fabs(residual);
-                        }
+                    size_t idx = j * nx + i;
 
-                        double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2 -
-                                        (p[idx + nx] + p[idx - nx]) / dy2) * (-inv_factor);
-                        
-                        p[idx] = p[idx] + POISSON_OMEGA * (p_new - p[idx]);
+                    double p_xx = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / dx2;
+                    double p_yy = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / dy2;
+                    double residual = p_xx + p_yy - rhs[idx];
+                    
+                    if (fabs(residual) > max_residual) {
+                        max_residual = fabs(residual);
                     }
+
+                    double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2 -
+                                    (p[idx + nx] + p[idx - nx]) / dy2) * (-inv_factor);
+                    
+                    p_temp[idx] = p[idx] + POISSON_OMEGA * (p_new - p[idx]);
                 }
-                
-                #pragma omp critical
-                {
-                    if (thread_max_res > max_residual) {
-                        max_residual = thread_max_res;
-                    }
+            }
+
+            // Phase 2: Commit updates to main array
+            #pragma omp parallel for private(i) schedule(static)
+            for (j = 1; j < (int)ny - 1; j++) {
+                for (i = 1; i < (int)nx - 1; i++) {
+                    if ((i + j) % 2 != color) continue;
+                    size_t idx = j * nx + i;
+                    p[idx] = p_temp[idx];
                 }
-            } // end parallel
+            }
         }
 
         // Apply BCs
@@ -88,6 +92,8 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
             break;
         }
     }
+
+    cfd_free(p_temp);
 
     return converged ? iter : -1;
 }
@@ -197,9 +203,10 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
         
         if (poisson_iters < 0) {
             // Fallback
-             long long idx;
+            // Fallback
+             size_t idx;
              #pragma omp parallel for private(idx) schedule(static)
-             for (idx = 0; idx < (long long)size; idx++) {
+             for (idx = 0; idx < size; idx++) {
                 p_new[idx] = field->p[idx] - 0.1 * dt * rhs[idx];
             }
         }
