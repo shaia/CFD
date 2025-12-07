@@ -29,12 +29,18 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
     int iter;
     int converged = 0;
 
+    // Allocate temporary buffer to avoid race conditions
+    double* p_temp = (double*)cfd_calloc(nx * ny, sizeof(double));
+    if (!p_temp) return -1;
+
     for (iter = 0; iter < max_iter; iter++) {
         double max_residual = 0.0;
         
-        // Red-Black Gauss-Seidel
+        // Red-Black Gauss-Seidel with Double Buffering
         for (int color = 0; color < 2; color++) {
             int i, j;
+
+            // Phase 1: Compute updates into temporary buffer
             #pragma omp parallel for reduction(max:max_residual) private(i) schedule(static)
             for (j = 1; j < (int)ny - 1; j++) {
                 for (i = 1; i < (int)nx - 1; i++) {
@@ -53,7 +59,17 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
                     double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2 -
                                     (p[idx + nx] + p[idx - nx]) / dy2) * (-inv_factor);
                     
-                    p[idx] = p[idx] + POISSON_OMEGA * (p_new - p[idx]);
+                    p_temp[idx] = p[idx] + POISSON_OMEGA * (p_new - p[idx]);
+                }
+            }
+
+            // Phase 2: Commit updates to main array
+            #pragma omp parallel for private(i) schedule(static)
+            for (j = 1; j < (int)ny - 1; j++) {
+                for (i = 1; i < (int)nx - 1; i++) {
+                    if ((i + j) % 2 != color) continue;
+                    size_t idx = j * nx + i;
+                    p[idx] = p_temp[idx];
                 }
             }
         }
@@ -76,6 +92,8 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
             break;
         }
     }
+
+    cfd_free(p_temp);
 
     return converged ? iter : -1;
 }
