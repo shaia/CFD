@@ -219,20 +219,17 @@ int solver_registry_has(const char* type_name);
 
 // Get description for a solver type
 const char* solver_registry_get_description(const char* type_name);
-
-/**
- * Built-in solver type names
- */
+// Solver Types
 #define SOLVER_TYPE_EXPLICIT_EULER           "explicit_euler"
 #define SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED "explicit_euler_optimized"
+#define SOLVER_TYPE_PROJECTION               "projection"
+#define SOLVER_TYPE_PROJECTION_OPTIMIZED     "projection_optimized"
 
-// Projection method solvers
-#define SOLVER_TYPE_PROJECTION           "projection"
-#define SOLVER_TYPE_PROJECTION_OPTIMIZED "projection_optimized"
-
-// GPU-accelerated solvers
 #define SOLVER_TYPE_EXPLICIT_EULER_GPU    "explicit_euler_gpu"
 #define SOLVER_TYPE_PROJECTION_JACOBI_GPU "projection_jacobi_gpu"
+
+#define SOLVER_TYPE_EXPLICIT_EULER_OMP    "explicit_euler_omp"
+#define SOLVER_TYPE_PROJECTION_OMP        "projection_omp"
 
 // Future solver types (placeholders)
 #define SOLVER_TYPE_SIMPLE "simple"
