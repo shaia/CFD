@@ -215,7 +215,7 @@ function(apply_compiler_options target_name)
         target_link_libraries(${target_name} PUBLIC OpenMP::OpenMP_C)
         # Attempt to enable modern LLVM-based OpenMP for MSVC to support newer standards (OpenMP 3.1+)
         if(MSVC)
-            target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/openmp:llvm>)
+            target_compile_options(${target_name} PRIVATE $<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:/openmp:llvm>)
         endif()
     endif()
     # CUDA-specific options
