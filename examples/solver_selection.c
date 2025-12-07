@@ -107,7 +107,7 @@ void run_solver_comparison(void) {
         simulation_set_run_prefix(sim, solver_type);
 
         // Register output at end of simulation only
-        simulation_register_output(sim, OUTPUT_PRESSURE, NUM_STEPS, "solver_test");
+        simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, NUM_STEPS, "solver_test");
 
         // Run simulation
         printf("\nRunning %d steps...\n", NUM_STEPS);
@@ -137,7 +137,7 @@ void run_dynamic_solver_switch(void) {
     simulation_set_run_prefix(sim, "dynamic_switch");
 
     // Register output every 10 steps
-    simulation_register_output(sim, OUTPUT_PRESSURE, 10, "test");
+    simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, 10, "test");
 
     Solver* solver = simulation_get_solver(sim);
     print_solver_info(solver);

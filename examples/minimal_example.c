@@ -32,8 +32,8 @@ int main() {
     simulation_set_run_prefix(sim, "minimal");
 
     // Step 4: Register automatic output every 5 steps
-    simulation_register_output(sim, OUTPUT_PRESSURE, 5, "pressure");
-    printf("✓ Registered pressure output every 5 steps\n");
+    simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, 5, "velocity_mag");
+    printf("✓ Registered velocity magnitude output every 5 steps\n");
 
     // Step 5: Run simulation with automatic output
     printf("\nRunning simulation...\n");

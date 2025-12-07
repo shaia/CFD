@@ -1,5 +1,4 @@
 #include "vtk_output.h"
-#include "field_ops.h"
 #include "grid.h"
 #include "solver_interface.h"
 #include "utils.h"
@@ -31,20 +30,6 @@ typedef void (*VtkOutputHandler)(const char* run_dir, const char* prefix, int st
                                  const FlowField* field, const Grid* grid);
 
 // VTK output handler functions
-static void write_pressure_vtk(const char* run_dir, const char* prefix, int step,
-                               const FlowField* field, const Grid* grid) {
-    const char* name = prefix ? prefix : "pressure";
-    char filename[256], filepath[512];
-
-    snprintf(filename, sizeof(filename), "%s_%03d.vtk", name, step);
-    build_filepath(filepath, sizeof(filepath), run_dir, filename);
-
-    double* velocity_magnitude = calculate_velocity_magnitude(field, grid->nx, grid->ny);
-    write_vtk_output(filepath, "velocity_magnitude", velocity_magnitude, grid->nx, grid->ny,
-                     grid->xmin, grid->xmax, grid->ymin, grid->ymax);
-    cfd_free(velocity_magnitude);
-}
-
 static void write_velocity_vtk(const char* run_dir, const char* prefix, int step,
                                const FlowField* field, const Grid* grid) {
     const char* name = prefix ? prefix : "velocity";
@@ -70,8 +55,9 @@ static void write_full_field_vtk(const char* run_dir, const char* prefix, int st
 }
 
 // VTK output handler table - indexed by VtkOutputType
+// Note: VTK_OUTPUT_VELOCITY_MAGNITUDE is handled via vtk_write_scalar_field, not dispatch
 static const VtkOutputHandler vtk_output_table[] = {
-    write_pressure_vtk,   // VTK_OUTPUT_PRESSURE = 0
+    NULL,                 // VTK_OUTPUT_VELOCITY_MAGNITUDE = 0 (uses vtk_write_scalar_field)
     write_velocity_vtk,   // VTK_OUTPUT_VELOCITY = 1
     write_full_field_vtk  // VTK_OUTPUT_FULL_FIELD = 2
 };
@@ -80,12 +66,35 @@ static const VtkOutputHandler vtk_output_table[] = {
 
 void vtk_dispatch_output(VtkOutputType vtk_type, const char* run_dir, const char* prefix, int step,
                          const FlowField* field, const Grid* grid) {
+    // VTK_OUTPUT_VELOCITY_MAGNITUDE should use vtk_write_scalar_field directly
+    if (vtk_type == VTK_OUTPUT_VELOCITY_MAGNITUDE) {
+        cfd_warning("VTK_OUTPUT_VELOCITY_MAGNITUDE should use vtk_write_scalar_field");
+        return;
+    }
+
     // Bounds check and dispatch via function table
-    if (vtk_type < VTK_OUTPUT_TABLE_SIZE) {
+    if (vtk_type < VTK_OUTPUT_TABLE_SIZE && vtk_output_table[vtk_type] != NULL) {
         vtk_output_table[vtk_type](run_dir, prefix, step, field, grid);
     } else {
         cfd_warning("Unknown VTK output type");
     }
+}
+
+// Write pre-computed scalar field to VTK
+void vtk_write_scalar_field(const char* run_dir, const char* prefix, int step,
+                            const char* field_name, const double* data,
+                            const Grid* grid) {
+    if (!run_dir || !data || !grid)
+        return;
+
+    const char* name = prefix ? prefix : "scalar";
+    char filename[256], filepath[512];
+
+    snprintf(filename, sizeof(filename), "%s_%03d.vtk", name, step);
+    build_filepath(filepath, sizeof(filepath), run_dir, filename);
+
+    write_vtk_output(filepath, field_name, data, grid->nx, grid->ny,
+                     grid->xmin, grid->xmax, grid->ymin, grid->ymax);
 }
 
 //=============================================================================

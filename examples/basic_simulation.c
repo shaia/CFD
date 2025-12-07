@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
     simulation_set_run_prefix(sim_data, "basic_sim");
 
     // Register automatic output every 100 steps
-    simulation_register_output(sim_data, OUTPUT_PRESSURE, 100, NULL);
+    simulation_register_output(sim_data, OUTPUT_VELOCITY_MAGNITUDE, 100, NULL);
 
     // Run the simulation
     for (int iter = 0; iter < sim_data->params.max_iter; iter++) {
