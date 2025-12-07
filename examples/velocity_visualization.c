@@ -27,7 +27,7 @@ int main() {
     simulation_set_run_prefix(sim_data, "velocity_viz");
 
     // Register outputs - specify what to output and how often
-    simulation_register_output(sim_data, OUTPUT_PRESSURE, 10, "velocity_magnitude");
+    simulation_register_output(sim_data, OUTPUT_VELOCITY_MAGNITUDE, 10, "velocity_magnitude");
     simulation_register_output(sim_data, OUTPUT_VELOCITY, 10, "velocity_vectors");
     simulation_register_output(sim_data, OUTPUT_FULL_FIELD, 10, "flow_field");
 

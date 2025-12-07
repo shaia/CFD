@@ -1,4 +1,5 @@
 #include "simulation_api.h"
+#include "derived_fields.h"
 #include "grid.h"
 #include "output_registry.h"
 #include "solver_interface.h"
@@ -255,8 +256,18 @@ void simulation_write_outputs(SimulationData* sim_data, int step) {
         output_registry_get_run_dir(sim_data->outputs, s_base_output_dir, sim_data->run_prefix,
                                     sim_data->grid->nx, sim_data->grid->ny);
 
-    // Write all registered outputs
+    // Compute derived fields (e.g., velocity magnitude) before output
+    // This is the solver level - computation happens here, not in output functions
+    DerivedFields* derived = derived_fields_create(sim_data->grid->nx, sim_data->grid->ny);
+    if (derived) {
+        derived_fields_compute_velocity_magnitude(derived, sim_data->field);
+    }
+
+    // Write all registered outputs with pre-computed derived fields
     output_registry_write_outputs(sim_data->outputs, run_dir, step, sim_data->current_time,
-                                  sim_data->field, sim_data->grid, &sim_data->params,
+                                  sim_data->field, derived, sim_data->grid, &sim_data->params,
                                   &sim_data->last_stats);
+
+    // Clean up derived fields
+    derived_fields_destroy(derived);
 }
