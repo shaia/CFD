@@ -1,4 +1,5 @@
 #include "vtk_output.h"
+#include "field_ops.h"
 #include "grid.h"
 #include "solver_interface.h"
 #include "utils.h"
@@ -93,9 +94,13 @@ void vtk_dispatch_output(VtkOutputType vtk_type, const char* run_dir, const char
 
 void write_vtk_output(const char* filename, const char* field_name, const double* data, size_t nx,
                       size_t ny, double xmin, double xmax, double ymin, double ymax) {
+    if (!filename || !field_name || !data)
+        return;
+
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
         cfd_error("Failed to open VTK output file");
+        return;
     }
 
     // Write VTK header
@@ -126,9 +131,13 @@ void write_vtk_output(const char* filename, const char* field_name, const double
 void write_vtk_vector_output(const char* filename, const char* field_name, const double* u_data,
                              const double* v_data, size_t nx, size_t ny, double xmin, double xmax,
                              double ymin, double ymax) {
+    if (!filename || !field_name || !u_data || !v_data)
+        return;
+
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
         cfd_error("Failed to open VTK vector output file");
+        return;
     }
 
     // Write VTK header
@@ -156,9 +165,13 @@ void write_vtk_vector_output(const char* filename, const char* field_name, const
 
 void write_vtk_flow_field(const char* filename, const FlowField* field, size_t nx, size_t ny,
                           double xmin, double xmax, double ymin, double ymax) {
+    if (!filename || !field)
+        return;
+
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
         cfd_error("Failed to open VTK flow field output file");
+        return;
     }
 
     // Write VTK header
@@ -257,13 +270,3 @@ void write_vtk_flow_field_run(const char* filename, const FlowField* field, size
     write_vtk_flow_field(filepath, field, nx, ny, xmin, xmax, ymin, ymax);
 }
 
-// Calculate velocity magnitude field for visualization
-double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny) {
-    double* velocity_magnitude = (double*)cfd_malloc(nx * ny * sizeof(double));
-
-    for (size_t i = 0; i < nx * ny; i++) {
-        velocity_magnitude[i] = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-    }
-
-    return velocity_magnitude;
-}

@@ -43,6 +43,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CFD_CORE_SOURCES
     src/core/grid.c
     src/core/utils.c
+    src/core/field_ops.c
 )
 
 # Collect I/O source files
@@ -107,6 +108,7 @@ set(CFD_LIBRARY_HEADERS
     include/solver_interface.h
     include/solver_gpu.h
     include/utils.h
+    include/field_ops.h
     include/vtk_output.h
     include/csv_output.h
     include/output_registry.h

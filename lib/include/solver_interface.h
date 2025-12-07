@@ -281,9 +281,6 @@ void compute_source_terms(double x, double y, int iter, double dt, const SolverP
 // Time step computation
 void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params);
 
-// Utility calculations
-double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny);
-
 // Helper function to initialize SolverParams with default values
 SolverParams solver_params_default(void);
 
