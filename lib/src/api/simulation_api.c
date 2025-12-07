@@ -277,7 +277,7 @@ void simulation_write_outputs(SimulationData* sim_data, int step) {
     if (compute_vel_mag || compute_stats) {
         derived = derived_fields_create(sim_data->grid->nx, sim_data->grid->ny);
         if (derived) {
-            // Compute velocity magnitude if needed (VTK or CSV outputs)
+            // Compute velocity magnitude if needed (CSV outputs)
             if (compute_vel_mag) {
                 derived_fields_compute_velocity_magnitude(derived, sim_data->field);
             }

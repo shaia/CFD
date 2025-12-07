@@ -314,6 +314,44 @@ void test_csv_statistics_null_safety(void) {
     TEST_ASSERT_FALSE(file_exists(filename));
 }
 
+void test_csv_statistics_requires_computed(void) {
+    char filename[256];
+    make_output_path(filename, sizeof(filename), "test_stats_not_computed.csv");
+    remove(filename);
+
+    // Create derived fields without computing statistics
+    DerivedFields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny);
+    TEST_ASSERT_NOT_NULL(derived_no_stats);
+    TEST_ASSERT_EQUAL_INT(0, derived_no_stats->stats_computed);
+
+    // Should not write file when stats_computed is false
+    write_csv_statistics(filename, 0, 0.0, test_field, derived_no_stats, test_grid->nx,
+                         test_grid->ny, 1);
+    TEST_ASSERT_FALSE(file_exists(filename));
+
+    derived_fields_destroy(derived_no_stats);
+}
+
+void test_csv_timeseries_requires_computed(void) {
+    char filename[256];
+    make_output_path(filename, sizeof(filename), "test_timeseries_not_computed.csv");
+    remove(filename);
+
+    SolverParams params = solver_params_default();
+    SolverStats stats = solver_stats_default();
+
+    // Create derived fields without computing statistics
+    DerivedFields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny);
+    TEST_ASSERT_NOT_NULL(derived_no_stats);
+
+    // Should not write file when stats_computed is false
+    write_csv_timeseries(filename, 0, 0.0, test_field, derived_no_stats, &params, &stats,
+                         test_grid->nx, test_grid->ny, 1);
+    TEST_ASSERT_FALSE(file_exists(filename));
+
+    derived_fields_destroy(derived_no_stats);
+}
+
 //=============================================================================
 // DATA CORRECTNESS TESTS
 //=============================================================================
@@ -363,6 +401,7 @@ int main(void) {
     RUN_TEST(test_csv_timeseries_has_header);
     RUN_TEST(test_csv_timeseries_appends_data);
     RUN_TEST(test_csv_timeseries_null_safety);
+    RUN_TEST(test_csv_timeseries_requires_computed);
 
     // Centerline tests
     RUN_TEST(test_csv_centerline_horizontal);
@@ -374,6 +413,7 @@ int main(void) {
     RUN_TEST(test_csv_statistics_has_header);
     RUN_TEST(test_csv_statistics_appends_data);
     RUN_TEST(test_csv_statistics_null_safety);
+    RUN_TEST(test_csv_statistics_requires_computed);
 
     // Data correctness tests
     RUN_TEST(test_csv_timeseries_data_values);
