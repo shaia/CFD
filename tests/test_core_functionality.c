@@ -1,3 +1,4 @@
+#include "field_ops.h"
 #include "simulation_api.h"
 #include "unity.h"
 #include <math.h>

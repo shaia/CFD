@@ -57,10 +57,6 @@ void write_vtk_vector_output_run(const char* filename, const char* field_name, c
 void write_vtk_flow_field_run(const char* filename, const FlowField* field, size_t nx, size_t ny,
                               double xmin, double xmax, double ymin, double ymax);
 
-// Utility: Calculate velocity magnitude field for visualization
-// Returns allocated array that must be freed by caller
-double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny);
-
 #ifdef __cplusplus
 }
 #endif
