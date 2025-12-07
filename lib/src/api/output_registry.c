@@ -118,16 +118,20 @@ typedef void (*OutputDispatchFunc)(const char* run_dir, const char* prefix, int 
                                    const DerivedFields* derived, const Grid* grid,
                                    const SolverParams* params, const SolverStats* stats);
 
-// VTK output wrappers (ignore derived for VTK)
-static void dispatch_vtk_pressure(const char* run_dir, const char* prefix, int step,
-                                  double current_time, const FlowField* field,
-                                  const DerivedFields* derived, const Grid* grid,
-                                  const SolverParams* params, const SolverStats* stats) {
+// VTK output wrappers
+static void dispatch_vtk_velocity_magnitude(const char* run_dir, const char* prefix, int step,
+                                            double current_time, const FlowField* field,
+                                            const DerivedFields* derived, const Grid* grid,
+                                            const SolverParams* params, const SolverStats* stats) {
     (void)current_time;
-    (void)derived;
+    (void)field;
     (void)params;
     (void)stats;
-    vtk_dispatch_output(VTK_OUTPUT_PRESSURE, run_dir, prefix, step, field, grid);
+    // Use pre-computed velocity magnitude from derived fields
+    if (derived && derived->velocity_magnitude) {
+        vtk_write_scalar_field(run_dir, prefix, step, "velocity_magnitude",
+                               derived->velocity_magnitude, grid);
+    }
 }
 
 static void dispatch_vtk_velocity(const char* run_dir, const char* prefix, int step,
@@ -180,12 +184,12 @@ static void dispatch_csv_statistics(const char* run_dir, const char* prefix, int
 // Output dispatch table - indexed by OutputFieldType
 // This provides O(1) lookup with no branch prediction issues
 static const OutputDispatchFunc output_dispatch_table[] = {
-    dispatch_vtk_pressure,    // OUTPUT_PRESSURE = 0
-    dispatch_vtk_velocity,    // OUTPUT_VELOCITY = 1
-    dispatch_vtk_full_field,  // OUTPUT_FULL_FIELD = 2
-    dispatch_csv_timeseries,  // OUTPUT_CSV_TIMESERIES = 3
-    dispatch_csv_centerline,  // OUTPUT_CSV_CENTERLINE = 4
-    dispatch_csv_statistics   // OUTPUT_CSV_STATISTICS = 5
+    dispatch_vtk_velocity_magnitude,  // OUTPUT_VELOCITY_MAGNITUDE = 0
+    dispatch_vtk_velocity,            // OUTPUT_VELOCITY = 1
+    dispatch_vtk_full_field,          // OUTPUT_FULL_FIELD = 2
+    dispatch_csv_timeseries,          // OUTPUT_CSV_TIMESERIES = 3
+    dispatch_csv_centerline,          // OUTPUT_CSV_CENTERLINE = 4
+    dispatch_csv_statistics           // OUTPUT_CSV_STATISTICS = 5
 };
 
 #define OUTPUT_DISPATCH_TABLE_SIZE \

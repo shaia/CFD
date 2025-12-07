@@ -248,7 +248,8 @@ void simulation_set_run_prefix(SimulationData* sim_data, const char* prefix) {
 
 // Check if any output type that uses velocity magnitude is registered
 static int needs_velocity_magnitude(const OutputRegistry* outputs) {
-    return output_registry_has_type(outputs, OUTPUT_CSV_TIMESERIES) ||
+    return output_registry_has_type(outputs, OUTPUT_VELOCITY_MAGNITUDE) ||
+           output_registry_has_type(outputs, OUTPUT_CSV_TIMESERIES) ||
            output_registry_has_type(outputs, OUTPUT_CSV_CENTERLINE) ||
            output_registry_has_type(outputs, OUTPUT_CSV_STATISTICS);
 }
