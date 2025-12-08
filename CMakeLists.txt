@@ -130,6 +130,7 @@ if(BUILD_TESTS)
     add_executable(test_csv_output tests/test_csv_output.c)
     add_executable(test_vtk_output tests/test_vtk_output.c)
     add_executable(test_derived_fields tests/test_derived_fields.c)
+    add_executable(test_simulation_api tests/test_simulation_api.c)
 
     # Link test executables with CFD library and Unity
     target_link_libraries(test_simulation_basic PRIVATE CFD::Library unity)
@@ -145,6 +146,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_csv_output PRIVATE CFD::Library unity)
     target_link_libraries(test_vtk_output PRIVATE CFD::Library unity)
     target_link_libraries(test_derived_fields PRIVATE CFD::Library unity)
+    target_link_libraries(test_simulation_api PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
     enable_testing()
@@ -159,6 +161,7 @@ if(BUILD_TESTS)
     add_test(NAME CsvOutputTest COMMAND test_csv_output)
     add_test(NAME VtkOutputTest COMMAND test_vtk_output)
     add_test(NAME DerivedFieldsTest COMMAND test_derived_fields)
+    add_test(NAME SimulationApiTest COMMAND test_simulation_api)
 endif()
 
 # Documentation target (Doxygen)
