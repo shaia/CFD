@@ -388,10 +388,11 @@ jobs:
           cd build
           lcov --summary coverage.info 2>&1 | tee -a $GITHUB_STEP_SUMMARY
 
-  # API Documentation build
+  # API Documentation build (only on main/master branch or releases)
   docs:
     name: API Documentation
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.event_name == 'release'
 
     steps:
       - name: Checkout code
@@ -442,7 +443,9 @@ jobs:
     steps:
       - name: Check build results
         run: |
-          if [[ "${{ needs.build-matrix.result }}" == "success" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "${{ needs.docs.result }}" == "success" ]]; then
+          # docs job may be skipped on feature branches, so treat 'skipped' as success
+          DOCS_OK="${{ needs.docs.result == 'success' || needs.docs.result == 'skipped' }}"
+          if [[ "${{ needs.build-matrix.result }}" == "success" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
             echo "✅ All builds passed successfully!"
             echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
             echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
