@@ -131,6 +131,7 @@ if(BUILD_TESTS)
     add_executable(test_vtk_output tests/test_vtk_output.c)
     add_executable(test_derived_fields tests/test_derived_fields.c)
     add_executable(test_simulation_api tests/test_simulation_api.c)
+    add_executable(test_solver_gpu tests/test_solver_gpu.c)
 
     # Link test executables with CFD library and Unity
     target_link_libraries(test_simulation_basic PRIVATE CFD::Library unity)
@@ -147,6 +148,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_vtk_output PRIVATE CFD::Library unity)
     target_link_libraries(test_derived_fields PRIVATE CFD::Library unity)
     target_link_libraries(test_simulation_api PRIVATE CFD::Library unity)
+    target_link_libraries(test_solver_gpu PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
     enable_testing()
@@ -162,6 +164,7 @@ if(BUILD_TESTS)
     add_test(NAME VtkOutputTest COMMAND test_vtk_output)
     add_test(NAME DerivedFieldsTest COMMAND test_derived_fields)
     add_test(NAME SimulationApiTest COMMAND test_simulation_api)
+    add_test(NAME SolverGpuTest COMMAND test_solver_gpu)
 endif()
 
 # Documentation target (Doxygen)
