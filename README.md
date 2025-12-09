@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/shaia/CFD/master/assets/CFD-Logo.png" alt="CFD Logo" width="200">
+  <img src="https://raw.githubusercontent.com/shaia/CFD/master/assets/cfd-logo-nbg.png" alt="CFD Logo" width="200">
 </p>
 
 # CFD Framework
