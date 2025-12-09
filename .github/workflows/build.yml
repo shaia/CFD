@@ -72,19 +72,10 @@ jobs:
               artifact_name: "cfd-linux-clang-x64"
             }
 
-          # macOS builds
-          - {
-              name: "macOS x64",
-              os: macos-13,  # Intel Mac
-              generator: "Unix Makefiles",
-              build_type: "Release",
-              cc: "clang",
-              cxx: "clang++",
-              artifact_name: "cfd-macos-x64"
-            }
+          # macOS builds (macos-13 retired, using macos-14 for ARM64)
           - {
               name: "macOS ARM64",
-              os: macos-latest,  # Apple Silicon
+              os: macos-14,  # Apple Silicon (M1)
               generator: "Unix Makefiles",
               build_type: "Release",
               cc: "clang",
