@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/shaia/CFD/master/assets/CFD-Logo.png" alt="CFD Logo" width="200">
+</p>
+
 # CFD Framework
 
 A computational fluid dynamics (CFD) framework implemented in C. This project provides a foundation for solving fluid dynamics problems using numerical methods, with VTK output for visualization.
