@@ -2,6 +2,7 @@
 #include "simulation_api.h"
 #include "unity.h"
 #include <math.h>
+#include <stdlib.h>
 
 void setUp(void) {
     // Set up code (if needed)
