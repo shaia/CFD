@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   check-version:
@@ -180,3 +182,86 @@ jobs:
           echo "- Release creation permissions" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "💡 **Next steps:** Fix the issues and push another commit to retry the release." >> $GITHUB_STEP_SUMMARY
+
+  # Publish documentation to GitHub Pages on release
+  publish-pages:
+    name: Publish Documentation to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: [check-version, build, create-release]
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: site/coverage
+
+      - name: Download API documentation
+        uses: actions/download-artifact@v4
+        with:
+          name: api-docs
+          path: site/docs
+
+      - name: Create index page
+        run: |
+          cat > site/index.html << EOF
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta name="description" content="Documentation and code coverage for the CFD Library - a 2D Computational Fluid Dynamics Library in C">
+            <title>CFD Library v${{ needs.check-version.outputs.version }} - Documentation</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+              h1 { color: #333; }
+              .version { color: #666; font-size: 0.9em; margin-bottom: 20px; }
+              .links { display: flex; gap: 20px; margin-top: 30px; }
+              .link-card { padding: 20px; border: 1px solid #ddd; border-radius: 8px; text-decoration: none; color: inherit; flex: 1; }
+              .link-card:hover { background: #f5f5f5; }
+              .link-card h2 { margin: 0 0 10px 0; color: #0366d6; }
+              .link-card p { margin: 0; color: #666; }
+            </style>
+          </head>
+          <body>
+            <h1>CFD Library Documentation</h1>
+            <p class="version">Version ${{ needs.check-version.outputs.version }}</p>
+            <p>2D Computational Fluid Dynamics Library in C</p>
+            <div class="links">
+              <a href="docs/" class="link-card" aria-label="API Documentation">
+                <span class="icon" aria-hidden="true">📚</span>
+                <h2>API Documentation</h2>
+                <p>Doxygen-generated API reference</p>
+              </a>
+              <a href="coverage/" class="link-card" aria-label="Code Coverage">
+                <span class="icon" aria-hidden="true">📊</span>
+                <h2>Code Coverage</h2>
+                <p>Test coverage report</p>
+              </a>
+            </div>
+          </body>
+          </html>
+          EOF
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Generate summary
+        run: |
+          echo "## 🌐 GitHub Pages Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Documentation for v${{ needs.check-version.outputs.version }} published to GitHub Pages:" >> $GITHUB_STEP_SUMMARY
+          echo "- 📚 [API Documentation](${{ steps.deployment.outputs.page_url }}docs/)" >> $GITHUB_STEP_SUMMARY
+          echo "- 📊 [Code Coverage](${{ steps.deployment.outputs.page_url }}coverage/)" >> $GITHUB_STEP_SUMMARY
