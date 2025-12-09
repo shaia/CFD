@@ -207,7 +207,7 @@ jobs:
 
       - name: Create index page
         run: |
-          cat > site/index.html << 'EOF'
+          cat > site/index.html << EOF
           <!DOCTYPE html>
           <html lang="en">
           <head>
