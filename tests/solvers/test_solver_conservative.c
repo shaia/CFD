@@ -15,8 +15,9 @@ void setUp(void) {
 void tearDown(void) {}
 
 // Simple fixed solver with better stability
-void solve_navier_stokes_fixed(FlowField* field, const Grid* grid, const SolverParams* params) {
-    printf("Running fixed solver...\n");
+void solve_navier_stokes_conservative(FlowField* field, const Grid* grid,
+                                      const SolverParams* params) {
+    printf("Running conservative solver...\n");
 
     // For small grids, just make minimal stable updates
     if (field->nx < 5 || field->ny < 5) {
@@ -78,7 +79,7 @@ void solve_navier_stokes_fixed(FlowField* field, const Grid* grid, const SolverP
 }
 
 // Test the fixed solver
-void test_fixed_solver(void) {
+void test_conservative_solver(void) {
     size_t nx = 5, ny = 5;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
@@ -98,11 +99,11 @@ void test_fixed_solver(void) {
     params.max_iter = 5;
     params.dt = 0.001;
 
-    printf("Testing fixed solver...\n");
+    printf("Testing conservative solver...\n");
 
     // Run fixed solver
     for (int iter = 0; iter < params.max_iter; iter++) {
-        solve_navier_stokes_fixed(field, grid, &params);
+        solve_navier_stokes_conservative(field, grid, &params);
 
         // Check for NaN after each iteration
         int has_nan = 0;
@@ -134,8 +135,8 @@ void test_fixed_solver(void) {
 int main(void) {
     UNITY_BEGIN();
 
-    printf("=== FIXED SOLVER TEST ===\n");
-    RUN_TEST(test_fixed_solver);
+    printf("=== CONSERVATIVE SOLVER TEST ===\n");
+    RUN_TEST(test_conservative_solver);
 
     return UNITY_END();
 }

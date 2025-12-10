@@ -57,7 +57,7 @@ void test_solver_step_by_step_debug(void) {
     TEST_ASSERT_NOT_NULL(grid);
     TEST_ASSERT_NOT_NULL(field);
 
-    printf("=== DEBUGGING SOLVER STEP BY STEP ===\n");
+    printf("=== TESTING SOLVER STABILITY STEP BY STEP ===\n");
 
     // Initialize field
     initialize_flow_field(field, grid);
