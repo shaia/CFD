@@ -27,6 +27,19 @@ extern "C" {
  */
 double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny);
 
+/**
+ * Calculate velocity magnitude squared field
+ *
+ * Computes u^2 + v^2 for each grid point.
+ * Performance optimized version avoiding sqrt call.
+ *
+ * @param field The flow field containing u and v velocity components
+ * @param nx Number of grid points in x direction
+ * @param ny Number of grid points in y direction
+ * @return Allocated array of squared velocity magnitudes (caller must free), or NULL on error
+ */
+double* calculate_velocity_magnitude_squared(const FlowField* field, size_t nx, size_t ny);
+
 #ifdef __cplusplus
 }
 #endif

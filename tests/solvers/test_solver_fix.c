@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 void setUp(void) {
     ensure_directory_exists("../../artifacts");
