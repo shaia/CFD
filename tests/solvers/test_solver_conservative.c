@@ -101,7 +101,7 @@ void test_conservative_solver(void) {
 
     printf("Testing conservative solver...\n");
 
-    // Run fixed solver
+    // Run conservative solver
     for (int iter = 0; iter < params.max_iter; iter++) {
         solve_navier_stokes_conservative(field, grid, &params);
 

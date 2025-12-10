@@ -17,7 +17,7 @@ void tearDown(void) {
 }
 
 // Helper function to print field values for debugging
-void print_field_debug(FlowField* field, const char* name) {
+void print_field_stability(FlowField* field, const char* name) {
     printf("\n=== %s ===\n", name);
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
@@ -45,7 +45,7 @@ void check_field_validity(FlowField* field, const char* stage) {
 }
 
 // Test solver step by step to identify where NaN appears
-void test_solver_step_by_step_debug(void) {
+void test_solver_step_by_step_stability(void) {
     // Use very simple 3x3 grid
     size_t nx = 3, ny = 3;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
@@ -62,7 +62,7 @@ void test_solver_step_by_step_debug(void) {
     // Initialize field
     initialize_flow_field(field, grid);
     check_field_validity(field, "After initialization");
-    print_field_debug(field, "Initial state");
+    print_field_stability(field, "Initial state");
 
     // Set up solver parameters - make them very conservative
     SolverParams params = solver_params_default();
@@ -82,7 +82,7 @@ void test_solver_step_by_step_debug(void) {
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     check_field_validity(field, "After 1 solver iteration");
-    print_field_debug(field, "After solver");
+    print_field_stability(field, "After solver");
 
     // Check for NaN values
     int has_nan = 0;
@@ -109,7 +109,7 @@ int main(void) {
 
     printf("=== SOLVER STABILITY TEST ===\n");
 
-    RUN_TEST(test_solver_step_by_step_debug);
+    RUN_TEST(test_solver_step_by_step_stability);
 
     return UNITY_END();
 }
