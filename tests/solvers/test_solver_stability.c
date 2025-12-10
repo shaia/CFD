@@ -107,7 +107,7 @@ void test_solver_step_by_step_debug(void) {
 int main(void) {
     UNITY_BEGIN();
 
-    printf("=== SOLVER DEBUG TEST ===\n");
+    printf("=== SOLVER STABILITY TEST ===\n");
 
     RUN_TEST(test_solver_step_by_step_debug);
 
