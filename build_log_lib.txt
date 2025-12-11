@@ -1,6 +1,0 @@
-MSBuild version 17.14.23+b0019275e for .NET Framework
-
-cl : command line  warning D9025: overriding '/openmp' with '/openmp:llvm' [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]
-  solver_registry.c
-C:\Users\shaia\development\cfd-workspace\cfd\lib\src\api\solver_registry.c(146,5): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]
-  cfd_library.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\lib\Release\cfd_library.lib

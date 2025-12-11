@@ -1,7 +1,0 @@
-MSBuild version 17.14.23+b0019275e for .NET Framework
-
-  cfd_library.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\lib\Release\cfd_library.lib
-  unity.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\_deps\unity-build\Release\unity.lib
-  Building Custom Rule C:/Users/shaia/development/cfd-workspace/cfd/CMakeLists.txt
-  test_error_handling.c
-  test_error_handling.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_error_handling.exe
