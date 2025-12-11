@@ -107,6 +107,7 @@ typedef void* SolverContext;
  */
 
 // Initialize solver context (allocate internal buffers, etc.)
+// Returns CFD_SUCCESS on success, or error code on failure (e.g., CFD_ERROR_NOMEM)
 typedef cfd_status_t (*SolverInitFunc)(Solver* solver, const Grid* grid,
                                        const SolverParams* params);
 
@@ -114,10 +115,14 @@ typedef cfd_status_t (*SolverInitFunc)(Solver* solver, const Grid* grid,
 typedef void (*SolverDestroyFunc)(Solver* solver);
 
 // Perform one time step
+// Returns CFD_SUCCESS on success, CFD_ERROR_DIVERGED if solution diverges,
+// or error code on failure
 typedef cfd_status_t (*SolverStepFunc)(Solver* solver, FlowField* field, const Grid* grid,
                                        const SolverParams* params, SolverStats* stats);
 
 // Perform multiple iterations until convergence or max_iter
+// Returns CFD_SUCCESS on success, CFD_ERROR_DIVERGED if solution diverges,
+// or error code on failure
 typedef cfd_status_t (*SolverSolveFunc)(Solver* solver, FlowField* field, const Grid* grid,
                                         const SolverParams* params, SolverStats* stats);
 
