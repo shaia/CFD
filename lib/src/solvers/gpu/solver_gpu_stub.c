@@ -11,7 +11,7 @@
 #include <string.h>
 
 // Forward declarations for CPU fallback solvers
-// Forward declarations for CPU fallback solvers
+
 extern cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid,
                                         const SolverParams* params);
 extern cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
