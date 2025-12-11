@@ -1,0 +1,14 @@
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+cl : command line  warning D9025: overriding '/openmp' with '/openmp:llvm' [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]
+  simulation_api.c
+C:\Users\shaia\development\cfd-workspace\cfd\lib\src\api\simulation_api.c(45,5): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]
+C:\Users\shaia\development\cfd-workspace\cfd\lib\src\api\simulation_api.c(144,5): error C2371: 'simulation_set_solver': redefinition; different basic types [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]
+      C:\Users\shaia\development\cfd-workspace\cfd\lib\src\api\simulation_api.c(130,6):
+      see declaration of 'simulation_set_solver'
+  
+C:\Users\shaia\development\cfd-workspace\cfd\lib\src\api\simulation_api.c(145,5): error C2059: syntax error: 'return' [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]
+C:\Users\shaia\development\cfd-workspace\cfd\lib\src\api\simulation_api.c(146,1): error C2059: syntax error: '}' [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]
+C:\Users\shaia\development\cfd-workspace\cfd\lib\src\api\simulation_api.c(268,9): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]
+C:\Users\shaia\development\cfd-workspace\cfd\lib\src\api\simulation_api.c(288,9): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]
+  unity.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\_deps\unity-build\Debug\unity.lib

@@ -140,10 +140,18 @@ void cfd_registry_register_defaults(SolverRegistry* registry) {
 
 int cfd_registry_register(SolverRegistry* registry, const char* type_name,
                           SolverFactoryFunc factory) {
-    if (!registry || !type_name || !factory)
+    if (!registry || !type_name || !factory) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for solver registration");
         return -1;
-    if (registry->count >= MAX_REGISTERED_SOLVERS)
+    }
+    if (strlen(type_name) == 0) {
+        cfd_set_error(CFD_ERROR_INVALID, "Solver type name cannot be empty");
         return -1;
+    }
+    if (registry->count >= MAX_REGISTERED_SOLVERS) {
+        cfd_set_error(CFD_ERROR_NOMEM, "Max registered solvers limit reached");
+        return -1;
+    }
 
     // Check if already registered
     for (int i = 0; i < registry->count; i++) {
@@ -224,8 +232,10 @@ const char* cfd_registry_get_description(SolverRegistry* registry, const char* t
  */
 
 Solver* cfd_solver_create(SolverRegistry* registry, const char* type_name) {
-    if (!registry || !type_name)
+    if (!registry || !type_name) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for solver creation");
         return NULL;
+    }
 
     for (int i = 0; i < registry->count; i++) {
         if (strcmp(registry->entries[i].name, type_name) == 0) {

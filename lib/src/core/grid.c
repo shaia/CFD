@@ -9,6 +9,15 @@
 #include <math.h>
 
 Grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin, double ymax) {
+    if (nx == 0 || ny == 0) {
+        cfd_set_error(CFD_ERROR_INVALID, "Grid dimensions must be positive");
+        return NULL;
+    }
+    if (xmax <= xmin || ymax <= ymin) {
+        cfd_set_error(CFD_ERROR_INVALID, "Grid bounds invalid (max must be > min)");
+        return NULL;
+    }
+
     Grid* grid = (Grid*)cfd_malloc(sizeof(Grid));
     if (grid == NULL) {
         return NULL;

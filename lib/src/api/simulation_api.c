@@ -28,6 +28,15 @@ static int s_registry_initialized = 0;
 static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, double xmin, double xmax,
                                                      double ymin, double ymax,
                                                      const char* solver_type) {
+    if (nx == 0 || ny == 0) {
+        cfd_set_error(CFD_ERROR_INVALID, "Simulation grid dimensions must be positive");
+        return NULL;
+    }
+    if (xmax <= xmin || ymax <= ymin) {
+        cfd_set_error(CFD_ERROR_INVALID, "Simulation bounds invalid");
+        return NULL;
+    }
+
     SimulationData* sim_data = (SimulationData*)cfd_malloc(sizeof(SimulationData));
     if (!sim_data)
         return NULL;
@@ -133,12 +142,15 @@ void simulation_set_solver(SimulationData* sim_data, Solver* solver) {
 
 // Set the solver by type name
 int simulation_set_solver_by_name(SimulationData* sim_data, const char* solver_type) {
-    if (!sim_data || !solver_type)
+    if (!sim_data || !solver_type) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for simulation solver");
         return -1;
+    }
 
     Solver* solver = cfd_solver_create(sim_data->registry, solver_type);
-    if (!solver)
+    if (!solver) {
         return -1;
+    }
 
     simulation_set_solver(sim_data, solver);
     return 0;
@@ -247,8 +259,10 @@ int simulation_has_solver(const char* solver_type) {
 // Register output for automatic generation
 void simulation_register_output(SimulationData* sim_data, OutputFieldType field_type, int interval,
                                 const char* prefix) {
-    if (!sim_data || !sim_data->outputs)
+    if (!sim_data || !sim_data->outputs) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid simulation data");
         return;
+    }
     output_registry_add(sim_data->outputs, field_type, interval, prefix);
 }
 
