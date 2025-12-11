@@ -36,6 +36,9 @@ void cfd_set_error(cfd_status_t status, const char* message) {
 }
 
 const char* cfd_get_last_error(void) {
+    if (g_last_error_msg[0] == '\0') {
+        return NULL;
+    }
     return g_last_error_msg;
 }
 
