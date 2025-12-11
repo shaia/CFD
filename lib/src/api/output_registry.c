@@ -1,7 +1,12 @@
 #include "cfd/io/output_registry.h"
 #include "../io/csv_output_internal.h"
 #include "../io/vtk_output_internal.h"
-#include "cfd/core/utils.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/memory.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/filesystem.h"
+#include "cfd/core/math_utils.h"
+
 #include <string.h>
 
 //=============================================================================

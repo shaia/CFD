@@ -1,11 +1,18 @@
 #include "cfd/io/vtk_output.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+
+
 #include "cfd/solvers/solver_interface.h"
-#include "cfd/core/utils.h"
 #include "vtk_output_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 
 //=============================================================================
 // UTILITY FUNCTIONS
@@ -82,8 +89,7 @@ void vtk_dispatch_output(VtkOutputType vtk_type, const char* run_dir, const char
 
 // Write pre-computed scalar field to VTK
 void vtk_write_scalar_field(const char* run_dir, const char* prefix, int step,
-                            const char* field_name, const double* data,
-                            const Grid* grid) {
+                            const char* field_name, const double* data, const Grid* grid) {
     if (!run_dir || !data || !grid)
         return;
 
@@ -93,8 +99,8 @@ void vtk_write_scalar_field(const char* run_dir, const char* prefix, int step,
     snprintf(filename, sizeof(filename), "%s_%03d.vtk", name, step);
     build_filepath(filepath, sizeof(filepath), run_dir, filename);
 
-    write_vtk_output(filepath, field_name, data, grid->nx, grid->ny,
-                     grid->xmin, grid->xmax, grid->ymin, grid->ymax);
+    write_vtk_output(filepath, field_name, data, grid->nx, grid->ny, grid->xmin, grid->xmax,
+                     grid->ymin, grid->ymax);
 }
 
 //=============================================================================
@@ -109,6 +115,7 @@ void write_vtk_output(const char* filename, const char* field_name, const double
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
         cfd_error("Failed to open VTK output file");
+        return;
     }
 
     // Write VTK header
@@ -275,4 +282,3 @@ void write_vtk_flow_field_run(const char* filename, const FlowField* field, size
     get_run_filepath(filepath, sizeof(filepath), filename);
     write_vtk_flow_field(filepath, field, nx, ny, xmin, xmax, ymin, ymax);
 }
-

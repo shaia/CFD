@@ -1,46 +1,11 @@
-#ifndef CFD_UTILS_H
-#define CFD_UTILS_H
+#ifndef CFD_FILESYSTEM_H
+#define CFD_FILESYSTEM_H
 
-#include "cfd/core/cfd_status.h"
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-//=============================================================================
-// ERROR HANDLING
-//=============================================================================
-
-// Log error message and set thread-local error state (does NOT exit)
-void cfd_error(const char* message);
-
-// Print warning message
-void cfd_warning(const char* message);
-
-//=============================================================================
-// MEMORY MANAGEMENT
-//=============================================================================
-
-// Standard memory allocation with error checking
-void* cfd_malloc(size_t size);
-void* cfd_calloc(size_t count, size_t size);
-void cfd_free(void* ptr);
-
-// Aligned memory allocation for SIMD operations (32-byte aligned)
-void* cfd_aligned_malloc(size_t size);
-void* cfd_aligned_calloc(size_t count, size_t size);
-void cfd_aligned_free(void* ptr);
-
-//=============================================================================
-// MATH UTILITIES
-//=============================================================================
-
-double min_double(double a, double b);
-double max_double(double a, double b);
-double sign(double x);
 
 //=============================================================================
 // FILE SYSTEM
@@ -114,15 +79,9 @@ const char* cfd_get_run_directory(void);
 // Reset run directory for new simulation
 void cfd_reset_run_directory(void);
 
-//=============================================================================
-// DEPRECATED ALIASES (for backward compatibility)
-//=============================================================================
-
-// Alias: use cfd_set_output_base_dir() instead
-void cfd_set_artifacts_path(const char* path);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  // CFD_UTILS_H
+#endif  // CFD_FILESYSTEM_H

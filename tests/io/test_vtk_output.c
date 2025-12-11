@@ -1,11 +1,19 @@
 #include "cfd/core/grid.h"
+#include "cfd/core/memory.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/memory.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/filesystem.h"
+#include "cfd/core/math_utils.h"
+
+#include "cfd/io/vtk_output.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
-#include "cfd/core/utils.h"
-#include "cfd/io/vtk_output.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
 
 #ifdef _WIN32
 #include <direct.h>
@@ -64,8 +72,11 @@ static int file_exists(const char* filename) {
 
 // Helper to check if file contains a string
 static int file_contains(const char* filename, const char* str) {
+    if (filename == NULL)
+        return 0;
     FILE* fp = fopen(filename, "r");
-    if (!fp) return 0;
+    if (!fp)
+        return 0;
 
     char buffer[4096];
     while (fgets(buffer, sizeof(buffer), fp)) {
@@ -87,10 +98,8 @@ void test_vtk_output_creates_file(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_scalar.vtk");
     remove(filename);
 
-    write_vtk_output(filename, "pressure", test_field->p,
-                     test_grid->nx, test_grid->ny,
-                     test_grid->xmin, test_grid->xmax,
-                     test_grid->ymin, test_grid->ymax);
+    write_vtk_output(filename, "pressure", test_field->p, test_grid->nx, test_grid->ny,
+                     test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax);
 
     TEST_ASSERT_TRUE(file_exists(filename));
     remove(filename);
@@ -101,10 +110,8 @@ void test_vtk_output_has_header(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_header.vtk");
     remove(filename);
 
-    write_vtk_output(filename, "velocity_u", test_field->u,
-                     test_grid->nx, test_grid->ny,
-                     test_grid->xmin, test_grid->xmax,
-                     test_grid->ymin, test_grid->ymax);
+    write_vtk_output(filename, "velocity_u", test_field->u, test_grid->nx, test_grid->ny,
+                     test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax);
 
     TEST_ASSERT_TRUE(file_contains(filename, "# vtk DataFile Version"));
     TEST_ASSERT_TRUE(file_contains(filename, "STRUCTURED_POINTS"));
@@ -119,10 +126,8 @@ void test_vtk_output_file_size(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_size.vtk");
     remove(filename);
 
-    write_vtk_output(filename, "temperature", test_field->T,
-                     test_grid->nx, test_grid->ny,
-                     test_grid->xmin, test_grid->xmax,
-                     test_grid->ymin, test_grid->ymax);
+    write_vtk_output(filename, "temperature", test_field->T, test_grid->nx, test_grid->ny,
+                     test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax);
 
     FILE* fp = fopen(filename, "r");
     TEST_ASSERT_NOT_NULL(fp);
@@ -146,10 +151,9 @@ void test_vtk_vector_output_creates_file(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_vector.vtk");
     remove(filename);
 
-    write_vtk_vector_output(filename, "velocity", test_field->u, test_field->v,
-                            test_grid->nx, test_grid->ny,
-                            test_grid->xmin, test_grid->xmax,
-                            test_grid->ymin, test_grid->ymax);
+    write_vtk_vector_output(filename, "velocity", test_field->u, test_field->v, test_grid->nx,
+                            test_grid->ny, test_grid->xmin, test_grid->xmax, test_grid->ymin,
+                            test_grid->ymax);
 
     TEST_ASSERT_TRUE(file_exists(filename));
     remove(filename);
@@ -160,10 +164,9 @@ void test_vtk_vector_output_has_header(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_vector_header.vtk");
     remove(filename);
 
-    write_vtk_vector_output(filename, "velocity", test_field->u, test_field->v,
-                            test_grid->nx, test_grid->ny,
-                            test_grid->xmin, test_grid->xmax,
-                            test_grid->ymin, test_grid->ymax);
+    write_vtk_vector_output(filename, "velocity", test_field->u, test_field->v, test_grid->nx,
+                            test_grid->ny, test_grid->xmin, test_grid->xmax, test_grid->ymin,
+                            test_grid->ymax);
 
     TEST_ASSERT_TRUE(file_contains(filename, "# vtk DataFile Version"));
     TEST_ASSERT_TRUE(file_contains(filename, "VECTORS velocity"));
@@ -180,10 +183,8 @@ void test_vtk_flow_field_creates_file(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_flow.vtk");
     remove(filename);
 
-    write_vtk_flow_field(filename, test_field,
-                         test_grid->nx, test_grid->ny,
-                         test_grid->xmin, test_grid->xmax,
-                         test_grid->ymin, test_grid->ymax);
+    write_vtk_flow_field(filename, test_field, test_grid->nx, test_grid->ny, test_grid->xmin,
+                         test_grid->xmax, test_grid->ymin, test_grid->ymax);
 
     TEST_ASSERT_TRUE(file_exists(filename));
     remove(filename);
@@ -194,10 +195,8 @@ void test_vtk_flow_field_has_all_fields(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_flow_fields.vtk");
     remove(filename);
 
-    write_vtk_flow_field(filename, test_field,
-                         test_grid->nx, test_grid->ny,
-                         test_grid->xmin, test_grid->xmax,
-                         test_grid->ymin, test_grid->ymax);
+    write_vtk_flow_field(filename, test_field, test_grid->nx, test_grid->ny, test_grid->xmin,
+                         test_grid->xmax, test_grid->ymin, test_grid->ymax);
 
     // Should contain velocity, pressure, density, temperature
     TEST_ASSERT_TRUE(file_contains(filename, "VECTORS velocity"));
@@ -264,6 +263,9 @@ void test_vtk_output_small_grid(void) {
     // Minimum grid size
     size_t nx = 2, ny = 2;
     double* data = (double*)malloc(nx * ny * sizeof(double));
+    if (data == NULL) {
+        TEST_FAIL_MESSAGE("Memory allocation failed");
+    }
     for (size_t i = 0; i < nx * ny; i++) {
         data[i] = (double)i;
     }
@@ -284,6 +286,9 @@ void test_vtk_output_large_values(void) {
     // Create data with large/small values
     size_t nx = 5, ny = 5;
     double* data = (double*)malloc(nx * ny * sizeof(double));
+    if (data == NULL) {
+        TEST_FAIL_MESSAGE("Memory allocation failed");
+    }
     data[0] = 1e10;
     data[1] = -1e10;
     data[2] = 1e-10;
