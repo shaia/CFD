@@ -1,0 +1,34 @@
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+  cfd_library.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\lib\Release\cfd_library.lib
+  animated_flow_simulation.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\animated_flow_simulation.exe
+  basic_simulation.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\basic_simulation.exe
+  csv_data_export.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\csv_data_export.exe
+  custom_boundary_conditions.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\custom_boundary_conditions.exe
+  custom_source_terms.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\custom_source_terms.exe
+  minimal_example.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\minimal_example.exe
+  performance_comparison.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\performance_comparison.exe
+  runtime_comparison.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\runtime_comparison.exe
+  simple_animated_flow.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\simple_animated_flow.exe
+  solver_selection.c
+  solver_selection.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\solver_selection.exe
+  unity.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\_deps\unity-build\Release\unity.lib
+  test_comprehensive.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_comprehensive.exe
+  test_core_functionality.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_core_functionality.exe
+  test_csv_output.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_csv_output.exe
+  test_decay_prevention.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_decay_prevention.exe
+  test_derived_fields.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_derived_fields.exe
+  test_error_handling.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_error_handling.exe
+  test_fixed_comprehensive.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_fixed_comprehensive.exe
+  test_output_paths.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_output_paths.exe
+  test_physics_validation.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_physics_validation.exe
+  test_runner.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_runner.exe
+  test_simulation_api.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_simulation_api.exe
+  test_simulation_basic.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_simulation_basic.exe
+  test_solver_basic.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_solver_basic.exe
+  test_solver_conservative.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_solver_conservative.exe
+  test_solver_consistency.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_solver_consistency.exe
+  test_solver_gpu.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_solver_gpu.exe
+  test_solver_stability.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_solver_stability.exe
+  test_vtk_output.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\test_vtk_output.exe
+  velocity_visualization.vcxproj -> C:\Users\shaia\development\cfd-workspace\cfd\build\Release\velocity_visualization.exe

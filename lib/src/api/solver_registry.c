@@ -6,21 +6,29 @@
 
 // Forward declarations for internal solver implementations
 // These are not part of the public API
-void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams* params);
+cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams* params);
 void explicit_euler_optimized_impl(FlowField* field, const Grid* grid, const SolverParams* params);
 #ifdef CFD_ENABLE_OPENMP
-void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverParams* params);
-void solve_projection_method_omp(FlowField* field, const Grid* grid, const SolverParams* params);
+cfd_status_t explicit_euler_omp_impl(FlowField* field, const Grid* grid,
+                                     const SolverParams* params);
+cfd_status_t solve_projection_method_omp(FlowField* field, const Grid* grid,
+                                         const SolverParams* params);
 #endif
 
 // SIMD Solver functions
-SolverStatus explicit_euler_simd_init(Solver* solver, const Grid* grid, const SolverParams* params);
+// Replace all return types
+cfd_status_t explicit_euler_simd_init(Solver* solver, const Grid* grid, const SolverParams* params);
 void explicit_euler_simd_destroy(Solver* solver);
-SolverStatus explicit_euler_simd_step(Solver* solver, FlowField* field, const Grid* grid, const SolverParams* params, SolverStats* stats);
+// Replace all return types
+cfd_status_t explicit_euler_simd_step(Solver* solver, FlowField* field, const Grid* grid,
+                                      const SolverParams* params, SolverStats* stats);
 
-SolverStatus projection_simd_init(Solver* solver, const Grid* grid, const SolverParams* params);
+// Replace all return types
+cfd_status_t projection_simd_init(Solver* solver, const Grid* grid, const SolverParams* params);
 void projection_simd_destroy(Solver* solver);
-SolverStatus projection_simd_step(Solver* solver, FlowField* field, const Grid* grid, const SolverParams* params, SolverStats* stats);
+// Replace all return types
+cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* grid,
+                                  const SolverParams* params, SolverStats* stats);
 
 #ifdef _WIN32
 #include <windows.h>
@@ -56,12 +64,15 @@ static Solver* create_projection_omp_solver(void);
 #endif
 
 // External projection method solver functions
-extern void solve_projection_method(FlowField* field, const Grid* grid, const SolverParams* params);
+extern cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
+                                            const SolverParams* params);
 extern void solve_projection_method_optimized(FlowField* field, const Grid* grid,
                                               const SolverParams* params);
 
 // External GPU solver functions (from solver_gpu.cu or solver_gpu_stub.c)
+#include "cfd_status.h"
 #include "solver_gpu.h"
+
 
 // Helper to get current time in milliseconds
 static double get_time_ms(void) {
@@ -232,26 +243,29 @@ void solver_destroy(Solver* solver) {
     cfd_free(solver);
 }
 
-SolverStatus solver_init(Solver* solver, const Grid* grid, const SolverParams* params) {
+// Replace all return types
+cfd_status_t solver_init(Solver* solver, const Grid* grid, const SolverParams* params) {
     if (!solver)
-        return SOLVER_STATUS_INVALID_INPUT;
+        return CFD_ERROR_INVALID;
     if (!solver->init)
-        return SOLVER_STATUS_OK;  // Optional
+        return CFD_SUCCESS;  // Optional
 
     return solver->init(solver, grid, params);
 }
 
-SolverStatus solver_step(Solver* solver, FlowField* field, const Grid* grid,
+// Replace all return types
+cfd_status_t solver_step(Solver* solver, FlowField* field, const Grid* grid,
                          const SolverParams* params, SolverStats* stats) {
     if (!solver || !field || !grid || !params) {
-        return SOLVER_STATUS_INVALID_INPUT;
+        return CFD_ERROR_INVALID;
     }
     if (!solver->step) {
-        return SOLVER_STATUS_ERROR;
+        return CFD_ERROR;
     }
 
     double start_time = get_time_ms();
-    SolverStatus status = solver->step(solver, field, grid, params, stats);
+    // Replace all return types
+    cfd_status_t status = solver->step(solver, field, grid, params, stats);
     double end_time = get_time_ms();
 
     if (stats) {
@@ -262,17 +276,19 @@ SolverStatus solver_step(Solver* solver, FlowField* field, const Grid* grid,
     return status;
 }
 
-SolverStatus solver_solve(Solver* solver, FlowField* field, const Grid* grid,
+// Replace all return types
+cfd_status_t solver_solve(Solver* solver, FlowField* field, const Grid* grid,
                           const SolverParams* params, SolverStats* stats) {
     if (!solver || !field || !grid || !params) {
-        return SOLVER_STATUS_INVALID_INPUT;
+        return CFD_ERROR_INVALID;
     }
     if (!solver->solve) {
-        return SOLVER_STATUS_ERROR;
+        return CFD_ERROR;
     }
 
     double start_time = get_time_ms();
-    SolverStatus status = solver->solve(solver, field, grid, params, stats);
+    // Replace all return types
+    cfd_status_t status = solver->solve(solver, field, grid, params, stats);
     double end_time = get_time_ms();
 
     if (stats) {
@@ -340,18 +356,18 @@ typedef struct {
     int initialized;
 } ExplicitEulerContext;
 
-static SolverStatus explicit_euler_init(Solver* solver, const Grid* grid,
-                                        const SolverParams* params) {
+static  // Replace all return types
+    cfd_status_t explicit_euler_init(Solver* solver, const Grid* grid, const SolverParams* params) {
     (void)grid;
     (void)params;
 
     ExplicitEulerContext* ctx = (ExplicitEulerContext*)cfd_malloc(sizeof(ExplicitEulerContext));
     if (!ctx)
-        return SOLVER_STATUS_ERROR;
+        return CFD_ERROR;
 
     ctx->initialized = 1;
     solver->context = ctx;
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static void explicit_euler_destroy(Solver* solver) {
@@ -361,12 +377,13 @@ static void explicit_euler_destroy(Solver* solver) {
     }
 }
 
-static SolverStatus explicit_euler_step(Solver* solver, FlowField* field, const Grid* grid,
-                                        const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t explicit_euler_step(Solver* solver, FlowField* field, const Grid* grid,
+                                     const SolverParams* params, SolverStats* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
-        return SOLVER_STATUS_INVALID_INPUT;
+        return CFD_ERROR_INVALID;
     }
 
     // Create params with single iteration
@@ -392,15 +409,16 @@ static SolverStatus explicit_euler_step(Solver* solver, FlowField* field, const 
         stats->max_pressure = max_p;
     }
 
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
-static SolverStatus explicit_euler_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                         const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t explicit_euler_solve(Solver* solver, FlowField* field, const Grid* grid,
+                                      const SolverParams* params, SolverStats* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
-        return SOLVER_STATUS_INVALID_INPUT;
+        return CFD_ERROR_INVALID;
     }
 
     explicit_euler_impl(field, grid, params);
@@ -421,7 +439,7 @@ static SolverStatus explicit_euler_solve(Solver* solver, FlowField* field, const
         stats->max_pressure = max_p;
     }
 
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static Solver* create_explicit_euler_solver(void) {
@@ -445,12 +463,17 @@ static Solver* create_explicit_euler_solver(void) {
 }
 
 
-static SolverStatus explicit_euler_simd_solve(Solver* solver, FlowField* field, const Grid* grid, const SolverParams* params, SolverStats* stats) {
-    if (!solver || !field || !grid || !params) return SOLVER_STATUS_INVALID_INPUT;
+static  // Replace all return types
+    cfd_status_t explicit_euler_simd_solve(Solver* solver, FlowField* field, const Grid* grid,
+                                           const SolverParams* params, SolverStats* stats) {
+    if (!solver || !field || !grid || !params)
+        return CFD_ERROR_INVALID;
 
     for (int i = 0; i < params->max_iter; i++) {
-        SolverStatus status = explicit_euler_simd_step(solver, field, grid, params, NULL);
-        if (status != SOLVER_STATUS_OK) return status;
+        // Replace all return types
+        cfd_status_t status = explicit_euler_simd_step(solver, field, grid, params, NULL);
+        if (status != CFD_SUCCESS)
+            return status;
     }
 
     if (stats) {
@@ -459,18 +482,21 @@ static SolverStatus explicit_euler_simd_solve(Solver* solver, FlowField* field, 
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
     }
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static Solver* create_explicit_euler_optimized_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED;
     solver->description = "SIMD-optimized explicit Euler solver (AVX2)";
@@ -480,7 +506,7 @@ static Solver* create_explicit_euler_optimized_solver(void) {
     solver->init = explicit_euler_simd_init;
     solver->destroy = explicit_euler_simd_destroy;
     solver->step = explicit_euler_simd_step;
-    solver->solve = explicit_euler_simd_solve; 
+    solver->solve = explicit_euler_simd_solve;
     solver->apply_boundary = NULL;
     solver->compute_dt = NULL;
 
@@ -495,13 +521,16 @@ typedef struct {
     int initialized;
 } ProjectionContext;
 
-static SolverStatus projection_init(Solver* solver, const Grid* grid, const SolverParams* params) {
-    (void)grid; (void)params;
+static  // Replace all return types
+    cfd_status_t projection_init(Solver* solver, const Grid* grid, const SolverParams* params) {
+    (void)grid;
+    (void)params;
     ProjectionContext* ctx = (ProjectionContext*)cfd_malloc(sizeof(ProjectionContext));
-    if (!ctx) return SOLVER_STATUS_ERROR;
+    if (!ctx)
+        return CFD_ERROR;
     ctx->initialized = 1;
     solver->context = ctx;
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static void projection_destroy(Solver* solver) {
@@ -511,9 +540,12 @@ static void projection_destroy(Solver* solver) {
     }
 }
 
-static SolverStatus projection_step(Solver* solver, FlowField* field, const Grid* grid, const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t projection_step(Solver* solver, FlowField* field, const Grid* grid,
+                                 const SolverParams* params, SolverStats* stats) {
     (void)solver;
-    if (field->nx < 3 || field->ny < 3) return SOLVER_STATUS_INVALID_INPUT;
+    if (field->nx < 3 || field->ny < 3)
+        return CFD_ERROR_INVALID;
 
     SolverParams step_params = *params;
     step_params.max_iter = 1;
@@ -522,45 +554,53 @@ static SolverStatus projection_step(Solver* solver, FlowField* field, const Grid
 
     if (stats) {
         stats->iterations = 1;
-         // Compute max velocity/pressure
+        // Compute max velocity/pressure
         double max_vel = 0.0;
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
     }
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
-static SolverStatus projection_solve(Solver* solver, FlowField* field, const Grid* grid, const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t projection_solve(Solver* solver, FlowField* field, const Grid* grid,
+                                  const SolverParams* params, SolverStats* stats) {
     (void)solver;
-    if (field->nx < 3 || field->ny < 3) return SOLVER_STATUS_INVALID_INPUT;
+    if (field->nx < 3 || field->ny < 3)
+        return CFD_ERROR_INVALID;
 
     solve_projection_method(field, grid, params);
 
     if (stats) {
         stats->iterations = params->max_iter;
-         // Compute max velocity/pressure
+        // Compute max velocity/pressure
         double max_vel = 0.0;
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
     }
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static Solver* create_projection_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_PROJECTION;
     solver->description = "Projection method (Chorin's method)";
@@ -577,34 +617,43 @@ static Solver* create_projection_solver(void) {
     return solver;
 }
 
-static SolverStatus projection_simd_solve(Solver* solver, FlowField* field, const Grid* grid, const SolverParams* params, SolverStats* stats) {
-    if (!solver || !field || !grid || !params) return SOLVER_STATUS_INVALID_INPUT;
-    
+static  // Replace all return types
+    cfd_status_t projection_simd_solve(Solver* solver, FlowField* field, const Grid* grid,
+                                       const SolverParams* params, SolverStats* stats) {
+    if (!solver || !field || !grid || !params)
+        return CFD_ERROR_INVALID;
+
     // Use the step function which utilizes the persistent context
     for (int i = 0; i < params->max_iter; i++) {
-        SolverStatus status = projection_simd_step(solver, field, grid, params, NULL); // Pass NULL stats for individual steps
-        if (status != SOLVER_STATUS_OK) return status;
+        // Replace all return types
+        cfd_status_t status = projection_simd_step(solver, field, grid, params,
+                                                   NULL);  // Pass NULL stats for individual steps
+        if (status != CFD_SUCCESS)
+            return status;
     }
 
     if (stats) {
         stats->iterations = params->max_iter;
-         // Compute max velocity/pressure
+        // Compute max velocity/pressure
         double max_vel = 0.0;
         double max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
     }
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static Solver* create_projection_optimized_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_PROJECTION_OPTIMIZED;
     solver->description = "SIMD-optimized Projection solver (AVX2)";
@@ -614,7 +663,7 @@ static Solver* create_projection_optimized_solver(void) {
     solver->init = projection_simd_init;
     solver->destroy = projection_simd_destroy;
     solver->step = projection_simd_step;
-    solver->solve = projection_simd_solve; 
+    solver->solve = projection_simd_solve;
     solver->apply_boundary = NULL;
     solver->compute_dt = NULL;
 
@@ -632,11 +681,12 @@ typedef struct {
     int use_gpu;
 } GPUSolverWrapperContext;
 
-static SolverStatus gpu_euler_init(Solver* solver, const Grid* grid, const SolverParams* params) {
+static  // Replace all return types
+    cfd_status_t gpu_euler_init(Solver* solver, const Grid* grid, const SolverParams* params) {
     GPUSolverWrapperContext* ctx =
         (GPUSolverWrapperContext*)cfd_malloc(sizeof(GPUSolverWrapperContext));
     if (!ctx)
-        return SOLVER_STATUS_ERROR;
+        return CFD_ERROR;
 
     ctx->gpu_config = gpu_config_default();
     ctx->use_gpu = gpu_should_use(&ctx->gpu_config, grid->nx, grid->ny, params->max_iter);
@@ -650,7 +700,7 @@ static SolverStatus gpu_euler_init(Solver* solver, const Grid* grid, const Solve
     }
 
     solver->context = ctx;
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static void gpu_euler_destroy(Solver* solver) {
@@ -664,12 +714,13 @@ static void gpu_euler_destroy(Solver* solver) {
     }
 }
 
-static SolverStatus gpu_euler_step(Solver* solver, FlowField* field, const Grid* grid,
-                                   const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t gpu_euler_step(Solver* solver, FlowField* field, const Grid* grid,
+                                const SolverParams* params, SolverStats* stats) {
     GPUSolverWrapperContext* ctx = (GPUSolverWrapperContext*)solver->context;
 
     if (field->nx < 3 || field->ny < 3) {
-        return SOLVER_STATUS_INVALID_INPUT;
+        return CFD_ERROR_INVALID;
     }
 
     SolverParams step_params = *params;
@@ -697,7 +748,7 @@ static SolverStatus gpu_euler_step(Solver* solver, FlowField* field, const Grid*
                     stats->max_velocity = max_vel;
                     stats->max_pressure = max_p;
                 }
-                return SOLVER_STATUS_OK;
+                return CFD_SUCCESS;
             }
         }
         // GPU failed, fall through to CPU
@@ -720,15 +771,16 @@ static SolverStatus gpu_euler_step(Solver* solver, FlowField* field, const Grid*
         stats->max_pressure = max_p;
     }
 
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
-static SolverStatus gpu_euler_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                    const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t gpu_euler_solve(Solver* solver, FlowField* field, const Grid* grid,
+                                 const SolverParams* params, SolverStats* stats) {
     GPUSolverWrapperContext* ctx = (GPUSolverWrapperContext*)solver->context;
 
     if (field->nx < 3 || field->ny < 3) {
-        return SOLVER_STATUS_INVALID_INPUT;
+        return CFD_ERROR_INVALID;
     }
 
     if (ctx && ctx->use_gpu && ctx->gpu_ctx) {
@@ -751,7 +803,7 @@ static SolverStatus gpu_euler_solve(Solver* solver, FlowField* field, const Grid
             stats->max_velocity = max_vel;
             stats->max_pressure = max_p;
         }
-        return SOLVER_STATUS_OK;
+        return CFD_SUCCESS;
     }
 
     // CPU fallback
@@ -771,7 +823,7 @@ static SolverStatus gpu_euler_solve(Solver* solver, FlowField* field, const Grid
         stats->max_pressure = max_p;
     }
 
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static Solver* create_explicit_euler_gpu_solver(void) {
@@ -798,12 +850,13 @@ static Solver* create_explicit_euler_gpu_solver(void) {
  * Built-in Solver: GPU-Accelerated Projection Method
  */
 
-static SolverStatus gpu_projection_step(Solver* solver, FlowField* field, const Grid* grid,
-                                        const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t gpu_projection_step(Solver* solver, FlowField* field, const Grid* grid,
+                                     const SolverParams* params, SolverStats* stats) {
     GPUSolverWrapperContext* ctx = (GPUSolverWrapperContext*)solver->context;
 
     if (field->nx < 3 || field->ny < 3) {
-        return SOLVER_STATUS_INVALID_INPUT;
+        return CFD_ERROR_INVALID;
     }
 
     SolverParams step_params = *params;
@@ -829,15 +882,16 @@ static SolverStatus gpu_projection_step(Solver* solver, FlowField* field, const 
         stats->max_pressure = max_p;
     }
 
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
-static SolverStatus gpu_projection_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                         const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t gpu_projection_solve(Solver* solver, FlowField* field, const Grid* grid,
+                                      const SolverParams* params, SolverStats* stats) {
     GPUSolverWrapperContext* ctx = (GPUSolverWrapperContext*)solver->context;
 
     if (field->nx < 3 || field->ny < 3) {
-        return SOLVER_STATUS_INVALID_INPUT;
+        return CFD_ERROR_INVALID;
     }
 
     if (ctx && ctx->use_gpu) {
@@ -860,7 +914,7 @@ static SolverStatus gpu_projection_solve(Solver* solver, FlowField* field, const
         stats->max_pressure = max_p;
     }
 
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static Solver* create_projection_gpu_solver(void) {
@@ -888,10 +942,12 @@ static Solver* create_projection_gpu_solver(void) {
  * Built-in Solver: Explicit Euler OpenMP
  */
 
-static SolverStatus explicit_euler_omp_step(Solver* solver, FlowField* field, const Grid* grid,
-                                            const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t explicit_euler_omp_step(Solver* solver, FlowField* field, const Grid* grid,
+                                         const SolverParams* params, SolverStats* stats) {
     (void)solver;
-    if (field->nx < 3 || field->ny < 3) return SOLVER_STATUS_INVALID_INPUT;
+    if (field->nx < 3 || field->ny < 3)
+        return CFD_ERROR_INVALID;
 
     SolverParams step_params = *params;
     step_params.max_iter = 1;
@@ -902,20 +958,24 @@ static SolverStatus explicit_euler_omp_step(Solver* solver, FlowField* field, co
         stats->iterations = 1;
         double max_vel = 0.0, max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
-             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-             if (vel > max_vel) max_vel = vel;
-             if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
     }
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
-static SolverStatus explicit_euler_omp_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                             const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t explicit_euler_omp_solve(Solver* solver, FlowField* field, const Grid* grid,
+                                          const SolverParams* params, SolverStats* stats) {
     (void)solver;
-    if (field->nx < 3 || field->ny < 3) return SOLVER_STATUS_INVALID_INPUT;
+    if (field->nx < 3 || field->ny < 3)
+        return CFD_ERROR_INVALID;
 
     explicit_euler_omp_impl(field, grid, params);
 
@@ -923,31 +983,34 @@ static SolverStatus explicit_euler_omp_solve(Solver* solver, FlowField* field, c
         stats->iterations = params->max_iter;
         double max_vel = 0.0, max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
-             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-             if (vel > max_vel) max_vel = vel;
-             if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
     }
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static Solver* create_explicit_euler_omp_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_EXPLICIT_EULER_OMP;
     solver->description = "OpenMP multi-threaded explicit Euler solver";
     solver->version = "1.0.0";
     solver->capabilities = SOLVER_CAP_INCOMPRESSIBLE | SOLVER_CAP_TRANSIENT | SOLVER_CAP_PARALLEL;
 
-    solver->init = explicit_euler_init; // Reuse basic init
-    solver->destroy = explicit_euler_destroy; // Reuse basic destroy
+    solver->init = explicit_euler_init;        // Reuse basic init
+    solver->destroy = explicit_euler_destroy;  // Reuse basic destroy
     solver->step = explicit_euler_omp_step;
     solver->solve = explicit_euler_omp_solve;
-    solver->apply_boundary = NULL; // Use default
-    solver->compute_dt = NULL; // Use default
+    solver->apply_boundary = NULL;  // Use default
+    solver->compute_dt = NULL;      // Use default
 
     return solver;
 }
@@ -956,10 +1019,12 @@ static Solver* create_explicit_euler_omp_solver(void) {
  * Built-in Solver: Projection OpenMP
  */
 
-static SolverStatus projection_omp_step(Solver* solver, FlowField* field, const Grid* grid,
-                                        const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t projection_omp_step(Solver* solver, FlowField* field, const Grid* grid,
+                                     const SolverParams* params, SolverStats* stats) {
     (void)solver;
-    if (field->nx < 3 || field->ny < 3) return SOLVER_STATUS_INVALID_INPUT;
+    if (field->nx < 3 || field->ny < 3)
+        return CFD_ERROR_INVALID;
 
     SolverParams step_params = *params;
     step_params.max_iter = 1;
@@ -970,20 +1035,24 @@ static SolverStatus projection_omp_step(Solver* solver, FlowField* field, const 
         stats->iterations = 1;
         double max_vel = 0.0, max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
-             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-             if (vel > max_vel) max_vel = vel;
-             if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
     }
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
-static SolverStatus projection_omp_solve(Solver* solver, FlowField* field, const Grid* grid,
-                                         const SolverParams* params, SolverStats* stats) {
+static  // Replace all return types
+    cfd_status_t projection_omp_solve(Solver* solver, FlowField* field, const Grid* grid,
+                                      const SolverParams* params, SolverStats* stats) {
     (void)solver;
-    if (field->nx < 3 || field->ny < 3) return SOLVER_STATUS_INVALID_INPUT;
+    if (field->nx < 3 || field->ny < 3)
+        return CFD_ERROR_INVALID;
 
     solve_projection_method_omp(field, grid, params);
 
@@ -991,27 +1060,30 @@ static SolverStatus projection_omp_solve(Solver* solver, FlowField* field, const
         stats->iterations = params->max_iter;
         double max_vel = 0.0, max_p = 0.0;
         for (size_t i = 0; i < field->nx * field->ny; i++) {
-             double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-             if (vel > max_vel) max_vel = vel;
-             if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+            double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
+            if (vel > max_vel)
+                max_vel = vel;
+            if (fabs(field->p[i]) > max_p)
+                max_p = fabs(field->p[i]);
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
     }
-    return SOLVER_STATUS_OK;
+    return CFD_SUCCESS;
 }
 
 static Solver* create_projection_omp_solver(void) {
     Solver* solver = (Solver*)cfd_calloc(1, sizeof(Solver));
-    if (!solver) return NULL;
+    if (!solver)
+        return NULL;
 
     solver->name = SOLVER_TYPE_PROJECTION_OMP;
     solver->description = "OpenMP multi-threaded Projection solver";
     solver->version = "1.0.0";
     solver->capabilities = SOLVER_CAP_INCOMPRESSIBLE | SOLVER_CAP_TRANSIENT | SOLVER_CAP_PARALLEL;
 
-    solver->init = projection_init; // Reuse basic init
-    solver->destroy = projection_destroy; // Reuse basic destroy
+    solver->init = projection_init;        // Reuse basic init
+    solver->destroy = projection_destroy;  // Reuse basic destroy
     solver->step = projection_omp_step;
     solver->solve = projection_omp_solve;
     solver->apply_boundary = NULL;

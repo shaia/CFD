@@ -11,8 +11,11 @@
 #include <string.h>
 
 // Forward declarations for CPU fallback solvers
-extern void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams* params);
-extern void solve_projection_method(FlowField* field, const Grid* grid, const SolverParams* params);
+// Forward declarations for CPU fallback solvers
+extern cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid,
+                                        const SolverParams* params);
+extern cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
+                                            const SolverParams* params);
 
 GPUConfig gpu_config_default(void) {
     GPUConfig config;
@@ -41,9 +44,9 @@ int gpu_get_device_info(GPUDeviceInfo* info, int max_devices) {
     return 0;  // No devices
 }
 
-int gpu_select_device(int device_id) {
+cfd_status_t gpu_select_device(int device_id) {
     (void)device_id;
-    return -1;  // Cannot select device
+    return CFD_ERROR;  // Cannot select device
 }
 
 int gpu_should_use(const GPUConfig* config, size_t nx, size_t ny, int num_steps) {
@@ -67,25 +70,25 @@ void gpu_solver_destroy(GPUSolverContext* ctx) {
     // Nothing to do
 }
 
-int gpu_solver_upload(GPUSolverContext* ctx, const FlowField* field) {
+cfd_status_t gpu_solver_upload(GPUSolverContext* ctx, const FlowField* field) {
     (void)ctx;
     (void)field;
-    return -1;
+    return CFD_ERROR;
 }
 
-int gpu_solver_download(GPUSolverContext* ctx, FlowField* field) {
+cfd_status_t gpu_solver_download(GPUSolverContext* ctx, FlowField* field) {
     (void)ctx;
     (void)field;
-    return -1;
+    return CFD_ERROR;
 }
 
-int gpu_solver_step(GPUSolverContext* ctx, const Grid* grid, const SolverParams* params,
-                    GPUSolverStats* stats) {
+cfd_status_t gpu_solver_step(GPUSolverContext* ctx, const Grid* grid, const SolverParams* params,
+                             GPUSolverStats* stats) {
     (void)ctx;
     (void)grid;
     (void)params;
     (void)stats;
-    return -1;
+    return CFD_ERROR;
 }
 
 GPUSolverStats gpu_solver_get_stats(const GPUSolverContext* ctx) {
@@ -99,8 +102,8 @@ void gpu_solver_reset_stats(GPUSolverContext* ctx) {
     (void)ctx;
 }
 
-void solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
-                             const GPUConfig* config) {
+cfd_status_t solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
+                                     const GPUConfig* config) {
     (void)config;
 
     // Fall back to CPU implementation
@@ -108,11 +111,11 @@ void solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverPar
         printf("GPU Solver: CUDA not available, using CPU solver\n");
     }
 
-    explicit_euler_impl(field, grid, params);
+    return explicit_euler_impl(field, grid, params);
 }
 
-void solve_projection_method_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
-                                 const GPUConfig* config) {
+cfd_status_t solve_projection_method_gpu(FlowField* field, const Grid* grid,
+                                         const SolverParams* params, const GPUConfig* config) {
     (void)config;
 
     // Fall back to CPU implementation
@@ -120,5 +123,5 @@ void solve_projection_method_gpu(FlowField* field, const Grid* grid, const Solve
         printf("GPU Projection: CUDA not available, using CPU solver\n");
     }
 
-    solve_projection_method(field, grid, params);
+    return solve_projection_method(field, grid, params);
 }

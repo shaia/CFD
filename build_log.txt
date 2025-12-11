@@ -1,0 +1,5 @@
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+cl : command line  warning D9025: overriding '/openmp' with '/openmp:llvm' [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]
+  solver_registry.c
+C:\Users\shaia\development\cfd-workspace\cfd\lib\src\api\solver_registry.c(72,1): error C1083: Cannot open include file: 'solver_registry.h': No such file or directory [C:\Users\shaia\development\cfd-workspace\cfd\build\lib\cfd_library.vcxproj]

@@ -16,9 +16,41 @@
 // ERROR HANDLING
 //=============================================================================
 
+#ifdef _WIN32
+#include <windows.h>
+static __declspec(thread) cfd_status_t g_last_status = CFD_SUCCESS;
+static __declspec(thread) char g_last_error_msg[256] = {0};
+#else
+#include <pthread.h>
+static __thread cfd_status_t g_last_status = CFD_SUCCESS;
+static __thread char g_last_error_msg[256] = {0};
+#endif
+
+void cfd_set_error(cfd_status_t status, const char* message) {
+    g_last_status = status;
+    if (message) {
+        snprintf(g_last_error_msg, sizeof(g_last_error_msg), "%s", message);
+    } else {
+        g_last_error_msg[0] = '\0';
+    }
+}
+
+const char* cfd_get_last_error(void) {
+    return g_last_error_msg;
+}
+
+cfd_status_t cfd_get_last_status(void) {
+    return g_last_status;
+}
+
+void cfd_clear_error(void) {
+    g_last_status = CFD_SUCCESS;
+    g_last_error_msg[0] = '\0';
+}
+
 void cfd_error(const char* message) {
     fprintf(stderr, "ERROR: %s\n", message);
-    exit(EXIT_FAILURE);
+    cfd_set_error(CFD_ERROR, message);
 }
 
 void cfd_warning(const char* message) {
@@ -33,6 +65,7 @@ void* cfd_malloc(size_t size) {
     void* ptr = malloc(size);
     if (ptr == NULL) {
         cfd_error("Memory allocation failed");
+        cfd_set_error(CFD_ERROR_NOMEM, "Memory allocation failed");
     }
     return ptr;
 }
@@ -41,6 +74,7 @@ void* cfd_calloc(size_t count, size_t size) {
     void* ptr = calloc(count, size);
     if (ptr == NULL) {
         cfd_error("Memory allocation failed");
+        cfd_set_error(CFD_ERROR_NOMEM, "Memory allocation failed");
     }
     return ptr;
 }
@@ -74,6 +108,7 @@ void* cfd_aligned_malloc(size_t size) {
 
     if (posix_memalign(&ptr, alignment, size) != 0) {
         cfd_error("Aligned memory allocation failed");
+        cfd_set_error(CFD_ERROR_NOMEM, "Aligned memory allocation failed");
         return NULL;
     }
 #else
@@ -81,6 +116,7 @@ void* cfd_aligned_malloc(size_t size) {
     ptr = _aligned_malloc(size, 32);
     if (ptr == NULL) {
         cfd_error("Aligned memory allocation failed");
+        cfd_set_error(CFD_ERROR_NOMEM, "Aligned memory allocation failed");
     }
 #endif
 
