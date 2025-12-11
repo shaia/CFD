@@ -162,6 +162,7 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
 
 cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* grid,
                                   const SolverParams* params, SolverStats* stats) {
+    cfd_status_t status = CFD_SUCCESS;
     if (!solver || !solver->context || !field || !grid)
         return CFD_ERROR_INVALID;
     ProjectionSIMDContext* ctx = (ProjectionSIMDContext*)solver->context;
@@ -182,7 +183,7 @@ cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* 
 
     // Removed outer loop over max_iter to match interface expectation (one step per call)
 
-    cfd_status_t status = CFD_SUCCESS;
+
     // Step 1: Predictor
     for (size_t j = 1; j < ctx->ny - 1; j++) {
         for (size_t i = 1; i < ctx->nx - 1; i++) {

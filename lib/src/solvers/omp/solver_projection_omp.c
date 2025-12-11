@@ -82,14 +82,13 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
         }
 
         // Apply BCs
-        int i, j;
-#pragma omp parallel for private(j) schedule(static)
-        for (j = 0; j < (int)ny; j++) {
+#pragma omp parallel for schedule(static)
+        for (int j = 0; j < (int)ny; j++) {
             p[j * nx + 0] = p[j * nx + 1];
             p[j * nx + nx - 1] = p[j * nx + nx - 2];
         }
-#pragma omp parallel for private(i) schedule(static)
-        for (i = 0; i < (int)nx; i++) {
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < (int)nx; i++) {
             p[i] = p[nx + i];
             p[(ny - 1) * nx + i] = p[(ny - 2) * nx + i];
         }
@@ -112,6 +111,7 @@ cfd_status_t solve_projection_method_omp(FlowField* field, const Grid* grid,
     if (field->nx < 3 || field->ny < 3)
         return CFD_ERROR_INVALID;
 
+    cfd_status_t status = CFD_SUCCESS;
     size_t nx = field->nx;
     size_t ny = field->ny;
     size_t size = nx * ny;
@@ -140,11 +140,10 @@ cfd_status_t solve_projection_method_omp(FlowField* field, const Grid* grid,
 
     for (int iter = 0; iter < params->max_iter; iter++) {
         // STEP 1: Predictor
-        int i, j;
-// Use static scheduling for uniform grid load balancing
-#pragma omp parallel for private(i) schedule(static)
-        for (j = 1; j < (int)ny - 1; j++) {
-            for (i = 1; i < (int)nx - 1; i++) {
+        // Use static scheduling for uniform grid load balancing
+#pragma omp parallel for schedule(static)
+        for (int j = 1; j < (int)ny - 1; j++) {
+            for (int i = 1; i < (int)nx - 1; i++) {
                 size_t idx = j * nx + i;
 
                 double u = field->u[idx];
@@ -184,15 +183,15 @@ cfd_status_t solve_projection_method_omp(FlowField* field, const Grid* grid,
         }
 
 // BCs for intermediate velocity
-#pragma omp parallel for private(j) schedule(static)
-        for (j = 0; j < (int)ny; j++) {
+#pragma omp parallel for schedule(static)
+        for (int j = 0; j < (int)ny; j++) {
             u_star[j * nx + 0] = u_star[j * nx + 1];
             u_star[j * nx + nx - 1] = u_star[j * nx + nx - 2];
             v_star[j * nx + 0] = v_star[j * nx + 1];
             v_star[j * nx + nx - 1] = v_star[j * nx + nx - 2];
         }
-#pragma omp parallel for private(i) schedule(static)
-        for (i = 0; i < (int)nx; i++) {
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < (int)nx; i++) {
             u_star[i] = u_star[nx + i];
             u_star[(ny - 1) * nx + i] = u_star[(ny - 2) * nx + i];
             v_star[i] = v_star[nx + i];
@@ -202,9 +201,9 @@ cfd_status_t solve_projection_method_omp(FlowField* field, const Grid* grid,
         // STEP 2: Pressure
         double rho = field->rho[0] < 1e-10 ? 1.0 : field->rho[0];
 
-#pragma omp parallel for private(i) schedule(static)
-        for (j = 1; j < (int)ny - 1; j++) {
-            for (i = 1; i < (int)nx - 1; i++) {
+#pragma omp parallel for schedule(static)
+        for (int j = 1; j < (int)ny - 1; j++) {
+            for (int i = 1; i < (int)nx - 1; i++) {
                 size_t idx = j * nx + i;
                 double du_star_dx = (u_star[idx + 1] - u_star[idx - 1]) / (2.0 * dx);
                 double dv_star_dy = (v_star[idx + nx] - v_star[idx - nx]) / (2.0 * dy);
@@ -226,28 +225,29 @@ cfd_status_t solve_projection_method_omp(FlowField* field, const Grid* grid,
         }
 
 // STEP 3: Corrector
-#pragma omp parallel for private(i) schedule(static)
-        for (j = 1; j < (int)ny - 1; j++) {
-            for (i = 1; i < (int)nx - 1; i++) {
-                size_t idx = j * nx + i;
-                double dp_dx = (p_new[idx + 1] - p_new[idx - 1]) / (2.0 * dx);
-                double dp_dy = (p_new[idx + nx] - p_new[idx - nx]) / (2.0 * dy);
+#pragma omp parallel for schedule(static)
+        for (int j = 1; j < (int)ny - 1; j++) {
+            for (int i = 1; i < (int)nx - 1; i++) {
+                for (i = 1; i < (int)nx - 1; i++) {
+                    size_t idx = j * nx + i;
+                    double dp_dx = (p_new[idx + 1] - p_new[idx - 1]) / (2.0 * dx);
+                    double dp_dy = (p_new[idx + nx] - p_new[idx - nx]) / (2.0 * dy);
 
-                field->u[idx] = u_star[idx] - (dt / rho) * dp_dx;
-                field->v[idx] = v_star[idx] - (dt / rho) * dp_dy;
+                    field->u[idx] = u_star[idx] - (dt / rho) * dp_dx;
+                    field->v[idx] = v_star[idx] - (dt / rho) * dp_dy;
 
-                field->u[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, field->u[idx]));
-                field->v[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, field->v[idx]));
+                    field->u[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, field->u[idx]));
+                    field->v[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, field->v[idx]));
+                }
             }
+
+            memcpy(field->p, p_new, size * sizeof(double));
+            apply_boundary_conditions(field, grid);
         }
 
-        memcpy(field->p, p_new, size * sizeof(double));
-        apply_boundary_conditions(field, grid);
+        cfd_free(u_star);
+        cfd_free(v_star);
+        cfd_free(p_new);
+        cfd_free(rhs);
+        return status;
     }
-
-    cfd_free(u_star);
-    cfd_free(v_star);
-    cfd_free(p_new);
-    cfd_free(rhs);
-    return CFD_SUCCESS;
-}
