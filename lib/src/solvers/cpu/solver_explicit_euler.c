@@ -162,6 +162,7 @@ void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params)
 }
 
 void apply_boundary_conditions(FlowField* field, const Grid* grid) {
+    (void)grid;
     // Apply periodic boundary conditions in x-direction
     for (size_t j = 0; j < field->ny; j++) {
         field->u[j * field->nx + 0] = field->u[j * field->nx + field->nx - 2];
@@ -213,7 +214,6 @@ cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const Solve
         return CFD_ERROR_INVALID;  // Skip solver for grids too small for finite differences
     }
 
-    // Allocate temporary arrays for the solution update
     // Allocate temporary arrays for the solution update
     double* u_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
     double* v_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));

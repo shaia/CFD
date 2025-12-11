@@ -65,7 +65,7 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
             for (size_t j = 1; j < ny - 1; j++) {
                 for (size_t i = 1; i < nx - 1; i++) {
                     // Red-black ordering
-                    if ((i + j) % 2 != color)
+                    if ((int)((i + j) % 2) != color)
                         continue;
 
                     size_t idx = j * nx + i;
@@ -118,7 +118,6 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
 /**
  * Projection Method Solver
  */
-// Projection Method Solver
 cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
                                      const SolverParams* params) {
     if (!field || !grid || !params)
