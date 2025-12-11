@@ -113,6 +113,9 @@ void run_solver_comparison(void) {
         // Set run prefix for this solver test
         simulation_set_run_prefix(sim, solver_type);
 
+        // Configure output directory
+        simulation_set_output_dir(sim, "../../artifacts");
+
         // Register output at end of simulation only
         simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, NUM_STEPS, "solver_test");
 
@@ -142,6 +145,7 @@ void run_dynamic_solver_switch(void) {
     printf("\n1. Creating simulation with default solver...\n");
     SimulationData* sim = init_simulation(NX, NY, XMIN, XMAX, YMIN, YMAX);
     simulation_set_run_prefix(sim, "dynamic_switch");
+    simulation_set_output_dir(sim, "../../artifacts");
 
     // Register output every 10 steps
     simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, 10, "test");
@@ -249,10 +253,14 @@ int main(int argc, char** argv) {
     printf("CFD Framework - Solver Selection Example\n");
     printf("=========================================\n");
 
-    // Configure output directory (optional - defaults to ../../artifacts)
-    simulation_set_output_dir("../../artifacts");
 
     // Run demonstrations
+    // Run demonstrations
+    // Note: Each run function now needs to handle output dir set up individually if needed,
+    // but the main function is responsible for the overall setup or they should be updated.
+    // Wait, the run functions create their own simulations.
+    // They used to inherit the global output dir. Now they don't.
+    // I need to update EACH run function to set the output dir!
     run_solver_comparison();
     run_dynamic_solver_switch();
     run_direct_solver_usage();

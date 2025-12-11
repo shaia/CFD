@@ -20,9 +20,6 @@
 // Default solver type used when none is specified
 #define DEFAULT_SOLVER_TYPE SOLVER_TYPE_EXPLICIT_EULER
 
-// Global base output directory
-static char s_base_output_dir[512] = "../../artifacts";
-
 // Static flag to track if registry is initialized
 static int s_registry_initialized = 0;
 
@@ -34,6 +31,10 @@ static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, doubl
     SimulationData* sim_data = (SimulationData*)cfd_malloc(sizeof(SimulationData));
     if (!sim_data)
         return NULL;
+
+    // Initialize base output directory
+    strncpy(sim_data->output_base_dir, "../../artifacts", sizeof(sim_data->output_base_dir) - 1);
+    sim_data->output_base_dir[sizeof(sim_data->output_base_dir) - 1] = '\0';
 
     // Create and initialize grid
     sim_data->grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
@@ -259,10 +260,10 @@ void simulation_clear_outputs(SimulationData* sim_data) {
 }
 
 // Set base output directory
-void simulation_set_output_dir(const char* base_dir) {
-    if (base_dir && strlen(base_dir) > 0) {
-        strncpy(s_base_output_dir, base_dir, sizeof(s_base_output_dir) - 1);
-        s_base_output_dir[sizeof(s_base_output_dir) - 1] = '\0';
+void simulation_set_output_dir(SimulationData* sim_data, const char* base_dir) {
+    if (sim_data && base_dir && strlen(base_dir) > 0) {
+        strncpy(sim_data->output_base_dir, base_dir, sizeof(sim_data->output_base_dir) - 1);
+        sim_data->output_base_dir[sizeof(sim_data->output_base_dir) - 1] = '\0';
     }
 }
 
@@ -310,8 +311,8 @@ void simulation_write_outputs(SimulationData* sim_data, int step) {
 
     // Get run directory (creates it if needed)
     const char* run_dir =
-        output_registry_get_run_dir(sim_data->outputs, s_base_output_dir, sim_data->run_prefix,
-                                    sim_data->grid->nx, sim_data->grid->ny);
+        output_registry_get_run_dir(sim_data->outputs, sim_data->output_base_dir,
+                                    sim_data->run_prefix, sim_data->grid->nx, sim_data->grid->ny);
 
     // Compute derived fields only when needed
     DerivedFields* derived = NULL;

@@ -2,10 +2,11 @@
 #include "../io/csv_output_internal.h"
 #include "../io/vtk_output_internal.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+
 
 #include <string.h>
 
@@ -100,14 +101,10 @@ const char* output_registry_get_run_dir(OutputRegistry* reg, const char* base_di
         return reg->run_dir;
     }
 
-    // Set base output directory
-    if (base_dir) {
-        cfd_set_output_base_dir(base_dir);
-    }
-
-    // Create run directory with prefix
+    // Create run directory with prefix using custom base directory (re-entrant)
     const char* prefix = run_prefix ? run_prefix : "sim";
-    cfd_create_run_directory_ex(reg->run_dir, sizeof(reg->run_dir), prefix, nx, ny);
+    cfd_create_run_directory_ex_with_base(reg->run_dir, sizeof(reg->run_dir), base_dir, prefix, nx,
+                                          ny);
 
     reg->run_dir_created = 1;
     return reg->run_dir;

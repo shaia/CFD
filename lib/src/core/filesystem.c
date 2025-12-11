@@ -230,6 +230,79 @@ void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* s
     current_run_directory[sizeof(current_run_directory) - 1] = '\0';
 }
 
+void cfd_create_run_directory_with_base(char* buffer, size_t buffer_size, const char* base_dir,
+                                        const char* prefix) {
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+
+    // Format: prefix_YYYYMMDD_HHMMSS
+    char timestamp[64];
+    snprintf(timestamp, sizeof(timestamp), "%s_%04d%02d%02d_%02d%02d%02d", prefix,
+             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
+
+    // Use provided base directory
+    const char* root_path = (base_dir && strlen(base_dir) > 0) ? base_dir : ".";
+
+#ifdef _WIN32
+    snprintf(buffer, buffer_size, "%s\\output\\%s", root_path, timestamp);
+#else
+    snprintf(buffer, buffer_size, "%s/output/%s", root_path, timestamp);
+#endif
+
+    // Ensure base output directory exists
+    char output_base[512];
+#ifdef _WIN32
+    snprintf(output_base, sizeof(output_base), "%s\\output", root_path);
+#else
+    snprintf(output_base, sizeof(output_base), "%s/output", root_path);
+#endif
+    ensure_directory_exists(output_base);
+
+    // Create run-specific directory
+    if (!ensure_directory_exists(buffer)) {
+        cfd_warning("Failed to create run directory, using base output directory");
+        strncpy(buffer, output_base, buffer_size - 1);
+        buffer[buffer_size - 1] = '\0';
+    }
+}
+
+void cfd_create_run_directory_ex_with_base(char* buffer, size_t buffer_size, const char* base_dir,
+                                           const char* solver_name, size_t nx, size_t ny) {
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+
+    // Format: solvername_gridsize_YYYYMMDD_HHMMSS
+    char timestamp[128];
+    snprintf(timestamp, sizeof(timestamp), "%s_%zux%zu_%04d%02d%02d_%02d%02d%02d",
+             solver_name ? solver_name : "sim", nx, ny, t->tm_year + 1900, t->tm_mon + 1,
+             t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
+
+    // Use provided base directory
+    const char* root_path = (base_dir && strlen(base_dir) > 0) ? base_dir : ".";
+
+#ifdef _WIN32
+    snprintf(buffer, buffer_size, "%s\\output\\%s", root_path, timestamp);
+#else
+    snprintf(buffer, buffer_size, "%s/output/%s", root_path, timestamp);
+#endif
+
+    // Ensure base output directory exists
+    char output_base[512];
+#ifdef _WIN32
+    snprintf(output_base, sizeof(output_base), "%s\\output", root_path);
+#else
+    snprintf(output_base, sizeof(output_base), "%s/output", root_path);
+#endif
+    ensure_directory_exists(output_base);
+
+    // Create run-specific directory
+    if (!ensure_directory_exists(buffer)) {
+        cfd_warning("Failed to create run directory, using base output directory");
+        strncpy(buffer, output_base, buffer_size - 1);
+        buffer[buffer_size - 1] = '\0';
+    }
+}
+
 void cfd_get_run_directory(char* buffer, size_t size) {
     if (!buffer || size == 0)
         return;

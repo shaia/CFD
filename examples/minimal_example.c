@@ -12,9 +12,6 @@ int main() {
     printf("Minimal CFD Library Example\n");
     printf("===========================\n");
 
-    // Step 1: Configure output directory (optional)
-    simulation_set_output_dir("../../artifacts");
-    printf("✓ Output directory: ../../artifacts\n");
 
     // Step 2: Initialize simulation
     size_t nx = 50, ny = 25;
@@ -27,6 +24,10 @@ int main() {
 
     printf("✓ Simulation initialized (%zux%zu grid)\n", nx, ny);
     printf("✓ Domain: [0,1] x [0,0.5]\n");
+
+    // Configure output directory (optional)
+    simulation_set_output_dir(sim, "../../artifacts");
+    printf("✓ Output directory: ../../artifacts\n");
 
     // Step 3: Set run prefix for organized output
     simulation_set_run_prefix(sim, "minimal");
