@@ -7,7 +7,12 @@
 
 #include "cfd/core/grid.h"
 #include "cfd/solvers/solver_interface.h"
-#include "cfd/core/utils.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/memory.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/filesystem.h"
+#include "cfd/core/math_utils.h"
+
 #include "cfd/io/vtk_output.h"
 #include <math.h>
 #include <stdio.h>

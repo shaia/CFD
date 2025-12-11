@@ -1,5 +1,10 @@
 #include "cfd/api/simulation_api.h"
-#include "cfd/core/utils.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/memory.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/filesystem.h"
+#include "cfd/core/math_utils.h"
+
 #include <stdio.h>
 
 int main() {
