@@ -52,22 +52,6 @@ void cfd_set_default_path_mode(cfd_default_path_mode_t mode) {
     default_path_mode = mode;
 }
 
-const char* cfd_get_artifacts_path_internal(void) {
-    if (strlen(artifacts_base_path) > 0) {
-        return artifacts_base_path;
-    }
-
-    // Generate default path based on mode
-    static char default_base[512];  // Keep internal static for base path logic if needed, OR
-                                    // better: explicitly construct it.
-    // Actually, to fully remove static return buffers we should avoid returning pointers entirely.
-    // The previous implementation returned a pointer to a static buffer.
-    // We will keep 'artifacts_base_path' as configuration state, but for defaults we need a
-    // strategy.
-
-    // Let's implement the copy logic directly.
-    return NULL;
-}
 
 void cfd_get_artifacts_path(char* buffer, size_t size) {
     if (!buffer || size == 0)
