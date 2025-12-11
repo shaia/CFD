@@ -176,15 +176,12 @@ Solver* solver_create(const char* type_name);
 void solver_destroy(Solver* solver);
 
 // Initialize a solver for a specific grid configuration
-// Initialize a solver for a specific grid configuration
 cfd_status_t solver_init(Solver* solver, const Grid* grid, const SolverParams* params);
 
-// Perform a single time step
 // Perform a single time step
 cfd_status_t solver_step(Solver* solver, FlowField* field, const Grid* grid,
                          const SolverParams* params, SolverStats* stats);
 
-// Solve until convergence or max iterations
 // Solve until convergence or max iterations
 cfd_status_t solver_solve(Solver* solver, FlowField* field, const Grid* grid,
                           const SolverParams* params, SolverStats* stats);
