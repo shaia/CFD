@@ -52,17 +52,24 @@ void test_simulation_step_execution(void) {
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
     SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
 
-    // Initial check
+    // Initial check - ensure all fields finite
     for (size_t i = 0; i < nx * ny; i++) {
         TEST_ASSERT_TRUE(isfinite(sim_data->field->u[i]));
+        TEST_ASSERT_TRUE(isfinite(sim_data->field->v[i]));
+        TEST_ASSERT_TRUE(isfinite(sim_data->field->p[i]));
+        TEST_ASSERT_TRUE(isfinite(sim_data->field->rho[i]));
+        TEST_ASSERT_TRUE(isfinite(sim_data->field->T[i]));
     }
 
     run_simulation_step(sim_data);
 
-    // Verify stability
+    // Verify stability - ensure all fields remain finite
     for (size_t i = 0; i < nx * ny; i++) {
         TEST_ASSERT_TRUE(isfinite(sim_data->field->u[i]));
+        TEST_ASSERT_TRUE(isfinite(sim_data->field->v[i]));
         TEST_ASSERT_TRUE(isfinite(sim_data->field->p[i]));
+        TEST_ASSERT_TRUE(isfinite(sim_data->field->rho[i]));
+        TEST_ASSERT_TRUE(isfinite(sim_data->field->T[i]));
     }
 
     free_simulation(sim_data);
