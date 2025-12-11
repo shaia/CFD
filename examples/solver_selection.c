@@ -255,12 +255,6 @@ int main(int argc, char** argv) {
 
 
     // Run demonstrations
-    // Run demonstrations
-    // Note: Each run function now needs to handle output dir set up individually if needed,
-    // but the main function is responsible for the overall setup or they should be updated.
-    // Wait, the run functions create their own simulations.
-    // They used to inherit the global output dir. Now they don't.
-    // I need to update EACH run function to set the output dir!
     run_solver_comparison();
     run_dynamic_solver_switch();
     run_direct_solver_usage();
