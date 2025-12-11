@@ -42,7 +42,10 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # Collect core source files
 set(CFD_CORE_SOURCES
     src/core/grid.c
-    src/core/utils.c
+    src/core/memory.c
+    src/core/filesystem.c
+    src/core/logging.c
+    src/core/math_utils.c
     src/core/field_ops.c
     src/core/derived_fields.c
 )
@@ -110,6 +113,10 @@ set(CFD_LIBRARY_HEADERS
     include/cfd/core/cfd_status.h
     include/cfd/solvers/solver_gpu.h
     include/cfd/core/utils.h
+    include/cfd/core/memory.h
+    include/cfd/core/filesystem.h
+    include/cfd/core/logging.h
+    include/cfd/core/math_utils.h
     include/cfd/core/field_ops.h
     include/cfd/core/derived_fields.h
     include/cfd/io/vtk_output.h
