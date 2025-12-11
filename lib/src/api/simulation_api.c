@@ -1,13 +1,14 @@
 #include "cfd/api/simulation_api.h"
+#include "cfd/core/cfd_status.h"
 #include "cfd/core/derived_fields.h"
+#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
 #include "cfd/io/output_registry.h"
 #include "cfd/solvers/solver_interface.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+
 
 #include <math.h>
 #include <stdio.h>
@@ -45,10 +46,19 @@ static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, doubl
 
     // Create and initialize grid
     sim_data->grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    if (!sim_data->grid) {
+        cfd_free(sim_data);
+        return NULL;
+    }
     grid_initialize_uniform(sim_data->grid);
 
     // Create flow field
     sim_data->field = flow_field_create(nx, ny);
+    if (!sim_data->field) {
+        grid_destroy(sim_data->grid);
+        cfd_free(sim_data);
+        return NULL;
+    }
     initialize_flow_field(sim_data->field, sim_data->grid);
 
     // Initialize solver parameters with defaults
@@ -63,6 +73,12 @@ static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, doubl
 
     // Create output registry
     sim_data->outputs = output_registry_create();
+    if (!sim_data->outputs) {
+        flow_field_destroy(sim_data->field);
+        grid_destroy(sim_data->grid);
+        cfd_free(sim_data);
+        return NULL;
+    }
     sim_data->run_prefix = NULL;
     sim_data->current_time = 0.0;
 

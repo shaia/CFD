@@ -1,14 +1,18 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+
 
 #include <math.h>
 
 Grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin, double ymax) {
     Grid* grid = (Grid*)cfd_malloc(sizeof(Grid));
+    if (grid == NULL) {
+        return NULL;
+    }
 
     grid->nx = nx;
     grid->ny = ny;
@@ -22,6 +26,11 @@ Grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin, d
     grid->y = (double*)cfd_calloc(ny, sizeof(double));
     grid->dx = (double*)cfd_calloc(nx - 1, sizeof(double));
     grid->dy = (double*)cfd_calloc(ny - 1, sizeof(double));
+
+    if (!grid->x || !grid->y || !grid->dx || !grid->dy) {
+        grid_destroy(grid);
+        return NULL;
+    }
 
     return grid;
 }
