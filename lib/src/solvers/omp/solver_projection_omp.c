@@ -1,9 +1,11 @@
+#include "cfd_status.h"
 #include "solver_interface.h"
 #include "utils.h"
 #include <math.h>
-#include <string.h>
 #include <omp.h>
 #include <stdio.h>
+#include <string.h>
+
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -18,12 +20,13 @@
 #define MAX_VELOCITY 100.0
 
 static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t ny, double dx,
-                             double dy, int max_iter, double tolerance) {
+                                 double dy, int max_iter, double tolerance) {
     double dx2 = dx * dx;
     double dy2 = dy * dy;
     double factor = 2.0 * (1.0 / dx2 + 1.0 / dy2);
 
-    if (factor < 1e-10) return -1;
+    if (factor < 1e-10)
+        return -1;
 
     double inv_factor = 1.0 / factor;
     int iter;
@@ -31,43 +34,46 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
 
     // Allocate temporary buffer to avoid race conditions
     double* p_temp = (double*)cfd_calloc(nx * ny, sizeof(double));
-    if (!p_temp) return -1;
+    if (!p_temp)
+        return -1;
 
     for (iter = 0; iter < max_iter; iter++) {
         double max_residual = 0.0;
-        
-        // Red-Black Gauss-Seidel with Double Buffering
-        for (int color = 0; color < 2; color++) {
-            int i, j;
 
-            // Phase 1: Compute updates into temporary buffer
-            #pragma omp parallel for reduction(max:max_residual) private(i) schedule(static)
+        // Red-Black Gauss-Seidel with Double Buffering
+        int i, j;
+        for (int color = 0; color < 2; color++) {
+// Phase 1: Compute updates into temporary buffer
+#pragma omp parallel for reduction(max : max_residual) private(i) schedule(static)
             for (j = 1; j < (int)ny - 1; j++) {
                 for (i = 1; i < (int)nx - 1; i++) {
-                    if ((i + j) % 2 != color) continue;
+                    if ((i + j) % 2 != color)
+                        continue;
 
                     size_t idx = j * nx + i;
 
                     double p_xx = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / dx2;
                     double p_yy = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / dy2;
                     double residual = p_xx + p_yy - rhs[idx];
-                    
+
                     if (fabs(residual) > max_residual) {
                         max_residual = fabs(residual);
                     }
 
                     double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2 -
-                                    (p[idx + nx] + p[idx - nx]) / dy2) * (-inv_factor);
-                    
+                                    (p[idx + nx] + p[idx - nx]) / dy2) *
+                                   (-inv_factor);
+
                     p_temp[idx] = p[idx] + POISSON_OMEGA * (p_new - p[idx]);
                 }
             }
 
-            // Phase 2: Commit updates to main array
-            #pragma omp parallel for private(i) schedule(static)
+// Phase 2: Commit updates to main array
+#pragma omp parallel for private(i) schedule(static)
             for (j = 1; j < (int)ny - 1; j++) {
                 for (i = 1; i < (int)nx - 1; i++) {
-                    if ((i + j) % 2 != color) continue;
+                    if ((i + j) % 2 != color)
+                        continue;
                     size_t idx = j * nx + i;
                     p[idx] = p_temp[idx];
                 }
@@ -75,13 +81,12 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
         }
 
         // Apply BCs
-        int i, j;
-        #pragma omp parallel for private(j) schedule(static)
+#pragma omp parallel for schedule(static)
         for (j = 0; j < (int)ny; j++) {
             p[j * nx + 0] = p[j * nx + 1];
             p[j * nx + nx - 1] = p[j * nx + nx - 2];
         }
-        #pragma omp parallel for private(i) schedule(static)
+#pragma omp parallel for schedule(static)
         for (i = 0; i < (int)nx; i++) {
             p[i] = p[nx + i];
             p[(ny - 1) * nx + i] = p[(ny - 2) * nx + i];
@@ -98,10 +103,14 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
     return converged ? iter : -1;
 }
 
-void solve_projection_method_omp(FlowField* field, const Grid* grid, const SolverParams* params) {
-    if (!field || !grid || !params) return;
-    if (field->nx < 3 || field->ny < 3) return;
+cfd_status_t solve_projection_method_omp(FlowField* field, const Grid* grid,
+                                         const SolverParams* params) {
+    if (!field || !grid || !params)
+        return CFD_ERROR_INVALID;
+    if (field->nx < 3 || field->ny < 3)
+        return CFD_ERROR_INVALID;
 
+    cfd_status_t status = CFD_SUCCESS;
     size_t nx = field->nx;
     size_t ny = field->ny;
     size_t size = nx * ny;
@@ -117,8 +126,11 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
     double* rhs = (double*)cfd_calloc(size, sizeof(double));
 
     if (!u_star || !v_star || !p_new || !rhs) {
-        cfd_free(u_star); cfd_free(v_star); cfd_free(p_new); cfd_free(rhs);
-        return;
+        cfd_free(u_star);
+        cfd_free(v_star);
+        cfd_free(p_new);
+        cfd_free(rhs);
+        return CFD_ERROR_NOMEM;
     }
 
     memcpy(u_star, field->u, size * sizeof(double));
@@ -127,9 +139,9 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
 
     for (int iter = 0; iter < params->max_iter; iter++) {
         // STEP 1: Predictor
-        int i, j;
         // Use static scheduling for uniform grid load balancing
-        #pragma omp parallel for private(i) schedule(static)
+        int i, j, k;
+#pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
             for (i = 1; i < (int)nx - 1; i++) {
                 size_t idx = j * nx + i;
@@ -170,15 +182,15 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
             }
         }
 
-        // BCs for intermediate velocity
-        #pragma omp parallel for private(j) schedule(static)
+// BCs for intermediate velocity
+#pragma omp parallel for schedule(static)
         for (j = 0; j < (int)ny; j++) {
             u_star[j * nx + 0] = u_star[j * nx + 1];
             u_star[j * nx + nx - 1] = u_star[j * nx + nx - 2];
             v_star[j * nx + 0] = v_star[j * nx + 1];
             v_star[j * nx + nx - 1] = v_star[j * nx + nx - 2];
         }
-        #pragma omp parallel for private(i) schedule(static)
+#pragma omp parallel for schedule(static)
         for (i = 0; i < (int)nx; i++) {
             u_star[i] = u_star[nx + i];
             u_star[(ny - 1) * nx + i] = u_star[(ny - 2) * nx + i];
@@ -188,8 +200,8 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
 
         // STEP 2: Pressure
         double rho = field->rho[0] < 1e-10 ? 1.0 : field->rho[0];
-        
-        #pragma omp parallel for private(i) schedule(static)
+
+#pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
             for (i = 1; i < (int)nx - 1; i++) {
                 size_t idx = j * nx + i;
@@ -199,20 +211,21 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
             }
         }
 
-        int poisson_iters = solve_poisson_sor_omp(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
-        
+        int poisson_iters =
+            solve_poisson_sor_omp(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
+
         if (poisson_iters < 0) {
+            status = CFD_ERROR_DIVERGED;
             // Fallback
-            // Fallback
-             size_t idx;
-             #pragma omp parallel for private(idx) schedule(static)
-             for (idx = 0; idx < size; idx++) {
-                p_new[idx] = field->p[idx] - 0.1 * dt * rhs[idx];
+#pragma omp parallel for schedule(static)
+            for (k = 0; k < (int)size; k++) {
+                p_new[k] = field->p[k] - 0.1 * dt * rhs[k];
             }
         }
 
-        // STEP 3: Corrector
-        #pragma omp parallel for private(i) schedule(static)
+// STEP 3: Corrector
+// STEP 3: Corrector
+#pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
             for (i = 1; i < (int)nx - 1; i++) {
                 size_t idx = j * nx + i;
@@ -221,7 +234,7 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
 
                 field->u[idx] = u_star[idx] - (dt / rho) * dp_dx;
                 field->v[idx] = v_star[idx] - (dt / rho) * dp_dy;
-                
+
                 field->u[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, field->u[idx]));
                 field->v[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, field->v[idx]));
             }
@@ -235,4 +248,5 @@ void solve_projection_method_omp(FlowField* field, const Grid* grid, const Solve
     cfd_free(v_star);
     cfd_free(p_new);
     cfd_free(rhs);
+    return status;
 }

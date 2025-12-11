@@ -12,6 +12,7 @@
 #ifndef CFD_SOLVER_GPU_H
 #define CFD_SOLVER_GPU_H
 
+#include "cfd_status.h"
 #include "grid.h"
 #include "solver_interface.h"
 
@@ -99,9 +100,9 @@ int gpu_get_device_info(GPUDeviceInfo* info, int max_devices);
 
 /**
  * Select GPU device to use
- * Returns 0 on success, -1 on error
+ * Returns CFD_SUCCESS on success, error code otherwise
  */
-int gpu_select_device(int device_id);
+cfd_status_t gpu_select_device(int device_id);
 
 /**
  * Determine if GPU should be used based on problem size and config
@@ -124,18 +125,18 @@ void gpu_solver_destroy(GPUSolverContext* ctx);
 /**
  * Transfer flow field data from host to GPU
  */
-int gpu_solver_upload(GPUSolverContext* ctx, const FlowField* field);
+cfd_status_t gpu_solver_upload(GPUSolverContext* ctx, const FlowField* field);
 
 /**
  * Transfer flow field data from GPU to host
  */
-int gpu_solver_download(GPUSolverContext* ctx, FlowField* field);
+cfd_status_t gpu_solver_download(GPUSolverContext* ctx, FlowField* field);
 
 /**
  * Run one solver step on GPU
  */
-int gpu_solver_step(GPUSolverContext* ctx, const Grid* grid, const SolverParams* params,
-                    GPUSolverStats* stats);
+cfd_status_t gpu_solver_step(GPUSolverContext* ctx, const Grid* grid, const SolverParams* params,
+                             GPUSolverStats* stats);
 
 /**
  * Get GPU solver statistics
@@ -151,14 +152,14 @@ void gpu_solver_reset_stats(GPUSolverContext* ctx);
  * High-level GPU-accelerated Navier-Stokes solver
  * Automatically handles data transfer and GPU selection
  */
-void solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
-                             const GPUConfig* config);
+cfd_status_t solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
+                                     const GPUConfig* config);
 
 /**
  * GPU-accelerated projection method solver
  */
-void solve_projection_method_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
-                                 const GPUConfig* config);
+cfd_status_t solve_projection_method_gpu(FlowField* field, const Grid* grid,
+                                         const SolverParams* params, const GPUConfig* config);
 
 #ifdef __cplusplus
 }

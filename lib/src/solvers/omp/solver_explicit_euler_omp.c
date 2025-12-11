@@ -1,8 +1,10 @@
+#include "cfd_status.h"
 #include "solver_interface.h"
 #include "utils.h"
 #include <math.h>
-#include <string.h>
 #include <omp.h>
+#include <string.h>
+
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -18,9 +20,10 @@
 #define PRESSURE_UPDATE_FACTOR      0.1
 
 // Internal OpenMP explicit Euler implementation
-void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverParams* params) {
+cfd_status_t explicit_euler_omp_impl(FlowField* field, const Grid* grid,
+                                     const SolverParams* params) {
     if (field->nx < 3 || field->ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
 
     // Allocate temporary arrays
@@ -32,7 +35,7 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
         cfd_free(u_new);
         cfd_free(v_new);
         cfd_free(p_new);
-        return;
+        return CFD_ERROR_NOMEM;
     }
 
     // Initialize with current values
@@ -45,56 +48,62 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
     for (int iter = 0; iter < params->max_iter; iter++) {
         // Parallelize the main loop
         int i, j;
-        #pragma omp parallel for private(i) schedule(static)
+#pragma omp parallel for private(i) schedule(static)
         for (j = 1; j < (int)field->ny - 1; j++) {
             for (i = 1; i < (int)field->nx - 1; i++) {
                 size_t idx = j * field->nx + i;
 
                 // Derivatives
                 double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
-                double du_dy = (field->u[idx + field->nx] - field->u[idx - field->nx]) / (2.0 * grid->dy[j]);
+                double du_dy =
+                    (field->u[idx + field->nx] - field->u[idx - field->nx]) / (2.0 * grid->dy[j]);
                 double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) / (2.0 * grid->dx[i]);
-                double dv_dy = (field->v[idx + field->nx] - field->v[idx - field->nx]) / (2.0 * grid->dy[j]);
+                double dv_dy =
+                    (field->v[idx + field->nx] - field->v[idx - field->nx]) / (2.0 * grid->dy[j]);
 
                 double dp_dx = (field->p[idx + 1] - field->p[idx - 1]) / (2.0 * grid->dx[i]);
-                double dp_dy = (field->p[idx + field->nx] - field->p[idx - field->nx]) / (2.0 * grid->dy[j]);
+                double dp_dy =
+                    (field->p[idx + field->nx] - field->p[idx - field->nx]) / (2.0 * grid->dy[j]);
 
-                double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) / (grid->dx[i] * grid->dx[i]);
-                double d2u_dy2 = (field->u[idx + field->nx] - 2.0 * field->u[idx] + field->u[idx - field->nx]) / (grid->dy[j] * grid->dy[j]);
-                double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) / (grid->dx[i] * grid->dx[i]);
-                double d2v_dy2 = (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) / (grid->dy[j] * grid->dy[j]);
+                double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) /
+                                 (grid->dx[i] * grid->dx[i]);
+                double d2u_dy2 =
+                    (field->u[idx + field->nx] - 2.0 * field->u[idx] + field->u[idx - field->nx]) /
+                    (grid->dy[j] * grid->dy[j]);
+                double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) /
+                                 (grid->dx[i] * grid->dx[i]);
+                double d2v_dy2 =
+                    (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) /
+                    (grid->dy[j] * grid->dy[j]);
 
-                if (field->rho[idx] <= 1e-10) continue;
+                if (field->rho[idx] <= 1e-10)
+                    continue;
 
                 double nu = params->mu / fmax(field->rho[idx], 1e-10);
                 nu = fmin(nu, 1.0);
 
                 // Source terms
-                double source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]) * exp(-params->source_decay_rate * iter * conservative_dt);
-                double source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]) * exp(-params->source_decay_rate * iter * conservative_dt);
+                double source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]) *
+                                  exp(-params->source_decay_rate * iter * conservative_dt);
+                double source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]) *
+                                  exp(-params->source_decay_rate * iter * conservative_dt);
 
                 // Update u
-                double du = conservative_dt * (
-                    -field->u[idx] * du_dx - field->v[idx] * du_dy
-                    - dp_dx / fmax(field->rho[idx], 1e-10)
-                    + nu * (d2u_dx2 + d2u_dy2)
-                    + source_u
-                );
+                double du = conservative_dt * (-field->u[idx] * du_dx - field->v[idx] * du_dy -
+                                               dp_dx / fmax(field->rho[idx], 1e-10) +
+                                               nu * (d2u_dx2 + d2u_dy2) + source_u);
 
                 // Update v
-                double dv = conservative_dt * (
-                    -field->u[idx] * dv_dx - field->v[idx] * dv_dy
-                    - dp_dy / fmax(field->rho[idx], 1e-10)
-                    + nu * (d2v_dx2 + d2v_dy2)
-                    + source_v
-                );
+                double dv = conservative_dt * (-field->u[idx] * dv_dx - field->v[idx] * dv_dy -
+                                               dp_dy / fmax(field->rho[idx], 1e-10) +
+                                               nu * (d2v_dx2 + d2v_dy2) + source_v);
 
                 du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));
                 dv = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dv));
 
                 u_new[idx] = field->u[idx] + du;
                 v_new[idx] = field->v[idx] + dv;
-                
+
                 // Limit velocity
                 u_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, u_new[idx]));
                 v_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, v_new[idx]));
@@ -102,8 +111,9 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
                 // Pressure update
                 double divergence = du_dx + dv_dy;
                 divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
-                
-                double dp = -PRESSURE_UPDATE_FACTOR * conservative_dt * field->rho[idx] * divergence;
+
+                double dp =
+                    -PRESSURE_UPDATE_FACTOR * conservative_dt * field->rho[idx] * divergence;
                 dp = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dp));
                 p_new[idx] = field->p[idx] + dp;
             }
@@ -121,7 +131,7 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
         int has_nan = 0;
         int k;
         int limit = (int)(field->nx * field->ny);
-        #pragma omp parallel for reduction(|:has_nan) schedule(static)
+#pragma omp parallel for reduction(| : has_nan) schedule(static)
         for (k = 0; k < limit; k++) {
             if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
                 has_nan = 1;
@@ -137,4 +147,6 @@ void explicit_euler_omp_impl(FlowField* field, const Grid* grid, const SolverPar
     cfd_free(u_new);
     cfd_free(v_new);
     cfd_free(p_new);
+
+    return CFD_SUCCESS;
 }

@@ -16,6 +16,7 @@
  * This ensures ∇·u^(n+1) = 0 (incompressibility constraint)
  */
 
+#include "cfd_status.h"
 #include "solver_interface.h"
 #include "utils.h"
 #include <math.h>
@@ -64,7 +65,7 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
             for (size_t j = 1; j < ny - 1; j++) {
                 for (size_t i = 1; i < nx - 1; i++) {
                     // Red-black ordering
-                    if ((i + j) % 2 != color)
+                    if ((int)((i + j) % 2) != color)
                         continue;
 
                     size_t idx = j * nx + i;
@@ -117,11 +118,12 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
 /**
  * Projection Method Solver
  */
-void solve_projection_method(FlowField* field, const Grid* grid, const SolverParams* params) {
+cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
+                                     const SolverParams* params) {
     if (!field || !grid || !params)
-        return;
+        return CFD_ERROR_INVALID;
     if (field->nx < 3 || field->ny < 3)
-        return;
+        return CFD_ERROR_INVALID;
 
     size_t nx = field->nx;
     size_t ny = field->ny;
@@ -144,8 +146,10 @@ void solve_projection_method(FlowField* field, const Grid* grid, const SolverPar
         cfd_free(v_star);
         cfd_free(p_new);
         cfd_free(rhs);
-        return;
+        return CFD_ERROR_NOMEM;
     }
+
+    cfd_status_t status = CFD_SUCCESS;
 
     // Copy current values
     memcpy(u_star, field->u, size * sizeof(double));
@@ -245,6 +249,7 @@ void solve_projection_method(FlowField* field, const Grid* grid, const SolverPar
             solve_poisson_sor(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
 
         if (poisson_iters < 0) {
+            status = CFD_ERROR_DIVERGED;
             // Poisson solver didn't converge - use simple pressure update
             for (size_t idx = 0; idx < size; idx++) {
                 p_new[idx] = field->p[idx] - 0.1 * dt * rhs[idx];
@@ -287,7 +292,8 @@ void solve_projection_method(FlowField* field, const Grid* grid, const SolverPar
         }
 
         if (has_nan) {
-            printf("Warning: NaN detected in projection solver at iteration %d\n", iter);
+            // Log warning but return diverged status
+            status = CFD_ERROR_DIVERGED;
             break;
         }
     }
@@ -297,4 +303,6 @@ void solve_projection_method(FlowField* field, const Grid* grid, const SolverPar
     cfd_free(v_star);
     cfd_free(p_new);
     cfd_free(rhs);
+
+    return status;
 }

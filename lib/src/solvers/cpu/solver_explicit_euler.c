@@ -1,3 +1,4 @@
+#include "cfd_status.h"
 #include "solver_interface.h"
 #include "utils.h"
 #include "vtk_output.h"
@@ -161,6 +162,7 @@ void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params)
 }
 
 void apply_boundary_conditions(FlowField* field, const Grid* grid) {
+    (void)grid;
     // Apply periodic boundary conditions in x-direction
     for (size_t j = 0; j < field->ny; j++) {
         field->u[j * field->nx + 0] = field->u[j * field->nx + field->nx - 2];
@@ -206,10 +208,10 @@ void compute_source_terms(double x, double y, int iter, double dt, const SolverP
 
 // Internal explicit Euler implementation
 // This is called by the solver registry - not part of public API
-void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams* params) {
+cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams* params) {
     // Check for minimum grid size - prevent crashes on small grids
     if (field->nx < 3 || field->ny < 3) {
-        return;  // Skip solver for grids too small for finite differences
+        return CFD_ERROR_INVALID;  // Skip solver for grids too small for finite differences
     }
 
     // Allocate temporary arrays for the solution update
@@ -218,6 +220,15 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
     double* p_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
     double* rho_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
     double* T_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
+
+    if (!u_new || !v_new || !p_new || !rho_new || !T_new) {
+        cfd_free(u_new);
+        cfd_free(v_new);
+        cfd_free(p_new);
+        cfd_free(rho_new);
+        cfd_free(T_new);
+        return CFD_ERROR_NOMEM;
+    }
 
     // Initialize with current values to prevent uninitialized memory
     memcpy(u_new, field->u, field->nx * field->ny * sizeof(double));
@@ -366,4 +377,6 @@ void explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams*
     cfd_free(p_new);
     cfd_free(rho_new);
     cfd_free(T_new);
+
+    return CFD_SUCCESS;
 }

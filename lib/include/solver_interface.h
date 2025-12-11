@@ -1,7 +1,9 @@
 #ifndef CFD_SOLVER_INTERFACE_H
 #define CFD_SOLVER_INTERFACE_H
 
+#include "cfd_status.h"
 #include "grid.h"
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -77,16 +79,9 @@ typedef enum {
 } SolverCapabilities;
 
 /**
- * Solver status codes
+ * Solver status codes - Deprecated, use cfd_status_t
  */
-typedef enum {
-    SOLVER_STATUS_OK = 0,
-    SOLVER_STATUS_ERROR = -1,
-    SOLVER_STATUS_DIVERGED = -2,
-    SOLVER_STATUS_MAX_ITER = -3,
-    SOLVER_STATUS_INVALID_INPUT = -4,
-    SOLVER_STATUS_NOT_INITIALIZED = -5,
-} SolverStatus;
+// typedef enum { ... } SolverStatus; // Removed in favor of cfd_status_t
 
 /**
  * Solver statistics - filled after each solve step
@@ -98,7 +93,7 @@ typedef struct {
     double max_pressure;     // Maximum pressure
     double cfl_number;       // Actual CFL number used
     double elapsed_time_ms;  // Wall clock time for solve
-    SolverStatus status;     // Status of the solve
+    cfd_status_t status;     // Status of the solve
 } SolverStats;
 
 /**
@@ -112,18 +107,23 @@ typedef void* SolverContext;
  */
 
 // Initialize solver context (allocate internal buffers, etc.)
-typedef SolverStatus (*SolverInitFunc)(Solver* solver, const Grid* grid,
+// Returns CFD_SUCCESS on success, or error code on failure (e.g., CFD_ERROR_NOMEM)
+typedef cfd_status_t (*SolverInitFunc)(Solver* solver, const Grid* grid,
                                        const SolverParams* params);
 
 // Destroy solver context (free internal buffers)
 typedef void (*SolverDestroyFunc)(Solver* solver);
 
 // Perform one time step
-typedef SolverStatus (*SolverStepFunc)(Solver* solver, FlowField* field, const Grid* grid,
+// Returns CFD_SUCCESS on success, CFD_ERROR_DIVERGED if solution diverges,
+// or error code on failure
+typedef cfd_status_t (*SolverStepFunc)(Solver* solver, FlowField* field, const Grid* grid,
                                        const SolverParams* params, SolverStats* stats);
 
 // Perform multiple iterations until convergence or max_iter
-typedef SolverStatus (*SolverSolveFunc)(Solver* solver, FlowField* field, const Grid* grid,
+// Returns CFD_SUCCESS on success, CFD_ERROR_DIVERGED if solution diverges,
+// or error code on failure
+typedef cfd_status_t (*SolverSolveFunc)(Solver* solver, FlowField* field, const Grid* grid,
                                         const SolverParams* params, SolverStats* stats);
 
 // Apply boundary conditions (can be overridden by specific solvers)
@@ -181,14 +181,14 @@ Solver* solver_create(const char* type_name);
 void solver_destroy(Solver* solver);
 
 // Initialize a solver for a specific grid configuration
-SolverStatus solver_init(Solver* solver, const Grid* grid, const SolverParams* params);
+cfd_status_t solver_init(Solver* solver, const Grid* grid, const SolverParams* params);
 
 // Perform a single time step
-SolverStatus solver_step(Solver* solver, FlowField* field, const Grid* grid,
+cfd_status_t solver_step(Solver* solver, FlowField* field, const Grid* grid,
                          const SolverParams* params, SolverStats* stats);
 
 // Solve until convergence or max iterations
-SolverStatus solver_solve(Solver* solver, FlowField* field, const Grid* grid,
+cfd_status_t solver_solve(Solver* solver, FlowField* field, const Grid* grid,
                           const SolverParams* params, SolverStats* stats);
 
 // Apply boundary conditions
@@ -228,8 +228,8 @@ const char* solver_registry_get_description(const char* type_name);
 #define SOLVER_TYPE_EXPLICIT_EULER_GPU    "explicit_euler_gpu"
 #define SOLVER_TYPE_PROJECTION_JACOBI_GPU "projection_jacobi_gpu"
 
-#define SOLVER_TYPE_EXPLICIT_EULER_OMP    "explicit_euler_omp"
-#define SOLVER_TYPE_PROJECTION_OMP        "projection_omp"
+#define SOLVER_TYPE_EXPLICIT_EULER_OMP "explicit_euler_omp"
+#define SOLVER_TYPE_PROJECTION_OMP     "projection_omp"
 
 // Future solver types (placeholders)
 #define SOLVER_TYPE_SIMPLE "simple"
@@ -257,7 +257,7 @@ static inline SolverStats solver_stats_default(void) {
                          .max_pressure = 0.0,
                          .cfl_number = 0.0,
                          .elapsed_time_ms = 0.0,
-                         .status = SOLVER_STATUS_OK};
+                         .status = CFD_SUCCESS};
     return stats;
 }
 

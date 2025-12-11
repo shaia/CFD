@@ -107,6 +107,7 @@ endif()
 set(CFD_LIBRARY_HEADERS
     include/grid.h
     include/solver_interface.h
+    include/cfd_status.h
     include/solver_gpu.h
     include/utils.h
     include/field_ops.h

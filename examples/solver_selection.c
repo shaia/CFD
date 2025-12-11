@@ -8,12 +8,14 @@
  * - Accessing solver statistics
  */
 
+#include "cfd_status.h"
 #include "simulation_api.h"
 #include "solver_interface.h"
 #include "utils.h"
 #include "vtk_output.h"
 #include <stdio.h>
 #include <string.h>
+
 
 // Grid parameters
 #define NX   100
@@ -202,7 +204,7 @@ void run_direct_solver_usage(void) {
     params.dt = 0.005;
 
     // Initialize solver
-    SolverStatus status = solver_init(solver, grid, &params);
+    cfd_status_t status = solver_init(solver, grid, &params);
     printf("\nSolver init status: %d\n", status);
 
     // Run steps directly

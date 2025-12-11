@@ -1,6 +1,7 @@
 #ifndef CFD_UTILS_H
 #define CFD_UTILS_H
 
+#include "cfd_status.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,7 +14,7 @@ extern "C" {
 // ERROR HANDLING
 //=============================================================================
 
-// Print error message and exit
+// Log error message and set thread-local error state (does NOT exit)
 void cfd_error(const char* message);
 
 // Print warning message
