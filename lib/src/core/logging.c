@@ -36,6 +36,29 @@ cfd_status_t cfd_get_last_status(void) {
     return g_last_status;
 }
 
+const char* cfd_get_error_string(cfd_status_t status) {
+    switch (status) {
+        case CFD_SUCCESS:
+            return "Success";
+        case CFD_ERROR:
+            return "Generic error";
+        case CFD_ERROR_NOMEM:
+            return "Out of memory";
+        case CFD_ERROR_INVALID:
+            return "Invalid argument";
+        case CFD_ERROR_IO:
+            return "I/O error";
+        case CFD_ERROR_UNSUPPORTED:
+            return "Operation not supported";
+        case CFD_ERROR_DIVERGED:
+            return "Solver diverged";
+        case CFD_ERROR_MAX_ITER:
+            return "Max iterations reached";
+        default:
+            return "Unknown error";
+    }
+}
+
 void cfd_clear_error(void) {
     g_last_status = CFD_SUCCESS;
     g_last_error_msg[0] = '\0';

@@ -1,9 +1,9 @@
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+
 
 #include <assert.h>
 #include <stdio.h>
@@ -61,6 +61,18 @@ int test_error_reporting() {
     // Test 5: cfd_malloc failure check (if we could force it)
     // Hard to force malloc failure without a custom allocator or massive size.
     // We will trust the mock for now.
+
+    // Test 6: Error String Mapping
+    assert(strcmp(cfd_get_error_string(CFD_SUCCESS), "Success") == 0);
+    assert(strcmp(cfd_get_error_string(CFD_ERROR), "Generic error") == 0);
+    assert(strcmp(cfd_get_error_string(CFD_ERROR_NOMEM), "Out of memory") == 0);
+    assert(strcmp(cfd_get_error_string(CFD_ERROR_INVALID), "Invalid argument") == 0);
+    assert(strcmp(cfd_get_error_string(CFD_ERROR_IO), "I/O error") == 0);
+    assert(strcmp(cfd_get_error_string(CFD_ERROR_UNSUPPORTED), "Operation not supported") == 0);
+    assert(strcmp(cfd_get_error_string(CFD_ERROR_DIVERGED), "Solver diverged") == 0);
+    assert(strcmp(cfd_get_error_string(CFD_ERROR_MAX_ITER), "Max iterations reached") == 0);
+    assert(strcmp(cfd_get_error_string((cfd_status_t)999), "Unknown error") == 0);
+    printf("  Error String Mapping: OK\n");
 
     printf("Error reporting tests passed.\n");
     return 0;

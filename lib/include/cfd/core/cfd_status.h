@@ -32,6 +32,9 @@ const char* cfd_get_last_error(void);
 // Get the last error code
 cfd_status_t cfd_get_last_status(void);
 
+// Get string description of status code
+const char* cfd_get_error_string(cfd_status_t status);
+
 // Clear the error state
 void cfd_clear_error(void);
 

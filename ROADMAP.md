@@ -31,10 +31,10 @@ This document outlines the development roadmap for achieving a commercial-grade,
 **Goal:** Transform the codebase from a research prototype to a production-safe library.
 
 ### 0.1 Safe Error Handling
-- [ ] Replace all `exit()` calls with error code propagation
-- [ ] Implement `cfd_status_t` and `cfd_get_error_string()`
-- [ ] Thread-local error context for rich error reporting
-- [ ] Ensure resource cleanup on error paths (no leaks on failure)
+- [x] Replace all `exit()` calls with error code propagation
+- [x] Implement `cfd_status_t` and `cfd_get_error_string()`
+- [x] Thread-local error context for rich error reporting
+- [x] Ensure resource cleanup on error paths (no leaks on failure)
 
 ### 0.2 Thread Safety & Global State
 - [ ] Remove static buffers in `utils.c` (path management)
