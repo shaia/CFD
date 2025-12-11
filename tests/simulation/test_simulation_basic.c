@@ -37,6 +37,7 @@ void test_simulation_parameters(void) {
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
     SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    TEST_ASSERT_NOT_NULL(sim_data);
 
     // Check grid parameters (using float comparison since Unity double precision is disabled)
     TEST_ASSERT_EQUAL_FLOAT((float)xmin, (float)sim_data->grid->xmin);
@@ -51,6 +52,7 @@ void test_simulation_step_execution(void) {
     size_t nx = 10, ny = 10;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
     SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    TEST_ASSERT_NOT_NULL(sim_data);
 
     // Initial check - ensure all fields finite
     for (size_t i = 0; i < nx * ny; i++) {
