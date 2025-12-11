@@ -9,7 +9,9 @@
 #include <direct.h>
 #define rmdir _rmdir
 #else
+#include <sys/stat.h>
 #include <unistd.h>
+
 #endif
 
 void setUp(void) {
