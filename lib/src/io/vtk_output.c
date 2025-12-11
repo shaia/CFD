@@ -1,10 +1,11 @@
 #include "cfd/io/vtk_output.h"
-#include "cfd/core/grid.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+
 
 #include "cfd/solvers/solver_interface.h"
 #include "vtk_output_internal.h"
@@ -101,10 +102,6 @@ void vtk_write_scalar_field(const char* run_dir, const char* prefix, int step,
     write_vtk_output(filepath, field_name, data, grid->nx, grid->ny, grid->xmin, grid->xmax,
                      grid->ymin, grid->ymax);
 }
-
-//=============================================================================
-// VTK LEGACY API
-//=============================================================================
 
 //=============================================================================
 // VTK LEGACY API
