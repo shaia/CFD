@@ -5,7 +5,6 @@
 #include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
 
-
 #include <math.h>
 #include <stdio.h>
 
