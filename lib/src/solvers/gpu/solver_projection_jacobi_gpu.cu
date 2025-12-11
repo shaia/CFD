@@ -8,12 +8,13 @@
  * - Pointer swapping instead of memcpy for Poisson iterations
  */
 
-#include "cfd/solvers/solver_gpu.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+#include "cfd/solvers/solver_gpu.h"
+
 
 
 #include <cuda_runtime.h>
@@ -383,21 +384,19 @@ GPUSolverContext* gpu_solver_create(size_t nx, size_t ny, const GPUConfig* confi
 void gpu_solver_destroy(GPUSolverContext* ctx) {
     if (!ctx)
         return;
-    if (ctx->memory_allocated) {
-        cudaFree(ctx->d_u);
-        cudaFree(ctx->d_v);
-        cudaFree(ctx->d_p);
-        cudaFree(ctx->d_rho);
-        cudaFree(ctx->d_u_new);
-        cudaFree(ctx->d_v_new);
-        cudaFree(ctx->d_p_new);
-        cudaFree(ctx->d_rhs);
-        cudaFree(ctx->d_residual);
-        cudaFree(ctx->d_x);
-        cudaFree(ctx->d_y);
-        cudaFree(ctx->d_dx);
-        cudaFree(ctx->d_dy);
-    }
+    cudaFree(ctx->d_u);
+    cudaFree(ctx->d_v);
+    cudaFree(ctx->d_p);
+    cudaFree(ctx->d_rho);
+    cudaFree(ctx->d_u_new);
+    cudaFree(ctx->d_v_new);
+    cudaFree(ctx->d_p_new);
+    cudaFree(ctx->d_rhs);
+    cudaFree(ctx->d_residual);
+    cudaFree(ctx->d_x);
+    cudaFree(ctx->d_y);
+    cudaFree(ctx->d_dx);
+    cudaFree(ctx->d_dy);
     cudaEventDestroy(ctx->start_event);
     cudaEventDestroy(ctx->stop_event);
     cudaStreamDestroy(ctx->stream);
