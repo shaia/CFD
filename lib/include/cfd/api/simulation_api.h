@@ -17,14 +17,15 @@ typedef struct OutputRegistry OutputRegistry;
 
 // Main simulation state containing grid, flow field, solver, and parameters
 typedef struct {
-    Grid* grid;               // Computational grid
-    FlowField* field;         // Flow variables (u, v, p, rho, T)
-    SolverParams params;      // Solver parameters (dt, CFL, viscosity, etc.)
-    Solver* solver;           // Active solver (NULL = default solver)
-    SolverStats last_stats;   // Statistics from last solve step
-    OutputRegistry* outputs;  // Registered output configurations (internal)
-    char* run_prefix;         // Run directory prefix (NULL = default "sim")
-    double current_time;      // Current simulation time (accumulated dt)
+    Grid* grid;                // Computational grid
+    FlowField* field;          // Flow variables (u, v, p, rho, T)
+    SolverParams params;       // Solver parameters (dt, CFL, viscosity, etc.)
+    Solver* solver;            // Active solver (NULL = default solver)
+    SolverRegistry* registry;  // Solver registry (context-bound)
+    SolverStats last_stats;    // Statistics from last solve step
+    OutputRegistry* outputs;   // Registered output configurations (internal)
+    char* run_prefix;          // Run directory prefix (NULL = default "sim")
+    double current_time;       // Current simulation time (accumulated dt)
 } SimulationData;
 
 //=============================================================================

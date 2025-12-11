@@ -5,27 +5,33 @@
  * using the modern pluggable solver interface.
  */
 
-#include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+#include "cfd/solvers/solver_interface.h"
+
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
+// Helper to benchmark a solver type
 void benchmark_solver(const char* solver_name, const char* solver_type, size_t nx, size_t ny,
                       int iterations) {
     printf("\n=== %s Benchmark ===\n", solver_name);
     printf("Grid size: %zux%zu, Iterations: %d\n", nx, ny, iterations);
 
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
     // Create solver using modern interface
-    Solver* solver = solver_create(solver_type);
+    Solver* solver = cfd_solver_create(registry, solver_type);
     if (!solver) {
         fprintf(stderr, "Failed to create solver: %s\n", solver_type);
+        cfd_registry_destroy(registry);
         return;
     }
 
@@ -64,6 +70,7 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
     solver_destroy(solver);
     flow_field_destroy(field);
     grid_destroy(grid);
+    cfd_registry_destroy(registry);
 }
 
 int main() {
@@ -99,15 +106,15 @@ int main() {
         // Benchmark optimized solver
         benchmark_solver("Optimized Solver", SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, nx, ny,
                          iterations);
-        
+
         // Benchmark OpenMP solver
         benchmark_solver("OpenMP Solver", SOLVER_TYPE_EXPLICIT_EULER_OMP, nx, ny, iterations);
 
         // Benchmark Projection solvers
         benchmark_solver("Projection Solver", SOLVER_TYPE_PROJECTION, nx, ny, iterations);
-        benchmark_solver("Projection Optimized", SOLVER_TYPE_PROJECTION_OPTIMIZED, nx, ny, iterations);
+        benchmark_solver("Projection Optimized", SOLVER_TYPE_PROJECTION_OPTIMIZED, nx, ny,
+                         iterations);
         benchmark_solver("Projection OpenMP", SOLVER_TYPE_PROJECTION_OMP, nx, ny, iterations);
-
 
 
         // Calculate speedup

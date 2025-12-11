@@ -1,11 +1,12 @@
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+
 
 #include <math.h>
 #include <stdio.h>
@@ -81,11 +82,15 @@ void test_solver_step_by_step_stability(void) {
            params.pressure_coupling);
 
     // Run solver using modern interface
-    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
     SolverStats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
+    cfd_registry_destroy(registry);
     check_field_validity(field, "After 1 solver iteration");
     print_field_stability(field, "After solver");
 

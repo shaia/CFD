@@ -8,14 +8,14 @@
  * - Accessing solver statistics
  */
 
-#include "cfd/core/cfd_status.h"
 #include "cfd/api/simulation_api.h"
-#include "cfd/solvers/solver_interface.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+#include "cfd/solvers/solver_interface.h"
+
 
 #include "cfd/io/vtk_output.h"
 #include <stdio.h>
@@ -187,11 +187,15 @@ void run_direct_solver_usage(void) {
     printf("DIRECT SOLVER API USAGE\n");
     print_separator();
 
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
     // Create solver directly
-    printf("\nCreating solver directly via solver_create()...\n");
-    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    printf("\nCreating solver directly via cfd_solver_create()...\n");
+    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     if (!solver) {
         printf("  ERROR: Failed to create solver\n");
+        cfd_registry_destroy(registry);
         return;
     }
 
@@ -235,6 +239,7 @@ void run_direct_solver_usage(void) {
     solver_destroy(solver);
     flow_field_destroy(field);
     grid_destroy(grid);
+    cfd_registry_destroy(registry);
 }
 
 int main(int argc, char** argv) {

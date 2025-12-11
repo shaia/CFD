@@ -1,10 +1,11 @@
-#include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+#include "cfd/solvers/solver_interface.h"
+
 
 #include "cfd/io/vtk_output.h"
 #include <math.h>
@@ -54,9 +55,15 @@ int main(int argc, char* argv[]) {
     initialize_flow_field(field, grid);
 
     // Create solver using modern interface
-    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     if (!solver) {
         fprintf(stderr, "Failed to create solver\n");
+        cfd_registry_destroy(registry);
+        flow_field_destroy(field);
+        grid_destroy(grid);
         return 1;
     }
 
@@ -184,7 +191,9 @@ int main(int argc, char* argv[]) {
     printf("- Flow directionality (U vs V amplitudes)\n\n");
 
     printf("Users can customize these parameters in their code:\n");
-    printf("  Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);\n");
+    printf("  SolverRegistry* registry = cfd_registry_create();\n");
+    printf("  cfd_registry_register_defaults(registry);\n");
+    printf("  Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);\n");
     printf("  SolverParams params = solver_params_default();\n");
     printf("  params.source_amplitude_u = 0.2;  // Custom value\n");
     printf("  params.source_amplitude_v = 0.1;  // Custom value\n");
@@ -198,6 +207,5 @@ int main(int argc, char* argv[]) {
     solver_destroy(solver);
     flow_field_destroy(field);
     grid_destroy(grid);
-
-    return 0;
+    cfd_registry_destroy(registry);
 }

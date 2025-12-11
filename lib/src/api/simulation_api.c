@@ -27,19 +27,10 @@ static char s_base_output_dir[512] = "../../artifacts";
 static int s_registry_initialized = 0;
 
 // Ensure registry is initialized
-static void ensure_registry_initialized(void) {
-    if (!s_registry_initialized) {
-        solver_registry_init();
-        s_registry_initialized = 1;
-    }
-}
-
 // Internal helper to create simulation with a specific solver
 static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, double xmin, double xmax,
                                                      double ymin, double ymax,
                                                      const char* solver_type) {
-    ensure_registry_initialized();
-
     SimulationData* sim_data = (SimulationData*)cfd_malloc(sizeof(SimulationData));
     if (!sim_data)
         return NULL;
@@ -82,10 +73,22 @@ static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, doubl
     sim_data->run_prefix = NULL;
     sim_data->current_time = 0.0;
 
+    // Initialize Solver Registry
+    sim_data->registry = cfd_registry_create();
+    if (!sim_data->registry) {
+        output_registry_destroy(sim_data->outputs);
+        flow_field_destroy(sim_data->field);
+        grid_destroy(sim_data->grid);
+        cfd_free(sim_data);
+        return NULL;
+    }
+    cfd_registry_register_defaults(sim_data->registry);
+
     // Create and initialize the solver
-    sim_data->solver = solver_create(solver_type);
+    sim_data->solver = cfd_solver_create(sim_data->registry, solver_type);
     if (!sim_data->solver) {
         // Failed to create solver - cleanup and return NULL
+        cfd_registry_destroy(sim_data->registry);
         output_registry_destroy(sim_data->outputs);
         flow_field_destroy(sim_data->field);
         grid_destroy(sim_data->grid);
@@ -132,9 +135,7 @@ int simulation_set_solver_by_name(SimulationData* sim_data, const char* solver_t
     if (!sim_data || !solver_type)
         return -1;
 
-    ensure_registry_initialized();
-
-    Solver* solver = solver_create(solver_type);
+    Solver* solver = cfd_solver_create(sim_data->registry, solver_type);
     if (!solver)
         return -1;
 
@@ -182,6 +183,7 @@ void run_simulation_solve(SimulationData* sim_data) {
 }
 
 // Free simulation data
+// Free simulation data
 void free_simulation(SimulationData* sim_data) {
     if (!sim_data)
         return;
@@ -189,6 +191,11 @@ void free_simulation(SimulationData* sim_data) {
     if (sim_data->solver) {
         solver_destroy(sim_data->solver);
         sim_data->solver = NULL;
+    }
+
+    if (sim_data->registry) {
+        cfd_registry_destroy(sim_data->registry);
+        sim_data->registry = NULL;
     }
 
     if (sim_data->outputs) {
@@ -206,16 +213,31 @@ void free_simulation(SimulationData* sim_data) {
     cfd_free(sim_data);
 }
 
-// Solver discovery and listing
+// Solver discovery and listing (creates temporary registry)
 int simulation_list_solvers(const char** names, int max_count) {
-    ensure_registry_initialized();
-    return solver_registry_list(names, max_count);
+    SolverRegistry* registry = cfd_registry_create();
+    if (!registry)
+        return 0;
+
+    cfd_registry_register_defaults(registry);
+    int count = cfd_registry_list(registry, names, max_count);
+
+    cfd_registry_destroy(registry);
+    return count;
 }
 
 int simulation_has_solver(const char* solver_type) {
-    ensure_registry_initialized();
-    return solver_registry_has(solver_type);
+    SolverRegistry* registry = cfd_registry_create();
+    if (!registry)
+        return 0;
+
+    cfd_registry_register_defaults(registry);
+    int result = cfd_registry_has(registry, solver_type);
+
+    cfd_registry_destroy(registry);
+    return result;
 }
+
 
 //=============================================================================
 // OUTPUT REGISTRY API

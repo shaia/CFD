@@ -174,8 +174,28 @@ struct Solver {
  * Solver creation and management functions
  */
 
-// Create a new solver by type name (e.g., "explicit_euler", "projection", "simple")
-Solver* solver_create(const char* type_name);
+// Opaque handle for solver registry
+typedef struct SolverRegistry SolverRegistry;
+
+/**
+ * Registry Management
+ */
+
+// Create a new solver registry
+SolverRegistry* cfd_registry_create(void);
+
+// Destroy a solver registry
+void cfd_registry_destroy(SolverRegistry* registry);
+
+// Register default built-in solvers
+void cfd_registry_register_defaults(SolverRegistry* registry);
+
+/**
+ * Solver Creation
+ */
+
+// Create a new solver instance from the registry
+Solver* cfd_solver_create(SolverRegistry* registry, const char* type_name);
 
 // Destroy a solver and free all resources
 void solver_destroy(Solver* solver);
@@ -199,53 +219,39 @@ double solver_compute_dt(Solver* solver, const FlowField* field, const Grid* gri
                          const SolverParams* params);
 
 /**
- * Solver registry functions
+ * Registry Operations
  */
 
 // Solver factory function type - creates a new solver instance
 typedef Solver* (*SolverFactoryFunc)(void);
 
 // Register a new solver type
-int solver_registry_register(const char* type_name, SolverFactoryFunc factory);
+int cfd_registry_register(SolverRegistry* registry, const char* type_name,
+                          SolverFactoryFunc factory);
 
 // Unregister a solver type
-int solver_registry_unregister(const char* type_name);
+int cfd_registry_unregister(SolverRegistry* registry, const char* type_name);
 
 // Get list of available solver types (returns count, fills names array)
-int solver_registry_list(const char** names, int max_count);
+int cfd_registry_list(SolverRegistry* registry, const char** names, int max_count);
 
 // Check if a solver type is available
-int solver_registry_has(const char* type_name);
+int cfd_registry_has(SolverRegistry* registry, const char* type_name);
 
 // Get description for a solver type
-const char* solver_registry_get_description(const char* type_name);
-// Solver Types
+const char* cfd_registry_get_description(SolverRegistry* registry, const char* type_name);
+
+/**
+ * Standard Built-in Solver Types
+ */
 #define SOLVER_TYPE_EXPLICIT_EULER           "explicit_euler"
 #define SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED "explicit_euler_optimized"
+#define SOLVER_TYPE_EXPLICIT_EULER_OMP       "explicit_euler_omp"
+#define SOLVER_TYPE_EXPLICIT_EULER_GPU       "explicit_euler_gpu"
 #define SOLVER_TYPE_PROJECTION               "projection"
 #define SOLVER_TYPE_PROJECTION_OPTIMIZED     "projection_optimized"
-
-#define SOLVER_TYPE_EXPLICIT_EULER_GPU    "explicit_euler_gpu"
-#define SOLVER_TYPE_PROJECTION_JACOBI_GPU "projection_jacobi_gpu"
-
-#define SOLVER_TYPE_EXPLICIT_EULER_OMP "explicit_euler_omp"
-#define SOLVER_TYPE_PROJECTION_OMP     "projection_omp"
-
-// Future solver types (placeholders)
-#define SOLVER_TYPE_SIMPLE "simple"
-#define SOLVER_TYPE_LBM    "lbm"
-
-/**
- * Initialize all built-in solvers in the registry
- * Call this once at program startup
- */
-void solver_registry_init(void);
-
-/**
- * Cleanup the solver registry
- * Call this at program shutdown
- */
-void solver_registry_cleanup(void);
+#define SOLVER_TYPE_PROJECTION_OMP           "projection_omp"
+#define SOLVER_TYPE_PROJECTION_JACOBI_GPU    "projection_jacobi_gpu"
 
 /**
  * Helper to initialize SolverStats with default values
