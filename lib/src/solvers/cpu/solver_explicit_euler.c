@@ -73,6 +73,12 @@ FlowField* flow_field_create(size_t nx, size_t ny) {
     field->nx = nx;
     field->ny = ny;
 
+    field->u = NULL;
+    field->v = NULL;
+    field->p = NULL;
+    field->rho = NULL;
+    field->T = NULL;
+
     // Allocate 32-byte aligned memory for flow variables (optimized for SIMD operations)
     field->u = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
     field->v = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
