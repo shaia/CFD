@@ -1,11 +1,12 @@
-#include "cfd/core/grid.h"
 #include "cfd/api/simulation_api.h"
-#include "cfd/solvers/solver_interface.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+#include "cfd/solvers/solver_interface.h"
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,11 +20,12 @@ int main(int argc, char* argv[]) {
     printf("Starting CFD simulation...\n");
     printf("Grid size: %zu x %zu\n", nx, ny);
 
-    // Configure output directory (optional)
-    simulation_set_output_dir("../../artifacts");
 
     // Initialize simulation
     SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+
+    // Configure output directory (optional)
+    simulation_set_output_dir(sim_data, "../../artifacts");
     simulation_set_run_prefix(sim_data, "basic_sim");
 
     // Register automatic output every 100 steps

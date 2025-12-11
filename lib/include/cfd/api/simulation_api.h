@@ -17,15 +17,16 @@ typedef struct OutputRegistry OutputRegistry;
 
 // Main simulation state containing grid, flow field, solver, and parameters
 typedef struct {
-    Grid* grid;                // Computational grid
-    FlowField* field;          // Flow variables (u, v, p, rho, T)
-    SolverParams params;       // Solver parameters (dt, CFL, viscosity, etc.)
-    Solver* solver;            // Active solver (NULL = default solver)
-    SolverRegistry* registry;  // Solver registry (context-bound)
-    SolverStats last_stats;    // Statistics from last solve step
-    OutputRegistry* outputs;   // Registered output configurations (internal)
-    char* run_prefix;          // Run directory prefix (NULL = default "sim")
-    double current_time;       // Current simulation time (accumulated dt)
+    Grid* grid;                 // Computational grid
+    FlowField* field;           // Flow variables (u, v, p, rho, T)
+    SolverParams params;        // Solver parameters (dt, CFL, viscosity, etc.)
+    Solver* solver;             // Active solver (NULL = default solver)
+    SolverRegistry* registry;   // Solver registry (context-bound)
+    SolverStats last_stats;     // Statistics from last solve step
+    OutputRegistry* outputs;    // Registered output configurations (internal)
+    char* run_prefix;           // Run directory prefix (NULL = default "sim")
+    double current_time;        // Current simulation time (accumulated dt)
+    char output_base_dir[512];  // Base output directory
 } SimulationData;
 
 //=============================================================================
@@ -115,7 +116,7 @@ void simulation_clear_outputs(SimulationData* sim_data);
 
 // Set base output directory (default: "../../artifacts")
 // This is the only manual configuration needed - everything else is automatic
-void simulation_set_output_dir(const char* base_dir);
+void simulation_set_output_dir(SimulationData* sim_data, const char* base_dir);
 
 // Set run name prefix (default: "sim")
 // Creates directories like: {base_dir}/output/{prefix}_{grid}_{timestamp}/

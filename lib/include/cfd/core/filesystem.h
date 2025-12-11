@@ -73,6 +73,14 @@ void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size, cons
 void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* solver_name,
                                  size_t nx, size_t ny);
 
+// Create timestamped run directory with custom base directory (re-entrant)
+void cfd_create_run_directory_with_base(char* buffer, size_t buffer_size, const char* base_dir,
+                                        const char* prefix);
+
+// Create run directory with simulation context and custom base directory (re-entrant)
+void cfd_create_run_directory_ex_with_base(char* buffer, size_t buffer_size, const char* base_dir,
+                                           const char* solver_name, size_t nx, size_t ny);
+
 // Get current run directory (copies to buffer, empty string if not created)
 void cfd_get_run_directory(char* buffer, size_t size);
 

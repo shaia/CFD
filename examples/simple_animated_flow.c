@@ -1,9 +1,9 @@
 #include "cfd/api/simulation_api.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -84,8 +84,6 @@ int main() {
     printf("Grid size: %zu x %zu\n", nx, ny);
     printf("Domain: [%.1f, %.1f] x [%.1f, %.1f]\n", xmin, xmax, ymin, ymax);
 
-    // Configure output directory
-    simulation_set_output_dir("../../artifacts");
 
     // Initialize simulation
     SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
@@ -93,6 +91,9 @@ int main() {
         printf("Failed to initialize simulation\n");
         return 1;
     }
+
+    // Configure output directory
+    simulation_set_output_dir(sim_data, "../../artifacts");
 
     // Set run prefix
     simulation_set_run_prefix(sim_data, "simple_flow");
