@@ -242,11 +242,3 @@ const char* cfd_get_run_directory(void) {
 void cfd_reset_run_directory(void) {
     current_run_directory[0] = '\0';
 }
-
-//=============================================================================
-// DEPRECATED ALIASES
-//=============================================================================
-
-void cfd_set_artifacts_path(const char* path) {
-    cfd_set_output_base_dir(path);
-}

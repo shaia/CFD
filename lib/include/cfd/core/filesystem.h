@@ -79,12 +79,6 @@ const char* cfd_get_run_directory(void);
 // Reset run directory for new simulation
 void cfd_reset_run_directory(void);
 
-//=============================================================================
-// DEPRECATED ALIASES (for backward compatibility)
-//=============================================================================
-
-// Alias: use cfd_set_output_base_dir() instead
-void cfd_set_artifacts_path(const char* path);
 
 #ifdef __cplusplus
 }
