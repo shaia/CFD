@@ -1,11 +1,12 @@
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+
 
 #include <math.h>
 #include <stdio.h>
@@ -64,18 +65,24 @@ void test_solver_consistency(void) {
                            .source_decay_rate = 0.1,
                            .pressure_coupling = 0.1};
 
+    // Create registry
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
     // Run both solvers for same number of iterations
-    Solver* solver1 = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    Solver* solver1 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver1, grid1, &params);
     SolverStats stats1 = solver_stats_default();
     solver_step(solver1, field1, grid1, &params, &stats1);
     solver_destroy(solver1);
 
-    Solver* solver2 = solver_create(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    Solver* solver2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
     solver_init(solver2, grid2, &params);
     SolverStats stats2 = solver_stats_default();
     solver_step(solver2, field2, grid2, &params, &stats2);
     solver_destroy(solver2);
+
+    cfd_registry_destroy(registry);
 
     // Compare results - they should be very close
     double max_u_diff = 0.0, max_v_diff = 0.0, max_p_diff = 0.0;
@@ -163,8 +170,12 @@ void test_solver_stability(void) {
                            .source_decay_rate = 0.1,
                            .pressure_coupling = 0.1};
 
+    // Create registry
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
     // Test basic solver
-    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
     SolverStats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
@@ -190,11 +201,12 @@ void test_solver_stability(void) {
         field->p[i] = 1.0 + 0.5 * sin(M_PI * i / (nx * ny));
     }
 
-    Solver* solver2 = solver_create(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    Solver* solver2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
     solver_init(solver2, grid, &params);
     SolverStats stats2 = solver_stats_default();
     solver_step(solver2, field, grid, &params, &stats2);
     solver_destroy(solver2);
+    cfd_registry_destroy(registry);
 
     stable_count = 0;
     for (size_t i = 0; i < nx * ny; i++) {

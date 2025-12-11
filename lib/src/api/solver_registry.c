@@ -1,9 +1,10 @@
-#include "cfd/solvers/solver_interface.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+#include "cfd/solvers/solver_interface.h"
+
 
 #include <math.h>
 #include <stdlib.h>
@@ -51,10 +52,11 @@ typedef struct {
     const char* description;
 } SolverRegistryEntry;
 
-// Global solver registry
-static SolverRegistryEntry g_solver_registry[MAX_REGISTERED_SOLVERS];
-static int g_solver_registry_count = 0;
-static int g_registry_initialized = 0;
+// SolverRegistry structure
+struct SolverRegistry {
+    SolverRegistryEntry entries[MAX_REGISTERED_SOLVERS];
+    int count;
+};
 
 // Forward declarations for built-in solver factories
 static Solver* create_explicit_euler_solver(void);
@@ -97,120 +99,118 @@ static double get_time_ms(void) {
  * Solver Registry Implementation
  */
 
-void solver_registry_init(void) {
-    if (g_registry_initialized)
+SolverRegistry* cfd_registry_create(void) {
+    SolverRegistry* registry = (SolverRegistry*)cfd_calloc(1, sizeof(SolverRegistry));
+    return registry;
+}
+
+void cfd_registry_destroy(SolverRegistry* registry) {
+    if (registry) {
+        cfd_free(registry);
+    }
+}
+
+void cfd_registry_register_defaults(SolverRegistry* registry) {
+    if (!registry)
         return;
 
-    // Clear registry
-    memset(g_solver_registry, 0, sizeof(g_solver_registry));
-    g_solver_registry_count = 0;
-
     // Register built-in solvers
-    solver_registry_register(SOLVER_TYPE_EXPLICIT_EULER, create_explicit_euler_solver);
-    solver_registry_register(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
-                             create_explicit_euler_optimized_solver);
+    cfd_registry_register(registry, SOLVER_TYPE_EXPLICIT_EULER, create_explicit_euler_solver);
+    cfd_registry_register(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+                          create_explicit_euler_optimized_solver);
 
     // Register projection method solvers
-    solver_registry_register(SOLVER_TYPE_PROJECTION, create_projection_solver);
-    solver_registry_register(SOLVER_TYPE_PROJECTION_OPTIMIZED, create_projection_optimized_solver);
+    cfd_registry_register(registry, SOLVER_TYPE_PROJECTION, create_projection_solver);
+    cfd_registry_register(registry, SOLVER_TYPE_PROJECTION_OPTIMIZED,
+                          create_projection_optimized_solver);
 
     // Register GPU solvers (will use CPU fallback if CUDA not available)
-    solver_registry_register(SOLVER_TYPE_EXPLICIT_EULER_GPU, create_explicit_euler_gpu_solver);
-    solver_registry_register(SOLVER_TYPE_PROJECTION_JACOBI_GPU, create_projection_gpu_solver);
+    cfd_registry_register(registry, SOLVER_TYPE_EXPLICIT_EULER_GPU,
+                          create_explicit_euler_gpu_solver);
+    cfd_registry_register(registry, SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+                          create_projection_gpu_solver);
 
     // Register OpenMP solvers
 #ifdef CFD_ENABLE_OPENMP
-    solver_registry_register(SOLVER_TYPE_EXPLICIT_EULER_OMP, create_explicit_euler_omp_solver);
-    solver_registry_register(SOLVER_TYPE_PROJECTION_OMP, create_projection_omp_solver);
+    cfd_registry_register(registry, SOLVER_TYPE_EXPLICIT_EULER_OMP,
+                          create_explicit_euler_omp_solver);
+    cfd_registry_register(registry, SOLVER_TYPE_PROJECTION_OMP, create_projection_omp_solver);
 #endif
-
-    g_registry_initialized = 1;
 }
 
-void solver_registry_cleanup(void) {
-    g_solver_registry_count = 0;
-    g_registry_initialized = 0;
-}
-
-int solver_registry_register(const char* type_name, SolverFactoryFunc factory) {
-    if (!type_name || !factory)
+int cfd_registry_register(SolverRegistry* registry, const char* type_name,
+                          SolverFactoryFunc factory) {
+    if (!registry || !type_name || !factory)
         return -1;
-    if (g_solver_registry_count >= MAX_REGISTERED_SOLVERS)
+    if (registry->count >= MAX_REGISTERED_SOLVERS)
         return -1;
 
     // Check if already registered
-    for (int i = 0; i < g_solver_registry_count; i++) {
-        if (strcmp(g_solver_registry[i].name, type_name) == 0) {
+    for (int i = 0; i < registry->count; i++) {
+        if (strcmp(registry->entries[i].name, type_name) == 0) {
             // Update existing entry
-            g_solver_registry[i].factory = factory;
+            registry->entries[i].factory = factory;
             return 0;
         }
     }
 
     // Add new entry
-    strncpy(g_solver_registry[g_solver_registry_count].name, type_name, 63);
-    g_solver_registry[g_solver_registry_count].name[63] = '\0';
-    g_solver_registry[g_solver_registry_count].factory = factory;
-    g_solver_registry_count++;
+    strncpy(registry->entries[registry->count].name, type_name, 63);
+    registry->entries[registry->count].name[63] = '\0';
+    registry->entries[registry->count].factory = factory;
+    registry->count++;
 
     return 0;
 }
 
-int solver_registry_unregister(const char* type_name) {
-    if (!type_name)
+int cfd_registry_unregister(SolverRegistry* registry, const char* type_name) {
+    if (!registry || !type_name)
         return -1;
 
-    for (int i = 0; i < g_solver_registry_count; i++) {
-        if (strcmp(g_solver_registry[i].name, type_name) == 0) {
+    for (int i = 0; i < registry->count; i++) {
+        if (strcmp(registry->entries[i].name, type_name) == 0) {
             // Shift remaining entries
-            for (int j = i; j < g_solver_registry_count - 1; j++) {
-                g_solver_registry[j] = g_solver_registry[j + 1];
+            for (int j = i; j < registry->count - 1; j++) {
+                registry->entries[j] = registry->entries[j + 1];
             }
-            g_solver_registry_count--;
+            registry->count--;
             return 0;
         }
     }
     return -1;
 }
 
-int solver_registry_list(const char** names, int max_count) {
-    if (!g_registry_initialized) {
-        solver_registry_init();
-    }
+int cfd_registry_list(SolverRegistry* registry, const char** names, int max_count) {
+    if (!registry)
+        return 0;
 
-    int count = (g_solver_registry_count < max_count) ? g_solver_registry_count : max_count;
+    int count = (registry->count < max_count) ? registry->count : max_count;
     if (names) {
         for (int i = 0; i < count; i++) {
-            names[i] = g_solver_registry[i].name;
+            names[i] = registry->entries[i].name;
         }
     }
-    return g_solver_registry_count;
+    return registry->count;
 }
 
-int solver_registry_has(const char* type_name) {
-    if (!type_name)
+int cfd_registry_has(SolverRegistry* registry, const char* type_name) {
+    if (!registry || !type_name)
         return 0;
-    if (!g_registry_initialized) {
-        solver_registry_init();
-    }
 
-    for (int i = 0; i < g_solver_registry_count; i++) {
-        if (strcmp(g_solver_registry[i].name, type_name) == 0) {
+    for (int i = 0; i < registry->count; i++) {
+        if (strcmp(registry->entries[i].name, type_name) == 0) {
             return 1;
         }
     }
     return 0;
 }
 
-const char* solver_registry_get_description(const char* type_name) {
-    if (!type_name)
+const char* cfd_registry_get_description(SolverRegistry* registry, const char* type_name) {
+    if (!registry || !type_name)
         return NULL;
-    if (!g_registry_initialized) {
-        solver_registry_init();
-    }
 
     // Create a temporary solver to get its description
-    Solver* solver = solver_create(type_name);
+    Solver* solver = cfd_solver_create(registry, type_name);
     if (solver) {
         const char* desc = solver->description;
         solver_destroy(solver);
@@ -223,16 +223,13 @@ const char* solver_registry_get_description(const char* type_name) {
  * Solver Creation and Management
  */
 
-Solver* solver_create(const char* type_name) {
-    if (!type_name)
+Solver* cfd_solver_create(SolverRegistry* registry, const char* type_name) {
+    if (!registry || !type_name)
         return NULL;
-    if (!g_registry_initialized) {
-        solver_registry_init();
-    }
 
-    for (int i = 0; i < g_solver_registry_count; i++) {
-        if (strcmp(g_solver_registry[i].name, type_name) == 0) {
-            return g_solver_registry[i].factory();
+    for (int i = 0; i < registry->count; i++) {
+        if (strcmp(registry->entries[i].name, type_name) == 0) {
+            return registry->entries[i].factory();
         }
     }
     return NULL;

@@ -1,11 +1,12 @@
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+
 
 #include <math.h>
 #include <stdio.h>
@@ -60,7 +61,10 @@ void test_flow_energy_maintenance(void) {
     int measurement_steps[] = {0, 5, 10, 15, 20};
 
     // Create solver once and reuse it for all steps
-    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
     SolverStats stats = solver_stats_default();
 
@@ -93,6 +97,7 @@ void test_flow_energy_maintenance(void) {
     }
 
     solver_destroy(solver);
+    cfd_registry_destroy(registry);
 
     // Test that energy doesn't decay too rapidly
     // With source terms, energy should be maintained or decay slowly
@@ -156,11 +161,15 @@ void test_source_term_effectiveness(void) {
                            .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
     SolverStats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
+    cfd_registry_destroy(registry);
 
     // Calculate final velocity magnitude squared (avoid expensive sqrt)
     double final_velocity_mag_sq = 0.0;
@@ -229,17 +238,21 @@ void test_decay_prevention_both_solvers(void) {
                            .pressure_coupling = 0.1};
 
     // Run both solvers using modern interface
-    Solver* solver1 = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    Solver* solver1 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver1, grid1, &params);
     SolverStats stats1 = solver_stats_default();
     solver_step(solver1, field1, grid1, &params, &stats1);
     solver_destroy(solver1);
 
-    Solver* solver2 = solver_create(SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    Solver* solver2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
     solver_init(solver2, grid2, &params);
     SolverStats stats2 = solver_stats_default();
     solver_step(solver2, field2, grid2, &params, &stats2);
     solver_destroy(solver2);
+    cfd_registry_destroy(registry);
 
     // Calculate final energies
     double final_energy1 = 0.0, final_energy2 = 0.0;

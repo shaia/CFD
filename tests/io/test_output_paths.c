@@ -1,11 +1,12 @@
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+
 
 #include "cfd/io/vtk_output.h"
 #include <math.h>
@@ -167,7 +168,10 @@ void test_solver_output_paths(void) {
     remove(unwanted_output);  // Clean up any existing file
 
     // Run solver
-    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
     SolverStats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
@@ -200,6 +204,7 @@ void test_solver_output_paths(void) {
     remove(test_output);
     flow_field_destroy(field);
     grid_destroy(grid);
+    cfd_registry_destroy(registry);
 }
 
 // Test that old scattered output directories don't get used
@@ -255,11 +260,15 @@ void test_no_scattered_output(void) {
                            .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    Solver* solver = solver_create(SOLVER_TYPE_EXPLICIT_EULER);
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
     SolverStats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
+    cfd_registry_destroy(registry);
 
     // Check that old scattered directories were NOT created
     for (size_t i = 0; i < num_paths; i++) {

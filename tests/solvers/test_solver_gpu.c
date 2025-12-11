@@ -1,12 +1,13 @@
-#include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
-#include "cfd/solvers/solver_gpu.h"
-#include "unity.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+#include "cfd/solvers/solver_gpu.h"
+#include "cfd/solvers/solver_interface.h"
+#include "unity.h"
+
 
 #include <math.h>
 #include <stdio.h>
@@ -25,7 +26,7 @@ void tearDown(void) {
 // Test GPU configuration defaults
 void test_gpu_config_defaults(void) {
     GPUConfig config = gpu_config_default();
-    
+
     int expected_enable = gpu_is_available() ? 1 : 0;
     TEST_ASSERT_EQUAL_INT(expected_enable, config.enable_gpu);
     TEST_ASSERT_EQUAL_INT(10000, config.min_grid_size);
@@ -44,16 +45,16 @@ void test_gpu_should_use(void) {
     GPUConfig config = gpu_config_default();
     config.min_grid_size = 100;
     config.min_steps = 10;
-    
+
     // Should use GPU: optimized grid size and steps
     TEST_ASSERT_TRUE(gpu_should_use(&config, 1000, 1000, 20));
-    
+
     // Should NOT use: grid too small
     TEST_ASSERT_FALSE(gpu_should_use(&config, 10, 10, 20));
-    
+
     // Should NOT use: too few steps
     TEST_ASSERT_FALSE(gpu_should_use(&config, 1000, 1000, 5));
-    
+
     // Should NOT use: disabled in config
     config.enable_gpu = 0;
     TEST_ASSERT_FALSE(gpu_should_use(&config, 1000, 1000, 20));
@@ -71,7 +72,7 @@ void test_gpu_solver_execution(void) {
 
     Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     FlowField* field = flow_field_create(nx, ny);
-    
+
     TEST_ASSERT_NOT_NULL(grid);
     TEST_ASSERT_NOT_NULL(field);
 
@@ -83,41 +84,46 @@ void test_gpu_solver_execution(void) {
 
     GPUConfig config = gpu_config_default();
     // Force usage even if defaults would say no (though 100*50 < 10000, so we adjust config)
-    config.min_grid_size = 100; 
+    config.min_grid_size = 100;
 
     // Test Projection GPU Solver
     // Note: We are testing the public API wrapper which dispatches to GPU
-    // But since we want to specifically test GPU code, we can use the direct call if exposed, 
+    // But since we want to specifically test GPU code, we can use the direct call if exposed,
     // or rely on the registry. Let's use the registry via `solver_create`.
-    
-    Solver* solver = solver_create(SOLVER_TYPE_PROJECTION_JACOBI_GPU);
-    
-    // If we are on a machine with GPU but the solver creation failed (maybe build issue?), fail test
-    // But if registry fallback works or returns null, handle it. 
-    // Actually, solver_create returns NULL if not found.
-    // However, if we built with CUDA support, it should be there.
-    
+
+    SolverRegistry* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+
+    // If we are on a machine with GPU but the solver creation failed (maybe build issue?), fail
+    // test But if registry fallback works or returns null, handle it. Actually, solver_create
+    // returns NULL if not found. However, if we built with CUDA support, it should be there.
+
     if (solver == NULL) {
         // Might happen if CUDA implementation wasn't linked or registered.
         // For now, let's assume it should be there.
-        TEST_FAIL_MESSAGE("Could not create GPU solver. Check if SOLVER_TYPE_PROJECTION_JACOBI_GPU is registered.");
+        cfd_registry_destroy(registry);
+        TEST_FAIL_MESSAGE("Could not create GPU solver. Check if SOLVER_TYPE_PROJECTION_JACOBI_GPU "
+                          "is registered.");
     }
-    
+
     solver_init(solver, grid, &params);
     SolverStats stats = solver_stats_default();
-    
+
     // Run a few steps
     for (int i = 0; i < 3; i++) {
         int result = solver_step(solver, field, grid, &params, &stats);
         TEST_ASSERT_EQUAL(0, result);
     }
-    
+
     solver_destroy(solver);
-    
+    cfd_registry_destroy(registry);
+
     // Verify results are finite (basic stability check)
     TEST_ASSERT_TRUE(isfinite(field->u[0]));
     TEST_ASSERT_TRUE(isfinite(field->p[0]));
-    
+
     flow_field_destroy(field);
     grid_destroy(grid);
 }
