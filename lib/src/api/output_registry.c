@@ -1,7 +1,7 @@
-#include "output_registry.h"
+#include "cfd/io/output_registry.h"
 #include "../io/csv_output_internal.h"
 #include "../io/vtk_output_internal.h"
-#include "utils.h"
+#include "cfd/core/utils.h"
 #include <string.h>
 
 //=============================================================================

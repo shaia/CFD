@@ -16,9 +16,9 @@
  * This ensures ∇·u^(n+1) = 0 (incompressibility constraint)
  */
 
-#include "cfd_status.h"
-#include "solver_interface.h"
-#include "utils.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/utils.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>

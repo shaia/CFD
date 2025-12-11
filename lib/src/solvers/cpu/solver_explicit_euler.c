@@ -1,7 +1,7 @@
-#include "cfd_status.h"
-#include "solver_interface.h"
-#include "utils.h"
-#include "vtk_output.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/utils.h"
+#include "cfd/io/vtk_output.h"
 #include <math.h>
 #include <string.h>
 

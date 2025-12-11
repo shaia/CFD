@@ -12,9 +12,9 @@
 #ifndef CFD_SOLVER_GPU_H
 #define CFD_SOLVER_GPU_H
 
-#include "cfd_status.h"
-#include "grid.h"
-#include "solver_interface.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/grid.h"
+#include "cfd/solvers/solver_interface.h"
 
 #ifdef __cplusplus
 extern "C" {

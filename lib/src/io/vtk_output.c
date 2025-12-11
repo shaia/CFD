@@ -1,7 +1,7 @@
-#include "vtk_output.h"
-#include "grid.h"
-#include "solver_interface.h"
-#include "utils.h"
+#include "cfd/io/vtk_output.h"
+#include "cfd/core/grid.h"
+#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/utils.h"
 #include "vtk_output_internal.h"
 #include <stdio.h>
 #include <stdlib.h>

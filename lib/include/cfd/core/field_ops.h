@@ -1,7 +1,7 @@
 #ifndef FIELD_OPS_H
 #define FIELD_OPS_H
 
-#include "solver_interface.h"
+#include "cfd/solvers/solver_interface.h"
 #include <stddef.h>
 
 #ifdef __cplusplus

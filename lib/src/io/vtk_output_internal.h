@@ -1,7 +1,7 @@
 #ifndef VTK_OUTPUT_INTERNAL_H
 #define VTK_OUTPUT_INTERNAL_H
 
-#include "vtk_output.h"
+#include "cfd/io/vtk_output.h"
 
 #ifdef __cplusplus
 extern "C" {

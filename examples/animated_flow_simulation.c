@@ -1,5 +1,5 @@
-#include "simulation_api.h"
-#include "utils.h"
+#include "cfd/api/simulation_api.h"
+#include "cfd/core/utils.h"
 #include <math.h>
 #include <stdio.h>
 

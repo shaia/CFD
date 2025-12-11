@@ -5,7 +5,7 @@
  * Perfect for getting started and understanding the basic API.
  */
 
-#include "simulation_api.h"
+#include "cfd/api/simulation_api.h"
 #include <stdio.h>
 
 int main() {

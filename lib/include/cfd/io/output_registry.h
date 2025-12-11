@@ -1,8 +1,8 @@
 #ifndef OUTPUT_REGISTRY_H
 #define OUTPUT_REGISTRY_H
 
-#include "derived_fields.h"
-#include "simulation_api.h"
+#include "cfd/core/derived_fields.h"
+#include "cfd/api/simulation_api.h"
 
 #ifdef __cplusplus
 extern "C" {

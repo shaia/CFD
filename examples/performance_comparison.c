@@ -5,9 +5,9 @@
  * using the modern pluggable solver interface.
  */
 
-#include "grid.h"
-#include "solver_interface.h"
-#include "utils.h"
+#include "cfd/core/grid.h"
+#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>

@@ -8,8 +8,8 @@
  * - Pointer swapping instead of memcpy for Poisson iterations
  */
 
-#include "solver_gpu.h"
-#include "utils.h"
+#include "cfd/solvers/solver_gpu.h"
+#include "cfd/core/utils.h"
 
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>

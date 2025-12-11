@@ -1,7 +1,7 @@
 #ifndef VTK_OUTPUT_H
 #define VTK_OUTPUT_H
 
-#include "solver_interface.h"
+#include "cfd/solvers/solver_interface.h"
 #include <stddef.h>
 
 #ifdef __cplusplus

@@ -1,8 +1,8 @@
 #ifndef CFD_SOLVER_INTERFACE_H
 #define CFD_SOLVER_INTERFACE_H
 
-#include "cfd_status.h"
-#include "grid.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/grid.h"
 
 
 #ifdef __cplusplus

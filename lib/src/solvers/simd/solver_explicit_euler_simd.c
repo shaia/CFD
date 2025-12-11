@@ -2,9 +2,9 @@
 #define _POSIX_C_SOURCE 200112L
 #define _ISOC11_SOURCE
 
-#include "cfd_status.h"
-#include "solver_interface.h"
-#include "utils.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/utils.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

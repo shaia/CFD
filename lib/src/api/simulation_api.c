@@ -1,9 +1,9 @@
-#include "simulation_api.h"
-#include "derived_fields.h"
-#include "grid.h"
-#include "output_registry.h"
-#include "solver_interface.h"
-#include "utils.h"
+#include "cfd/api/simulation_api.h"
+#include "cfd/core/derived_fields.h"
+#include "cfd/core/grid.h"
+#include "cfd/io/output_registry.h"
+#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/utils.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

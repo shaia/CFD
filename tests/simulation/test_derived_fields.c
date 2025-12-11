@@ -1,7 +1,7 @@
-#include "derived_fields.h"
-#include "solver_interface.h"
+#include "cfd/core/derived_fields.h"
+#include "cfd/solvers/solver_interface.h"
 #include "unity.h"
-#include "utils.h"
+#include "cfd/core/utils.h"
 #include <math.h>
 
 // Test fixtures

@@ -1,7 +1,7 @@
 #ifndef CFD_UTILS_H
 #define CFD_UTILS_H
 
-#include "cfd_status.h"
+#include "cfd/core/cfd_status.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
