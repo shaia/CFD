@@ -112,7 +112,6 @@ set(CFD_LIBRARY_HEADERS
     include/cfd/solvers/solver_interface.h
     include/cfd/core/cfd_status.h
     include/cfd/solvers/solver_gpu.h
-    include/cfd/core/utils.h
     include/cfd/core/memory.h
     include/cfd/core/filesystem.h
     include/cfd/core/logging.h
