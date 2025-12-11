@@ -52,23 +52,21 @@ void cfd_set_default_path_mode(cfd_default_path_mode_t mode) {
     default_path_mode = mode;
 }
 
-const char* cfd_get_artifacts_path(void) {
-    static char default_path_buffer[512];
+
+void cfd_get_artifacts_path(char* buffer, size_t size) {
+    if (!buffer || size == 0)
+        return;
 
     if (strlen(artifacts_base_path) > 0) {
-        return artifacts_base_path;
+        strncpy(buffer, artifacts_base_path, size - 1);
+        buffer[size - 1] = '\0';
+        return;
     }
 
     // Generate default path based on mode
     switch (default_path_mode) {
         case CFD_PATH_CURRENT_DIR:
-#ifdef _WIN32
-            strncpy(default_path_buffer, ".", sizeof(default_path_buffer) - 1);
-            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
-#else
-            strncpy(default_path_buffer, ".", sizeof(default_path_buffer) - 1);
-            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
-#endif
+            strncpy(buffer, ".", size - 1);
             break;
 
         case CFD_PATH_TEMP_DIR:
@@ -79,40 +77,31 @@ const char* cfd_get_artifacts_path(void) {
                 temp_dir = getenv("TMP");
             if (!temp_dir)
                 temp_dir = "C:\\temp";
-            snprintf(default_path_buffer, sizeof(default_path_buffer), "%s", temp_dir);
+            snprintf(buffer, size, "%s", temp_dir);
         }
 #else
         {
             char* temp_dir = getenv("TMPDIR");
             if (!temp_dir)
                 temp_dir = "/tmp";
-            snprintf(default_path_buffer, sizeof(default_path_buffer), "%s", temp_dir);
+            snprintf(buffer, size, "%s", temp_dir);
         }
 #endif
         break;
 
         case CFD_PATH_RELATIVE_BUILD:
 #ifdef _WIN32
-            strncpy(default_path_buffer, "..\\..\\artifacts", sizeof(default_path_buffer) - 1);
-            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
+            strncpy(buffer, "..\\..\\artifacts", size - 1);
 #else
-            strncpy(default_path_buffer, "../../artifacts", sizeof(default_path_buffer) - 1);
-            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
+            strncpy(buffer, "../../artifacts", size - 1);
 #endif
             break;
 
         default:
-#ifdef _WIN32
-            strncpy(default_path_buffer, ".", sizeof(default_path_buffer) - 1);
-            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
-#else
-            strncpy(default_path_buffer, ".", sizeof(default_path_buffer) - 1);
-            default_path_buffer[sizeof(default_path_buffer) - 1] = '\0';
-#endif
+            strncpy(buffer, ".", size - 1);
             break;
     }
-
-    return default_path_buffer;
+    buffer[size - 1] = '\0';
 }
 
 void cfd_reset_artifacts_path(void) {
@@ -123,7 +112,8 @@ void cfd_reset_artifacts_path(void) {
 // PATH CONSTRUCTION
 //=============================================================================
 void make_output_path(char* buffer, size_t buffer_size, const char* filename) {
-    const char* base_path = cfd_get_artifacts_path();
+    char base_path[512];
+    cfd_get_artifacts_path(base_path, sizeof(base_path));
 
 #ifdef _WIN32
     snprintf(buffer, buffer_size, "%s\\output\\%s", base_path, filename);
@@ -133,7 +123,8 @@ void make_output_path(char* buffer, size_t buffer_size, const char* filename) {
 }
 
 void make_artifacts_path(char* buffer, size_t buffer_size, const char* subdir) {
-    const char* base_path = cfd_get_artifacts_path();
+    char base_path[512];
+    cfd_get_artifacts_path(base_path, sizeof(base_path));
 
     if (subdir && strlen(subdir) > 0) {
 #ifdef _WIN32
@@ -151,7 +142,7 @@ void make_artifacts_path(char* buffer, size_t buffer_size, const char* subdir) {
 // RUN DIRECTORY MANAGEMENT
 //=============================================================================
 
-static char current_run_directory[512] = {0};
+static char current_run_directory[512] = {0};  // Keep state, but no direct access
 
 void cfd_create_run_directory(char* buffer, size_t buffer_size) {
     cfd_create_run_directory_with_prefix(buffer, buffer_size, "run");
@@ -167,7 +158,9 @@ void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size, cons
              t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
 
     // Create full path
-    const char* base_path = cfd_get_artifacts_path();
+    char base_path[512];
+    cfd_get_artifacts_path(base_path, sizeof(base_path));
+
 #ifdef _WIN32
     snprintf(buffer, buffer_size, "%s\\output\\%s", base_path, timestamp);
 #else
@@ -207,7 +200,9 @@ void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* s
              t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
 
     // Create full path
-    const char* base_path = cfd_get_artifacts_path();
+    char base_path[512];
+    cfd_get_artifacts_path(base_path, sizeof(base_path));
+
 #ifdef _WIN32
     snprintf(buffer, buffer_size, "%s\\output\\%s", base_path, timestamp);
 #else
@@ -235,8 +230,16 @@ void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* s
     current_run_directory[sizeof(current_run_directory) - 1] = '\0';
 }
 
-const char* cfd_get_run_directory(void) {
-    return current_run_directory[0] != '\0' ? current_run_directory : NULL;
+void cfd_get_run_directory(char* buffer, size_t size) {
+    if (!buffer || size == 0)
+        return;
+
+    if (current_run_directory[0] != '\0') {
+        strncpy(buffer, current_run_directory, size - 1);
+    } else {
+        buffer[0] = '\0';
+    }
+    buffer[size - 1] = '\0';
 }
 
 void cfd_reset_run_directory(void) {
