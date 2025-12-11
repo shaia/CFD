@@ -5,8 +5,8 @@
  * All functions report that GPU is not available and return appropriate errors.
  */
 
-#include "solver_gpu.h"
-#include "solver_interface.h"
+#include "cfd/solvers/solver_gpu.h"
+#include "cfd/solvers/solver_interface.h"
 #include <stdio.h>
 #include <string.h>
 

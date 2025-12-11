@@ -1,8 +1,8 @@
 #ifndef CSV_OUTPUT_INTERNAL_H
 #define CSV_OUTPUT_INTERNAL_H
 
-#include "csv_output.h"
-#include "derived_fields.h"
+#include "cfd/io/csv_output.h"
+#include "cfd/core/derived_fields.h"
 
 #ifdef __cplusplus
 extern "C" {

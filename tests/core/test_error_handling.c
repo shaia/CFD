@@ -1,5 +1,5 @@
-#include "cfd_status.h"
-#include "utils.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/utils.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>

@@ -1,7 +1,7 @@
-#include "grid.h"
-#include "simulation_api.h"
-#include "solver_interface.h"
-#include "utils.h"
+#include "cfd/core/grid.h"
+#include "cfd/api/simulation_api.h"
+#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>

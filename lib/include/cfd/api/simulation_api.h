@@ -1,8 +1,8 @@
 #ifndef SIMULATION_API_H
 #define SIMULATION_API_H
 
-#include "grid.h"
-#include "solver_interface.h"
+#include "cfd/core/grid.h"
+#include "cfd/solvers/solver_interface.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,11 +1,11 @@
 #ifndef CSV_OUTPUT_H
 #define CSV_OUTPUT_H
 
-#include "derived_fields.h"
-#include "solver_interface.h"
+#include "cfd/core/derived_fields.h"
+#include "cfd/solvers/solver_interface.h"
 #include <stddef.h>
 
-#include "grid.h"
+#include "cfd/core/grid.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,5 +1,5 @@
-#include "grid.h"
-#include "utils.h"
+#include "cfd/core/grid.h"
+#include "cfd/core/utils.h"
 #include <math.h>
 
 Grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin, double ymax) {

@@ -1,8 +1,8 @@
 #ifndef DERIVED_FIELDS_H
 #define DERIVED_FIELDS_H
 
-#include "grid.h"
-#include "solver_interface.h"
+#include "cfd/core/grid.h"
+#include "cfd/solvers/solver_interface.h"
 #include <stddef.h>
 
 #ifdef __cplusplus

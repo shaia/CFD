@@ -1,5 +1,5 @@
-#include "solver_interface.h"
-#include "utils.h"
+#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/utils.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,8 +70,8 @@ extern void solve_projection_method_optimized(FlowField* field, const Grid* grid
                                               const SolverParams* params);
 
 // External GPU solver functions (from solver_gpu.cu or solver_gpu_stub.c)
-#include "cfd_status.h"
-#include "solver_gpu.h"
+#include "cfd/core/cfd_status.h"
+#include "cfd/solvers/solver_gpu.h"
 
 
 // Helper to get current time in milliseconds

@@ -105,17 +105,17 @@ endif()
 
 # Collect all header files
 set(CFD_LIBRARY_HEADERS
-    include/grid.h
-    include/solver_interface.h
-    include/cfd_status.h
-    include/solver_gpu.h
-    include/utils.h
-    include/field_ops.h
-    include/derived_fields.h
-    include/vtk_output.h
-    include/csv_output.h
-    include/output_registry.h
-    include/simulation_api.h
+    include/cfd/core/grid.h
+    include/cfd/solvers/solver_interface.h
+    include/cfd/core/cfd_status.h
+    include/cfd/solvers/solver_gpu.h
+    include/cfd/core/utils.h
+    include/cfd/core/field_ops.h
+    include/cfd/core/derived_fields.h
+    include/cfd/io/vtk_output.h
+    include/cfd/io/csv_output.h
+    include/cfd/io/output_registry.h
+    include/cfd/api/simulation_api.h
 )
 
 # Create libraries (both static and shared if requested)

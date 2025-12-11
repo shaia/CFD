@@ -1,5 +1,5 @@
-#include "derived_fields.h"
-#include "utils.h"
+#include "cfd/core/derived_fields.h"
+#include "cfd/core/utils.h"
 #include <math.h>
 
 #ifdef CFD_ENABLE_OPENMP

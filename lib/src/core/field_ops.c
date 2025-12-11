@@ -1,5 +1,5 @@
-#include "field_ops.h"
-#include "utils.h"
+#include "cfd/core/field_ops.h"
+#include "cfd/core/utils.h"
 #include <math.h>
 #include <stdlib.h>
 
