@@ -243,13 +243,12 @@ void write_vtk_flow_field(const char* filename, const FlowField* field, size_t n
 
 // New run-based output functions
 static void get_run_filepath(char* buffer, size_t buffer_size, const char* filename) {
-    const char* run_dir = cfd_get_run_directory();
+    char run_dir[512];
+    cfd_get_run_directory(run_dir, sizeof(run_dir));
 
     // If no run directory exists yet, create one
-    if (run_dir == NULL) {
-        char new_run_dir[512];
-        cfd_create_run_directory(new_run_dir, sizeof(new_run_dir));
-        run_dir = cfd_get_run_directory();
+    if (strlen(run_dir) == 0) {
+        cfd_create_run_directory(run_dir, sizeof(run_dir));
     }
 
     // Build full path
