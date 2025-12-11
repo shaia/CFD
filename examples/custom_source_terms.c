@@ -61,6 +61,9 @@ int main(int argc, char* argv[]) {
     Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     if (!solver) {
         fprintf(stderr, "Failed to create solver\n");
+        cfd_registry_destroy(registry);
+        flow_field_destroy(field);
+        grid_destroy(grid);
         return 1;
     }
 
