@@ -216,7 +216,7 @@ cfd_status_t solve_projection_method_omp(FlowField* field, const Grid* grid,
             solve_poisson_sor_omp(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
 
         if (poisson_iters < 0) {
-            // Fallback
+            status = CFD_ERROR_DIVERGED;
             // Fallback
             size_t idx;
 #pragma omp parallel for private(idx) schedule(static)

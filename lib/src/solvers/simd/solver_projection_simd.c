@@ -245,6 +245,7 @@ cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* 
     // Poisson
     int poisson_iters = solve_poisson_sor(ctx->p_new, ctx->rhs, ctx->nx, ctx->ny, dx, dy);
     if (poisson_iters < 0) {
+        status = CFD_ERROR_DIVERGED;
         // Fallback if Poisson solver fails to converge
         double fallback_factor = 0.1 * dt;
 #if USE_AVX

@@ -250,6 +250,7 @@ cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
             solve_poisson_sor(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
 
         if (poisson_iters < 0) {
+            status = CFD_ERROR_DIVERGED;
             // Poisson solver didn't converge - use simple pressure update
             for (size_t idx = 0; idx < size; idx++) {
                 p_new[idx] = field->p[idx] - 0.1 * dt * rhs[idx];
