@@ -1,9 +1,9 @@
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+
 
 #include "cfd/io/vtk_output.h"
 #include "cfd/solvers/solver_interface.h"
@@ -66,6 +66,9 @@ SolverParams solver_params_default(void) {
 }
 FlowField* flow_field_create(size_t nx, size_t ny) {
     FlowField* field = (FlowField*)cfd_malloc(sizeof(FlowField));
+    if (field == NULL) {
+        return NULL;
+    }
 
     field->nx = nx;
     field->ny = ny;
@@ -76,6 +79,11 @@ FlowField* flow_field_create(size_t nx, size_t ny) {
     field->p = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
     field->rho = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
     field->T = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
+
+    if (!field->u || !field->v || !field->p || !field->rho || !field->T) {
+        flow_field_destroy(field);
+        return NULL;
+    }
 
     return field;
 }
