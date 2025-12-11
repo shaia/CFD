@@ -65,7 +65,7 @@ SolverParams solver_params_default(void) {
     return params;
 }
 FlowField* flow_field_create(size_t nx, size_t ny) {
-    FlowField* field = (FlowField*)cfd_malloc(sizeof(FlowField));
+    FlowField* field = (FlowField*)cfd_calloc(1, sizeof(FlowField));
     if (field == NULL) {
         return NULL;
     }
