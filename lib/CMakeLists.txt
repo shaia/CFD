@@ -45,6 +45,7 @@ set(CFD_CORE_SOURCES
     src/core/memory.c
     src/core/filesystem.c
     src/core/logging.c
+    src/core/cfd_version.c
     src/core/math_utils.c
     src/core/field_ops.c
     src/core/derived_fields.c
