@@ -65,6 +65,11 @@ SolverParams solver_params_default(void) {
     return params;
 }
 FlowField* flow_field_create(size_t nx, size_t ny) {
+    if (nx == 0 || ny == 0) {
+        cfd_set_error(CFD_ERROR_INVALID, "Flow field dimensions must be positive");
+        return NULL;
+    }
+
     FlowField* field = (FlowField*)cfd_calloc(1, sizeof(FlowField));
     if (field == NULL) {
         return NULL;

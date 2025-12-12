@@ -112,3 +112,5 @@ nul
 Dockerfile.act
 artifacts/
 test_frames/
+build_log.txt
+*.log

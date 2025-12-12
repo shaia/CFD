@@ -20,21 +20,27 @@
 // Default solver type used when none is specified
 #define DEFAULT_SOLVER_TYPE SOLVER_TYPE_EXPLICIT_EULER
 
-// Static flag to track if registry is initialized
-static int s_registry_initialized = 0;
-
 // Ensure registry is initialized
 // Internal helper to create simulation with a specific solver
 static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, double xmin, double xmax,
                                                      double ymin, double ymax,
                                                      const char* solver_type) {
+    if (nx == 0 || ny == 0) {
+        cfd_set_error(CFD_ERROR_INVALID, "Simulation grid dimensions must be positive");
+        return NULL;
+    }
+    if (xmax <= xmin || ymax <= ymin) {
+        cfd_set_error(CFD_ERROR_INVALID, "Simulation bounds invalid");
+        return NULL;
+    }
+
     SimulationData* sim_data = (SimulationData*)cfd_malloc(sizeof(SimulationData));
     if (!sim_data)
         return NULL;
 
     // Initialize base output directory
-    strncpy(sim_data->output_base_dir, "../../artifacts", sizeof(sim_data->output_base_dir) - 1);
-    sim_data->output_base_dir[sizeof(sim_data->output_base_dir) - 1] = '\0';
+    // Initialize base output directory
+    snprintf(sim_data->output_base_dir, sizeof(sim_data->output_base_dir), "../../artifacts");
 
     // Create and initialize grid
     sim_data->grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
@@ -119,8 +125,10 @@ SimulationData* init_simulation_with_solver(size_t nx, size_t ny, double xmin, d
 
 // Set the solver for an existing simulation
 void simulation_set_solver(SimulationData* sim_data, Solver* solver) {
-    if (!sim_data || !solver)
+    if (!sim_data || !solver) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for simulation_set_solver");
         return;
+    }
 
     // Destroy existing solver
     if (sim_data->solver) {
@@ -133,12 +141,15 @@ void simulation_set_solver(SimulationData* sim_data, Solver* solver) {
 
 // Set the solver by type name
 int simulation_set_solver_by_name(SimulationData* sim_data, const char* solver_type) {
-    if (!sim_data || !solver_type)
+    if (!sim_data || !solver_type) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for simulation solver");
         return -1;
+    }
 
     Solver* solver = cfd_solver_create(sim_data->registry, solver_type);
-    if (!solver)
+    if (!solver) {
         return -1;
+    }
 
     simulation_set_solver(sim_data, solver);
     return 0;
@@ -247,8 +258,10 @@ int simulation_has_solver(const char* solver_type) {
 // Register output for automatic generation
 void simulation_register_output(SimulationData* sim_data, OutputFieldType field_type, int interval,
                                 const char* prefix) {
-    if (!sim_data || !sim_data->outputs)
+    if (!sim_data || !sim_data->outputs) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid simulation data");
         return;
+    }
     output_registry_add(sim_data->outputs, field_type, interval, prefix);
 }
 
@@ -262,8 +275,7 @@ void simulation_clear_outputs(SimulationData* sim_data) {
 // Set base output directory
 void simulation_set_output_dir(SimulationData* sim_data, const char* base_dir) {
     if (sim_data && base_dir && strlen(base_dir) > 0) {
-        strncpy(sim_data->output_base_dir, base_dir, sizeof(sim_data->output_base_dir) - 1);
-        sim_data->output_base_dir[sizeof(sim_data->output_base_dir) - 1] = '\0';
+        snprintf(sim_data->output_base_dir, sizeof(sim_data->output_base_dir), "%s", base_dir);
     }
 }
 
@@ -282,7 +294,9 @@ void simulation_set_run_prefix(SimulationData* sim_data, const char* prefix) {
     if (prefix) {
         size_t len = strlen(prefix) + 1;
         sim_data->run_prefix = (char*)cfd_malloc(len);
-        strncpy(sim_data->run_prefix, prefix, len);
+        if (sim_data->run_prefix) {
+            snprintf(sim_data->run_prefix, len, "%s", prefix);
+        }
     }
 }
 
@@ -306,8 +320,10 @@ static int needs_statistics(const OutputRegistry* outputs) {
 
 // Automatically write all registered outputs for current step
 void simulation_write_outputs(SimulationData* sim_data, int step) {
-    if (!sim_data || !sim_data->outputs)
+    if (!sim_data || !sim_data->outputs) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for simulation_write_outputs");
         return;
+    }
 
     // Get run directory (creates it if needed)
     const char* run_dir =

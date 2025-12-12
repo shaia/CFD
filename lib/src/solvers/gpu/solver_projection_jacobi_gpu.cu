@@ -16,7 +16,6 @@
 #include "cfd/solvers/solver_gpu.h"
 
 
-
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <math.h>
@@ -308,8 +307,7 @@ int gpu_get_device_info(GPUDeviceInfo* info, int max_devices) {
         cudaDeviceProp prop;
         if (cudaGetDeviceProperties(&prop, i) == cudaSuccess) {
             info[i].device_id = i;
-            strncpy(info[i].name, prop.name, 255);
-            info[i].name[255] = '\0';
+            snprintf(info[i].name, sizeof(info[i].name), "%s", prop.name);
             info[i].total_memory = prop.totalGlobalMem;
             info[i].compute_capability_major = prop.major;
             info[i].compute_capability_minor = prop.minor;

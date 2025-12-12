@@ -37,10 +37,10 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] Ensure resource cleanup on error paths (no leaks on failure)
 
 ### 0.2 Thread Safety & Global State
-- [ ] Remove static buffers in `utils.c` (path management)
-- [ ] Make `SolverRegistry` thread-safe or context-bound
-- [ ] Ensure `SimulationData` and solvers are re-entrant
-- [ ] Validate thread-safety with concurrent simulation tests
+- [x] Remove static buffers in `utils.c` (path management)
+- [x] Make `SolverRegistry` thread-safe or context-bound
+- [x] Ensure `SimulationData` and solvers are re-entrant
+- [x] Validate thread-safety with concurrent simulation tests
 
 ### 0.3 API Robustness
 - [ ] Comprehensive input validation (check for NULL, NaN, invalid ranges)
