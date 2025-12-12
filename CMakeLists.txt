@@ -13,7 +13,7 @@ option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 
 # Explicitly default to static libraries to simplifiy running tests on Windows
-option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
+set(BUILD_SHARED_LIBS OFF)
 
 if(ENABLE_COVERAGE)
     if(MSVC)
