@@ -113,8 +113,10 @@ typedef struct {
 // Register output for automatic generation
 // Example: simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, 10, "velocity_mag");
 //          Automatically writes velocity_mag_000.vtk, velocity_mag_010.vtk, etc.
-CFD_LIBRARY_EXPORT void simulation_register_output(SimulationData* sim_data, OutputFieldType field_type, int interval,
-                                const char* prefix);
+CFD_LIBRARY_EXPORT void simulation_register_output(SimulationData* sim_data,
+                                                   OutputFieldType field_type,
+                                                   int interval,
+                                                   const char* prefix);
 
 // Clear all registered outputs
 CFD_LIBRARY_EXPORT void simulation_clear_outputs(SimulationData* sim_data);

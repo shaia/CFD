@@ -1,8 +1,11 @@
 #ifndef OUTPUT_REGISTRY_H
 #define OUTPUT_REGISTRY_H
 
-#include "cfd/core/derived_fields.h"
+#include "cfd/cfd_export.h"
+
 #include "cfd/api/simulation_api.h"
+#include "cfd/core/derived_fields.h"
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,33 +19,38 @@ extern "C" {
 typedef struct OutputRegistry OutputRegistry;
 
 // Create output registry
-OutputRegistry* output_registry_create(void);
+CFD_LIBRARY_EXPORT OutputRegistry* output_registry_create(void);
 
 // Destroy output registry
-void output_registry_destroy(OutputRegistry* reg);
+CFD_LIBRARY_EXPORT void output_registry_destroy(OutputRegistry* reg);
 
 // Register output configuration
-void output_registry_add(OutputRegistry* reg, OutputFieldType field_type, int interval,
-                         const char* prefix);
+CFD_LIBRARY_EXPORT void output_registry_add(OutputRegistry* reg, OutputFieldType field_type,
+                                            int interval, const char* prefix);
 
 // Clear all registered outputs
-void output_registry_clear(OutputRegistry* reg);
+CFD_LIBRARY_EXPORT void output_registry_clear(OutputRegistry* reg);
 
 // Get count of registered outputs
-int output_registry_count(const OutputRegistry* reg);
+CFD_LIBRARY_EXPORT int output_registry_count(const OutputRegistry* reg);
 
 // Get run directory (creates it if needed)
-const char* output_registry_get_run_dir(OutputRegistry* reg, const char* base_dir,
-                                        const char* run_prefix, size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT const char* output_registry_get_run_dir(OutputRegistry* reg,
+                                                           const char* base_dir,
+                                                           const char* run_prefix, size_t nx,
+                                                           size_t ny);
 
 // Check if any output of given type is registered
-int output_registry_has_type(const OutputRegistry* reg, OutputFieldType field_type);
+CFD_LIBRARY_EXPORT int output_registry_has_type(const OutputRegistry* reg,
+                                                OutputFieldType field_type);
 
 // Process all registered outputs for current step (with pre-computed derived fields)
-void output_registry_write_outputs(OutputRegistry* reg, const char* run_dir, int step,
-                                   double current_time, const FlowField* field,
-                                   const DerivedFields* derived, const Grid* grid,
-                                   const SolverParams* params, const SolverStats* stats);
+CFD_LIBRARY_EXPORT void output_registry_write_outputs(OutputRegistry* reg, const char* run_dir,
+                                                      int step, double current_time,
+                                                      const FlowField* field,
+                                                      const DerivedFields* derived,
+                                                      const Grid* grid, const SolverParams* params,
+                                                      const SolverStats* stats);
 
 #ifdef __cplusplus
 }
