@@ -135,6 +135,7 @@ if(BUILD_SHARED_LIBS)
 else()
     # Create static library only
     add_library(cfd_library STATIC ${CFD_LIBRARY_SOURCES})
+    target_compile_definitions(cfd_library PUBLIC CFD_LIBRARY_STATIC_DEFINE)
 endif()
 
 # Enable Position Independent Code for all library targets
