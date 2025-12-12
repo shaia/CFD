@@ -261,7 +261,7 @@ CFD_LIBRARY_EXPORT const char* cfd_registry_get_description(SolverRegistry* regi
 /**
  * Helper to initialize SolverStats with default values
  */
-CFD_LIBRARY_EXPORT static inline SolverStats solver_stats_default(void) {
+static inline SolverStats solver_stats_default(void) {
     SolverStats stats = {.iterations = 0,
                          .residual = 0.0,
                          .max_velocity = 0.0,
