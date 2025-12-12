@@ -52,6 +52,11 @@ endif()
 # Add the library subdirectory
 add_subdirectory(lib)
 
+# Ensure consumers (tests/examples) know we are using statistic library
+if(NOT BUILD_SHARED_LIBS)
+    add_compile_definitions(CFD_LIBRARY_STATIC_DEFINE)
+endif()
+
 # Example executables
 option(BUILD_EXAMPLES "Build example programs" ON)
 
