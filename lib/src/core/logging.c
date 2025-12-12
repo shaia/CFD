@@ -6,10 +6,12 @@
 #include <windows.h>
 static __declspec(thread) cfd_status_t g_last_status = CFD_SUCCESS;
 static __declspec(thread) char g_last_error_msg[256] = {0};
+static __declspec(thread) cfd_log_callback_t s_log_callback = NULL;
 #else
 #include <pthread.h>
 static __thread cfd_status_t g_last_status = CFD_SUCCESS;
 static __thread char g_last_error_msg[256] = {0};
+static __thread cfd_log_callback_t s_log_callback = NULL;
 #endif
 
 //=============================================================================
@@ -69,9 +71,6 @@ void cfd_clear_error(void) {
 //=============================================================================
 // LOGGING
 //=============================================================================
-
-// Static log callback
-static cfd_log_callback_t s_log_callback = NULL;
 
 void cfd_set_log_callback(cfd_log_callback_t callback) {
     s_log_callback = callback;

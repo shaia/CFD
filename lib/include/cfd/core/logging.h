@@ -33,7 +33,8 @@ typedef enum { CFD_LOG_LEVEL_INFO, CFD_LOG_LEVEL_WARNING, CFD_LOG_LEVEL_ERROR } 
 // Log callback function type
 typedef void (*cfd_log_callback_t)(cfd_log_level_t level, const char* message);
 
-// Set a custom logging callback (pass NULL to reset to default stderr output)
+// Set a custom logging callback for the CURRENT THREAD (pass NULL to reset to default stderr
+// output)
 void cfd_set_log_callback(cfd_log_callback_t callback);
 
 // Log error message and set thread-local error state (does NOT exit)
