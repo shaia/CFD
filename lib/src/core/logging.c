@@ -70,11 +70,26 @@ void cfd_clear_error(void) {
 // LOGGING
 //=============================================================================
 
+// Static log callback
+static cfd_log_callback_t s_log_callback = NULL;
+
+void cfd_set_log_callback(cfd_log_callback_t callback) {
+    s_log_callback = callback;
+}
+
 void cfd_error(const char* message) {
-    fprintf(stderr, "ERROR: %s\n", message);
+    if (s_log_callback) {
+        s_log_callback(CFD_LOG_LEVEL_ERROR, message);
+    } else {
+        fprintf(stderr, "ERROR: %s\n", message);
+    }
     cfd_set_error(CFD_ERROR, message);
 }
 
 void cfd_warning(const char* message) {
-    fprintf(stderr, "WARNING: %s\n", message);
+    if (s_log_callback) {
+        s_log_callback(CFD_LOG_LEVEL_WARNING, message);
+    } else {
+        fprintf(stderr, "WARNING: %s\n", message);
+    }
 }
