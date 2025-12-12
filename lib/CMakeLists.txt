@@ -108,21 +108,22 @@ else()
 endif()
 
 # Collect all header files
+# Collect all header files
 set(CFD_LIBRARY_HEADERS
-    include/cfd/core/grid.h
-    include/cfd/solvers/solver_interface.h
-    include/cfd/core/cfd_status.h
-    include/cfd/solvers/solver_gpu.h
-    include/cfd/core/memory.h
-    include/cfd/core/filesystem.h
-    include/cfd/core/logging.h
-    include/cfd/core/math_utils.h
-    include/cfd/core/field_ops.h
-    include/cfd/core/derived_fields.h
-    include/cfd/io/vtk_output.h
-    include/cfd/io/csv_output.h
-    include/cfd/io/output_registry.h
-    include/cfd/api/simulation_api.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/grid.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/solver_interface.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/cfd_status.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/solver_gpu.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/memory.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/filesystem.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/logging.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/math_utils.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/field_ops.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/derived_fields.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/vtk_output.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/csv_output.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/output_registry.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/api/simulation_api.h
 )
 
 # Create libraries (both static and shared if requested)
@@ -287,7 +288,18 @@ install(TARGETS ${INSTALL_TARGETS}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cfd
+    # PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cfd  <-- Removed to prevent flattening
+)
+
+# Install headers preserving directory structure
+install(DIRECTORY include/cfd
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h"
+)
+
+# Install generated export header explicitly
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/include/cfd/cfd_export.h"
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cfd
 )
 
 install(EXPORT cfd_libraryTargets
