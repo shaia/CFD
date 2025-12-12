@@ -12,6 +12,9 @@ option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 # Code coverage option (for GCC/Clang)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 
+# Explicitly default to static libraries to simplifiy running tests on Windows
+set(BUILD_SHARED_LIBS OFF)
+
 if(ENABLE_COVERAGE)
     if(MSVC)
         message(WARNING "Code coverage is not supported with MSVC, skipping")
@@ -51,6 +54,11 @@ endif()
 
 # Add the library subdirectory
 add_subdirectory(lib)
+
+# Ensure consumers (tests/examples) know we are using statistic library
+if(NOT BUILD_SHARED_LIBS)
+    add_compile_definitions(CFD_LIBRARY_STATIC_DEFINE)
+endif()
 
 # Example executables
 option(BUILD_EXAMPLES "Build example programs" ON)

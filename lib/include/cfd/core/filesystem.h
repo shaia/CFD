@@ -1,6 +1,8 @@
 #ifndef CFD_FILESYSTEM_H
 #define CFD_FILESYSTEM_H
 
+#include "cfd/cfd_export.h"
+
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -21,7 +23,7 @@ extern "C" {
 #endif
 
 // Create directory if it doesn't exist (returns 1 on success)
-int ensure_directory_exists(const char* path);
+CFD_LIBRARY_EXPORT int ensure_directory_exists(const char* path);
 
 //=============================================================================
 // OUTPUT PATH CONFIGURATION
@@ -35,26 +37,26 @@ typedef enum {
 } cfd_default_path_mode_t;
 
 // Set custom base directory for all output (e.g., "../../artifacts")
-void cfd_set_output_base_dir(const char* path);
+CFD_LIBRARY_EXPORT void cfd_set_output_base_dir(const char* path);
 
 // Set default path mode when custom base not specified
-void cfd_set_default_path_mode(cfd_default_path_mode_t mode);
+CFD_LIBRARY_EXPORT void cfd_set_default_path_mode(cfd_default_path_mode_t mode);
 
 // Get current base path (copies to buffer)
-void cfd_get_artifacts_path(char* buffer, size_t size);
+CFD_LIBRARY_EXPORT void cfd_get_artifacts_path(char* buffer, size_t size);
 
 // Reset to default path mode
-void cfd_reset_artifacts_path(void);
+CFD_LIBRARY_EXPORT void cfd_reset_artifacts_path(void);
 
 //=============================================================================
 // PATH CONSTRUCTION
 //=============================================================================
 
 // Construct path in output directory: "{base}/output/{filename}"
-void make_output_path(char* buffer, size_t buffer_size, const char* filename);
+CFD_LIBRARY_EXPORT void make_output_path(char* buffer, size_t buffer_size, const char* filename);
 
 // Construct path in artifacts subdirectory: "{base}/{subdir}"
-void make_artifacts_path(char* buffer, size_t buffer_size, const char* subdir);
+CFD_LIBRARY_EXPORT void make_artifacts_path(char* buffer, size_t buffer_size, const char* subdir);
 
 //=============================================================================
 // RUN DIRECTORY MANAGEMENT
@@ -62,30 +64,34 @@ void make_artifacts_path(char* buffer, size_t buffer_size, const char* subdir);
 
 // Create timestamped run directory with default prefix
 // Example: "output/run_20250127_153045"
-void cfd_create_run_directory(char* buffer, size_t buffer_size);
+CFD_LIBRARY_EXPORT void cfd_create_run_directory(char* buffer, size_t buffer_size);
 
 // Create timestamped run directory with custom prefix
 // Example: "output/{prefix}_20250127_153045"
-void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size, const char* prefix);
+CFD_LIBRARY_EXPORT void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size,
+                                                             const char* prefix);
 
 // Create run directory with simulation context
 // Example: "output/explicit_euler_100x50_20250127_153045"
-void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* solver_name,
-                                 size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT void cfd_create_run_directory_ex(char* buffer, size_t buffer_size,
+                                                    const char* solver_name, size_t nx, size_t ny);
 
 // Create timestamped run directory with custom base directory (re-entrant)
-void cfd_create_run_directory_with_base(char* buffer, size_t buffer_size, const char* base_dir,
-                                        const char* prefix);
+CFD_LIBRARY_EXPORT void cfd_create_run_directory_with_base(char* buffer, size_t buffer_size,
+                                                           const char* base_dir,
+                                                           const char* prefix);
 
 // Create run directory with simulation context and custom base directory (re-entrant)
-void cfd_create_run_directory_ex_with_base(char* buffer, size_t buffer_size, const char* base_dir,
-                                           const char* solver_name, size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT void cfd_create_run_directory_ex_with_base(char* buffer, size_t buffer_size,
+                                                              const char* base_dir,
+                                                              const char* solver_name, size_t nx,
+                                                              size_t ny);
 
 // Get current run directory (copies to buffer, empty string if not created)
-void cfd_get_run_directory(char* buffer, size_t size);
+CFD_LIBRARY_EXPORT void cfd_get_run_directory(char* buffer, size_t size);
 
 // Reset run directory for new simulation
-void cfd_reset_run_directory(void);
+CFD_LIBRARY_EXPORT void cfd_reset_run_directory(void);
 
 
 #ifdef __cplusplus

@@ -1,6 +1,8 @@
 #ifndef CFD_VERSION_H
 #define CFD_VERSION_H
 
+#include "cfd/cfd_export.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -21,7 +23,7 @@ extern "C" {
  *
  * @return const char* Version string in format "MAJOR.MINOR.PATCH"
  */
-const char* cfd_get_version_string(void);
+CFD_LIBRARY_EXPORT const char* cfd_get_version_string(void);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,8 @@
 #ifndef CSV_OUTPUT_H
 #define CSV_OUTPUT_H
 
+#include "cfd/cfd_export.h"
+
 #include "cfd/core/derived_fields.h"
 #include "cfd/solvers/solver_interface.h"
 #include <stddef.h>
@@ -46,9 +48,10 @@ extern "C" {
 // Creates: step,time,dt,max_u,max_v,max_p,avg_u,avg_v,avg_p,iterations,...
 // If derived fields available: adds max_vel_mag,avg_vel_mag columns
 // On first write, creates file with header. Subsequent writes append data.
-void write_csv_timeseries(const char* filename, int step, double time, const FlowField* field,
-                          const DerivedFields* derived, const SolverParams* params,
-                          const SolverStats* stats, size_t nx, size_t ny, int create_new);
+CFD_LIBRARY_EXPORT void write_csv_timeseries(const char* filename, int step, double time,
+                                             const FlowField* field, const DerivedFields* derived,
+                                             const SolverParams* params, const SolverStats* stats,
+                                             size_t nx, size_t ny, int create_new);
 
 //=============================================================================
 // CSV CENTERLINE PROFILE OUTPUT
@@ -63,9 +66,10 @@ typedef enum {
     PROFILE_VERTICAL     // Along y-axis at x = domain_width/2
 } ProfileDirection;
 
-void write_csv_centerline(const char* filename, const FlowField* field, const DerivedFields* derived,
-                          const double* x_coords, const double* y_coords, size_t nx, size_t ny,
-                          ProfileDirection direction);
+CFD_LIBRARY_EXPORT void write_csv_centerline(const char* filename, const FlowField* field,
+                                             const DerivedFields* derived, const double* x_coords,
+                                             const double* y_coords, size_t nx, size_t ny,
+                                             ProfileDirection direction);
 
 //=============================================================================
 // CSV STATISTICS OUTPUT
@@ -75,8 +79,9 @@ void write_csv_centerline(const char* filename, const FlowField* field, const De
 // Creates: step,time,min_u,max_u,avg_u,min_v,max_v,avg_v,min_p,max_p,avg_p,...
 // If derived fields available: adds min_vel_mag,max_vel_mag,avg_vel_mag columns
 // On first write, creates file with header. Subsequent writes append data.
-void write_csv_statistics(const char* filename, int step, double time, const FlowField* field,
-                          const DerivedFields* derived, size_t nx, size_t ny, int create_new);
+CFD_LIBRARY_EXPORT void write_csv_statistics(const char* filename, int step, double time,
+                                             const FlowField* field, const DerivedFields* derived,
+                                             size_t nx, size_t ny, int create_new);
 
 #ifdef __cplusplus
 }

@@ -12,6 +12,8 @@
 #ifndef CFD_SOLVER_GPU_H
 #define CFD_SOLVER_GPU_H
 
+#include "cfd/cfd_export.h"
+
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/solvers/solver_interface.h"
@@ -84,81 +86,82 @@ typedef struct GPUSolverContext GPUSolverContext;
 /**
  * Initialize default GPU configuration
  */
-GPUConfig gpu_config_default(void);
+CFD_LIBRARY_EXPORT GPUConfig gpu_config_default(void);
 
 /**
  * Check if CUDA is available on this system
  * Returns 1 if CUDA is available, 0 otherwise
  */
-int gpu_is_available(void);
+CFD_LIBRARY_EXPORT int gpu_is_available(void);
 
 /**
  * Get information about available GPU devices
  * Returns number of devices found
  */
-int gpu_get_device_info(GPUDeviceInfo* info, int max_devices);
+CFD_LIBRARY_EXPORT int gpu_get_device_info(GPUDeviceInfo* info, int max_devices);
 
 /**
  * Select GPU device to use
  * Returns CFD_SUCCESS on success, error code otherwise
  */
-cfd_status_t gpu_select_device(int device_id);
+CFD_LIBRARY_EXPORT cfd_status_t gpu_select_device(int device_id);
 
 /**
  * Determine if GPU should be used based on problem size and config
  * Returns 1 if GPU should be used, 0 for CPU
  */
-int gpu_should_use(const GPUConfig* config, size_t nx, size_t ny, int num_steps);
+CFD_LIBRARY_EXPORT int gpu_should_use(const GPUConfig* config, size_t nx, size_t ny, int num_steps);
 
 /**
  * Create GPU solver context
  * Allocates GPU memory and initializes CUDA resources
  */
-GPUSolverContext* gpu_solver_create(size_t nx, size_t ny, const GPUConfig* config);
+CFD_LIBRARY_EXPORT GPUSolverContext* gpu_solver_create(size_t nx, size_t ny,
+                                                       const GPUConfig* config);
 
 /**
  * Destroy GPU solver context
  * Frees GPU memory and releases CUDA resources
  */
-void gpu_solver_destroy(GPUSolverContext* ctx);
+CFD_LIBRARY_EXPORT void gpu_solver_destroy(GPUSolverContext* ctx);
 
 /**
  * Transfer flow field data from host to GPU
  */
-cfd_status_t gpu_solver_upload(GPUSolverContext* ctx, const FlowField* field);
+CFD_LIBRARY_EXPORT cfd_status_t gpu_solver_upload(GPUSolverContext* ctx, const FlowField* field);
 
 /**
  * Transfer flow field data from GPU to host
  */
-cfd_status_t gpu_solver_download(GPUSolverContext* ctx, FlowField* field);
+CFD_LIBRARY_EXPORT cfd_status_t gpu_solver_download(GPUSolverContext* ctx, FlowField* field);
 
 /**
  * Run one solver step on GPU
  */
-cfd_status_t gpu_solver_step(GPUSolverContext* ctx, const Grid* grid, const SolverParams* params,
-                             GPUSolverStats* stats);
+CFD_LIBRARY_EXPORT cfd_status_t gpu_solver_step(GPUSolverContext* ctx, const Grid* grid,
+                                                const SolverParams* params, GPUSolverStats* stats);
 
 /**
  * Get GPU solver statistics
  */
-GPUSolverStats gpu_solver_get_stats(const GPUSolverContext* ctx);
+CFD_LIBRARY_EXPORT GPUSolverStats gpu_solver_get_stats(const GPUSolverContext* ctx);
 
 /**
  * Reset GPU solver statistics
  */
-void gpu_solver_reset_stats(GPUSolverContext* ctx);
+CFD_LIBRARY_EXPORT void gpu_solver_reset_stats(GPUSolverContext* ctx);
 
 /**
  * High-level GPU-accelerated Navier-Stokes solver
  * Automatically handles data transfer and GPU selection
  */
-cfd_status_t solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
+CFD_LIBRARY_EXPORT cfd_status_t solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
                                      const GPUConfig* config);
 
 /**
  * GPU-accelerated projection method solver
  */
-cfd_status_t solve_projection_method_gpu(FlowField* field, const Grid* grid,
+CFD_LIBRARY_EXPORT cfd_status_t solve_projection_method_gpu(FlowField* field, const Grid* grid,
                                          const SolverParams* params, const GPUConfig* config);
 
 #ifdef __cplusplus

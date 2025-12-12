@@ -1,6 +1,8 @@
 #ifndef CFD_GRID_H
 #define CFD_GRID_H
 
+#include "cfd/cfd_export.h"
+
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -37,24 +39,25 @@ typedef struct {
  * @param ymax Maximum y-coordinate
  * @return Pointer to newly created grid
  */
-Grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin, double ymax);
+CFD_LIBRARY_EXPORT Grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin,
+                                     double ymax);
 
 /**
  * Destroy grid and free memory
  */
-void grid_destroy(Grid* grid);
+CFD_LIBRARY_EXPORT void grid_destroy(Grid* grid);
 
 /**
  * Initialize grid with uniform spacing
  */
-void grid_initialize_uniform(Grid* grid);
+CFD_LIBRARY_EXPORT void grid_initialize_uniform(Grid* grid);
 
 /**
  * Initialize grid with stretched spacing
  *
  * @param beta Stretching parameter (larger = more stretching)
  */
-void grid_initialize_stretched(Grid* grid, double beta);
+CFD_LIBRARY_EXPORT void grid_initialize_stretched(Grid* grid, double beta);
 
 #ifdef __cplusplus
 }

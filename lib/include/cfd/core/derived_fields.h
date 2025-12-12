@@ -1,6 +1,8 @@
 #ifndef DERIVED_FIELDS_H
 #define DERIVED_FIELDS_H
 
+#include "cfd/cfd_export.h"
+
 #include "cfd/core/grid.h"
 #include "cfd/solvers/solver_interface.h"
 #include <stddef.h>
@@ -23,7 +25,7 @@ typedef struct {
 
 // Calculate statistics for a field array (OpenMP parallelized for large arrays)
 // Returns FieldStats with min, max, avg, sum computed
-FieldStats calculate_field_statistics(const double* data, size_t count);
+CFD_LIBRARY_EXPORT FieldStats calculate_field_statistics(const double* data, size_t count);
 
 //=============================================================================
 // DERIVED FIELDS
@@ -49,21 +51,23 @@ typedef struct {
 } DerivedFields;
 
 // Create derived fields container (all fields initially NULL, stats zeroed)
-DerivedFields* derived_fields_create(size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT DerivedFields* derived_fields_create(size_t nx, size_t ny);
 
 // Destroy derived fields and free all computed arrays
-void derived_fields_destroy(DerivedFields* derived);
+CFD_LIBRARY_EXPORT void derived_fields_destroy(DerivedFields* derived);
 
 // Compute velocity magnitude from flow field
 // Stores result in derived->velocity_magnitude
-void derived_fields_compute_velocity_magnitude(DerivedFields* derived, const FlowField* field);
+CFD_LIBRARY_EXPORT void derived_fields_compute_velocity_magnitude(DerivedFields* derived,
+                                                                  const FlowField* field);
 
 // Compute statistics for all fields (including velocity magnitude if computed)
 // Stores results in derived->*_stats fields
-void derived_fields_compute_statistics(DerivedFields* derived, const FlowField* field);
+CFD_LIBRARY_EXPORT void derived_fields_compute_statistics(DerivedFields* derived,
+                                                          const FlowField* field);
 
 // Clear all computed fields (frees memory, sets pointers to NULL, resets stats)
-void derived_fields_clear(DerivedFields* derived);
+CFD_LIBRARY_EXPORT void derived_fields_clear(DerivedFields* derived);
 
 #ifdef __cplusplus
 }
