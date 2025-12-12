@@ -20,9 +20,6 @@
 // Default solver type used when none is specified
 #define DEFAULT_SOLVER_TYPE SOLVER_TYPE_EXPLICIT_EULER
 
-// Static flag to track if registry is initialized
-static int s_registry_initialized = 0;
-
 // Ensure registry is initialized
 // Internal helper to create simulation with a specific solver
 static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, double xmin, double xmax,
