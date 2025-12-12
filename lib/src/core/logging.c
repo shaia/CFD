@@ -54,6 +54,8 @@ const char* cfd_get_error_string(cfd_status_t status) {
             return "Solver diverged";
         case CFD_ERROR_MAX_ITER:
             return "Max iterations reached";
+        case CFD_ERROR_LIMIT_EXCEEDED:
+            return "Resource limit exceeded";
         default:
             return "Unknown error";
     }

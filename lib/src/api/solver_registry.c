@@ -149,7 +149,7 @@ int cfd_registry_register(SolverRegistry* registry, const char* type_name,
         return -1;
     }
     if (registry->count >= MAX_REGISTERED_SOLVERS) {
-        cfd_set_error(CFD_ERROR_NOMEM, "Max registered solvers limit reached");
+        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Max registered solvers limit reached");
         return -1;
     }
 

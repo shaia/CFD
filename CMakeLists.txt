@@ -181,7 +181,7 @@ if(BUILD_TESTS)
     add_test(NAME CoreFunctionalityTest COMMAND test_core_functionality)
     add_test(NAME ErrorHandlingTest COMMAND test_error_handling)
     add_test(NAME ReentrancyTest COMMAND test_reentrancy)
-add_test(NAME InputValidationTest COMMAND test_input_validation)
+    add_test(NAME InputValidationTest COMMAND test_input_validation)
 endif()
 
 # Documentation target (Doxygen)

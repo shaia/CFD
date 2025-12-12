@@ -71,6 +71,19 @@ void test_solver_registry_invalid(void) {
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
     // Ideally we would verify the error message too, but status code is good for now
 
+    // Verify limit handling by filling the registry
+    char name_buf[32];
+    for (int i = 0; i < 32; i++) {
+        sprintf(name_buf, "solver_%d", i);
+        res = cfd_registry_register(registry, name_buf, dummy_factory);
+        TEST_ASSERT_EQUAL(0, res);
+    }
+
+    // Attempt to register one more (should fail with limit exceeded)
+    res = cfd_registry_register(registry, "overflow", dummy_factory);
+    TEST_ASSERT_EQUAL(-1, res);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_LIMIT_EXCEEDED, cfd_get_last_status());
+
     cfd_registry_destroy(registry);
 }
 
