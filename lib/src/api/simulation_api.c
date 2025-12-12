@@ -128,8 +128,10 @@ SimulationData* init_simulation_with_solver(size_t nx, size_t ny, double xmin, d
 
 // Set the solver for an existing simulation
 void simulation_set_solver(SimulationData* sim_data, Solver* solver) {
-    if (!sim_data || !solver)
+    if (!sim_data || !solver) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for simulation_set_solver");
         return;
+    }
 
     // Destroy existing solver
     if (sim_data->solver) {
@@ -320,8 +322,10 @@ static int needs_statistics(const OutputRegistry* outputs) {
 
 // Automatically write all registered outputs for current step
 void simulation_write_outputs(SimulationData* sim_data, int step) {
-    if (!sim_data || !sim_data->outputs)
+    if (!sim_data || !sim_data->outputs) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for simulation_write_outputs");
         return;
+    }
 
     // Get run directory (creates it if needed)
     const char* run_dir =

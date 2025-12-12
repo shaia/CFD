@@ -129,16 +129,22 @@ void test_registry_register_limit_exceeded(void) {
 
 void test_null_pointer_handling(void) {
     // API should be robust against NULL pointers
+    cfd_clear_error();
     simulation_set_solver(NULL, NULL);
-    // Should not crash
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
+    cfd_clear_error();
     int res = simulation_set_solver_by_name(NULL, "explicit_euler");
     TEST_ASSERT_EQUAL(-1, res);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
+    cfd_clear_error();
     simulation_register_output(NULL, OUTPUT_VELOCITY, 1, "test");
-    // Should verify error is set if we implemented it, but mostly just check no crash
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
+    cfd_clear_error();
     simulation_write_outputs(NULL, 1);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
 int main(void) {
