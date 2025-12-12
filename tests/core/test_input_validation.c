@@ -47,18 +47,29 @@ void test_simulation_init_invalid(void) {
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
+// Dummy factory for testing
+Solver* dummy_factory(void) {
+    return NULL;
+}
+
 void test_solver_registry_invalid(void) {
     // Null registry
-    int res = cfd_registry_register(NULL, "test", NULL);
+    int res = cfd_registry_register(NULL, "test", dummy_factory);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
     SolverRegistry* registry = cfd_registry_create();
 
-    // Empty name
-    res = cfd_registry_register(registry, "", NULL);
+    // Null factory
+    res = cfd_registry_register(registry, "test", NULL);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+
+    // Empty name (now using valid factory so NULL check passes)
+    res = cfd_registry_register(registry, "", dummy_factory);
+    TEST_ASSERT_EQUAL(-1, res);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+    // Ideally we would verify the error message too, but status code is good for now
 
     cfd_registry_destroy(registry);
 }
