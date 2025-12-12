@@ -74,7 +74,7 @@ void test_solver_registry_invalid(void) {
     // Verify limit handling by filling the registry
     char name_buf[32];
     for (int i = 0; i < 32; i++) {
-        sprintf(name_buf, "solver_%d", i);
+        snprintf(name_buf, sizeof(name_buf), "solver_%d", i);
         res = cfd_registry_register(registry, name_buf, dummy_factory);
         TEST_ASSERT_EQUAL(0, res);
     }
