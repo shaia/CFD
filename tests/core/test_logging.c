@@ -1,6 +1,8 @@
+#include "cfd/core/cfd_status.h"
 #include "cfd/core/logging.h"
 #include "unity.h"
 #include <string.h>
+
 
 // Mock callback state
 static int s_callback_called = 0;
@@ -61,17 +63,6 @@ void test_info_logging_callback(void) {
     TEST_ASSERT_EQUAL_STRING("Test info message", s_last_message);
 }
 
-void test_callback_reset(void) {
-    cfd_set_log_callback(mock_log_callback);
-    cfd_warning("First");
-    TEST_ASSERT_EQUAL_INT(1, s_callback_called);
-
-    cfd_set_log_callback(NULL);
-    cfd_warning("Second");
-    // Callback should NOT be called
-    TEST_ASSERT_EQUAL_INT(1, s_callback_called);
-}
-
 void test_null_handling(void) {
     cfd_set_log_callback(mock_log_callback);
 
@@ -89,6 +80,17 @@ void test_null_handling(void) {
     TEST_ASSERT_EQUAL_INT(3, s_callback_called);
     TEST_ASSERT_EQUAL_INT(CFD_LOG_LEVEL_INFO, s_last_level);
     TEST_ASSERT_EQUAL_STRING("(null)", s_last_message);
+}
+
+void test_callback_reset(void) {
+    cfd_set_log_callback(mock_log_callback);
+    cfd_warning("First");
+    TEST_ASSERT_EQUAL_INT(1, s_callback_called);
+
+    cfd_set_log_callback(NULL);
+    cfd_warning("Second");
+    // Callback should NOT be called
+    TEST_ASSERT_EQUAL_INT(1, s_callback_called);
 }
 
 int main(void) {
