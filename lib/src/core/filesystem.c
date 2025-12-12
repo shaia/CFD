@@ -41,8 +41,7 @@ static cfd_default_path_mode_t default_path_mode = CFD_PATH_CURRENT_DIR;
 
 void cfd_set_output_base_dir(const char* path) {
     if (path && strlen(path) > 0) {
-        strncpy(artifacts_base_path, path, sizeof(artifacts_base_path) - 1);
-        artifacts_base_path[sizeof(artifacts_base_path) - 1] = '\0';
+        snprintf(artifacts_base_path, sizeof(artifacts_base_path), "%s", path);
     } else {
         artifacts_base_path[0] = '\0';  // Reset to default
     }
@@ -58,15 +57,14 @@ void cfd_get_artifacts_path(char* buffer, size_t size) {
         return;
 
     if (strlen(artifacts_base_path) > 0) {
-        strncpy(buffer, artifacts_base_path, size - 1);
-        buffer[size - 1] = '\0';
+        snprintf(buffer, size, "%s", artifacts_base_path);
         return;
     }
 
     // Generate default path based on mode
     switch (default_path_mode) {
         case CFD_PATH_CURRENT_DIR:
-            strncpy(buffer, ".", size - 1);
+            snprintf(buffer, size, ".");
             break;
 
         case CFD_PATH_TEMP_DIR:
@@ -91,14 +89,14 @@ void cfd_get_artifacts_path(char* buffer, size_t size) {
 
         case CFD_PATH_RELATIVE_BUILD:
 #ifdef _WIN32
-            strncpy(buffer, "..\\..\\artifacts", size - 1);
+            snprintf(buffer, size, "..\\..\\artifacts");
 #else
-            strncpy(buffer, "../../artifacts", size - 1);
+            snprintf(buffer, size, "../../artifacts");
 #endif
             break;
 
         default:
-            strncpy(buffer, ".", size - 1);
+            snprintf(buffer, size, ".");
             break;
     }
     buffer[size - 1] = '\0';
@@ -133,8 +131,7 @@ void make_artifacts_path(char* buffer, size_t buffer_size, const char* subdir) {
         snprintf(buffer, buffer_size, "%s/%s", base_path, subdir);
 #endif
     } else {
-        strncpy(buffer, base_path, buffer_size - 1);
-        buffer[buffer_size - 1] = '\0';
+        snprintf(buffer, buffer_size, "%s", base_path);
     }
 }
 
@@ -167,8 +164,7 @@ static void create_run_directory_internal(char* buffer, size_t buffer_size, cons
     // Create run-specific directory
     if (!ensure_directory_exists(buffer)) {
         cfd_warning("Failed to create run directory, using base output directory");
-        strncpy(buffer, output_base, buffer_size - 1);
-        buffer[buffer_size - 1] = '\0';
+        snprintf(buffer, buffer_size, "%s", output_base);
     }
 }
 
@@ -207,13 +203,11 @@ void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size, cons
     // Create run-specific directory
     if (!ensure_directory_exists(buffer)) {
         cfd_warning("Failed to create run directory, using base output directory");
-        strncpy(buffer, output_base, buffer_size - 1);
-        buffer[buffer_size - 1] = '\0';
+        snprintf(buffer, buffer_size, "%s", output_base);
     }
 
     // Store in global state
-    strncpy(current_run_directory, buffer, sizeof(current_run_directory) - 1);
-    current_run_directory[sizeof(current_run_directory) - 1] = '\0';
+    snprintf(current_run_directory, sizeof(current_run_directory), "%s", buffer);
 }
 
 void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* solver_name,
@@ -249,13 +243,11 @@ void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* s
     // Create run-specific directory
     if (!ensure_directory_exists(buffer)) {
         cfd_warning("Failed to create run directory, using base output directory");
-        strncpy(buffer, output_base, buffer_size - 1);
-        buffer[buffer_size - 1] = '\0';
+        snprintf(buffer, buffer_size, "%s", output_base);
     }
 
     // Store in global state
-    strncpy(current_run_directory, buffer, sizeof(current_run_directory) - 1);
-    current_run_directory[sizeof(current_run_directory) - 1] = '\0';
+    snprintf(current_run_directory, sizeof(current_run_directory), "%s", buffer);
 }
 
 void cfd_create_run_directory_with_base(char* buffer, size_t buffer_size, const char* base_dir,
@@ -290,7 +282,7 @@ void cfd_get_run_directory(char* buffer, size_t size) {
         return;
 
     if (current_run_directory[0] != '\0') {
-        strncpy(buffer, current_run_directory, size - 1);
+        snprintf(buffer, size, "%s", current_run_directory);
     } else {
         buffer[0] = '\0';
     }

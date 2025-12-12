@@ -163,8 +163,8 @@ int cfd_registry_register(SolverRegistry* registry, const char* type_name,
     }
 
     // Add new entry
-    strncpy(registry->entries[registry->count].name, type_name, 63);
-    registry->entries[registry->count].name[63] = '\0';
+    snprintf(registry->entries[registry->count].name,
+             sizeof(registry->entries[registry->count].name), "%s", type_name);
     registry->entries[registry->count].factory = factory;
     registry->count++;
 
