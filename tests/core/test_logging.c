@@ -51,6 +51,35 @@ void test_warning_logging_callback(void) {
     TEST_ASSERT_EQUAL_STRING("Test warning message", s_last_message);
 }
 
+void test_info_logging_callback(void) {
+    cfd_set_log_callback(mock_log_callback);
+
+    cfd_info("Test info message");
+
+    TEST_ASSERT_EQUAL_INT(1, s_callback_called);
+    TEST_ASSERT_EQUAL_INT(CFD_LOG_LEVEL_INFO, s_last_level);
+    TEST_ASSERT_EQUAL_STRING("Test info message", s_last_message);
+}
+
+void test_null_handling(void) {
+    cfd_set_log_callback(mock_log_callback);
+
+    cfd_error(NULL);
+    TEST_ASSERT_EQUAL_INT(1, s_callback_called);
+    TEST_ASSERT_EQUAL_INT(CFD_LOG_LEVEL_ERROR, s_last_level);
+    TEST_ASSERT_EQUAL_STRING("(null)", s_last_message);
+
+    cfd_warning(NULL);
+    TEST_ASSERT_EQUAL_INT(2, s_callback_called);
+    TEST_ASSERT_EQUAL_INT(CFD_LOG_LEVEL_WARNING, s_last_level);
+    TEST_ASSERT_EQUAL_STRING("(null)", s_last_message);
+
+    cfd_info(NULL);
+    TEST_ASSERT_EQUAL_INT(3, s_callback_called);
+    TEST_ASSERT_EQUAL_INT(CFD_LOG_LEVEL_INFO, s_last_level);
+    TEST_ASSERT_EQUAL_STRING("(null)", s_last_message);
+}
+
 void test_callback_reset(void) {
     cfd_set_log_callback(mock_log_callback);
     cfd_warning("First");
@@ -66,6 +95,8 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_error_logging_callback);
     RUN_TEST(test_warning_logging_callback);
+    RUN_TEST(test_info_logging_callback);
+    RUN_TEST(test_null_handling);
     RUN_TEST(test_callback_reset);
     return UNITY_END();
 }
