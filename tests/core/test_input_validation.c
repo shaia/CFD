@@ -17,15 +17,18 @@ void test_grid_creation_invalid_params(void) {
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
+    cfd_clear_error();
     grid = grid_create(10, 0, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
     // Invalid bounds
+    cfd_clear_error();
     grid = grid_create(10, 10, 1.0, 0.0, 0.0, 1.0);  // xmin > xmax
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
+    cfd_clear_error();
     grid = grid_create(10, 10, 0.0, 1.0, 1.0, 0.0);  // ymin > ymax
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
@@ -37,11 +40,13 @@ void test_simulation_init_invalid(void) {
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
+    cfd_clear_error();
     sim = init_simulation(100, 0, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
     // Invalid bounds
+    cfd_clear_error();
     sim = init_simulation(100, 100, 1.0, 0.0, 0.0, 1.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
@@ -61,17 +66,20 @@ void test_solver_registry_invalid(void) {
     SolverRegistry* registry = cfd_registry_create();
 
     // Null factory
+    cfd_clear_error();
     res = cfd_registry_register(registry, "test", NULL);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
     // Empty name (now using valid factory so NULL check passes)
+    cfd_clear_error();
     res = cfd_registry_register(registry, "", dummy_factory);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
     // Ideally we would verify the error message too, but status code is good for now
 
     // Verify limit handling by filling the registry
+    cfd_clear_error();
     char name_buf[32];
     for (int i = 0; i < 32; i++) {
         snprintf(name_buf, sizeof(name_buf), "solver_%d", i);
@@ -80,6 +88,7 @@ void test_solver_registry_invalid(void) {
     }
 
     // Attempt to register one more (should fail with limit exceeded)
+    cfd_clear_error();
     res = cfd_registry_register(registry, "overflow", dummy_factory);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_LIMIT_EXCEEDED, cfd_get_last_status());
