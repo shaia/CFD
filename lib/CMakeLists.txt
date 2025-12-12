@@ -184,6 +184,28 @@ target_include_directories(cfd_library
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+# Symbol Visibility and Export Header
+include(GenerateExportHeader)
+generate_export_header(cfd_library
+    BASE_NAME CFD_LIBRARY
+    EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/include/cfd/cfd_export.h"
+)
+
+# Set visibility properties
+set_target_properties(cfd_library PROPERTIES
+    C_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
+)
+
+# Add export header to includes
+target_include_directories(cfd_library PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+# Add generated header to headers list for installation
+list(APPEND CFD_LIBRARY_HEADERS "${CMAKE_CURRENT_BINARY_DIR}/include/cfd/cfd_export.h")
+
 # If we built both libraries, set properties for static version too
 if(BUILD_SHARED_LIBS)
     set_target_properties(cfd_library_static PROPERTIES
@@ -194,10 +216,13 @@ if(BUILD_SHARED_LIBS)
     target_include_directories(cfd_library_static
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
             $<INSTALL_INTERFACE:include>
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
+    # Define STATIC macro to disable export declarations
+    target_compile_definitions(cfd_library_static PUBLIC CFD_LIBRARY_STATIC_DEFINE)
 endif()
 
 # Function to apply compiler options to a target

@@ -1,6 +1,8 @@
 #ifndef FIELD_OPS_H
 #define FIELD_OPS_H
 
+#include "cfd/cfd_export.h"
+
 #include "cfd/solvers/solver_interface.h"
 #include <stddef.h>
 
@@ -25,7 +27,8 @@ extern "C" {
  * @param ny Number of grid points in y direction
  * @return Allocated array of velocity magnitudes (caller must free), or NULL on error
  */
-double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT double* calculate_velocity_magnitude(const FlowField* field, size_t nx,
+                                                        size_t ny);
 
 /**
  * Calculate velocity magnitude squared field
@@ -38,7 +41,8 @@ double* calculate_velocity_magnitude(const FlowField* field, size_t nx, size_t n
  * @param ny Number of grid points in y direction
  * @return Allocated array of squared velocity magnitudes (caller must free), or NULL on error
  */
-double* calculate_velocity_magnitude_squared(const FlowField* field, size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT double* calculate_velocity_magnitude_squared(const FlowField* field, size_t nx,
+                                                                size_t ny);
 
 #ifdef __cplusplus
 }

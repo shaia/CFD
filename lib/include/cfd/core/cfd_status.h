@@ -1,6 +1,8 @@
 #ifndef CFD_STATUS_H
 #define CFD_STATUS_H
 
+#include "cfd/cfd_export.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -25,19 +27,19 @@ typedef enum {
  */
 
 // Set the last error message for the current thread
-void cfd_set_error(cfd_status_t status, const char* message);
+CFD_LIBRARY_EXPORT void cfd_set_error(cfd_status_t status, const char* message);
 
 // Get the last error message for the current thread
-const char* cfd_get_last_error(void);
+CFD_LIBRARY_EXPORT const char* cfd_get_last_error(void);
 
 // Get the last error code
-cfd_status_t cfd_get_last_status(void);
+CFD_LIBRARY_EXPORT cfd_status_t cfd_get_last_status(void);
 
 // Get string description of status code
-const char* cfd_get_error_string(cfd_status_t status);
+CFD_LIBRARY_EXPORT const char* cfd_get_error_string(cfd_status_t status);
 
 // Clear the error state
-void cfd_clear_error(void);
+CFD_LIBRARY_EXPORT void cfd_clear_error(void);
 
 #ifdef __cplusplus
 }

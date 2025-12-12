@@ -1,6 +1,8 @@
 #ifndef CFD_SOLVER_INTERFACE_H
 #define CFD_SOLVER_INTERFACE_H
 
+#include "cfd/cfd_export.h"
+
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 
@@ -182,41 +184,42 @@ typedef struct SolverRegistry SolverRegistry;
  */
 
 // Create a new solver registry
-SolverRegistry* cfd_registry_create(void);
+CFD_LIBRARY_EXPORT SolverRegistry* cfd_registry_create(void);
 
 // Destroy a solver registry
-void cfd_registry_destroy(SolverRegistry* registry);
+CFD_LIBRARY_EXPORT void cfd_registry_destroy(SolverRegistry* registry);
 
 // Register default built-in solvers
-void cfd_registry_register_defaults(SolverRegistry* registry);
+CFD_LIBRARY_EXPORT void cfd_registry_register_defaults(SolverRegistry* registry);
 
 /**
  * Solver Creation
  */
 
 // Create a new solver instance from the registry
-Solver* cfd_solver_create(SolverRegistry* registry, const char* type_name);
+CFD_LIBRARY_EXPORT Solver* cfd_solver_create(SolverRegistry* registry, const char* type_name);
 
 // Destroy a solver and free all resources
-void solver_destroy(Solver* solver);
+CFD_LIBRARY_EXPORT void solver_destroy(Solver* solver);
 
 // Initialize a solver for a specific grid configuration
-cfd_status_t solver_init(Solver* solver, const Grid* grid, const SolverParams* params);
+CFD_LIBRARY_EXPORT cfd_status_t solver_init(Solver* solver, const Grid* grid,
+                                            const SolverParams* params);
 
 // Perform a single time step
-cfd_status_t solver_step(Solver* solver, FlowField* field, const Grid* grid,
-                         const SolverParams* params, SolverStats* stats);
+CFD_LIBRARY_EXPORT cfd_status_t solver_step(Solver* solver, FlowField* field, const Grid* grid,
+                                            const SolverParams* params, SolverStats* stats);
 
 // Solve until convergence or max iterations
-cfd_status_t solver_solve(Solver* solver, FlowField* field, const Grid* grid,
-                          const SolverParams* params, SolverStats* stats);
+CFD_LIBRARY_EXPORT cfd_status_t solver_solve(Solver* solver, FlowField* field, const Grid* grid,
+                                             const SolverParams* params, SolverStats* stats);
 
 // Apply boundary conditions
-void solver_apply_boundary(Solver* solver, FlowField* field, const Grid* grid);
+CFD_LIBRARY_EXPORT void solver_apply_boundary(Solver* solver, FlowField* field, const Grid* grid);
 
 // Compute stable time step
-double solver_compute_dt(Solver* solver, const FlowField* field, const Grid* grid,
-                         const SolverParams* params);
+CFD_LIBRARY_EXPORT double solver_compute_dt(Solver* solver, const FlowField* field,
+                                            const Grid* grid, const SolverParams* params);
 
 /**
  * Registry Operations
@@ -226,20 +229,22 @@ double solver_compute_dt(Solver* solver, const FlowField* field, const Grid* gri
 typedef Solver* (*SolverFactoryFunc)(void);
 
 // Register a new solver type
-int cfd_registry_register(SolverRegistry* registry, const char* type_name,
-                          SolverFactoryFunc factory);
+CFD_LIBRARY_EXPORT int cfd_registry_register(SolverRegistry* registry, const char* type_name,
+                                             SolverFactoryFunc factory);
 
 // Unregister a solver type
-int cfd_registry_unregister(SolverRegistry* registry, const char* type_name);
+CFD_LIBRARY_EXPORT int cfd_registry_unregister(SolverRegistry* registry, const char* type_name);
 
 // Get list of available solver types (returns count, fills names array)
-int cfd_registry_list(SolverRegistry* registry, const char** names, int max_count);
+CFD_LIBRARY_EXPORT int cfd_registry_list(SolverRegistry* registry, const char** names,
+                                         int max_count);
 
 // Check if a solver type is available
-int cfd_registry_has(SolverRegistry* registry, const char* type_name);
+CFD_LIBRARY_EXPORT int cfd_registry_has(SolverRegistry* registry, const char* type_name);
 
 // Get description for a solver type
-const char* cfd_registry_get_description(SolverRegistry* registry, const char* type_name);
+CFD_LIBRARY_EXPORT const char* cfd_registry_get_description(SolverRegistry* registry,
+                                                            const char* type_name);
 
 /**
  * Standard Built-in Solver Types
@@ -256,7 +261,7 @@ const char* cfd_registry_get_description(SolverRegistry* registry, const char* t
 /**
  * Helper to initialize SolverStats with default values
  */
-static inline SolverStats solver_stats_default(void) {
+CFD_LIBRARY_EXPORT static inline SolverStats solver_stats_default(void) {
     SolverStats stats = {.iterations = 0,
                          .residual = 0.0,
                          .max_velocity = 0.0,
@@ -273,22 +278,23 @@ static inline SolverStats solver_stats_default(void) {
 //=============================================================================
 
 // Flow field memory management
-FlowField* flow_field_create(size_t nx, size_t ny);
-void flow_field_destroy(FlowField* field);
+CFD_LIBRARY_EXPORT FlowField* flow_field_create(size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT void flow_field_destroy(FlowField* field);
 
 // Flow field initialization and operations
-void initialize_flow_field(FlowField* field, const Grid* grid);
-void apply_boundary_conditions(FlowField* field, const Grid* grid);
+CFD_LIBRARY_EXPORT void initialize_flow_field(FlowField* field, const Grid* grid);
+CFD_LIBRARY_EXPORT void apply_boundary_conditions(FlowField* field, const Grid* grid);
 
 // Source term computation
-void compute_source_terms(double x, double y, int iter, double dt, const SolverParams* params,
-                          double* source_u, double* source_v);
+CFD_LIBRARY_EXPORT void compute_source_terms(double x, double y, int iter, double dt,
+                                             const SolverParams* params, double* source_u,
+                                             double* source_v);
 
 // Time step computation
-void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params);
+CFD_LIBRARY_EXPORT void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params);
 
 // Helper function to initialize SolverParams with default values
-SolverParams solver_params_default(void);
+CFD_LIBRARY_EXPORT SolverParams solver_params_default(void);
 
 #ifdef __cplusplus
 }
