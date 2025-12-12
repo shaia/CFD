@@ -77,26 +77,29 @@ void cfd_set_log_callback(cfd_log_callback_t callback) {
 }
 
 void cfd_error(const char* message) {
+    const char* safe_msg = message ? message : "(null)";
     if (s_log_callback) {
-        s_log_callback(CFD_LOG_LEVEL_ERROR, message);
+        s_log_callback(CFD_LOG_LEVEL_ERROR, safe_msg);
     } else {
-        fprintf(stderr, "ERROR: %s\n", message);
+        fprintf(stderr, "ERROR: %s\n", safe_msg);
     }
-    cfd_set_error(CFD_ERROR, message);
+    cfd_set_error(CFD_ERROR, safe_msg);
 }
 
 void cfd_warning(const char* message) {
+    const char* safe_msg = message ? message : "(null)";
     if (s_log_callback) {
-        s_log_callback(CFD_LOG_LEVEL_WARNING, message);
+        s_log_callback(CFD_LOG_LEVEL_WARNING, safe_msg);
     } else {
-        fprintf(stderr, "WARNING: %s\n", message);
+        fprintf(stderr, "WARNING: %s\n", safe_msg);
     }
 }
 
 void cfd_info(const char* message) {
+    const char* safe_msg = message ? message : "(null)";
     if (s_log_callback) {
-        s_log_callback(CFD_LOG_LEVEL_INFO, message);
+        s_log_callback(CFD_LOG_LEVEL_INFO, safe_msg);
     } else {
-        fprintf(stdout, "INFO: %s\n", message);
+        fprintf(stdout, "INFO: %s\n", safe_msg);
     }
 }
