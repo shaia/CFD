@@ -1,6 +1,8 @@
+#include "cfd/core/cfd_status.h"
 #include "cfd/core/logging.h"
 #include "unity.h"
 #include <string.h>
+
 
 // Mock callback state
 static int s_callback_called = 0;

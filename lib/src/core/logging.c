@@ -1,4 +1,5 @@
 #include "cfd/core/logging.h"
+#include "cfd/core/cfd_status.h"
 #include <stdio.h>
 
 
