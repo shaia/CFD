@@ -129,6 +129,8 @@ void test_registry_register_limit_exceeded(void) {
 
 void test_null_pointer_handling(void) {
     // API should be robust against NULL pointers
+
+    // 1. Test with completely NULL arguments
     cfd_clear_error();
     simulation_set_solver(NULL, NULL);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
@@ -145,6 +147,32 @@ void test_null_pointer_handling(void) {
     cfd_clear_error();
     simulation_write_outputs(NULL, 1);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+
+    // 2. Test with partial NULL arguments where applicable
+    SimulationData* sim = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NOT_NULL(sim);
+
+    // simulation_set_solver: valid sim, NULL solver
+    cfd_clear_error();
+    simulation_set_solver(sim, NULL);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+
+    // simulation_set_solver: NULL sim, valid (or dummy) solver
+    // (We rely on logic that check happens before access, so passing a non-NULL dummy pointer is
+    // "safe" for the check) However, to be cleaner, we can use the solver from the sim just for the
+    // pointer value, or NULL. We already tested NULL/NULL. Let's strictly test NULL/Valid if we
+    // could extract a solver. But simulation_set_solver(NULL, allocated_solver) is valid to test.
+    // For now, NULL/NULL covers the "sim is NULL" branch in implementation usually: "if (!sim ||
+    // !solver)"
+
+    // simulation_set_solver_by_name: valid sim, NULL name
+    cfd_clear_error();
+    res = simulation_set_solver_by_name(sim, NULL);
+    TEST_ASSERT_EQUAL(-1, res);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+
+    // Clean up
+    free_simulation(sim);
 }
 
 int main(void) {
