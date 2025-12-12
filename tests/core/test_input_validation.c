@@ -11,43 +11,50 @@ void setUp(void) {
 
 void tearDown(void) {}
 
-void test_grid_creation_invalid_params(void) {
-    // Zero dimensions
+void test_grid_creation_zero_width(void) {
+    // Zero width
     Grid* grid = grid_create(0, 10, 0.0, 1.0, 0.0, 1.0);
-    TEST_ASSERT_NULL(grid);
-    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
-
-    cfd_clear_error();
-    grid = grid_create(10, 0, 0.0, 1.0, 0.0, 1.0);
-    TEST_ASSERT_NULL(grid);
-    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
-
-    // Invalid bounds
-    cfd_clear_error();
-    grid = grid_create(10, 10, 1.0, 0.0, 0.0, 1.0);  // xmin > xmax
-    TEST_ASSERT_NULL(grid);
-    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
-
-    cfd_clear_error();
-    grid = grid_create(10, 10, 0.0, 1.0, 1.0, 0.0);  // ymin > ymax
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
-void test_simulation_init_invalid(void) {
+void test_grid_creation_zero_height(void) {
+    // Zero height
+    Grid* grid = grid_create(10, 0, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NULL(grid);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+}
+
+void test_grid_creation_invalid_xmin_xmax(void) {
+    // Invalid bounds xmin > xmax
+    Grid* grid = grid_create(10, 10, 1.0, 0.0, 0.0, 1.0);
+    TEST_ASSERT_NULL(grid);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+}
+
+void test_grid_creation_invalid_ymin_ymax(void) {
+    // Invalid bounds ymin > ymax
+    Grid* grid = grid_create(10, 10, 0.0, 1.0, 1.0, 0.0);
+    TEST_ASSERT_NULL(grid);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+}
+
+void test_simulation_init_zero_width(void) {
     // Zero dimensions
     SimulationData* sim = init_simulation(0, 100, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+}
 
-    cfd_clear_error();
-    sim = init_simulation(100, 0, 0.0, 1.0, 0.0, 1.0);
+void test_simulation_init_zero_height(void) {
+    SimulationData* sim = init_simulation(100, 0, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+}
 
+void test_simulation_init_invalid_bounds(void) {
     // Invalid bounds
-    cfd_clear_error();
-    sim = init_simulation(100, 100, 1.0, 0.0, 0.0, 1.0);
+    SimulationData* sim = init_simulation(100, 100, 1.0, 0.0, 0.0, 1.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
@@ -57,38 +64,41 @@ Solver* dummy_factory(void) {
     return NULL;
 }
 
-void test_solver_registry_invalid(void) {
-    // Null registry
+void test_registry_register_null_registry(void) {
     int res = cfd_registry_register(NULL, "test", dummy_factory);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+}
 
+void test_registry_register_null_factory(void) {
+    SolverRegistry* registry = cfd_registry_create();
+    int res = cfd_registry_register(registry, "test", NULL);
+    TEST_ASSERT_EQUAL(-1, res);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+    cfd_registry_destroy(registry);
+}
+
+void test_registry_register_empty_name(void) {
+    SolverRegistry* registry = cfd_registry_create();
+    int res = cfd_registry_register(registry, "", dummy_factory);
+    TEST_ASSERT_EQUAL(-1, res);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+    cfd_registry_destroy(registry);
+}
+
+void test_registry_register_limit_exceeded(void) {
     SolverRegistry* registry = cfd_registry_create();
 
-    // Null factory
-    cfd_clear_error();
-    res = cfd_registry_register(registry, "test", NULL);
-    TEST_ASSERT_EQUAL(-1, res);
-    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
-
-    // Empty name (now using valid factory so NULL check passes)
-    cfd_clear_error();
-    res = cfd_registry_register(registry, "", dummy_factory);
-    TEST_ASSERT_EQUAL(-1, res);
-    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
-    // Ideally we would verify the error message too, but status code is good for now
-
-    // Verify limit handling by filling the registry
-    cfd_clear_error();
+    // Fill the registry
     char name_buf[32];
+    int res;
     for (int i = 0; i < 32; i++) {
         snprintf(name_buf, sizeof(name_buf), "solver_%d", i);
         res = cfd_registry_register(registry, name_buf, dummy_factory);
         TEST_ASSERT_EQUAL(0, res);
     }
 
-    // Attempt to register one more (should fail with limit exceeded)
-    cfd_clear_error();
+    // Attempt to register one more
     res = cfd_registry_register(registry, "overflow", dummy_factory);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_LIMIT_EXCEEDED, cfd_get_last_status());
@@ -112,9 +122,17 @@ void test_null_pointer_handling(void) {
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_grid_creation_invalid_params);
-    RUN_TEST(test_simulation_init_invalid);
-    RUN_TEST(test_solver_registry_invalid);
+    RUN_TEST(test_grid_creation_zero_width);
+    RUN_TEST(test_grid_creation_zero_height);
+    RUN_TEST(test_grid_creation_invalid_xmin_xmax);
+    RUN_TEST(test_grid_creation_invalid_ymin_ymax);
+    RUN_TEST(test_simulation_init_zero_width);
+    RUN_TEST(test_simulation_init_zero_height);
+    RUN_TEST(test_simulation_init_invalid_bounds);
+    RUN_TEST(test_registry_register_null_registry);
+    RUN_TEST(test_registry_register_null_factory);
+    RUN_TEST(test_registry_register_empty_name);
+    RUN_TEST(test_registry_register_limit_exceeded);
     RUN_TEST(test_null_pointer_handling);
     return UNITY_END();
 }
