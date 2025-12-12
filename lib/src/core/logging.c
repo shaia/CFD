@@ -92,3 +92,11 @@ void cfd_warning(const char* message) {
         fprintf(stderr, "WARNING: %s\n", message);
     }
 }
+
+void cfd_info(const char* message) {
+    if (s_log_callback) {
+        s_log_callback(CFD_LOG_LEVEL_INFO, message);
+    } else {
+        fprintf(stdout, "INFO: %s\n", message);
+    }
+}

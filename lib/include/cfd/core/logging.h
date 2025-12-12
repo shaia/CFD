@@ -43,6 +43,9 @@ void cfd_error(const char* message);
 // Print warning message
 void cfd_warning(const char* message);
 
+// Print info message
+void cfd_info(const char* message);
+
 #ifdef __cplusplus
 }
 #endif
