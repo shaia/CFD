@@ -10,6 +10,11 @@
 #include <windows.h>
 #endif
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 
 // Forward declarations for internal solver implementations
 // These are not part of the public API
