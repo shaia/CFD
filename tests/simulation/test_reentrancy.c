@@ -1,6 +1,6 @@
 #include "cfd/api/simulation_api.h"
 #include "unity.h"
-#include <corecrt_io.h>
+
 #include <stdio.h>
 
 #ifdef _WIN32
