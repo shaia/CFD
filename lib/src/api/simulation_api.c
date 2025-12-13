@@ -28,7 +28,10 @@ static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, doubl
                                                      const char* solver_type) {
     // Lazy initialization of library
     if (!cfd_is_initialized()) {
-        cfd_init();
+        if (cfd_init() != CFD_SUCCESS) {
+            cfd_set_error(CFD_ERROR, "Failed to initialize CFD library");
+            return NULL;
+        }
     }
 
     if (nx == 0 || ny == 0) {
