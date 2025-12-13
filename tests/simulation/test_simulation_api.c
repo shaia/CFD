@@ -1,13 +1,17 @@
-#include "cfd/io/output_registry.h"
 #include "cfd/api/simulation_api.h"
+#include "cfd/core/cfd_init.h"
+#include "cfd/io/output_registry.h"
 #include "unity.h"
 #include <math.h>
+
 
 // Test fixtures
 static SimulationData* test_sim = NULL;
 
 void setUp(void) {
     // Create a small simulation for testing
+    // This implicitly initializes the library if strictly needed,
+    // but we can rely on lazy init too.
     test_sim = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
 }
 
@@ -16,6 +20,7 @@ void tearDown(void) {
         free_simulation(test_sim);
         test_sim = NULL;
     }
+    // Optional: could finalize here, but we want to test persistence usually
 }
 
 //=============================================================================
@@ -28,6 +33,23 @@ void test_init_simulation_creates_valid_structure(void) {
     TEST_ASSERT_NOT_NULL(test_sim->field);
     TEST_ASSERT_NOT_NULL(test_sim->solver);
     TEST_ASSERT_NOT_NULL(test_sim->outputs);
+}
+
+void test_init_simulation_performs_lazy_initialization(void) {
+    // 1. Ensure clean state
+    if (test_sim) {
+        free_simulation(test_sim);
+        test_sim = NULL;
+    }
+    cfd_finalize();
+    TEST_ASSERT_FALSE(cfd_is_initialized());
+
+    // 2. Call init_simulation
+    test_sim = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
+
+    // 3. Verify it succeeded and initialized the library
+    TEST_ASSERT_NOT_NULL(test_sim);
+    TEST_ASSERT_TRUE(cfd_is_initialized());
 }
 
 void test_init_simulation_sets_grid_dimensions(void) {
@@ -360,6 +382,7 @@ int main(void) {
 
     // Initialization tests
     RUN_TEST(test_init_simulation_creates_valid_structure);
+    RUN_TEST(test_init_simulation_performs_lazy_initialization);
     RUN_TEST(test_init_simulation_sets_grid_dimensions);
     RUN_TEST(test_init_simulation_sets_field_dimensions);
     RUN_TEST(test_init_simulation_sets_domain_bounds);

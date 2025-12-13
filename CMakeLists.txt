@@ -148,6 +148,7 @@ if(BUILD_TESTS)
     add_executable(test_reentrancy tests/simulation/test_reentrancy.c)
     add_executable(test_input_validation tests/core/test_input_validation.c)
     add_executable(test_logging tests/core/test_logging.c)
+    add_executable(test_init tests/core/test_init.c)
 
     # Link test executables with CFD library and Unity
     target_link_libraries(test_simulation_basic PRIVATE CFD::Library unity)
@@ -170,6 +171,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_reentrancy PRIVATE CFD::Library unity)
     target_link_libraries(test_input_validation PRIVATE CFD::Library unity)
     target_link_libraries(test_logging PRIVATE CFD::Library unity)
+    target_link_libraries(test_init PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
     enable_testing()
@@ -193,6 +195,7 @@ if(BUILD_TESTS)
     add_test(NAME ReentrancyTest COMMAND test_reentrancy)
     add_test(NAME InputValidationTest COMMAND test_input_validation)
     add_test(NAME LoggingTest COMMAND test_logging)
+    add_test(NAME InitializationTest COMMAND test_init)
 endif()
 
 # Documentation target (Doxygen)
