@@ -30,6 +30,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Buffer overflow security issue
 - Missing includes in test files (stdlib.h, string.h)
 
+## [0.7.0] - 2025-12-13
+
+### Added
+- **Library Initialization**: Thread-safe `cfd_init()` and `cfd_finalize()` functions.
+- **Lazy Initialization**: API functions now automatically initialize the library if needed.
+- **Thread Safety**: Core initialization uses atomic operations for safe concurrent access.
+- **Threading Abstraction**: Internal cross-platform threading layer (`cfd_threading_internal.h`) supporting Windows and C11 atomics.
+
+### Changed
+- Refactored `init_simulation` to perform safe lazy initialization.
+- Improved error handling during initialization failures.
+
+### Fixed
+- Fixed race conditions during library initialization.
+
 ## [0.0.6] - 2024-12-01
 
 ### Added

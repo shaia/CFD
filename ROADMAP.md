@@ -2,7 +2,7 @@
 
 This document outlines the development roadmap for achieving a commercial-grade, open-source CFD library.
 
-## Current State (v0.0.6)
+## Current State (v0.7.0)
 
 ### What We Have
 - [x] Pluggable solver architecture (function pointers, registry pattern)
@@ -15,6 +15,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] VTK and CSV output
 - [x] Python bindings infrastructure (cfd-python)
 - [x] Visualization library (cfd-visualization)
+- [x] Thread-safe library initialization
 
 ### Critical Gaps
 - [ ] Only 2D (no 3D support)
@@ -43,11 +44,11 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] Validate thread-safety with concurrent simulation tests
 
 ### 0.3 API Robustness
-- [ ] Comprehensive input validation (check for NULL, NaN, invalid ranges)
-- [ ] Configurable logging callback (`cfd_set_log_callback`)
-- [ ] Version header (`cfd_version.h`) with version macros
-- [ ] Symbol visibility control (hide private symbols) & export headers
-- [ ] Library initialization/shutdown functions
+- [x] Comprehensive input validation (check for NULL, NaN, invalid ranges)
+- [x] Configurable logging callback (`cfd_set_log_callback`)
+- [x] Version header (`cfd_version.h`) with version macros
+- [x] Symbol visibility control (hide private symbols) & export headers
+- [x] Library initialization/shutdown functions
 
 ---
 
