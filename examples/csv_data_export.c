@@ -1,9 +1,4 @@
 #include "cfd/api/simulation_api.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
 
 
 #include <stdio.h>
@@ -21,7 +16,7 @@ int main() {
 
 
     // Initialize simulation
-    SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
     if (!sim_data) {
         printf("Failed to initialize simulation\n");
         return 1;

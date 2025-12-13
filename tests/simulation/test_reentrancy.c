@@ -1,9 +1,7 @@
 #include "cfd/api/simulation_api.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/io/output_registry.h"
 #include "unity.h"
+
 #include <stdio.h>
-#include <string.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -29,8 +27,8 @@ static int file_exists(const char* filename) {
 
 void test_multiple_simulations_independent_outputs(void) {
     // Create two independent simulations
-    SimulationData* sim1 = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
-    SimulationData* sim2 = init_simulation(20, 20, 0.0, 2.0, 0.0, 2.0);
+    simulation_data* sim1 = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
+    simulation_data* sim2 = init_simulation(20, 20, 0.0, 2.0, 0.0, 2.0);
 
     TEST_ASSERT_NOT_NULL(sim1);
     TEST_ASSERT_NOT_NULL(sim2);
@@ -76,12 +74,12 @@ void test_multiple_simulations_independent_outputs(void) {
     // Note: The timestamp makes it hard to predict exact folder name.
     // However, we can check that *valid simulation run directories* were created.
     // Wait, the API `simulation_write_outputs` calls `output_registry_get_run_dir` which creates
-    // the dir. We can inspect `sim1->outputs->run_dir` but `SimulationData` definition is opaque or
-    // in header? It's in `simulation_api.h` and is fully visible? Actually
+    // the dir. We can inspect `sim1->outputs->run_dir` but `simulation_data` definition is opaque
+    // or in header? It's in `simulation_api.h` and is fully visible? Actually
     // `output_registry_get_run_dir` returns the path. But we don't have direct access to internal
-    // run dir string easily without headers. `SimulationData` struct IS in `simulation_api.h` so we
-    // CAN read `sim1->output_base_dir`. But the *actual* run directory (with timestamp) is inside
-    // `output_registry`. We can't easily get it unless we mock/inspect.
+    // run dir string easily without headers. `simulation_data` struct IS in `simulation_api.h` so
+    // we CAN read `sim1->output_base_dir`. But the *actual* run directory (with timestamp) is
+    // inside `output_registry`. We can't easily get it unless we mock/inspect.
 
     // However, we can check if the BASE directories were created?
     // `ensure_directory_exists` is called on base.

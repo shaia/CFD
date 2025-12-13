@@ -209,6 +209,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Unified memory optimization
 - [ ] Asynchronous transfers
 - [ ] GPU-aware MPI
+- [ ] Red-Black SOR kernel (`kernel_poisson_sor_rb`)
 
 ### 4.3 Performance Tools (P2)
 - [ ] Built-in profiling

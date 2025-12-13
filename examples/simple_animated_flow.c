@@ -1,9 +1,6 @@
 #include "cfd/api/simulation_api.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
+#include "cfd/core/grid.h"
+#include "cfd/solvers/solver_interface.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -34,17 +31,17 @@
 #define PRESSURE_Y_FREQUENCY 2.0  // Frequency of pressure variation in y
 
 // Simple analytical flow patterns for demonstration
-void set_analytical_flow(FlowField* field, const Grid* grid, double time) {
+void set_analytical_flow(flow_field* field, const grid* grid, double time) {
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = j * field->nx + i;
+            size_t idx = (j * field->nx) + i;
             double x = grid->x[i];
             double y = grid->y[j];
 
             // Rotating vortex that evolves over time
-            double cx = 2.0 + VORTEX_CENTER_AMPLITUDE_X * sin(time);  // Vortex center moves
-            double cy = 1.0 + VORTEX_CENTER_AMPLITUDE_Y * cos(time);
-            double r = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+            double cx = 2.0 + (VORTEX_CENTER_AMPLITUDE_X * sin(time));  // Vortex center moves
+            double cy = 1.0 + (VORTEX_CENTER_AMPLITUDE_Y * cos(time));
+            double r = sqrt(((x - cx) * (x - cx)) + ((y - cy) * (y - cy)));
             double theta = atan2(y - cy, x - cx);
 
             // Vortex strength that varies with time
@@ -60,11 +57,11 @@ void set_analytical_flow(FlowField* field, const Grid* grid, double time) {
             field->u[idx] +=
                 BACKGROUND_FLOW_U_BASE * (1.0 + BACKGROUND_FLOW_U_VARIATION * sin(time + x));
             field->v[idx] +=
-                BACKGROUND_FLOW_V_AMPLITUDE * sin(BACKGROUND_FLOW_V_FREQUENCY * time + y);
+                BACKGROUND_FLOW_V_AMPLITUDE * sin((BACKGROUND_FLOW_V_FREQUENCY * time) + y);
 
             // Pressure field
-            field->p[idx] = PRESSURE_BASE + PRESSURE_X_AMPLITUDE * sin(x + time) +
-                            PRESSURE_Y_AMPLITUDE * cos(y + PRESSURE_Y_FREQUENCY * time);
+            field->p[idx] = PRESSURE_BASE + (PRESSURE_X_AMPLITUDE * sin(x + time)) +
+                            (PRESSURE_Y_AMPLITUDE * cos(y + (PRESSURE_Y_FREQUENCY * time)));
 
             // Density
             field->rho[idx] = 1.0;
@@ -86,7 +83,7 @@ int main() {
 
 
     // Initialize simulation
-    SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
     if (!sim_data) {
         printf("Failed to initialize simulation\n");
         return 1;
@@ -109,7 +106,7 @@ int main() {
     printf("\nRunning simple analytical flow animation...\n");
     printf("Total steps: %d\n", max_steps);
     printf("Output interval: every %d steps\n", output_interval);
-    printf("Expected frames: %d\n", max_steps / output_interval + 1);
+    printf("Expected frames: %d\n", (max_steps / output_interval) + 1);
 
     printf("\nGenerating analytical flow patterns...\n");
     for (int step = 0; step <= max_steps; step++) {

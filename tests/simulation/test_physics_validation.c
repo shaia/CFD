@@ -28,10 +28,10 @@ void test_viscous_diffusion(void) {
     size_t nx = 15, ny = 15;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
     // Create a sharp velocity gradient (should diffuse with viscosity)
@@ -64,25 +64,25 @@ void test_viscous_diffusion(void) {
         }
     }
 
-    SolverParams params = {.dt = 0.001,
-                           .cfl = 0.2,
-                           .gamma = 1.4,
-                           .mu = 0.1,  // High viscosity for visible diffusion
-                           .k = 0.0242,
-                           .max_iter = 10,
-                           .tolerance = 1e-6,
-                           .source_amplitude_u = 0.1,
-                           .source_amplitude_v = 0.05,
-                           .source_decay_rate = 0.1,
-                           .pressure_coupling = 0.1};
+    solver_params params = {.dt = 0.001,
+                            .cfl = 0.2,
+                            .gamma = 1.4,
+                            .mu = 0.1,  // High viscosity for visible diffusion
+                            .k = 0.0242,
+                            .max_iter = 10,
+                            .tolerance = 1e-6,
+                            .source_amplitude_u = 0.1,
+                            .source_amplitude_v = 0.05,
+                            .source_decay_rate = 0.1,
+                            .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);
@@ -120,10 +120,10 @@ void test_pressure_gradient_effects(void) {
     size_t nx = 10, ny = 10;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny);
 
     // Set up pressure gradient with zero initial velocity
     for (size_t j = 0; j < ny; j++) {
@@ -145,25 +145,25 @@ void test_pressure_gradient_effects(void) {
         initial_velocity_sum += fabs(field->u[i]) + fabs(field->v[i]);
     }
 
-    SolverParams params = {.dt = 0.001,
-                           .cfl = 0.2,
-                           .gamma = 1.4,
-                           .mu = 0.001,  // Low viscosity so pressure gradient dominates
-                           .k = 0.0242,
-                           .max_iter = 5,
-                           .tolerance = 1e-6,
-                           .source_amplitude_u = 0.1,
-                           .source_amplitude_v = 0.05,
-                           .source_decay_rate = 0.1,
-                           .pressure_coupling = 0.1};
+    solver_params params = {.dt = 0.001,
+                            .cfl = 0.2,
+                            .gamma = 1.4,
+                            .mu = 0.001,  // Low viscosity so pressure gradient dominates
+                            .k = 0.0242,
+                            .max_iter = 5,
+                            .tolerance = 1e-6,
+                            .source_amplitude_u = 0.1,
+                            .source_amplitude_v = 0.05,
+                            .source_decay_rate = 0.1,
+                            .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);
@@ -207,10 +207,10 @@ void test_conservation_properties(void) {
     size_t nx = 12, ny = 8;
     double xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
     // Calculate initial total momentum and mass
@@ -224,25 +224,25 @@ void test_conservation_properties(void) {
         initial_momentum_y += field->rho[i] * field->v[i];
     }
 
-    SolverParams params = {.dt = 0.0005,
-                           .cfl = 0.2,
-                           .gamma = 1.4,
-                           .mu = 0.01,
-                           .k = 0.0242,
-                           .max_iter = 3,  // Short run to check conservation
-                           .tolerance = 1e-6,
-                           .source_amplitude_u = 0.1,
-                           .source_amplitude_v = 0.05,
-                           .source_decay_rate = 0.1,
-                           .pressure_coupling = 0.1};
+    solver_params params = {.dt = 0.0005,
+                            .cfl = 0.2,
+                            .gamma = 1.4,
+                            .mu = 0.01,
+                            .k = 0.0242,
+                            .max_iter = 3,  // Short run to check conservation
+                            .tolerance = 1e-6,
+                            .source_amplitude_u = 0.1,
+                            .source_amplitude_v = 0.05,
+                            .source_decay_rate = 0.1,
+                            .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);

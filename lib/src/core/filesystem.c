@@ -1,5 +1,6 @@
 #include "cfd/core/filesystem.h"
 #include "cfd/core/logging.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,7 +8,6 @@
 
 #ifdef _WIN32
 #include <direct.h>
-#include <io.h>
 #else
 #include <sys/stat.h>
 #include <unistd.h>
@@ -53,8 +53,9 @@ void cfd_set_default_path_mode(cfd_default_path_mode_t mode) {
 
 
 void cfd_get_artifacts_path(char* buffer, size_t size) {
-    if (!buffer || size == 0)
+    if (!buffer || size == 0) {
         return;
+    }
 
     if (strlen(artifacts_base_path) > 0) {
         snprintf(buffer, size, "%s", artifacts_base_path);
@@ -71,10 +72,12 @@ void cfd_get_artifacts_path(char* buffer, size_t size) {
 #ifdef _WIN32
         {
             char* temp_dir = getenv("TEMP");
-            if (!temp_dir)
+            if (!temp_dir) {
                 temp_dir = getenv("TMP");
-            if (!temp_dir)
+            }
+            if (!temp_dir) {
                 temp_dir = "C:\\temp";
+            }
             snprintf(buffer, size, "%s", temp_dir);
         }
 #else
@@ -278,8 +281,9 @@ void cfd_create_run_directory_ex_with_base(char* buffer, size_t buffer_size, con
 }
 
 void cfd_get_run_directory(char* buffer, size_t size) {
-    if (!buffer || size == 0)
+    if (!buffer || size == 0) {
         return;
+    }
 
     if (current_run_directory[0] != '\0') {
         snprintf(buffer, size, "%s", current_run_directory);

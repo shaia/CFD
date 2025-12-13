@@ -15,12 +15,13 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/solver_gpu.h"
 
-
+#include <cstdio.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <math.h>
-#include <stdio.h>
 
+
+#define MAX_VELOCITY 100.0
 
 #define CUDA_CHECK(call)                                                     \
     do {                                                                     \
@@ -42,10 +43,8 @@
         }                                                                    \
     } while (0)
 
-#define MAX_VELOCITY 100.0
-#define BLOCK_SIZE   16
-
-struct GPUSolverContext {
+// Internal context implementation structure
+struct gpu_solver_context_impl {
     size_t nx, ny, size;
     double* d_u;
     double* d_v;
@@ -60,8 +59,8 @@ struct GPUSolverContext {
     double* d_y;
     double* d_dx;
     double* d_dy;
-    GPUConfig config;
-    GPUSolverStats stats;
+    gpu_config config;
+    gpu_solver_stats stats;
     cudaStream_t stream;
     cudaEvent_t start_event;
     cudaEvent_t stop_event;
@@ -126,43 +125,6 @@ __global__ void kernel_poisson_jacobi(const double* __restrict__ p_old, double* 
     }
 }
 
-// Red-Black SOR (kept for compatibility)
-__global__ void kernel_poisson_sor_rb(double* __restrict__ p, const double* __restrict__ rhs,
-                                      size_t nx, size_t ny, double inv_dx2, double inv_dy2,
-                                      double omega, double inv_factor, int color,
-                                      double* __restrict__ residual_out) {
-    __shared__ double s_residual[BLOCK_SIZE * BLOCK_SIZE];
-    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
-    int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
-    int tid = threadIdx.y * blockDim.x + threadIdx.x;
-    double local_residual = 0.0;
-
-    if (i < nx - 1 && j < ny - 1 && (i + j) % 2 == color) {
-        size_t idx = j * nx + i;
-        double p_c = p[idx];
-        double sum = (p[idx + 1] + p[idx - 1]) * inv_dx2 + (p[idx + nx] + p[idx - nx]) * inv_dy2;
-        double p_gs = (rhs[idx] + sum) * inv_factor;
-        p[idx] = p_c + omega * (p_gs - p_c);
-        if (residual_out) {
-            double lap = (p[idx + 1] - 2.0 * p_c + p[idx - 1]) * inv_dx2 +
-                         (p[idx + nx] - 2.0 * p_c + p[idx - nx]) * inv_dy2;
-            local_residual = fabs(lap - rhs[idx]);
-        }
-    }
-
-    if (residual_out) {
-        s_residual[tid] = local_residual;
-        __syncthreads();
-        for (int s = blockDim.x * blockDim.y / 2; s > 0; s >>= 1) {
-            if (tid < s)
-                s_residual[tid] = fmax(s_residual[tid], s_residual[tid + s]);
-            __syncthreads();
-        }
-        if (tid == 0)
-            atomicMax((unsigned long long*)residual_out, __double_as_longlong(s_residual[0]));
-    }
-}
-
 // Predictor step - compute u* without pressure
 __global__ void kernel_predictor(const double* __restrict__ u, const double* __restrict__ v,
                                  double* __restrict__ u_star, double* __restrict__ v_star,
@@ -183,8 +145,8 @@ __global__ void kernel_predictor(const double* __restrict__ u, const double* __r
                      (v[idx + nx] - 2.0 * v_c + v[idx - nx]) * inv_dy2;
         double u_new = u_c + dt * (-(u_c * du_dx + v_c * du_dy) + nu * d2u);
         double v_new = v_c + dt * (-(u_c * dv_dx + v_c * dv_dy) + nu * d2v);
-        u_star[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, u_new));
-        v_star[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, v_new));
+        u_star[idx] = ::fmax((double)-MAX_VELOCITY, ::fmin((double)MAX_VELOCITY, (double)u_new));
+        v_star[idx] = ::fmax((double)-MAX_VELOCITY, ::fmin((double)MAX_VELOCITY, (double)v_new));
     }
 }
 
@@ -202,7 +164,7 @@ __global__ void kernel_velocity_rhs(const double* __restrict__ u, const double* 
         double du_dy = (u[idx + nx] - u[idx - nx]) * inv_2dy;
         double dv_dx = (v[idx + 1] - v[idx - 1]) * inv_2dx;
         double dv_dy = (v[idx + nx] - v[idx - nx]) * inv_2dy;
-        double d2u = (u[idx + 1] - 2.0 * u_c + u[idx - 1]) * inv_dx2 +
+        double d2u = ((u[idx + 1] - 2.0 * u_c + u[idx - 1]) * inv_dx2) +
                      (u[idx + nx] - 2.0 * u_c + u[idx - nx]) * inv_dy2;
         double d2v = (v[idx + 1] - 2.0 * v_c + v[idx - 1]) * inv_dx2 +
                      (v[idx + nx] - 2.0 * v_c + v[idx - nx]) * inv_dy2;
@@ -221,8 +183,10 @@ __global__ void kernel_velocity_update(double* __restrict__ u, double* __restric
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
         size_t idx = j * nx + i;
-        u[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, u[idx] + dt * u_rhs[idx]));
-        v[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, v[idx] + dt * v_rhs[idx]));
+        u[idx] = ::fmax((double)-MAX_VELOCITY,
+                        ::fmin((double)MAX_VELOCITY, (double)(u[idx] + dt * u_rhs[idx])));
+        v[idx] = ::fmax((double)-MAX_VELOCITY,
+                        ::fmin((double)MAX_VELOCITY, (double)(v[idx] + dt * v_rhs[idx])));
     }
 }
 
@@ -235,10 +199,13 @@ __global__ void kernel_projection_correct(double* __restrict__ u, double* __rest
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
         size_t idx = j * nx + i;
+        double u_c = u[idx], v_c = v[idx];
         double dp_dx = (p[idx + 1] - p[idx - 1]) * inv_2dx;
         double dp_dy = (p[idx + nx] - p[idx - nx]) * inv_2dy;
-        u[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, u_star[idx] - dt_rho * dp_dx));
-        v[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, v_star[idx] - dt_rho * dp_dy));
+        u[idx] = ::fmax((double)-MAX_VELOCITY,
+                        ::fmin((double)MAX_VELOCITY, (double)(u_star[idx] - dt_rho * dp_dx)));
+        v[idx] = ::fmax((double)-MAX_VELOCITY,
+                        ::fmin((double)MAX_VELOCITY, (double)(v_star[idx] - dt_rho * dp_dy)));
     }
 }
 
@@ -264,14 +231,14 @@ __global__ void kernel_scale_rhs(double* __restrict__ rhs, size_t nx, size_t ny,
 
 extern "C" {
 
-GPUConfig gpu_config_default(void) {
-    GPUConfig config;
+gpu_config gpu_config_default(void) {
+    gpu_config config;
     config.enable_gpu = 1;
     config.min_grid_size = 10000;
     config.min_steps = 10;
-    config.block_size_x = BLOCK_SIZE;
-    config.block_size_y = BLOCK_SIZE;
-    config.poisson_max_iter = 25;  // Balance between speed and accuracy
+    config.block_size_x = 16;
+    config.block_size_y = 16;
+    config.poisson_max_iter = 50;  // Reduced from 1000
     config.poisson_tolerance = 1e-4;
     config.persistent_memory = 1;
     config.async_transfers = 1;
@@ -297,7 +264,7 @@ int gpu_is_available(void) {
     return 0;
 }
 
-int gpu_get_device_info(GPUDeviceInfo* info, int max_devices) {
+int gpu_get_device_info(gpu_device_info* info, int max_devices) {
     int device_count = 0;
     cudaError_t err = cudaGetDeviceCount(&device_count);
     if (err != cudaSuccess)
@@ -328,7 +295,7 @@ cfd_status_t gpu_select_device(int device_id) {
     return (cudaSetDevice(device_id) == cudaSuccess) ? CFD_SUCCESS : CFD_ERROR;
 }
 
-int gpu_should_use(const GPUConfig* config, size_t nx, size_t ny, int num_steps) {
+int gpu_should_use(const gpu_config* config, size_t nx, size_t ny, int num_steps) {
     if (!config || !config->enable_gpu)
         return 0;
     if (!gpu_is_available())
@@ -340,10 +307,11 @@ int gpu_should_use(const GPUConfig* config, size_t nx, size_t ny, int num_steps)
     return 1;
 }
 
-GPUSolverContext* gpu_solver_create(size_t nx, size_t ny, const GPUConfig* config) {
+gpu_solver_context* gpu_solver_create(size_t nx, size_t ny, const gpu_config* config) {
     if (!gpu_is_available())
         return nullptr;
-    GPUSolverContext* ctx = (GPUSolverContext*)cfd_calloc(1, sizeof(GPUSolverContext));
+    struct gpu_solver_context_impl* ctx =
+        (struct gpu_solver_context_impl*)cfd_calloc(1, sizeof(struct gpu_solver_context_impl));
     if (!ctx)
         return nullptr;
     ctx->nx = nx;
@@ -370,18 +338,19 @@ GPUSolverContext* gpu_solver_create(size_t nx, size_t ny, const GPUConfig* confi
         cudaMalloc(&ctx->d_y, ny * sizeof(double)) != cudaSuccess ||
         cudaMalloc(&ctx->d_dx, (nx - 1) * sizeof(double)) != cudaSuccess ||
         cudaMalloc(&ctx->d_dy, (ny - 1) * sizeof(double)) != cudaSuccess) {
-        gpu_solver_destroy(ctx);
+        gpu_solver_destroy((gpu_solver_context*)ctx);
         return nullptr;
     }
     ctx->memory_allocated = 1;
     ctx->initialized = 1;
     ctx->stats.memory_allocated = bytes * 8 + (nx + ny + nx - 1 + ny - 1 + 1) * sizeof(double);
-    return ctx;
+    return (gpu_solver_context*)ctx;
 }
 
-void gpu_solver_destroy(GPUSolverContext* ctx) {
-    if (!ctx)
+void gpu_solver_destroy(gpu_solver_context* ctx_void) {
+    if (!ctx_void)
         return;
+    struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
     cudaFree(ctx->d_u);
     cudaFree(ctx->d_v);
     cudaFree(ctx->d_p);
@@ -401,9 +370,10 @@ void gpu_solver_destroy(GPUSolverContext* ctx) {
     cfd_free(ctx);
 }
 
-cfd_status_t gpu_solver_upload(GPUSolverContext* ctx, const FlowField* field) {
-    if (!ctx || !field)
+cfd_status_t gpu_solver_upload(gpu_solver_context* ctx_void, const flow_field* field) {
+    if (!ctx_void || !field)
         return CFD_ERROR_INVALID;
+    struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
     size_t bytes = ctx->size * sizeof(double);
     CUDA_CHECK(cudaMemcpyAsync(ctx->d_u, field->u, bytes, cudaMemcpyHostToDevice, ctx->stream));
     CUDA_CHECK(cudaMemcpyAsync(ctx->d_v, field->v, bytes, cudaMemcpyHostToDevice, ctx->stream));
@@ -413,9 +383,10 @@ cfd_status_t gpu_solver_upload(GPUSolverContext* ctx, const FlowField* field) {
     return CFD_SUCCESS;
 }
 
-cfd_status_t gpu_solver_download(GPUSolverContext* ctx, FlowField* field) {
-    if (!ctx || !field)
+cfd_status_t gpu_solver_download(gpu_solver_context* ctx_void, flow_field* field) {
+    if (!ctx_void || !field)
         return CFD_ERROR_INVALID;
+    struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
     size_t bytes = ctx->size * sizeof(double);
     CUDA_CHECK(cudaMemcpyAsync(field->u, ctx->d_u, bytes, cudaMemcpyDeviceToHost, ctx->stream));
     CUDA_CHECK(cudaMemcpyAsync(field->v, ctx->d_v, bytes, cudaMemcpyDeviceToHost, ctx->stream));
@@ -424,17 +395,18 @@ cfd_status_t gpu_solver_download(GPUSolverContext* ctx, FlowField* field) {
     return CFD_SUCCESS;
 }
 
-cfd_status_t gpu_solver_step(GPUSolverContext* ctx, const Grid* grid, const SolverParams* params,
-                             GPUSolverStats* stats) {
-    if (!ctx || !grid || !params)
+cfd_status_t gpu_solver_step(gpu_solver_context* ctx_void, const grid* grid,
+                             const solver_params* params, gpu_solver_stats* stats) {
+    if (!ctx_void || !grid || !params)
         return CFD_ERROR_INVALID;
+    struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
     size_t nx = ctx->nx, ny = ctx->ny;
     double dx = grid->dx[0], dy = grid->dy[0], dt = params->dt, nu = params->mu;
     double inv_2dx = 0.5 / dx, inv_2dy = 0.5 / dy, inv_dx2 = 1.0 / (dx * dx),
            inv_dy2 = 1.0 / (dy * dy);
     dim3 block(ctx->config.block_size_x, ctx->config.block_size_y);
     dim3 grid_dim((nx - 2 + block.x - 1) / block.x, (ny - 2 + block.y - 1) / block.y);
-    int bb = ((int)fmax(nx, ny) + 255) / 256;
+    int bb = ((int)((nx > ny) ? nx : ny) + 255) / 256;
 
     cudaEventRecord(ctx->start_event, ctx->stream);
     kernel_velocity_rhs<<<grid_dim, block, 0, ctx->stream>>>(
@@ -445,6 +417,7 @@ cfd_status_t gpu_solver_step(GPUSolverContext* ctx, const Grid* grid, const Solv
     kernel_apply_boundary_velocity<<<bb, 256, 0, ctx->stream>>>(ctx->d_u, ctx->d_v, nx, ny);
     kernel_compute_divergence<<<grid_dim, block, 0, ctx->stream>>>(ctx->d_u, ctx->d_v, ctx->d_rhs,
                                                                    nx, ny, inv_2dx, inv_2dy);
+
     kernel_pressure_update<<<grid_dim, block, 0, ctx->stream>>>(ctx->d_p, ctx->d_rhs, nx, ny,
                                                                 0.1 * dt / (dx * dx));
     kernel_apply_boundary_pressure<<<bb, 256, 0, ctx->stream>>>(ctx->d_p, nx, ny);
@@ -460,36 +433,38 @@ cfd_status_t gpu_solver_step(GPUSolverContext* ctx, const Grid* grid, const Solv
     return CFD_SUCCESS;
 }
 
-GPUSolverStats gpu_solver_get_stats(const GPUSolverContext* ctx) {
-    if (!ctx) {
-        GPUSolverStats e = {0};
+gpu_solver_stats gpu_solver_get_stats(const gpu_solver_context* ctx_void) {
+    if (!ctx_void) {
+        gpu_solver_stats e = {0};
         return e;
     }
+    const struct gpu_solver_context_impl* ctx = (const struct gpu_solver_context_impl*)ctx_void;
     return ctx->stats;
 }
 
-void gpu_solver_reset_stats(GPUSolverContext* ctx) {
-    if (!ctx)
+void gpu_solver_reset_stats(gpu_solver_context* ctx_void) {
+    if (!ctx_void)
         return;
-    memset(&ctx->stats, 0, sizeof(GPUSolverStats));
+    struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
+    memset(&ctx->stats, 0, sizeof(gpu_solver_stats));
     ctx->stats.memory_allocated = ctx->size * sizeof(double) * 8;
 }
 
-cfd_status_t solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
-                                     const GPUConfig* config) {
+cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
+                                     const solver_params* params, const gpu_config* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
-    GPUConfig cfg = config ? *config : gpu_config_default();
+    gpu_config cfg = config ? *config : gpu_config_default();
     if (!gpu_should_use(&cfg, field->nx, field->ny, params->max_iter))
         return CFD_ERROR;
-    GPUSolverContext* ctx = gpu_solver_create(field->nx, field->ny, &cfg);
+    gpu_solver_context* ctx = gpu_solver_create(field->nx, field->ny, &cfg);
     if (!ctx)
         return CFD_ERROR_NOMEM;
     if (gpu_solver_upload(ctx, field) != CFD_SUCCESS) {
         gpu_solver_destroy(ctx);
         return CFD_ERROR;
     }
-    GPUSolverStats stats;
+    gpu_solver_stats stats;
     for (int iter = 0; iter < params->max_iter; iter++) {
         if (gpu_solver_step(ctx, grid, params, &stats) != CFD_SUCCESS)
             break;
@@ -499,11 +474,11 @@ cfd_status_t solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const S
     return CFD_SUCCESS;
 }
 
-cfd_status_t solve_projection_method_gpu(FlowField* field, const Grid* grid,
-                                         const SolverParams* params, const GPUConfig* config) {
+cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
+                                         const solver_params* params, const gpu_config* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
-    GPUConfig cfg = config ? *config : gpu_config_default();
+    gpu_config cfg = config ? *config : gpu_config_default();
     if (!gpu_should_use(&cfg, field->nx, field->ny, params->max_iter))
         return CFD_ERROR;
 
@@ -516,17 +491,18 @@ cfd_status_t solve_projection_method_gpu(FlowField* field, const Grid* grid,
     double rho = (field->rho[0] > 1e-10) ? field->rho[0] : 1.0;
     double dt_rho = dt / rho;
 
-    GPUSolverContext* ctx = gpu_solver_create(nx, ny, &cfg);
-    if (!ctx)
+    gpu_solver_context* ctx_void = gpu_solver_create(nx, ny, &cfg);
+    if (!ctx_void)
         return CFD_ERROR_NOMEM;
-    if (gpu_solver_upload(ctx, field) != CFD_SUCCESS) {
-        gpu_solver_destroy(ctx);
+    if (gpu_solver_upload(ctx_void, field) != CFD_SUCCESS) {
+        gpu_solver_destroy(ctx_void);
         return CFD_ERROR;
     }
+    struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
 
     dim3 block(cfg.block_size_x, cfg.block_size_y);
     dim3 grid_dim((nx - 2 + block.x - 1) / block.x, (ny - 2 + block.y - 1) / block.y);
-    int bb = ((int)fmax(nx, ny) + 255) / 256;
+    int bb = ((int)((nx > ny) ? nx : ny) + 255) / 256;
 
     for (int iter = 0; iter < params->max_iter; iter++) {
         // Step 1: Predictor - compute u* without pressure
@@ -539,7 +515,7 @@ cfd_status_t solve_projection_method_gpu(FlowField* field, const Grid* grid,
         // Step 2: Compute divergence of u*
         kernel_compute_divergence<<<grid_dim, block, 0, ctx->stream>>>(
             ctx->d_u_new, ctx->d_v_new, ctx->d_rhs, nx, ny, inv_2dx, inv_2dy);
-        kernel_scale_rhs<<<grid_dim, block, 0, ctx->stream>>>(ctx->d_rhs, nx, ny, rho / dt);
+        kernel_scale_rhs<<<grid_dim, block, 0, ctx->stream>>>(ctx->d_rhs, nx, ny, 1.0 / dt);
 
         // Step 3: Solve Poisson with Jacobi (pointer swap)
         double* p_src = ctx->d_p;
@@ -566,8 +542,8 @@ cfd_status_t solve_projection_method_gpu(FlowField* field, const Grid* grid,
     }
 
     cudaStreamSynchronize(ctx->stream);
-    gpu_solver_download(ctx, field);
-    gpu_solver_destroy(ctx);
+    gpu_solver_download(ctx_void, field);
+    gpu_solver_destroy(ctx_void);
     return CFD_SUCCESS;
 }
 

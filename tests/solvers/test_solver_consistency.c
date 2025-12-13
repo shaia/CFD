@@ -30,14 +30,14 @@ void test_solver_consistency(void) {
     double xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 1.0;
 
     // Create two identical grids
-    Grid* grid1 = grid_create(nx, ny, xmin, xmax, ymin, ymax);
-    Grid* grid2 = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid1 = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid2 = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid1);
     grid_initialize_uniform(grid2);
 
     // Create two identical flow fields
-    FlowField* field1 = flow_field_create(nx, ny);
-    FlowField* field2 = flow_field_create(nx, ny);
+    flow_field* field1 = flow_field_create(nx, ny);
+    flow_field* field2 = flow_field_create(nx, ny);
 
     // Initialize with identical conditions
     initialize_flow_field(field1, grid1);
@@ -53,32 +53,32 @@ void test_solver_consistency(void) {
     }
 
     // Set up identical solver parameters
-    SolverParams params = {.dt = 0.001,
-                           .cfl = 0.2,
-                           .gamma = 1.4,
-                           .mu = 0.01,
-                           .k = 0.0242,
-                           .max_iter = 5,  // Small number for quick test
-                           .tolerance = 1e-6,
-                           .source_amplitude_u = 0.1,
-                           .source_amplitude_v = 0.05,
-                           .source_decay_rate = 0.1,
-                           .pressure_coupling = 0.1};
+    solver_params params = {.dt = 0.001,
+                            .cfl = 0.2,
+                            .gamma = 1.4,
+                            .mu = 0.01,
+                            .k = 0.0242,
+                            .max_iter = 5,  // Small number for quick test
+                            .tolerance = 1e-6,
+                            .source_amplitude_u = 0.1,
+                            .source_amplitude_v = 0.05,
+                            .source_decay_rate = 0.1,
+                            .pressure_coupling = 0.1};
 
     // Create registry
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     // Run both solvers for same number of iterations
-    Solver* solver1 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver1 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver1, grid1, &params);
-    SolverStats stats1 = solver_stats_default();
+    solver_stats stats1 = solver_stats_default();
     solver_step(solver1, field1, grid1, &params, &stats1);
     solver_destroy(solver1);
 
-    Solver* solver2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    solver* solver2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
     solver_init(solver2, grid2, &params);
-    SolverStats stats2 = solver_stats_default();
+    solver_stats stats2 = solver_stats_default();
     solver_step(solver2, field2, grid2, &params, &stats2);
     solver_destroy(solver2);
 
@@ -143,10 +143,10 @@ void test_solver_stability(void) {
     size_t nx = 10, ny = 10;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
     // Set challenging initial conditions
@@ -158,28 +158,28 @@ void test_solver_stability(void) {
         field->T[i] = 300.0;
     }
 
-    SolverParams params = {.dt = 0.0001,  // Very small time step for stability
-                           .cfl = 0.1,
-                           .gamma = 1.4,
-                           .mu = 0.01,
-                           .k = 0.0242,
-                           .max_iter = 3,
-                           .tolerance = 1e-6,
-                           .source_amplitude_u = 0.1,
-                           .source_amplitude_v = 0.05,
-                           .source_decay_rate = 0.1,
-                           .pressure_coupling = 0.1};
+    solver_params params = {.dt = 0.0001,  // Very small time step for stability
+                            .cfl = 0.1,
+                            .gamma = 1.4,
+                            .mu = 0.01,
+                            .k = 0.0242,
+                            .max_iter = 3,
+                            .tolerance = 1e-6,
+                            .source_amplitude_u = 0.1,
+                            .source_amplitude_v = 0.05,
+                            .source_decay_rate = 0.1,
+                            .pressure_coupling = 0.1};
 
     // Create registry
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     // Test basic solver
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
-    solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
-    solver_step(solver, field, grid, &params, &stats);
-    solver_destroy(solver);
+    solver* s = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver_init(s, grid, &params);
+    solver_stats stats = solver_stats_default();
+    solver_step(s, field, grid, &params, &stats);
+    solver_destroy(s);
 
     // Check that solution didn't blow up
     int stable_count = 0;
@@ -201,11 +201,11 @@ void test_solver_stability(void) {
         field->p[i] = 1.0 + 0.5 * sin(M_PI * i / (nx * ny));
     }
 
-    Solver* solver2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
-    solver_init(solver2, grid, &params);
-    SolverStats stats2 = solver_stats_default();
-    solver_step(solver2, field, grid, &params, &stats2);
-    solver_destroy(solver2);
+    solver* s2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    solver_init(s2, grid, &params);
+    solver_stats stats2 = solver_stats_default();
+    solver_step(s2, field, grid, &params, &stats2);
+    solver_destroy(s2);
     cfd_registry_destroy(registry);
 
     stable_count = 0;

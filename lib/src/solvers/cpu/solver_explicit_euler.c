@@ -1,11 +1,10 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
-#include "cfd/core/logging.h"
+#include "cfd/core/grid.h"
 #include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
 
 
-#include "cfd/io/vtk_output.h"
 #include "cfd/solvers/solver_interface.h"
 #include <math.h>
 #include <stdio.h>
@@ -49,28 +48,28 @@
 #define UPDATE_LIMIT           1.0
 #define PRESSURE_UPDATE_FACTOR 0.1
 
-// Helper function to initialize SolverParams with default values
-SolverParams solver_params_default(void) {
-    SolverParams params = {.dt = DEFAULT_TIME_STEP,
-                           .cfl = DEFAULT_CFL_NUMBER,
-                           .gamma = DEFAULT_GAMMA,
-                           .mu = DEFAULT_VISCOSITY,
-                           .k = DEFAULT_THERMAL_CONDUCTIVITY,
-                           .max_iter = DEFAULT_MAX_ITERATIONS,
-                           .tolerance = DEFAULT_TOLERANCE,
-                           .source_amplitude_u = DEFAULT_SOURCE_AMPLITUDE_U,
-                           .source_amplitude_v = DEFAULT_SOURCE_AMPLITUDE_V,
-                           .source_decay_rate = DEFAULT_SOURCE_DECAY_RATE,
-                           .pressure_coupling = DEFAULT_PRESSURE_COUPLING};
+// Helper function to initialize solver_params with default values
+solver_params solver_params_default(void) {
+    solver_params params = {.dt = DEFAULT_TIME_STEP,
+                            .cfl = DEFAULT_CFL_NUMBER,
+                            .gamma = DEFAULT_GAMMA,
+                            .mu = DEFAULT_VISCOSITY,
+                            .k = DEFAULT_THERMAL_CONDUCTIVITY,
+                            .max_iter = DEFAULT_MAX_ITERATIONS,
+                            .tolerance = DEFAULT_TOLERANCE,
+                            .source_amplitude_u = DEFAULT_SOURCE_AMPLITUDE_U,
+                            .source_amplitude_v = DEFAULT_SOURCE_AMPLITUDE_V,
+                            .source_decay_rate = DEFAULT_SOURCE_DECAY_RATE,
+                            .pressure_coupling = DEFAULT_PRESSURE_COUPLING};
     return params;
 }
-FlowField* flow_field_create(size_t nx, size_t ny) {
+flow_field* flow_field_create(size_t nx, size_t ny) {
     if (nx == 0 || ny == 0) {
         cfd_set_error(CFD_ERROR_INVALID, "Flow field dimensions must be positive");
         return NULL;
     }
 
-    FlowField* field = (FlowField*)cfd_calloc(1, sizeof(FlowField));
+    flow_field* field = (flow_field*)cfd_calloc(1, sizeof(flow_field));
     if (field == NULL) {
         return NULL;
     }
@@ -99,7 +98,7 @@ FlowField* flow_field_create(size_t nx, size_t ny) {
     return field;
 }
 
-void flow_field_destroy(FlowField* field) {
+void flow_field_destroy(flow_field* field) {
     if (field != NULL) {
         cfd_aligned_free(field->u);
         cfd_aligned_free(field->v);
@@ -110,17 +109,17 @@ void flow_field_destroy(FlowField* field) {
     }
 }
 
-void initialize_flow_field(FlowField* field, const Grid* grid) {
+void initialize_flow_field(flow_field* field, const grid* grid) {
     // Initialize with a more stable flow field
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = j * field->nx + i;
+            size_t idx = (j * field->nx) + i;
             double x = grid->x[i];
             double y = grid->y[j];
 
             // Set initial conditions with more interesting flow
             field->u[idx] =
-                INIT_U_BASE + INIT_U_VAR * sin(M_PI * y);      // Slightly varying u-velocity
+                INIT_U_BASE + (INIT_U_VAR * sin(M_PI * y));    // Slightly varying u-velocity
             field->v[idx] = INIT_V_VAR * sin(2.0 * M_PI * x);  // Small v-velocity variation
             field->p[idx] = INIT_PRESSURE;                     // Reference pressure
             field->rho[idx] = INIT_DENSITY;                    // Reference density
@@ -128,7 +127,7 @@ void initialize_flow_field(FlowField* field, const Grid* grid) {
 
             // Add a pressure perturbation for interesting flow
             double cx = PERTURB_CENTER_X, cy = PERTURB_CENTER_Y;  // Center of perturbation
-            double r = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+            double r = sqrt(((x - cx) * (x - cx)) + ((y - cy) * (y - cy)));
             if (r < PERTURB_RADIUS) {
                 field->p[idx] += PERTURB_MAG * exp(-r * r / PERTURB_WIDTH_SQ);
                 // Adjust velocities based on pressure gradient
@@ -143,7 +142,7 @@ void initialize_flow_field(FlowField* field, const Grid* grid) {
     }
 }
 
-void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params) {
+void compute_time_step(flow_field* field, const grid* grid, solver_params* params) {
     double max_speed = 0.0;
     double dx_min = grid->dx[0];
     double dy_min = grid->dy[0];
@@ -159,13 +158,13 @@ void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params)
     // Find maximum wave speed
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = j * field->nx + i;
+            size_t idx = (j * field->nx) + i;
             double u_speed = fabs(field->u[idx]);
             double v_speed = fabs(field->v[idx]);
             double sound_speed = sqrt(params->gamma * field->p[idx] / field->rho[idx]);
 
             // Optimized velocity magnitude calculation - avoid sqrt when possible
-            double vel_mag_sq = u_speed * u_speed + v_speed * v_speed;
+            double vel_mag_sq = (u_speed * u_speed) + (v_speed * v_speed);
             double vel_mag = (vel_mag_sq > VELOCITY_EPSILON) ? sqrt(vel_mag_sq) : 0.0;
             double local_speed = vel_mag + sound_speed;
             max_speed = max_double(max_speed, local_speed);
@@ -187,34 +186,34 @@ void compute_time_step(FlowField* field, const Grid* grid, SolverParams* params)
     params->dt = max_double(dt_min, min_double(dt_max, dt_cfl));
 }
 
-void apply_boundary_conditions(FlowField* field, const Grid* grid) {
+void apply_boundary_conditions(flow_field* field, const grid* grid) {
     (void)grid;
     // Apply periodic boundary conditions in x-direction
     for (size_t j = 0; j < field->ny; j++) {
-        field->u[j * field->nx + 0] = field->u[j * field->nx + field->nx - 2];
-        field->v[j * field->nx + 0] = field->v[j * field->nx + field->nx - 2];
-        field->p[j * field->nx + 0] = field->p[j * field->nx + field->nx - 2];
-        field->rho[j * field->nx + 0] = field->rho[j * field->nx + field->nx - 2];
-        field->T[j * field->nx + 0] = field->T[j * field->nx + field->nx - 2];
+        field->u[(j * field->nx) + 0] = field->u[(j * field->nx) + field->nx - 2];
+        field->v[(j * field->nx) + 0] = field->v[(j * field->nx) + field->nx - 2];
+        field->p[(j * field->nx) + 0] = field->p[(j * field->nx) + field->nx - 2];
+        field->rho[(j * field->nx) + 0] = field->rho[(j * field->nx) + field->nx - 2];
+        field->T[(j * field->nx) + 0] = field->T[(j * field->nx) + field->nx - 2];
 
-        field->u[j * field->nx + field->nx - 1] = field->u[j * field->nx + 1];
-        field->v[j * field->nx + field->nx - 1] = field->v[j * field->nx + 1];
-        field->p[j * field->nx + field->nx - 1] = field->p[j * field->nx + 1];
-        field->rho[j * field->nx + field->nx - 1] = field->rho[j * field->nx + 1];
-        field->T[j * field->nx + field->nx - 1] = field->T[j * field->nx + 1];
+        field->u[(j * field->nx) + field->nx - 1] = field->u[(j * field->nx) + 1];
+        field->v[(j * field->nx) + field->nx - 1] = field->v[(j * field->nx) + 1];
+        field->p[(j * field->nx) + field->nx - 1] = field->p[(j * field->nx) + 1];
+        field->rho[(j * field->nx) + field->nx - 1] = field->rho[(j * field->nx) + 1];
+        field->T[(j * field->nx) + field->nx - 1] = field->T[(j * field->nx) + 1];
     }
 
     // Apply periodic boundary conditions in y-direction (instead of walls)
     for (size_t i = 0; i < field->nx; i++) {
         // Bottom boundary = top interior
-        field->u[i] = field->u[(field->ny - 2) * field->nx + i];
-        field->v[i] = field->v[(field->ny - 2) * field->nx + i];
-        field->p[i] = field->p[(field->ny - 2) * field->nx + i];
-        field->rho[i] = field->rho[(field->ny - 2) * field->nx + i];
-        field->T[i] = field->T[(field->ny - 2) * field->nx + i];
+        field->u[i] = field->u[((field->ny - 2) * field->nx) + i];
+        field->v[i] = field->v[((field->ny - 2) * field->nx) + i];
+        field->p[i] = field->p[((field->ny - 2) * field->nx) + i];
+        field->rho[i] = field->rho[((field->ny - 2) * field->nx) + i];
+        field->T[i] = field->T[((field->ny - 2) * field->nx) + i];
 
         // Top boundary = bottom interior
-        size_t top_idx = (field->ny - 1) * field->nx + i;
+        size_t top_idx = ((field->ny - 1) * field->nx) + i;
         field->u[top_idx] = field->u[field->nx + i];
         field->v[top_idx] = field->v[field->nx + i];
         field->p[top_idx] = field->p[field->nx + i];
@@ -224,7 +223,7 @@ void apply_boundary_conditions(FlowField* field, const Grid* grid) {
 }
 
 // Helper function to compute source terms consistently across all solvers
-void compute_source_terms(double x, double y, int iter, double dt, const SolverParams* params,
+void compute_source_terms(double x, double y, int iter, double dt, const solver_params* params,
                           double* source_u, double* source_v) {
     *source_u =
         params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * dt);
@@ -234,7 +233,7 @@ void compute_source_terms(double x, double y, int iter, double dt, const SolverP
 
 // Internal explicit Euler implementation
 // This is called by the solver registry - not part of public API
-cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const SolverParams* params) {
+cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const solver_params* params) {
     // Check for minimum grid size - prevent crashes on small grids
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;  // Skip solver for grids too small for finite differences
@@ -245,14 +244,14 @@ cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const Solve
     double* v_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
     double* p_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
     double* rho_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
-    double* T_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
+    double* t_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
 
-    if (!u_new || !v_new || !p_new || !rho_new || !T_new) {
+    if (!u_new || !v_new || !p_new || !rho_new || !t_new) {
         cfd_free(u_new);
         cfd_free(v_new);
         cfd_free(p_new);
         cfd_free(rho_new);
-        cfd_free(T_new);
+        cfd_free(t_new);
         return CFD_ERROR_NOMEM;
     }
 
@@ -261,7 +260,7 @@ cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const Solve
     memcpy(v_new, field->v, field->nx * field->ny * sizeof(double));
     memcpy(p_new, field->p, field->nx * field->ny * sizeof(double));
     memcpy(rho_new, field->rho, field->nx * field->ny * sizeof(double));
-    memcpy(T_new, field->T, field->nx * field->ny * sizeof(double));
+    memcpy(t_new, field->T, field->nx * field->ny * sizeof(double));
 
     // Use conservative time step to prevent instabilities
     double conservative_dt = fmin(params->dt, DT_CONSERVATIVE_LIMIT);
@@ -271,7 +270,7 @@ cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const Solve
         // Update solution using explicit Euler method
         for (size_t j = 1; j < field->ny - 1; j++) {
             for (size_t i = 1; i < field->nx - 1; i++) {
-                size_t idx = j * field->nx + i;
+                size_t idx = (j * field->nx) + i;
 
                 // Compute spatial derivatives
                 double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
@@ -299,10 +298,12 @@ cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const Solve
                     (grid->dy[j] * grid->dy[j]);
 
                 // Safety checks to prevent division by zero
-                if (field->rho[idx] <= 1e-10)
+                if (field->rho[idx] <= 1e-10) {
                     continue;
-                if (fabs(grid->dx[i]) < 1e-10 || fabs(grid->dy[j]) < 1e-10)
+                }
+                if (fabs(grid->dx[i]) < 1e-10 || fabs(grid->dy[j]) < 1e-10) {
                     continue;
+                }
 
                 // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density) with
                 // safety
@@ -368,7 +369,7 @@ cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const Solve
 
                 // Keep density and temperature constant for this simplified model
                 rho_new[idx] = field->rho[idx];
-                T_new[idx] = field->T[idx];
+                t_new[idx] = field->T[idx];
             }
         }
 
@@ -377,7 +378,7 @@ cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const Solve
         memcpy(field->v, v_new, field->nx * field->ny * sizeof(double));
         memcpy(field->p, p_new, field->nx * field->ny * sizeof(double));
         memcpy(field->rho, rho_new, field->nx * field->ny * sizeof(double));
-        memcpy(field->T, T_new, field->nx * field->ny * sizeof(double));
+        memcpy(field->T, t_new, field->nx * field->ny * sizeof(double));
 
         // Apply boundary conditions
         apply_boundary_conditions(field, grid);
@@ -402,7 +403,7 @@ cfd_status_t explicit_euler_impl(FlowField* field, const Grid* grid, const Solve
     cfd_free(v_new);
     cfd_free(p_new);
     cfd_free(rho_new);
-    cfd_free(T_new);
+    cfd_free(t_new);
 
     return CFD_SUCCESS;
 }

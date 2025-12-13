@@ -1,13 +1,15 @@
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
+
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_gpu.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
-
 
 #include <math.h>
 #include <stdio.h>
@@ -25,7 +27,7 @@ void tearDown(void) {
 
 // Test GPU configuration defaults
 void test_gpu_config_defaults(void) {
-    GPUConfig config = gpu_config_default();
+    gpu_config config = gpu_config_default();
 
     int expected_enable = gpu_is_available() ? 1 : 0;
     TEST_ASSERT_EQUAL_INT(expected_enable, config.enable_gpu);
@@ -42,7 +44,7 @@ void test_gpu_should_use(void) {
         return;
     }
 
-    GPUConfig config = gpu_config_default();
+    gpu_config config = gpu_config_default();
     config.min_grid_size = 100;
     config.min_steps = 10;
 
@@ -67,22 +69,22 @@ void test_gpu_solver_execution(void) {
         return;
     }
 
-    size_t nx = 100, ny = 50;  // Grid size 5000 points (less than default min_grid_size of 10000)
+    size_t nx = 100, ny = 50;  // grid size 5000 points (less than default min_grid_size of 10000)
     double xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
-    FlowField* field = flow_field_create(nx, ny);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    flow_field* field = flow_field_create(nx, ny);
 
     TEST_ASSERT_NOT_NULL(grid);
     TEST_ASSERT_NOT_NULL(field);
 
     initialize_flow_field(field, grid);
 
-    SolverParams params = solver_params_default();
+    solver_params params = solver_params_default();
     params.max_iter = 5;
     params.dt = 0.001;
 
-    GPUConfig config = gpu_config_default();
+    gpu_config config = gpu_config_default();
     // Force usage even if defaults would say no (though 100*50 < 10000, so we adjust config)
     config.min_grid_size = 100;
 
@@ -91,10 +93,10 @@ void test_gpu_solver_execution(void) {
     // But since we want to specifically test GPU code, we can use the direct call if exposed,
     // or rely on the registry. Let's use the registry via `solver_create`.
 
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION_JACOBI_GPU);
 
     // If we are on a machine with GPU but the solver creation failed (maybe build issue?), fail
     // test But if registry fallback works or returns null, handle it. Actually, solver_create
@@ -109,7 +111,7 @@ void test_gpu_solver_execution(void) {
     }
 
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
 
     // Run a few steps
     for (int i = 0; i < 3; i++) {

@@ -1,12 +1,12 @@
 #include "cfd/core/memory.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/logging.h"
+
 #include <stdlib.h>
 #include <string.h>
 
 
 #ifdef _WIN32
-#include <malloc.h>
 #else
 #include <unistd.h>
 #endif

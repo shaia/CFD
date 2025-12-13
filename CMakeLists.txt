@@ -27,7 +27,7 @@ if(ENABLE_COVERAGE)
     endif()
 endif()
 
-if(ENABLE_ASAN OR ENABLE_UBSAN)
+if(ENABLE_ASAN OR ENABLE_UBSAN)                                                                                                                                             
     if(MSVC)
         message(WARNING "Sanitizers are not fully supported with MSVC, skipping")
     else()
@@ -110,7 +110,7 @@ if(BUILD_EXAMPLES)
 endif()
 
 # Optionally build tests
-option(BUILD_TESTS "Build test executables" OFF)
+option(BUILD_TESTS "Build test executables" ON)
 
 if(BUILD_TESTS)
     # Fetch Unity testing framework

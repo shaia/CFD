@@ -8,8 +8,8 @@ option(CFD_ENABLE_CUDA "Enable CUDA GPU acceleration" OFF)
 # Default: Support wide range of GPUs from Pascal (GTX 10xx) onwards
 # Users can override with -DCFD_CUDA_ARCHITECTURES="70;75" etc.
 if(NOT DEFINED CFD_CUDA_ARCHITECTURES)
-    set(CFD_CUDA_ARCHITECTURES "60;70;75;80;86;89;90" CACHE STRING
-        "CUDA architectures to build for (60=Pascal, 70=Volta, 75=Turing, 80=Ampere, 86=Ampere, 89=Ada, 90=Hopper)")
+    set(CFD_CUDA_ARCHITECTURES "75;80;86;89;90" CACHE STRING
+        "CUDA architectures to build for (75=Turing, 80=Ampere, 86=Ampere, 89=Ada, 90=Hopper)")
 endif()
 
 # Define the library project with optional CUDA
@@ -177,7 +177,6 @@ endif()
 set_target_properties(cfd_library PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION 1
-    PUBLIC_HEADER "${CFD_LIBRARY_HEADERS}"
 )
 
 # Include directories for main library
@@ -215,7 +214,6 @@ list(APPEND CFD_LIBRARY_HEADERS "${CMAKE_CURRENT_BINARY_DIR}/include/cfd/cfd_exp
 if(BUILD_SHARED_LIBS)
     set_target_properties(cfd_library_static PROPERTIES
         VERSION ${PROJECT_VERSION}
-        PUBLIC_HEADER "${CFD_LIBRARY_HEADERS}"
     )
 
     target_include_directories(cfd_library_static
@@ -263,7 +261,7 @@ function(apply_compiler_options target_name)
     # CUDA-specific options
     if(CFD_HAS_CUDA)
         target_compile_options(${target_name} PRIVATE
-            $<$<COMPILE_LANGUAGE:CUDA>:-O3 --use_fast_math>
+            $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:Release>>:-O3 --use_fast_math>
         )
     endif()
 endfunction()

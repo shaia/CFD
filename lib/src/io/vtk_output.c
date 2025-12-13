@@ -1,10 +1,7 @@
 #include "cfd/io/vtk_output.h"
-#include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
 
 
 #include "cfd/solvers/solver_interface.h"
@@ -33,12 +30,12 @@ static void build_filepath(char* filepath, size_t filepath_size, const char* run
 //=============================================================================
 
 // Function pointer type for VTK output handlers
-typedef void (*VtkOutputHandler)(const char* run_dir, const char* prefix, int step,
-                                 const FlowField* field, const Grid* grid);
+typedef void (*vtk_output_handler)(const char* run_dir, const char* prefix, int step,
+                                   const flow_field* field, const grid* grid);
 
 // VTK output handler functions
 static void write_velocity_vtk(const char* run_dir, const char* prefix, int step,
-                               const FlowField* field, const Grid* grid) {
+                               const flow_field* field, const grid* grid) {
     const char* name = prefix ? prefix : "velocity";
     char filename[256], filepath[512];
 
@@ -50,7 +47,7 @@ static void write_velocity_vtk(const char* run_dir, const char* prefix, int step
 }
 
 static void write_full_field_vtk(const char* run_dir, const char* prefix, int step,
-                                 const FlowField* field, const Grid* grid) {
+                                 const flow_field* field, const grid* grid) {
     const char* name = prefix ? prefix : "flow_field";
     char filename[256], filepath[512];
 
@@ -63,7 +60,7 @@ static void write_full_field_vtk(const char* run_dir, const char* prefix, int st
 
 // VTK output handler table - indexed by VtkOutputType
 // Note: VTK_OUTPUT_VELOCITY_MAGNITUDE is handled via vtk_write_scalar_field, not dispatch
-static const VtkOutputHandler vtk_output_table[] = {
+static const vtk_output_handler vtk_output_table[] = {
     NULL,                 // VTK_OUTPUT_VELOCITY_MAGNITUDE = 0 (uses vtk_write_scalar_field)
     write_velocity_vtk,   // VTK_OUTPUT_VELOCITY = 1
     write_full_field_vtk  // VTK_OUTPUT_FULL_FIELD = 2
@@ -71,8 +68,8 @@ static const VtkOutputHandler vtk_output_table[] = {
 
 #define VTK_OUTPUT_TABLE_SIZE (sizeof(vtk_output_table) / sizeof(vtk_output_table[0]))
 
-void vtk_dispatch_output(VtkOutputType vtk_type, const char* run_dir, const char* prefix, int step,
-                         const FlowField* field, const Grid* grid) {
+void vtk_dispatch_output(vtk_output_type vtk_type, const char* run_dir, const char* prefix,
+                         int step, const flow_field* field, const grid* grid) {
     // VTK_OUTPUT_VELOCITY_MAGNITUDE should use vtk_write_scalar_field directly
     if (vtk_type == VTK_OUTPUT_VELOCITY_MAGNITUDE) {
         cfd_warning("VTK_OUTPUT_VELOCITY_MAGNITUDE should use vtk_write_scalar_field");
@@ -89,9 +86,10 @@ void vtk_dispatch_output(VtkOutputType vtk_type, const char* run_dir, const char
 
 // Write pre-computed scalar field to VTK
 void vtk_write_scalar_field(const char* run_dir, const char* prefix, int step,
-                            const char* field_name, const double* data, const Grid* grid) {
-    if (!run_dir || !data || !grid)
+                            const char* field_name, const double* data, const grid* grid) {
+    if (!run_dir || !data || !grid) {
         return;
+    }
 
     const char* name = prefix ? prefix : "scalar";
     char filename[256], filepath[512];
@@ -109,8 +107,9 @@ void vtk_write_scalar_field(const char* run_dir, const char* prefix, int step,
 
 void write_vtk_output(const char* filename, const char* field_name, const double* data, size_t nx,
                       size_t ny, double xmin, double xmax, double ymin, double ymax) {
-    if (!filename || !field_name || !data)
+    if (!filename || !field_name || !data) {
         return;
+    }
 
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
@@ -135,7 +134,7 @@ void write_vtk_output(const char* filename, const char* field_name, const double
 
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = (j * nx) + i;
             fprintf(fp, "%f\n", data[idx]);
         }
     }
@@ -146,8 +145,9 @@ void write_vtk_output(const char* filename, const char* field_name, const double
 void write_vtk_vector_output(const char* filename, const char* field_name, const double* u_data,
                              const double* v_data, size_t nx, size_t ny, double xmin, double xmax,
                              double ymin, double ymax) {
-    if (!filename || !field_name || !u_data || !v_data)
+    if (!filename || !field_name || !u_data || !v_data) {
         return;
+    }
 
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
@@ -169,7 +169,7 @@ void write_vtk_vector_output(const char* filename, const char* field_name, const
 
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = (j * nx) + i;
             fprintf(fp, "%f %f 0.0\n", u_data[idx], v_data[idx]);
         }
     }
@@ -177,10 +177,11 @@ void write_vtk_vector_output(const char* filename, const char* field_name, const
     fclose(fp);
 }
 
-void write_vtk_flow_field(const char* filename, const FlowField* field, size_t nx, size_t ny,
+void write_vtk_flow_field(const char* filename, const flow_field* field, size_t nx, size_t ny,
                           double xmin, double xmax, double ymin, double ymax) {
-    if (!filename || !field)
+    if (!filename || !field) {
         return;
+    }
 
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
@@ -203,7 +204,7 @@ void write_vtk_flow_field(const char* filename, const FlowField* field, size_t n
     fprintf(fp, "VECTORS velocity float\n");
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = (j * nx) + i;
             fprintf(fp, "%f %f 0.0\n", field->u[idx], field->v[idx]);
         }
     }
@@ -213,7 +214,7 @@ void write_vtk_flow_field(const char* filename, const FlowField* field, size_t n
     fprintf(fp, "LOOKUP_TABLE default\n");
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = (j * nx) + i;
             fprintf(fp, "%f\n", field->p[idx]);
         }
     }
@@ -223,7 +224,7 @@ void write_vtk_flow_field(const char* filename, const FlowField* field, size_t n
     fprintf(fp, "LOOKUP_TABLE default\n");
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = (j * nx) + i;
             fprintf(fp, "%f\n", field->rho[idx]);
         }
     }
@@ -233,7 +234,7 @@ void write_vtk_flow_field(const char* filename, const FlowField* field, size_t n
     fprintf(fp, "LOOKUP_TABLE default\n");
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = (j * nx) + i;
             fprintf(fp, "%f\n", field->T[idx]);
         }
     }
@@ -275,7 +276,7 @@ void write_vtk_vector_output_run(const char* filename, const char* field_name, c
     write_vtk_vector_output(filepath, field_name, u_data, v_data, nx, ny, xmin, xmax, ymin, ymax);
 }
 
-void write_vtk_flow_field_run(const char* filename, const FlowField* field, size_t nx, size_t ny,
+void write_vtk_flow_field_run(const char* filename, const flow_field* field, size_t nx, size_t ny,
                               double xmin, double xmax, double ymin, double ymax) {
     char filepath[1024];
     get_run_filepath(filepath, sizeof(filepath), filename);

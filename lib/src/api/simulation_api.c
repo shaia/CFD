@@ -1,10 +1,7 @@
 #include "cfd/api/simulation_api.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/derived_fields.h"
-#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
 #include "cfd/io/output_registry.h"
 #include "cfd/solvers/solver_interface.h"
@@ -16,16 +13,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-// SimulationData struct is defined in simulation_api.h
+// simulation_data struct is defined in simulation_api.h
 
 // Default solver type used when none is specified
 #define DEFAULT_SOLVER_TYPE SOLVER_TYPE_EXPLICIT_EULER
 
 // Ensure registry is initialized
 // Internal helper to create simulation with a specific solver
-static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, double xmin, double xmax,
-                                                     double ymin, double ymax,
-                                                     const char* solver_type) {
+static simulation_data* create_simulation_with_solver(size_t nx, size_t ny, double xmin,
+                                                      double xmax, double ymin, double ymax,
+                                                      const char* solver_type) {
     // Lazy initialization of library
     if (!cfd_is_initialized()) {
         if (cfd_init() != CFD_SUCCESS) {
@@ -43,9 +40,10 @@ static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, doubl
         return NULL;
     }
 
-    SimulationData* sim_data = (SimulationData*)cfd_malloc(sizeof(SimulationData));
-    if (!sim_data)
+    simulation_data* sim_data = (simulation_data*)cfd_malloc(sizeof(simulation_data));
+    if (!sim_data) {
         return NULL;
+    }
 
     // Initialize base output directory
     // Initialize base output directory
@@ -59,7 +57,7 @@ static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, doubl
     }
     grid_initialize_uniform(sim_data->grid);
 
-    // Create flow field
+    // Create fflow_field
     sim_data->field = flow_field_create(nx, ny);
     if (!sim_data->field) {
         grid_destroy(sim_data->grid);
@@ -118,14 +116,14 @@ static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, doubl
 }
 
 // Initialize simulation data with default solver
-SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, double ymin,
-                                double ymax) {
+simulation_data* init_simulation(size_t nx, size_t ny, double xmin, double xmax, double ymin,
+                                 double ymax) {
     return create_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, DEFAULT_SOLVER_TYPE);
 }
 
 // Initialize simulation with a specific solver type
-SimulationData* init_simulation_with_solver(size_t nx, size_t ny, double xmin, double xmax,
-                                            double ymin, double ymax, const char* solver_type) {
+simulation_data* init_simulation_with_solver(size_t nx, size_t ny, double xmin, double xmax,
+                                             double ymin, double ymax, const char* solver_type) {
     if (!solver_type) {
         solver_type = DEFAULT_SOLVER_TYPE;
     }
@@ -133,7 +131,7 @@ SimulationData* init_simulation_with_solver(size_t nx, size_t ny, double xmin, d
 }
 
 // Set the solver for an existing simulation
-void simulation_set_solver(SimulationData* sim_data, Solver* solver) {
+void simulation_set_solver(simulation_data* sim_data, struct Solver* solver) {
     if (!sim_data || !solver) {
         cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for simulation_set_solver");
         return;
@@ -149,13 +147,13 @@ void simulation_set_solver(SimulationData* sim_data, Solver* solver) {
 }
 
 // Set the solver by type name
-int simulation_set_solver_by_name(SimulationData* sim_data, const char* solver_type) {
+int simulation_set_solver_by_name(simulation_data* sim_data, const char* solver_type) {
     if (!sim_data || !solver_type) {
         cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for simulation solver");
         return -1;
     }
 
-    Solver* solver = cfd_solver_create(sim_data->registry, solver_type);
+    struct Solver* solver = cfd_solver_create(sim_data->registry, solver_type);
     if (!solver) {
         return -1;
     }
@@ -165,19 +163,20 @@ int simulation_set_solver_by_name(SimulationData* sim_data, const char* solver_t
 }
 
 // Get the current solver
-Solver* simulation_get_solver(SimulationData* sim_data) {
+struct Solver* simulation_get_solver(simulation_data* sim_data) {
     return sim_data ? sim_data->solver : NULL;
 }
 
 // Get statistics from the last solve
-const SolverStats* simulation_get_stats(const SimulationData* sim_data) {
+const solver_stats* simulation_get_stats(const simulation_data* sim_data) {
     return sim_data ? &sim_data->last_stats : NULL;
 }
 
 // Run simulation step
-void run_simulation_step(SimulationData* sim_data) {
-    if (!sim_data || !sim_data->solver)
+void run_simulation_step(simulation_data* sim_data) {
+    if (!sim_data || !sim_data->solver) {
         return;
+    }
 
     // Use fixed time step for animation stability
     sim_data->params.dt = 0.005;
@@ -189,9 +188,10 @@ void run_simulation_step(SimulationData* sim_data) {
     sim_data->current_time += sim_data->params.dt;
 }
 
-void run_simulation_solve(SimulationData* sim_data) {
-    if (!sim_data || !sim_data->solver)
+void run_simulation_solve(simulation_data* sim_data) {
+    if (!sim_data || !sim_data->solver) {
         return;
+    }
 
     // Use fixed time step for animation stability
     sim_data->params.dt = 0.005;
@@ -205,9 +205,10 @@ void run_simulation_solve(SimulationData* sim_data) {
 
 // Free simulation data
 // Free simulation data
-void free_simulation(SimulationData* sim_data) {
-    if (!sim_data)
+void free_simulation(simulation_data* sim_data) {
+    if (!sim_data) {
         return;
+    }
 
     if (sim_data->solver) {
         solver_destroy(sim_data->solver);
@@ -236,9 +237,10 @@ void free_simulation(SimulationData* sim_data) {
 
 // Solver discovery and listing (creates temporary registry)
 int simulation_list_solvers(const char** names, int max_count) {
-    SolverRegistry* registry = cfd_registry_create();
-    if (!registry)
+    struct SolverRegistry* registry = cfd_registry_create();
+    if (!registry) {
         return 0;
+    }
 
     cfd_registry_register_defaults(registry);
     int count = cfd_registry_list(registry, names, max_count);
@@ -248,9 +250,10 @@ int simulation_list_solvers(const char** names, int max_count) {
 }
 
 int simulation_has_solver(const char* solver_type) {
-    SolverRegistry* registry = cfd_registry_create();
-    if (!registry)
+    struct SolverRegistry* registry = cfd_registry_create();
+    if (!registry) {
         return 0;
+    }
 
     cfd_registry_register_defaults(registry);
     int result = cfd_registry_has(registry, solver_type);
@@ -265,8 +268,8 @@ int simulation_has_solver(const char* solver_type) {
 //=============================================================================
 
 // Register output for automatic generation
-void simulation_register_output(SimulationData* sim_data, OutputFieldType field_type, int interval,
-                                const char* prefix) {
+void simulation_register_output(simulation_data* sim_data, output_field_type field_type,
+                                int interval, const char* prefix) {
     if (!sim_data || !sim_data->outputs) {
         cfd_set_error(CFD_ERROR_INVALID, "Invalid simulation data");
         return;
@@ -275,23 +278,25 @@ void simulation_register_output(SimulationData* sim_data, OutputFieldType field_
 }
 
 // Clear all registered outputs
-void simulation_clear_outputs(SimulationData* sim_data) {
-    if (!sim_data || !sim_data->outputs)
+void simulation_clear_outputs(simulation_data* sim_data) {
+    if (!sim_data || !sim_data->outputs) {
         return;
+    }
     output_registry_clear(sim_data->outputs);
 }
 
 // Set base output directory
-void simulation_set_output_dir(SimulationData* sim_data, const char* base_dir) {
+void simulation_set_output_dir(simulation_data* sim_data, const char* base_dir) {
     if (sim_data && base_dir && strlen(base_dir) > 0) {
         snprintf(sim_data->output_base_dir, sizeof(sim_data->output_base_dir), "%s", base_dir);
     }
 }
 
 // Set run name prefix
-void simulation_set_run_prefix(SimulationData* sim_data, const char* prefix) {
-    if (!sim_data)
+void simulation_set_run_prefix(simulation_data* sim_data, const char* prefix) {
+    if (!sim_data) {
         return;
+    }
 
     // Free existing prefix
     if (sim_data->run_prefix) {
@@ -314,7 +319,7 @@ void simulation_set_run_prefix(SimulationData* sim_data, const char* prefix) {
 //=============================================================================
 
 // Check if any output type that uses velocity magnitude is registered
-static int needs_velocity_magnitude(const OutputRegistry* outputs) {
+static int needs_velocity_magnitude(const output_registry* outputs) {
     return output_registry_has_type(outputs, OUTPUT_VELOCITY_MAGNITUDE) ||
            output_registry_has_type(outputs, OUTPUT_CSV_TIMESERIES) ||
            output_registry_has_type(outputs, OUTPUT_CSV_CENTERLINE) ||
@@ -322,13 +327,13 @@ static int needs_velocity_magnitude(const OutputRegistry* outputs) {
 }
 
 // Check if any output type that uses statistics is registered
-static int needs_statistics(const OutputRegistry* outputs) {
+static int needs_statistics(const output_registry* outputs) {
     return output_registry_has_type(outputs, OUTPUT_CSV_TIMESERIES) ||
            output_registry_has_type(outputs, OUTPUT_CSV_STATISTICS);
 }
 
 // Automatically write all registered outputs for current step
-void simulation_write_outputs(SimulationData* sim_data, int step) {
+void simulation_write_outputs(simulation_data* sim_data, int step) {
     if (!sim_data || !sim_data->outputs) {
         cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for simulation_write_outputs");
         return;
@@ -340,7 +345,7 @@ void simulation_write_outputs(SimulationData* sim_data, int step) {
                                     sim_data->run_prefix, sim_data->grid->nx, sim_data->grid->ny);
 
     // Compute derived fields only when needed
-    DerivedFields* derived = NULL;
+    derived_fields* derived = NULL;
     int compute_vel_mag = needs_velocity_magnitude(sim_data->outputs);
     int compute_stats = needs_statistics(sim_data->outputs);
 

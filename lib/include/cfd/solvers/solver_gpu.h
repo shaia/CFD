@@ -17,6 +17,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/solvers/solver_interface.h"
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,7 +47,7 @@ typedef struct {
     // Debug options
     int sync_after_kernel;  // Synchronize after each kernel for debugging (default: 0)
     int verbose;            // Print GPU info and timing (default: 0)
-} GPUConfig;
+} gpu_config;
 
 /**
  * GPU Device Information
@@ -62,7 +63,7 @@ typedef struct {
     int max_threads_per_block;
     int warp_size;
     int is_available;
-} GPUDeviceInfo;
+} gpu_device_info;
 
 /**
  * GPU Solver Statistics
@@ -75,18 +76,18 @@ typedef struct {
     double poisson_residual;  // Final Poisson residual
     size_t memory_allocated;  // GPU memory allocated (bytes)
     int kernels_launched;     // Number of kernels launched
-} GPUSolverStats;
+} gpu_solver_stats;
 
 /**
  * GPU Solver Context (opaque)
  * Holds GPU memory pointers and configuration
  */
-typedef struct GPUSolverContext GPUSolverContext;
+typedef struct gpu_solver_context gpu_solver_context;
 
 /**
  * Initialize default GPU configuration
  */
-CFD_LIBRARY_EXPORT GPUConfig gpu_config_default(void);
+CFD_LIBRARY_EXPORT gpu_config gpu_config_default(void);
 
 /**
  * Check if CUDA is available on this system
@@ -98,7 +99,7 @@ CFD_LIBRARY_EXPORT int gpu_is_available(void);
  * Get information about available GPU devices
  * Returns number of devices found
  */
-CFD_LIBRARY_EXPORT int gpu_get_device_info(GPUDeviceInfo* info, int max_devices);
+CFD_LIBRARY_EXPORT int gpu_get_device_info(gpu_device_info* info, int max_devices);
 
 /**
  * Select GPU device to use
@@ -110,59 +111,63 @@ CFD_LIBRARY_EXPORT cfd_status_t gpu_select_device(int device_id);
  * Determine if GPU should be used based on problem size and config
  * Returns 1 if GPU should be used, 0 for CPU
  */
-CFD_LIBRARY_EXPORT int gpu_should_use(const GPUConfig* config, size_t nx, size_t ny, int num_steps);
+CFD_LIBRARY_EXPORT int gpu_should_use(const gpu_config* config, size_t nx, size_t ny,
+                                      int num_steps);
 
 /**
  * Create GPU solver context
  * Allocates GPU memory and initializes CUDA resources
  */
-CFD_LIBRARY_EXPORT GPUSolverContext* gpu_solver_create(size_t nx, size_t ny,
-                                                       const GPUConfig* config);
+CFD_LIBRARY_EXPORT gpu_solver_context* gpu_solver_create(size_t nx, size_t ny,
+                                                         const gpu_config* config);
 
 /**
  * Destroy GPU solver context
  * Frees GPU memory and releases CUDA resources
  */
-CFD_LIBRARY_EXPORT void gpu_solver_destroy(GPUSolverContext* ctx);
+CFD_LIBRARY_EXPORT void gpu_solver_destroy(gpu_solver_context* ctx);
 
 /**
  * Transfer flow field data from host to GPU
  */
-CFD_LIBRARY_EXPORT cfd_status_t gpu_solver_upload(GPUSolverContext* ctx, const FlowField* field);
+CFD_LIBRARY_EXPORT cfd_status_t gpu_solver_upload(gpu_solver_context* ctx, const flow_field* field);
 
 /**
  * Transfer flow field data from GPU to host
  */
-CFD_LIBRARY_EXPORT cfd_status_t gpu_solver_download(GPUSolverContext* ctx, FlowField* field);
+CFD_LIBRARY_EXPORT cfd_status_t gpu_solver_download(gpu_solver_context* ctx, flow_field* field);
 
 /**
  * Run one solver step on GPU
  */
-CFD_LIBRARY_EXPORT cfd_status_t gpu_solver_step(GPUSolverContext* ctx, const Grid* grid,
-                                                const SolverParams* params, GPUSolverStats* stats);
+CFD_LIBRARY_EXPORT cfd_status_t gpu_solver_step(gpu_solver_context* ctx, const grid* grid,
+                                                const solver_params* params,
+                                                gpu_solver_stats* stats);
 
 /**
  * Get GPU solver statistics
  */
-CFD_LIBRARY_EXPORT GPUSolverStats gpu_solver_get_stats(const GPUSolverContext* ctx);
+CFD_LIBRARY_EXPORT gpu_solver_stats gpu_solver_get_stats(const gpu_solver_context* ctx);
 
 /**
  * Reset GPU solver statistics
  */
-CFD_LIBRARY_EXPORT void gpu_solver_reset_stats(GPUSolverContext* ctx);
+CFD_LIBRARY_EXPORT void gpu_solver_reset_stats(gpu_solver_context* ctx);
 
 /**
  * High-level GPU-accelerated Navier-Stokes solver
  * Automatically handles data transfer and GPU selection
  */
-CFD_LIBRARY_EXPORT cfd_status_t solve_navier_stokes_gpu(FlowField* field, const Grid* grid, const SolverParams* params,
-                                     const GPUConfig* config);
+CFD_LIBRARY_EXPORT cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
+                                                        const solver_params* params,
+                                                        const gpu_config* config);
 
 /**
  * GPU-accelerated projection method solver
  */
-CFD_LIBRARY_EXPORT cfd_status_t solve_projection_method_gpu(FlowField* field, const Grid* grid,
-                                         const SolverParams* params, const GPUConfig* config);
+CFD_LIBRARY_EXPORT cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
+                                                            const solver_params* params,
+                                                            const gpu_config* config);
 
 #ifdef __cplusplus
 }

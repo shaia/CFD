@@ -1,9 +1,7 @@
 #include "cfd/api/simulation_api.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
-#include "cfd/core/logging.h"
 #include "unity.h"
-#include <string.h>
 
 void setUp(void) {
     cfd_clear_error();
@@ -13,21 +11,21 @@ void tearDown(void) {}
 
 void test_grid_creation_zero_width(void) {
     // Zero width
-    Grid* grid = grid_create(0, 10, 0.0, 1.0, 0.0, 1.0);
+    grid* grid = grid_create(0, 10, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
 void test_grid_creation_zero_height(void) {
     // Zero height
-    Grid* grid = grid_create(10, 0, 0.0, 1.0, 0.0, 1.0);
+    grid* grid = grid_create(10, 0, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
 void test_grid_creation_invalid_bounds(void) {
     // 1. Invalid bounds xmin > xmax
-    Grid* grid = grid_create(10, 10, 1.0, 0.0, 0.0, 1.0);
+    grid* grid = grid_create(10, 10, 1.0, 0.0, 0.0, 1.0);
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
@@ -52,20 +50,20 @@ void test_grid_creation_invalid_bounds(void) {
 
 void test_simulation_init_zero_width(void) {
     // Zero dimensions
-    SimulationData* sim = init_simulation(0, 100, 0.0, 1.0, 0.0, 1.0);
+    simulation_data* sim = init_simulation(0, 100, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
 void test_simulation_init_zero_height(void) {
-    SimulationData* sim = init_simulation(100, 0, 0.0, 1.0, 0.0, 1.0);
+    simulation_data* sim = init_simulation(100, 0, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
 void test_simulation_init_invalid_bounds(void) {
     // 1. Invalid bounds (min > max)
-    SimulationData* sim = init_simulation(100, 100, 1.0, 0.0, 0.0, 1.0);
+    simulation_data* sim = init_simulation(100, 100, 1.0, 0.0, 0.0, 1.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
@@ -77,7 +75,7 @@ void test_simulation_init_invalid_bounds(void) {
 }
 
 // Dummy factory for testing
-Solver* dummy_factory(void) {
+solver* dummy_factory(void) {
     return NULL;
 }
 
@@ -88,7 +86,7 @@ void test_registry_register_null_registry(void) {
 }
 
 void test_registry_register_null_factory(void) {
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     int res = cfd_registry_register(registry, "test", NULL);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
@@ -96,7 +94,7 @@ void test_registry_register_null_factory(void) {
 }
 
 void test_registry_register_empty_name(void) {
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     int res = cfd_registry_register(registry, "", dummy_factory);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
@@ -104,7 +102,7 @@ void test_registry_register_empty_name(void) {
 }
 
 void test_registry_register_limit_exceeded(void) {
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
 
     // Fill the registry
     char name_buf[32];
@@ -145,7 +143,7 @@ void test_null_pointer_handling(void) {
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
     // 2. Test with partial NULL arguments where applicable
-    SimulationData* sim = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
+    simulation_data* sim = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NOT_NULL(sim);
 
     // simulation_set_solver: valid sim, NULL solver

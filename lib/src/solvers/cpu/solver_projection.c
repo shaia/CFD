@@ -17,12 +17,9 @@
  */
 
 #include "cfd/core/cfd_status.h"
-#include "cfd/solvers/solver_interface.h"
-#include "cfd/core/cfd_status.h"
+#include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+#include "cfd/solvers/solver_interface.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -54,8 +51,9 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
     double dy2 = dy * dy;
     double factor = 2.0 * (1.0 / dx2 + 1.0 / dy2);
 
-    if (factor < 1e-10)
+    if (factor < 1e-10) {
         return -1;
+    }
 
     double inv_factor = 1.0 / factor;
 
@@ -70,10 +68,11 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
             for (size_t j = 1; j < ny - 1; j++) {
                 for (size_t i = 1; i < nx - 1; i++) {
                     // Red-black ordering
-                    if ((int)((i + j) % 2) != color)
+                    if ((int)((i + j) % 2) != color) {
                         continue;
+                    }
 
-                    size_t idx = j * nx + i;
+                    size_t idx = (j * nx) + i;
 
                     // Compute Laplacian stencil
                     double p_xx = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / dx2;
@@ -92,7 +91,7 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
                                     (p[idx + nx] + p[idx - nx]) / dy2) *
                                    (-inv_factor);
 
-                    p[idx] = p[idx] + POISSON_OMEGA * (p_new - p[idx]);
+                    p[idx] = p[idx] + (POISSON_OMEGA * (p_new - p[idx]));
                 }
             }
         }
@@ -100,14 +99,14 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
         // Apply Neumann boundary conditions (zero gradient)
         // Left and right boundaries
         for (size_t j = 0; j < ny; j++) {
-            p[j * nx + 0] = p[j * nx + 1];
-            p[j * nx + nx - 1] = p[j * nx + nx - 2];
+            p[(j * nx) + 0] = p[(j * nx) + 1];
+            p[(j * nx) + nx - 1] = p[(j * nx) + nx - 2];
         }
 
         // Top and bottom boundaries
         for (size_t i = 0; i < nx; i++) {
             p[i] = p[nx + i];
-            p[(ny - 1) * nx + i] = p[(ny - 2) * nx + i];
+            p[((ny - 1) * nx) + i] = p[((ny - 2) * nx) + i];
         }
 
         // Check convergence
@@ -123,12 +122,14 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
 /**
  * Projection Method Solver
  */
-cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
-                                     const SolverParams* params) {
-    if (!field || !grid || !params)
+cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
+                                     const solver_params* params) {
+    if (!field || !grid || !params) {
         return CFD_ERROR_INVALID;
-    if (field->nx < 3 || field->ny < 3)
+    }
+    if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
+    }
 
     size_t nx = field->nx;
     size_t ny = field->ny;
@@ -168,7 +169,7 @@ cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
         // ============================================================
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = j * nx + i;
+                size_t idx = (j * nx) + i;
 
                 double u = field->u[idx];
                 double v = field->v[idx];
@@ -179,8 +180,8 @@ cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
                 double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) / (2.0 * dx);
                 double dv_dy = (field->v[idx + nx] - field->v[idx - nx]) / (2.0 * dy);
 
-                double conv_u = u * du_dx + v * du_dy;
-                double conv_v = u * dv_dx + v * dv_dy;
+                double conv_u = (u * du_dx) + (v * du_dy);
+                double conv_v = (u * dv_dx) + (v * dv_dy);
 
                 // Viscous terms: ν∇²u
                 double d2u_dx2 = (field->u[idx + 1] - 2.0 * u + field->u[idx - 1]) / (dx * dx);
@@ -204,8 +205,8 @@ cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
                 }
 
                 // Intermediate velocity (without pressure gradient)
-                u_star[idx] = u + dt * (-conv_u + visc_u + source_u);
-                v_star[idx] = v + dt * (-conv_v + visc_v + source_v);
+                u_star[idx] = u + (dt * (-conv_u + visc_u + source_u));
+                v_star[idx] = v + (dt * (-conv_v + visc_v + source_v));
 
                 // Limit velocities
                 u_star[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, u_star[idx]));
@@ -215,16 +216,16 @@ cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
 
         // Apply boundary conditions to intermediate velocity
         for (size_t j = 0; j < ny; j++) {
-            u_star[j * nx + 0] = u_star[j * nx + 1];
-            u_star[j * nx + nx - 1] = u_star[j * nx + nx - 2];
-            v_star[j * nx + 0] = v_star[j * nx + 1];
-            v_star[j * nx + nx - 1] = v_star[j * nx + nx - 2];
+            u_star[(j * nx) + 0] = u_star[(j * nx) + 1];
+            u_star[(j * nx) + nx - 1] = u_star[(j * nx) + nx - 2];
+            v_star[(j * nx) + 0] = v_star[(j * nx) + 1];
+            v_star[(j * nx) + nx - 1] = v_star[(j * nx) + nx - 2];
         }
         for (size_t i = 0; i < nx; i++) {
             u_star[i] = u_star[nx + i];
-            u_star[(ny - 1) * nx + i] = u_star[(ny - 2) * nx + i];
+            u_star[((ny - 1) * nx) + i] = u_star[((ny - 2) * nx) + i];
             v_star[i] = v_star[nx + i];
-            v_star[(ny - 1) * nx + i] = v_star[(ny - 2) * nx + i];
+            v_star[((ny - 1) * nx) + i] = v_star[((ny - 2) * nx) + i];
         }
 
         // ============================================================
@@ -234,12 +235,13 @@ cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
 
         // Compute RHS: divergence of intermediate velocity
         double rho = field->rho[0];  // Assume constant density
-        if (rho < 1e-10)
+        if (rho < 1e-10) {
             rho = 1.0;
+        }
 
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = j * nx + i;
+                size_t idx = (j * nx) + i;
 
                 double du_star_dx = (u_star[idx + 1] - u_star[idx - 1]) / (2.0 * dx);
                 double dv_star_dy = (v_star[idx + nx] - v_star[idx - nx]) / (2.0 * dy);
@@ -257,7 +259,7 @@ cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
             status = CFD_ERROR_DIVERGED;
             // Poisson solver didn't converge - use simple pressure update
             for (size_t idx = 0; idx < size; idx++) {
-                p_new[idx] = field->p[idx] - 0.1 * dt * rhs[idx];
+                p_new[idx] = field->p[idx] - (0.1 * dt * rhs[idx]);
             }
         }
 
@@ -267,13 +269,13 @@ cfd_status_t solve_projection_method(FlowField* field, const Grid* grid,
         // ============================================================
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = j * nx + i;
+                size_t idx = (j * nx) + i;
 
                 double dp_dx = (p_new[idx + 1] - p_new[idx - 1]) / (2.0 * dx);
                 double dp_dy = (p_new[idx + nx] - p_new[idx - nx]) / (2.0 * dy);
 
-                field->u[idx] = u_star[idx] - (dt / rho) * dp_dx;
-                field->v[idx] = v_star[idx] - (dt / rho) * dp_dy;
+                field->u[idx] = u_star[idx] - ((dt / rho) * dp_dx);
+                field->v[idx] = v_star[idx] - ((dt / rho) * dp_dy);
 
                 // Limit velocities
                 field->u[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, field->u[idx]));

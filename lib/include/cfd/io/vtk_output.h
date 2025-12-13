@@ -46,7 +46,7 @@ CFD_LIBRARY_EXPORT void write_vtk_vector_output(const char* filename, const char
                                                 size_t nx, size_t ny, double xmin, double xmax,
                                                 double ymin, double ymax);
 
-CFD_LIBRARY_EXPORT void write_vtk_flow_field(const char* filename, const FlowField* field,
+CFD_LIBRARY_EXPORT void write_vtk_flow_field(const char* filename, const flow_field* field,
                                              size_t nx, size_t ny, double xmin, double xmax,
                                              double ymin, double ymax);
 
@@ -61,8 +61,9 @@ CFD_LIBRARY_EXPORT void write_vtk_vector_output_run(const char* filename, const 
                                                     size_t nx, size_t ny, double xmin, double xmax,
                                                     double ymin, double ymax);
 
-CFD_LIBRARY_EXPORT void write_vtk_flow_field_run(const char* filename, const FlowField* field, size_t nx, size_t ny,
-                              double xmin, double xmax, double ymin, double ymax);
+CFD_LIBRARY_EXPORT void write_vtk_flow_field_run(const char* filename, const flow_field* field,
+                                                 size_t nx, size_t ny, double xmin, double xmax,
+                                                 double ymin, double ymax);
 
 #ifdef __cplusplus
 }
