@@ -34,7 +34,7 @@ CFD_LIBRARY_EXPORT void cfd_finalize(void);
 /**
  * @brief Check if the library is initialized.
  *
- * @return true if initialized, false otherwise.
+ * @return non-zero (1) if initialized, zero (0) otherwise.
  */
 CFD_LIBRARY_EXPORT int cfd_is_initialized(void);
 
