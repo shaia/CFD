@@ -1,6 +1,6 @@
 #include "cfd/core/filesystem.h"
 #include "cfd/core/logging.h"
-#include <corecrt_io.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -1,7 +1,6 @@
 #include "cfd/core/logging.h"
 #include "cfd/core/cfd_status.h"
 #include <stdio.h>
-#include <vcruntime.h>
 
 
 #ifdef _WIN32

@@ -1,7 +1,7 @@
 #include "cfd/core/memory.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/logging.h"
-#include <corecrt_malloc.h>
+
 #include <stdlib.h>
 #include <string.h>
 
