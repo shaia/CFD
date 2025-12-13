@@ -4,12 +4,9 @@
  */
 
 #include "cfd/core/cfd_status.h"
-#include "cfd/solvers/solver_interface.h"
-#include "cfd/core/cfd_status.h"
+#include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+#include "cfd/solvers/solver_interface.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -44,23 +41,27 @@ typedef struct {
     size_t nx;
     size_t ny;
     int initialized;
-} ProjectionSIMDContext;
+} projection_simd_context;
 
 // Public API
-cfd_status_t projection_simd_init(Solver* solver, const Grid* grid, const SolverParams* params);
-void projection_simd_destroy(Solver* solver);
-cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* grid,
-                                  const SolverParams* params, SolverStats* stats);
+cfd_status_t projection_simd_init(struct Solver* solver, const grid* grid,
+                                  const solver_params* params);
+void projection_simd_destroy(struct Solver* solver);
+cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, const grid* grid,
+                                  const solver_params* params, solver_stats* stats);
 
-cfd_status_t projection_simd_init(Solver* solver, const Grid* grid, const SolverParams* params) {
+cfd_status_t projection_simd_init(struct Solver* solver, const grid* grid,
+                                  const solver_params* params) {
     (void)params;
-    if (!solver || !grid)
+    if (!solver || !grid) {
         return CFD_ERROR_INVALID;
+    }
 
-    ProjectionSIMDContext* ctx =
-        (ProjectionSIMDContext*)cfd_calloc(1, sizeof(ProjectionSIMDContext));
-    if (!ctx)
+    projection_simd_context* ctx =
+        (projection_simd_context*)cfd_calloc(1, sizeof(projection_simd_context));
+    if (!ctx) {
         return CFD_ERROR_NOMEM;
+    }
 
     ctx->nx = grid->nx;
     ctx->ny = grid->ny;
@@ -74,18 +75,24 @@ cfd_status_t projection_simd_init(Solver* solver, const Grid* grid, const Solver
     ctx->v_new = (double*)cfd_aligned_malloc(size);
 
     if (!ctx->u_star || !ctx->v_star || !ctx->p_new || !ctx->rhs || !ctx->u_new || !ctx->v_new) {
-        if (ctx->u_star)
+        if (ctx->u_star) {
             cfd_aligned_free(ctx->u_star);
-        if (ctx->v_star)
+        }
+        if (ctx->v_star) {
             cfd_aligned_free(ctx->v_star);
-        if (ctx->p_new)
+        }
+        if (ctx->p_new) {
             cfd_aligned_free(ctx->p_new);
-        if (ctx->rhs)
+        }
+        if (ctx->rhs) {
             cfd_aligned_free(ctx->rhs);
-        if (ctx->u_new)
+        }
+        if (ctx->u_new) {
             cfd_aligned_free(ctx->u_new);
-        if (ctx->v_new)
+        }
+        if (ctx->v_new) {
             cfd_aligned_free(ctx->v_new);
+        }
         cfd_free(ctx);
         return CFD_ERROR_NOMEM;
     }
@@ -95,9 +102,9 @@ cfd_status_t projection_simd_init(Solver* solver, const Grid* grid, const Solver
     return CFD_SUCCESS;
 }
 
-void projection_simd_destroy(Solver* solver) {
+void projection_simd_destroy(struct Solver* solver) {
     if (solver && solver->context) {
-        ProjectionSIMDContext* ctx = (ProjectionSIMDContext*)solver->context;
+        projection_simd_context* ctx = (projection_simd_context*)solver->context;
         if (ctx->initialized) {
             cfd_aligned_free(ctx->u_star);
             cfd_aligned_free(ctx->v_star);
@@ -129,15 +136,17 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
         for (int color = 0; color < 2; color++) {
             for (size_t j = 1; j < ny - 1; j++) {
                 for (size_t i = 1; i < nx - 1; i++) {
-                    if ((int)((i + j) % 2) != color)
+                    if ((int)((i + j) % 2) != color) {
                         continue;
-                    size_t idx = j * nx + i;
+                    }
+                    size_t idx = (j * nx) + i;
 
                     double p_xx = (p[idx + 1] - 2 * p[idx] + p[idx - 1]) * inv_dx2;
                     double p_yy = (p[idx + nx] - 2 * p[idx] + p[idx - nx]) * inv_dy2;
                     double res = p_xx + p_yy - rhs[idx];
-                    if (fabs(res) > max_res)
+                    if (fabs(res) > max_res) {
                         max_res = fabs(res);
+                    }
 
                     double p_new_val = (rhs[idx] - (p[idx + 1] + p[idx - 1]) * inv_dx2 -
                                         (p[idx + nx] + p[idx - nx]) * inv_dy2) *
@@ -149,12 +158,12 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
 
         // BCs
         for (size_t j = 0; j < ny; j++) {
-            p[j * nx] = p[j * nx + 1];
-            p[j * nx + nx - 1] = p[j * nx + nx - 2];
+            p[j * nx] = p[(j * nx) + 1];
+            p[(j * nx) + nx - 1] = p[(j * nx) + nx - 2];
         }
         for (size_t i = 0; i < nx; i++) {
             p[i] = p[nx + i];
-            p[(ny - 1) * nx + i] = p[(ny - 2) * nx + i];
+            p[((ny - 1) * nx) + i] = p[((ny - 2) * nx) + i];
         }
 
         if (max_res < POISSON_TOLERANCE) {
@@ -165,15 +174,17 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
     return converged ? iter : -1;
 }
 
-cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* grid,
-                                  const SolverParams* params, SolverStats* stats) {
+cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, const grid* grid,
+                                  const solver_params* params, solver_stats* stats) {
     cfd_status_t status = CFD_SUCCESS;
-    if (!solver || !solver->context || !field || !grid)
+    if (!solver || !solver->context || !field || !grid) {
         return CFD_ERROR_INVALID;
-    ProjectionSIMDContext* ctx = (ProjectionSIMDContext*)solver->context;
+    }
+    projection_simd_context* ctx = (projection_simd_context*)solver->context;
 
-    if (field->nx != ctx->nx || field->ny != ctx->ny)
+    if (field->nx != ctx->nx || field->ny != ctx->ny) {
         return CFD_ERROR_INVALID;
+    }
 
     size_t size = ctx->nx * ctx->ny;
     double dt = params->dt;
@@ -192,7 +203,7 @@ cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* 
     // Step 1: Predictor
     for (size_t j = 1; j < ctx->ny - 1; j++) {
         for (size_t i = 1; i < ctx->nx - 1; i++) {
-            size_t idx = j * ctx->nx + i;
+            size_t idx = (j * ctx->nx) + i;
             double u = field->u[idx];
             double v = field->v[idx];
 
@@ -208,8 +219,8 @@ cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* 
             double d2v_dy2 =
                 (field->v[idx + ctx->nx] - 2 * v + field->v[idx - ctx->nx]) / (dy * dy);
 
-            double conv_u = u * du_dx + v * du_dy;
-            double conv_v = u * dv_dx + v * dv_dy;
+            double conv_u = (u * du_dx) + (v * du_dy);
+            double conv_v = (u * dv_dx) + (v * dv_dy);
             double visc_u = params->mu * (d2u_dx2 + d2u_dy2);
             double visc_v = params->mu * (d2v_dx2 + d2v_dy2);
 
@@ -220,29 +231,29 @@ cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* 
                 source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]);
             }
 
-            ctx->u_star[idx] = u + dt * (-conv_u + visc_u + source_u);
-            ctx->v_star[idx] = v + dt * (-conv_v + visc_v + source_v);
+            ctx->u_star[idx] = u + (dt * (-conv_u + visc_u + source_u));
+            ctx->v_star[idx] = v + (dt * (-conv_v + visc_v + source_v));
         }
     }
 
     // BCs intermediate
     for (size_t j = 0; j < ctx->ny; j++) {
-        ctx->u_star[j * ctx->nx] = ctx->u_star[j * ctx->nx + 1];
-        ctx->u_star[j * ctx->nx + ctx->nx - 1] = ctx->u_star[j * ctx->nx + ctx->nx - 2];
-        ctx->v_star[j * ctx->nx] = ctx->v_star[j * ctx->nx + 1];
-        ctx->v_star[j * ctx->nx + ctx->nx - 1] = ctx->v_star[j * ctx->nx + ctx->nx - 2];
+        ctx->u_star[j * ctx->nx] = ctx->u_star[(j * ctx->nx) + 1];
+        ctx->u_star[(j * ctx->nx) + ctx->nx - 1] = ctx->u_star[(j * ctx->nx) + ctx->nx - 2];
+        ctx->v_star[j * ctx->nx] = ctx->v_star[(j * ctx->nx) + 1];
+        ctx->v_star[(j * ctx->nx) + ctx->nx - 1] = ctx->v_star[(j * ctx->nx) + ctx->nx - 2];
     }
     for (size_t i = 0; i < ctx->nx; i++) {
         ctx->u_star[i] = ctx->u_star[ctx->nx + i];
-        ctx->u_star[(ctx->ny - 1) * ctx->nx + i] = ctx->u_star[(ctx->ny - 2) * ctx->nx + i];
+        ctx->u_star[((ctx->ny - 1) * ctx->nx) + i] = ctx->u_star[((ctx->ny - 2) * ctx->nx) + i];
         ctx->v_star[i] = ctx->v_star[ctx->nx + i];
-        ctx->v_star[(ctx->ny - 1) * ctx->nx + i] = ctx->v_star[(ctx->ny - 2) * ctx->nx + i];
+        ctx->v_star[((ctx->ny - 1) * ctx->nx) + i] = ctx->v_star[((ctx->ny - 2) * ctx->nx) + i];
     }
 
     // Step 2: RHS
     for (size_t j = 1; j < ctx->ny - 1; j++) {
         for (size_t i = 1; i < ctx->nx - 1; i++) {
-            size_t idx = j * ctx->nx + i;
+            size_t idx = (j * ctx->nx) + i;
             double du_dx = (ctx->u_star[idx + 1] - ctx->u_star[idx - 1]) / (2 * dx);
             double dv_dy = (ctx->v_star[idx + ctx->nx] - ctx->v_star[idx - ctx->nx]) / (2 * dy);
             ctx->rhs[idx] = (rho / dt) * (du_dx + dv_dy);
@@ -271,7 +282,7 @@ cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* 
         }
 #else
         for (size_t i = 0; i < ctx->nx * ctx->ny; i++) {
-            ctx->p_new[i] = field->p[i] - fallback_factor * ctx->rhs[i];
+            ctx->p_new[i] = field->p[i] - (fallback_factor * ctx->rhs[i]);
         }
 #endif
     }
@@ -279,12 +290,12 @@ cfd_status_t projection_simd_step(Solver* solver, FlowField* field, const Grid* 
     // Step 3: Corrector
     for (size_t j = 1; j < ctx->ny - 1; j++) {
         for (size_t i = 1; i < ctx->nx - 1; i++) {
-            size_t idx = j * ctx->nx + i;
+            size_t idx = (j * ctx->nx) + i;
             double dp_dx = (ctx->p_new[idx + 1] - ctx->p_new[idx - 1]) / (2 * dx);
             double dp_dy = (ctx->p_new[idx + ctx->nx] - ctx->p_new[idx - ctx->nx]) / (2 * dy);
 
-            double u_corr = ctx->u_star[idx] - (dt / rho) * dp_dx;
-            double v_corr = ctx->v_star[idx] - (dt / rho) * dp_dy;
+            double u_corr = ctx->u_star[idx] - ((dt / rho) * dp_dx);
+            double v_corr = ctx->v_star[idx] - ((dt / rho) * dp_dy);
 
             ctx->u_new[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, u_corr));
             ctx->v_new[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, v_corr));

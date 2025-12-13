@@ -1,11 +1,9 @@
 #include "cfd/core/derived_fields.h"
-#include "cfd/core/cfd_status.h"
 #include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+#include "cfd/solvers/solver_interface.h"
 
 #include <math.h>
+#include <stddef.h>
 
 #ifdef CFD_ENABLE_OPENMP
 #include <omp.h>
@@ -19,8 +17,8 @@
 // DERIVED FIELDS LIFECYCLE
 //=============================================================================
 
-DerivedFields* derived_fields_create(size_t nx, size_t ny) {
-    DerivedFields* derived = (DerivedFields*)cfd_calloc(1, sizeof(DerivedFields));
+derived_fields* derived_fields_create(size_t nx, size_t ny) {
+    derived_fields* derived = (derived_fields*)cfd_calloc(1, sizeof(derived_fields));
     if (derived) {
         derived->nx = nx;
         derived->ny = ny;
@@ -29,17 +27,19 @@ DerivedFields* derived_fields_create(size_t nx, size_t ny) {
     return derived;
 }
 
-void derived_fields_destroy(DerivedFields* derived) {
-    if (!derived)
+void derived_fields_destroy(derived_fields* derived) {
+    if (!derived) {
         return;
+    }
 
     derived_fields_clear(derived);
     cfd_free(derived);
 }
 
-void derived_fields_clear(DerivedFields* derived) {
-    if (!derived)
+void derived_fields_clear(derived_fields* derived) {
+    if (!derived) {
         return;
+    }
 
     if (derived->velocity_magnitude) {
         cfd_free(derived->velocity_magnitude);
@@ -54,8 +54,8 @@ void derived_fields_clear(DerivedFields* derived) {
 // FIELD STATISTICS
 //=============================================================================
 
-FieldStats calculate_field_statistics(const double* data, size_t count) {
-    FieldStats stats = {0};
+field_stats calculate_field_statistics(const double* data, size_t count) {
+    field_stats stats = {0};
 
     if (!data || count == 0) {
         return stats;
@@ -74,10 +74,12 @@ FieldStats calculate_field_statistics(const double* data, size_t count) {
 #pragma omp parallel for reduction(min : min_val) reduction(max : max_val) reduction(+ : sum_val)
         for (i = 0; i < nn; i++) {
             double val = data[i];
-            if (val < min_val)
+            if (val < min_val) {
                 min_val = val;
-            if (val > max_val)
+            }
+            if (val > max_val) {
                 max_val = val;
+            }
             sum_val += val;
         }
 
@@ -92,10 +94,12 @@ FieldStats calculate_field_statistics(const double* data, size_t count) {
 
         for (size_t i = 0; i < count; i++) {
             double val = data[i];
-            if (val < stats.min_val)
+            if (val < stats.min_val) {
                 stats.min_val = val;
-            if (val > stats.max_val)
+            }
+            if (val > stats.max_val) {
                 stats.max_val = val;
+            }
             stats.sum_val += val;
         }
     }
@@ -123,17 +127,19 @@ FieldStats calculate_field_statistics(const double* data, size_t count) {
 // DERIVED FIELD COMPUTATION
 //=============================================================================
 
-void derived_fields_compute_velocity_magnitude(DerivedFields* derived, const FlowField* field) {
-    if (!derived || !field || !field->u || !field->v)
+void derived_fields_compute_velocity_magnitude(derived_fields* derived, const flow_field* field) {
+    if (!derived || !field || !field->u || !field->v) {
         return;
+    }
 
     size_t n = derived->nx * derived->ny;
 
     // Allocate if needed
     if (!derived->velocity_magnitude) {
         derived->velocity_magnitude = (double*)cfd_malloc(n * sizeof(double));
-        if (!derived->velocity_magnitude)
+        if (!derived->velocity_magnitude) {
             return;
+        }
     }
 
     // Compute velocity magnitude (embarrassingly parallel)
@@ -148,11 +154,11 @@ void derived_fields_compute_velocity_magnitude(DerivedFields* derived, const Flo
         long long i;
 #pragma omp parallel for
         for (i = 0; i < nn; i++) {
-            vel_mag[i] = sqrt(u[i] * u[i] + v[i] * v[i]);
+            vel_mag[i] = sqrt((u[i] * u[i]) + (v[i] * v[i]));
         }
     } else {
         for (size_t i = 0; i < n; i++) {
-            vel_mag[i] = sqrt(u[i] * u[i] + v[i] * v[i]);
+            vel_mag[i] = sqrt((u[i] * u[i]) + (v[i] * v[i]));
         }
     }
 #else
@@ -162,9 +168,10 @@ void derived_fields_compute_velocity_magnitude(DerivedFields* derived, const Flo
 #endif
 }
 
-void derived_fields_compute_statistics(DerivedFields* derived, const FlowField* field) {
-    if (!derived || !field)
+void derived_fields_compute_statistics(derived_fields* derived, const flow_field* field) {
+    if (!derived || !field) {
         return;
+    }
 
     size_t count = derived->nx * derived->ny;
 

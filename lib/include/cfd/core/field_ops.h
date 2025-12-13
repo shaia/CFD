@@ -27,7 +27,7 @@ extern "C" {
  * @param ny Number of grid points in y direction
  * @return Allocated array of velocity magnitudes (caller must free), or NULL on error
  */
-CFD_LIBRARY_EXPORT double* calculate_velocity_magnitude(const FlowField* field, size_t nx,
+CFD_LIBRARY_EXPORT double* calculate_velocity_magnitude(const flow_field* field, size_t nx,
                                                         size_t ny);
 
 /**
@@ -41,7 +41,7 @@ CFD_LIBRARY_EXPORT double* calculate_velocity_magnitude(const FlowField* field, 
  * @param ny Number of grid points in y direction
  * @return Allocated array of squared velocity magnitudes (caller must free), or NULL on error
  */
-CFD_LIBRARY_EXPORT double* calculate_velocity_magnitude_squared(const FlowField* field, size_t nx,
+CFD_LIBRARY_EXPORT double* calculate_velocity_magnitude_squared(const flow_field* field, size_t nx,
                                                                 size_t ny);
 
 #ifdef __cplusplus

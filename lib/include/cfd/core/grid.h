@@ -26,7 +26,7 @@ typedef struct {
     double xmax;  // maximum x-coordinate
     double ymin;  // minimum y-coordinate
     double ymax;  // maximum y-coordinate
-} Grid;
+} grid;
 
 /**
  * Create a grid
@@ -39,25 +39,25 @@ typedef struct {
  * @param ymax Maximum y-coordinate
  * @return Pointer to newly created grid
  */
-CFD_LIBRARY_EXPORT Grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin,
+CFD_LIBRARY_EXPORT grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin,
                                      double ymax);
 
 /**
  * Destroy grid and free memory
  */
-CFD_LIBRARY_EXPORT void grid_destroy(Grid* grid);
+CFD_LIBRARY_EXPORT void grid_destroy(grid* grid);
 
 /**
  * Initialize grid with uniform spacing
  */
-CFD_LIBRARY_EXPORT void grid_initialize_uniform(Grid* grid);
+CFD_LIBRARY_EXPORT void grid_initialize_uniform(grid* grid);
 
 /**
  * Initialize grid with stretched spacing
  *
  * @param beta Stretching parameter (larger = more stretching)
  */
-CFD_LIBRARY_EXPORT void grid_initialize_stretched(Grid* grid, double beta);
+CFD_LIBRARY_EXPORT void grid_initialize_stretched(grid* grid, double beta);
 
 #ifdef __cplusplus
 }
