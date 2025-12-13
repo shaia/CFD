@@ -1,8 +1,8 @@
 #ifndef CFD_THREADING_INTERNAL_H
 #define CFD_THREADING_INTERNAL_H
 
-#include <windows.h>
 #ifdef _WIN32
+#include <windows.h>
 
 typedef volatile LONG cfd_atomic_int;
 
