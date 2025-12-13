@@ -1,15 +1,19 @@
 // Enable C11 features for aligned_alloc
-#include "cfd/core/grid.h"
-#define _POSIX_C_SOURCE 200112L
+#define _POSIX_C_SOURCE 200809L
 #define _ISOC11_SOURCE
+#define _USE_MATH_DEFINES
 
 #include "cfd/core/cfd_status.h"
+#include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 
 
-#define _USE_MATH_DEFINES
 #include <math.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -272,6 +276,7 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
 }
 #endif
 
+#if !USE_AVX
 static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* field,
                                const grid* grid, const solver_params* params, size_t j,
                                double conservative_dt) {
@@ -296,6 +301,10 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
                          (grid->dy[j] * grid->dy[j]);
 
         double rho = fmax(field->rho[idx], 1e-10);
+        // Using manual define for M_PI just in case it is missed in fallback
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
         double nu = fmin(params->mu / rho, 1.0);
 
         double source_u = 0.0;
@@ -326,6 +335,7 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
         ctx->p_new[idx] = field->p[idx] + dp;
     }
 }
+#endif
 
 cfd_status_t explicit_euler_simd_step(struct Solver* solver, flow_field* field, const grid* grid,
                                       const solver_params* params, solver_stats* stats) {

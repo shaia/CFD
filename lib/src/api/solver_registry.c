@@ -907,6 +907,7 @@ static solver* create_explicit_euler_gpu_solver(void) {
  * Built-in solver: GPU-Accelerated Projection Method
  */
 
+#if 0
 static cfd_status_t gpu_projection_step(solver* solver, flow_field* field, const grid* grid,
                                         const solver_params* params, solver_stats* stats) {
     // Dummy implementation
@@ -914,77 +915,14 @@ static cfd_status_t gpu_projection_step(solver* solver, flow_field* field, const
     step_params.max_iter = 1;
     solve_projection_method(field, grid, &step_params);
     return CFD_SUCCESS;
-    /*
-        gpu_solver_wrapper_context* ctx = (gpu_solver_wrapper_context*)solver->context;
-
-        if (field->nx < 3 || field->ny < 3) {
-            return CFD_ERROR_INVALID;
-        }
-
-        solver_params step_params = *params;
-        step_params.max_iter = 1;
-
-        if (ctx && ctx->use_gpu) {
-            solve_projection_method_gpu(field, grid, &step_params, (const
-       gpu_config*)&ctx->gpu_config); } else { solve_projection_method(field, grid, &step_params);
-        }
-
-        if (stats) {
-            stats->iterations = 1;
-            double max_vel = 0.0, max_p = 0.0;
-            for (size_t i = 0; i < field->nx * field->ny; i++) {
-                double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
-                if (vel > max_vel) {
-                    max_vel = vel;
-                }
-                if (fabs(field->p[i]) > max_p) {
-                    max_p = fabs(field->p[i]);
-                }
-            }
-            stats->max_velocity = max_vel;
-            stats->max_pressure = max_p;
-        }
-
-        return CFD_SUCCESS;
-    */
 }
 
 static cfd_status_t gpu_projection_solve(solver* solver, flow_field* field, const grid* grid,
                                          const solver_params* params, solver_stats* stats) {
     solve_projection_method(field, grid, params);
     return CFD_SUCCESS;
-    /*
-        gpu_solver_wrapper_context* ctx = (gpu_solver_wrapper_context*)solver->context;
-
-        if (field->nx < 3 || field->ny < 3) {
-            return CFD_ERROR_INVALID;
-        }
-
-        if (ctx && ctx->use_gpu) {
-            solve_projection_method_gpu(field, grid, params, (const gpu_config*)&ctx->gpu_config);
-        } else {
-            solve_projection_method(field, grid, params);
-        }
-
-        if (stats) {
-            stats->iterations = params->max_iter;
-            double max_vel = 0.0, max_p = 0.0;
-            for (size_t i = 0; i < field->nx * field->ny; i++) {
-                double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
-                if (vel > max_vel) {
-                    max_vel = vel;
-                }
-                if (fabs(field->p[i]) > max_p) {
-                    max_p = fabs(field->p[i]);
-                }
-            }
-            stats->max_velocity = max_vel;
-            stats->max_pressure = max_p;
-        }
-
-        return CFD_SUCCESS;
-    */
 }
+#endif
 
 static solver* create_projection_gpu_solver(void) {
     return NULL;
