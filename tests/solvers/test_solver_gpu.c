@@ -4,6 +4,13 @@
 #endif
 
 
+#include "cfd/core/cfd_status.h"
+#include "cfd/core/filesystem.h"
+#include "cfd/core/grid.h"
+#include "cfd/solvers/solver_gpu.h"
+#include "cfd/solvers/solver_interface.h"
+#include "unity.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
