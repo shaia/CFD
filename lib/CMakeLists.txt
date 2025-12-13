@@ -14,10 +14,10 @@ endif()
 
 # Define the library project with optional CUDA
 if(CFD_ENABLE_CUDA)
-    project(cfd_library VERSION 1.0.0 LANGUAGES C CUDA)
+    project(cfd_library VERSION 0.1.0 LANGUAGES C CUDA)
     message(STATUS "CUDA support enabled")
 else()
-    project(cfd_library VERSION 1.0.0 LANGUAGES C)
+    project(cfd_library VERSION 0.1.0 LANGUAGES C)
     message(STATUS "CUDA support disabled (use -DCFD_ENABLE_CUDA=ON to enable)")
 endif()
 
@@ -119,6 +119,7 @@ set(CFD_LIBRARY_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/filesystem.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/logging.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/cfd_init.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/cfd_version.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/math_utils.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/field_ops.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/derived_fields.h

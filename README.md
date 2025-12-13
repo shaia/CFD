@@ -14,6 +14,7 @@ A computational fluid dynamics (CFD) framework implemented in C. This project pr
   - Explicit Euler (basic and SIMD-optimized)
   - Projection Method (Chorin's method with Poisson pressure solver)
   - GPU-accelerated solvers (CUDA) with automatic CPU fallback
+- **Thread-safe initialization** - Safe for concurrent applications
 - **Output registry system** - flexible CSV and VTK output management
 - Support for various boundary conditions
 - VTK and CSV output formats for visualization and analysis
@@ -43,6 +44,10 @@ A computational fluid dynamics (CFD) framework implemented in C. This project pr
 ├── lib/                        # CFD Library
 │   ├── CMakeLists.txt          # Library CMake configuration
 │   ├── include/                # Public headers
+│   │   ├── cfd/core/           # Core functionality
+│   │   │   ├── cfd_init.h      # Initialization API
+│   │   │   ├── cfd_version.h   # Version macros
+│   │   │   └── cfd_status.h    # Error handling
 │   │   ├── grid.h              # Grid structures
 │   │   ├── solver_interface.h  # Pluggable solver API (types, interface, utils)
 │   │   ├── solver_gpu.h        # GPU solver configuration
@@ -53,8 +58,14 @@ A computational fluid dynamics (CFD) framework implemented in C. This project pr
 │   │   └── utils.h             # Utilities and memory management
 │   └── src/                    # Library source code (organized by function)
 │       ├── core/               # Core utilities and data structures
+│       │   ├── cfd_init.c      # Library initialization and threading
+│       │   ├── cfd_version.c   # Version information
 │       │   ├── grid.c
-│       │   └── utils.c
+│       │   ├── utils.c
+│       │   ├── logging.c
+│       │   ├── memory.c
+│       │   ├── filesystem.c
+│       │   └── cfd_threading_internal.h # Threading abstraction
 │       ├── io/                 # Input/output systems
 │       │   ├── vtk_output.c
 │       │   ├── csv_output.c
