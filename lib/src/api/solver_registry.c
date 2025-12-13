@@ -5,12 +5,10 @@
 #include "cfd/solvers/solver_interface.h"
 
 
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <windows.h>
+#endif
 
 
 // Forward declarations for internal solver implementations
