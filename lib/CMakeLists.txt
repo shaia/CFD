@@ -46,6 +46,7 @@ set(CFD_CORE_SOURCES
     src/core/filesystem.c
     src/core/logging.c
     src/core/cfd_version.c
+    src/core/cfd_init.c
     src/core/math_utils.c
     src/core/field_ops.c
     src/core/derived_fields.c
@@ -117,6 +118,7 @@ set(CFD_LIBRARY_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/memory.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/filesystem.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/logging.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/cfd_init.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/math_utils.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/field_ops.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/derived_fields.h

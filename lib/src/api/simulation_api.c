@@ -10,6 +10,7 @@
 #include "cfd/solvers/solver_interface.h"
 
 
+#include "cfd/core/cfd_init.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +26,11 @@
 static SimulationData* create_simulation_with_solver(size_t nx, size_t ny, double xmin, double xmax,
                                                      double ymin, double ymax,
                                                      const char* solver_type) {
+    // Lazy initialization of library
+    if (!cfd_is_initialized()) {
+        cfd_init();
+    }
+
     if (nx == 0 || ny == 0) {
         cfd_set_error(CFD_ERROR_INVALID, "Simulation grid dimensions must be positive");
         return NULL;
