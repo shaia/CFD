@@ -5,26 +5,22 @@
  * and solve a flow around a cylinder problem.
  */
 
+#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
 #include "cfd/solvers/solver_interface.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
 
 #include "cfd/io/vtk_output.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-void setup_cylinder_flow(FlowField* field, Grid* grid) {
+void setup_cylinder_flow(flow_field* field, grid* grid) {
     printf("Setting up flow around cylinder...\n");
 
     // Initialize flow field with uniform flow
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = j * field->nx + i;
+            size_t idx = (j * field->nx) + i;
 
             // Initial conditions: uniform flow in x-direction
             field->u[idx] = 1.0;    // u-velocity
@@ -44,13 +40,13 @@ void setup_cylinder_flow(FlowField* field, Grid* grid) {
 
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            double x = grid->xmin + i * (grid->xmax - grid->xmin) / (field->nx - 1);
-            double y = grid->ymin + j * (grid->ymax - grid->ymin) / (field->ny - 1);
+            double x = grid->xmin + (i * (grid->xmax - grid->xmin) / (field->nx - 1));
+            double y = grid->ymin + (j * (grid->ymax - grid->ymin) / (field->ny - 1));
 
-            double dist = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+            double dist = sqrt(((x - cx) * (x - cx)) + ((y - cy) * (y - cy)));
 
             if (dist < radius) {
-                size_t idx = j * field->nx + i;
+                size_t idx = (j * field->nx) + i;
                 // Inside cylinder: no-slip boundary conditions
                 field->u[idx] = 0.0;
                 field->v[idx] = 0.0;
@@ -59,19 +55,19 @@ void setup_cylinder_flow(FlowField* field, Grid* grid) {
     }
 }
 
-void apply_inlet_outlet_bc(FlowField* field, Grid* grid) {
+void apply_inlet_outlet_bc(flow_field* field, grid* grid) {
     // Inlet boundary (left side): fixed velocity
     for (size_t j = 0; j < field->ny; j++) {
-        size_t idx = j * field->nx + 0;  // i = 0 (left boundary)
-        field->u[idx] = 1.0;             // Inlet velocity
+        size_t idx = (j * field->nx) + 0;  // i = 0 (left boundary)
+        field->u[idx] = 1.0;               // Inlet velocity
         field->v[idx] = 0.0;
         field->p[idx] = 0.0;
     }
 
     // Outlet boundary (right side): zero gradient
     for (size_t j = 0; j < field->ny; j++) {
-        size_t idx_out = j * field->nx + (field->nx - 1);  // i = nx-1 (right boundary)
-        size_t idx_in = j * field->nx + (field->nx - 2);   // i = nx-2 (interior)
+        size_t idx_out = (j * field->nx) + (field->nx - 1);  // i = nx-1 (right boundary)
+        size_t idx_in = (j * field->nx) + (field->nx - 2);   // i = nx-2 (interior)
 
         field->u[idx_out] = field->u[idx_in];
         field->v[idx_out] = field->v[idx_in];
@@ -81,12 +77,12 @@ void apply_inlet_outlet_bc(FlowField* field, Grid* grid) {
     // Top and bottom walls: no-slip
     for (size_t i = 0; i < field->nx; i++) {
         // Bottom wall (j = 0)
-        size_t idx_bot = 0 * field->nx + i;
+        size_t idx_bot = (0 * field->nx) + i;
         field->u[idx_bot] = 0.0;
         field->v[idx_bot] = 0.0;
 
         // Top wall (j = ny-1)
-        size_t idx_top = (field->ny - 1) * field->nx + i;
+        size_t idx_top = ((field->ny - 1) * field->nx) + i;
         field->u[idx_top] = 0.0;
         field->v[idx_top] = 0.0;
     }
@@ -101,17 +97,17 @@ int main() {
     double xmin = 0.0, xmax = 2.0;  // Longer domain
     double ymin = 0.0, ymax = 1.0;
 
-    printf("Grid: %zux%zu, Domain: [%.1f,%.1f] x [%.1f,%.1f]\n", nx, ny, xmin, xmax, ymin, ymax);
+    printf("grid: %zux%zu, Domain: [%.1f,%.1f] x [%.1f,%.1f]\n", nx, ny, xmin, xmax, ymin, ymax);
 
     // Create grid and flow field
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
-    FlowField* field = flow_field_create(nx, ny);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    flow_field* field = flow_field_create(nx, ny);
 
     // Setup initial conditions and cylinder
     setup_cylinder_flow(field, grid);
 
     // Solver parameters for external flow
-    SolverParams params = {
+    solver_params params = {
         .max_iter = 2000,  // More iterations for convergence
         .dt = 0.0005,      // Smaller time step for stability
         .cfl = 0.3,        // Conservative CFL number

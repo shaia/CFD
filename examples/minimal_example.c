@@ -15,7 +15,7 @@ int main() {
 
     // Step 2: Initialize simulation
     size_t nx = 50, ny = 25;
-    SimulationData* sim = init_simulation(nx, ny, 0.0, 1.0, 0.0, 0.5);
+    simulation_data* sim = init_simulation(nx, ny, 0.0, 1.0, 0.0, 0.5);
 
     if (!sim) {
         printf("Error: Failed to initialize simulation\n");

@@ -5,12 +5,7 @@
  * using the modern pluggable solver interface.
  */
 
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 
 
@@ -24,11 +19,11 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
     printf("\n=== %s Benchmark ===\n", solver_name);
     printf("Grid size: %zux%zu, Iterations: %d\n", nx, ny, iterations);
 
-    SolverRegistry* registry = cfd_registry_create();
+    struct SolverRegistry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     // Create solver using modern interface
-    Solver* solver = cfd_solver_create(registry, solver_type);
+    struct Solver* solver = cfd_solver_create(registry, solver_type);
     if (!solver) {
         fprintf(stderr, "Failed to create solver: %s\n", solver_type);
         cfd_registry_destroy(registry);
@@ -36,12 +31,12 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
     }
 
     // Create grid and flow field
-    Grid* grid = grid_create(nx, ny, 0.0, 1.0, 0.0, 0.5);
-    FlowField* field = flow_field_create(nx, ny);
+    grid* grid = grid_create(nx, ny, 0.0, 1.0, 0.0, 0.5);
+    flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
     // Initialize solver parameters
-    SolverParams params = solver_params_default();
+    solver_params params = solver_params_default();
     params.dt = 0.001;
     params.cfl = 0.5;
     params.tolerance = 1e-6;
@@ -51,7 +46,7 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
 
     // Measure execution time
     clock_t start = clock();
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
 
     for (int i = 0; i < iterations; i++) {
         solver_step(solver, field, grid, &params, &stats);
@@ -92,12 +87,14 @@ int main() {
         size_t ny = grid_sizes[i][1];
 
         printf("\n");
-        for (int j = 0; j < 50; j++)
+        for (int j = 0; j < 50; j++) {
             printf("=");
+        }
         printf("\n");
         printf("Grid Size: %zux%zu (%zu total cells)\n", nx, ny, nx * ny);
-        for (int j = 0; j < 50; j++)
+        for (int j = 0; j < 50; j++) {
             printf("=");
+        }
         printf("\n");
 
         // Benchmark basic solver
@@ -123,8 +120,9 @@ int main() {
     }
 
     printf("\n");
-    for (int j = 0; j < 50; j++)
+    for (int j = 0; j < 50; j++) {
         printf("=");
+    }
     printf("\n");
     printf("Benchmark completed!\n");
     printf("Note: Performance varies by hardware and system load.\n");

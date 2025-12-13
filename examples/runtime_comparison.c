@@ -5,29 +5,29 @@
  * across different problem sizes, solver types, and iteration counts.
  *
  * Tests:
- * 1. Grid size scaling (small to large grids)
+ * 1. grid size scaling (small to large grids)
  * 2. Iteration count scaling (few to many iterations)
  * 3. Solver type comparison (Euler vs Projection)
  * 4. GPU threshold analysis (when GPU becomes faster)
  */
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #include "cfd/api/simulation_api.h"
+#include "cfd/core/filesystem.h"
 #include "cfd/solvers/solver_gpu.h"
 #include "cfd/solvers/solver_interface.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
 
-#include "cfd/io/vtk_output.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
-#include <windows.h>
 #else
 #include <sys/time.h>
 #endif
@@ -36,7 +36,7 @@
 #define WARMUP_STEPS 2
 #define REPEAT_COUNT 1
 
-// Grid sizes to test (reduced for faster testing)
+// grid sizes to test (reduced for faster testing)
 static const size_t GRID_SIZES[][2] = {
     {50, 25},    // 1,250 points
     {100, 50},   // 5,000 points
@@ -54,9 +54,9 @@ typedef struct {
     const char* simd_solver;
     const char* gpu_solver;
     const char* name;
-} SolverPair;
+} solver_pair;
 
-static const SolverPair SOLVER_PAIRS[] = {
+static const solver_pair SOLVER_PAIRS[] = {
     {SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, SOLVER_TYPE_EXPLICIT_EULER_GPU, "Explicit Euler"},
     {SOLVER_TYPE_PROJECTION_OPTIMIZED, SOLVER_TYPE_PROJECTION_JACOBI_GPU, "Projection Method"},
 };
@@ -74,7 +74,7 @@ typedef struct {
     double max_velocity;
     double max_pressure;
     int gpu_available;
-} BenchmarkResult;
+} benchmark_result;
 
 // High-resolution timer
 static double get_time_ms(void) {
@@ -104,9 +104,9 @@ static void print_header(const char* title) {
 }
 
 // Run benchmark for a specific configuration
-static BenchmarkResult run_benchmark(size_t nx, size_t ny, int iterations, const char* simd_solver,
-                                     const char* gpu_solver, const char* name) {
-    BenchmarkResult result;
+static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, const char* simd_solver,
+                                      const char* gpu_solver, const char* name) {
+    benchmark_result result;
     memset(&result, 0, sizeof(result));
 
     result.nx = nx;
@@ -120,7 +120,7 @@ static BenchmarkResult run_benchmark(size_t nx, size_t ny, int iterations, const
 
     // Benchmark SIMD solver
     {
-        SimulationData* sim =
+        simulation_data* sim =
             init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, simd_solver);
         if (!sim) {
             fprintf(stderr, "Failed to create SIMD simulation\n");
@@ -153,7 +153,7 @@ static BenchmarkResult run_benchmark(size_t nx, size_t ny, int iterations, const
         result.simd_time_ms = total_time / REPEAT_COUNT;
 
         // Get final stats
-        const SolverStats* stats = simulation_get_stats(sim);
+        const solver_stats* stats = simulation_get_stats(sim);
         if (stats) {
             result.max_velocity = stats->max_velocity;
             result.max_pressure = stats->max_pressure;
@@ -164,7 +164,7 @@ static BenchmarkResult run_benchmark(size_t nx, size_t ny, int iterations, const
 
     // Benchmark GPU solver
     {
-        SimulationData* sim =
+        simulation_data* sim =
             init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, gpu_solver);
         if (!sim) {
             fprintf(stderr, "Failed to create GPU simulation\n");
@@ -208,7 +208,7 @@ static BenchmarkResult run_benchmark(size_t nx, size_t ny, int iterations, const
 }
 
 // Print single result
-static void print_result(const BenchmarkResult* r) {
+static void print_result(const benchmark_result* r) {
     const char* winner = (r->speedup >= 1.0) ? "GPU" : "SIMD";
     double speedup_display = (r->speedup >= 1.0) ? r->speedup : (1.0 / r->speedup);
 
@@ -216,15 +216,15 @@ static void print_result(const BenchmarkResult* r) {
            r->iterations, r->solver_name, r->simd_time_ms, r->gpu_time_ms, speedup_display, winner);
 }
 
-// Test 1: Grid size scaling
+// Test 1: grid size scaling
 static void test_grid_size_scaling(void) {
-    print_header("TEST 1: Grid Size Scaling (100 iterations)");
-    printf("| Grid Size | Iter | Solver             | SIMD (ms)  | GPU (ms)   | Speedup     |\n");
+    print_header("TEST 1: grid Size Scaling (100 iterations)");
+    printf("| grid Size | Iter | Solver             | SIMD (ms)  | GPU (ms)   | Speedup     |\n");
     print_separator();
 
     for (size_t pair = 0; pair < NUM_SOLVER_PAIRS; pair++) {
         for (size_t g = 0; g < NUM_GRID_SIZES; g++) {
-            BenchmarkResult result = run_benchmark(
+            benchmark_result result = run_benchmark(
                 GRID_SIZES[g][0], GRID_SIZES[g][1], 100, SOLVER_PAIRS[pair].simd_solver,
                 SOLVER_PAIRS[pair].gpu_solver, SOLVER_PAIRS[pair].name);
             print_result(&result);
@@ -238,14 +238,14 @@ static void test_grid_size_scaling(void) {
 // Test 2: Iteration count scaling
 static void test_iteration_scaling(void) {
     print_header("TEST 2: Iteration Count Scaling (200x100 grid)");
-    printf("| Grid Size | Iter | Solver             | SIMD (ms)  | GPU (ms)   | Speedup     |\n");
+    printf("| grid Size | Iter | Solver             | SIMD (ms)  | GPU (ms)   | Speedup     |\n");
     print_separator();
 
     size_t nx = 200, ny = 100;
 
     for (size_t pair = 0; pair < NUM_SOLVER_PAIRS; pair++) {
         for (size_t i = 0; i < NUM_ITERATION_COUNTS; i++) {
-            BenchmarkResult result =
+            benchmark_result result =
                 run_benchmark(nx, ny, ITERATION_COUNTS[i], SOLVER_PAIRS[pair].simd_solver,
                               SOLVER_PAIRS[pair].gpu_solver, SOLVER_PAIRS[pair].name);
             print_result(&result);
@@ -263,7 +263,7 @@ static void test_gpu_crossover(void) {
 
     for (size_t pair = 0; pair < NUM_SOLVER_PAIRS; pair++) {
         printf("Solver: %s\n", SOLVER_PAIRS[pair].name);
-        printf("| Grid Size  | Points    | SIMD (ms) | GPU (ms)  | Winner | Speedup |\n");
+        printf("| grid Size  | Points    | SIMD (ms) | GPU (ms)  | Winner | Speedup |\n");
         printf("|------------|-----------|-----------|-----------|--------|----------|\n");
 
         // Test a range of grid sizes
@@ -275,7 +275,7 @@ static void test_gpu_crossover(void) {
         size_t crossover_nx = 0, crossover_ny = 0;
 
         for (size_t t = 0; t < num_tests; t++) {
-            BenchmarkResult result = run_benchmark(
+            benchmark_result result = run_benchmark(
                 test_sizes[t][0], test_sizes[t][1], 100, SOLVER_PAIRS[pair].simd_solver,
                 SOLVER_PAIRS[pair].gpu_solver, SOLVER_PAIRS[pair].name);
 
@@ -327,10 +327,11 @@ static void test_all_solvers(void) {
     const char* best_solver = NULL;
 
     for (size_t s = 0; s < num_solvers; s++) {
-        SimulationData* sim =
+        simulation_data* sim =
             init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, all_solvers[s]);
-        if (!sim)
+        if (!sim) {
             continue;
+        }
 
         // Warmup
         for (int i = 0; i < WARMUP_STEPS; i++) {
@@ -349,7 +350,7 @@ static void test_all_solvers(void) {
         double end = get_time_ms();
         double time_ms = end - start;
 
-        const SolverStats* stats = simulation_get_stats(sim);
+        const solver_stats* stats = simulation_get_stats(sim);
         double max_vel = stats ? stats->max_velocity : 0.0;
         double max_press = stats ? stats->max_pressure : 0.0;
 
@@ -372,7 +373,7 @@ static void test_all_solvers(void) {
 
 // Test 5: Large grid performance
 static void test_large_grid(void) {
-    print_header("TEST 5: Large Grid Performance");
+    print_header("TEST 5: Large grid Performance");
 
     // Reduced sizes for faster testing
     size_t large_sizes[][2] = {
@@ -382,15 +383,15 @@ static void test_large_grid(void) {
     size_t num_sizes = sizeof(large_sizes) / sizeof(large_sizes[0]);
 
     printf("Testing large grids with 50 iterations...\n\n");
-    printf("| Grid Size  | Points    | SIMD (ms) | GPU (ms)  | Winner | Throughput  |\n");
+    printf("| grid Size  | Points    | SIMD (ms) | GPU (ms)  | Winner | Throughput  |\n");
     printf("|------------|-----------|-----------|-----------|--------|-------------|\n");
 
     for (size_t i = 0; i < num_sizes; i++) {
         size_t nx = large_sizes[i][0];
         size_t ny = large_sizes[i][1];
 
-        BenchmarkResult result = run_benchmark(nx, ny, 50, SOLVER_TYPE_PROJECTION_OPTIMIZED,
-                                               SOLVER_TYPE_PROJECTION_JACOBI_GPU, "Projection");
+        benchmark_result result = run_benchmark(nx, ny, 50, SOLVER_TYPE_PROJECTION_OPTIMIZED,
+                                                SOLVER_TYPE_PROJECTION_JACOBI_GPU, "Projection");
 
         const char* winner = (result.speedup >= 1.0) ? "GPU" : "SIMD";
         double best_time = (result.speedup >= 1.0) ? result.gpu_time_ms : result.simd_time_ms;
@@ -409,7 +410,7 @@ static void print_system_info(void) {
            gpu_is_available() ? "Available" : "Not available (using CPU fallback)");
 
     if (gpu_is_available()) {
-        GPUDeviceInfo info[4];
+        gpu_device_info info[4];
         int num_devices = gpu_get_device_info(info, 4);
 
         printf("GPU Devices: %d\n", num_devices);
@@ -452,7 +453,7 @@ static void write_results_csv(void) {
     for (size_t pair = 0; pair < NUM_SOLVER_PAIRS; pair++) {
         for (size_t g = 0; g < NUM_GRID_SIZES; g++) {
             for (size_t i = 0; i < NUM_ITERATION_COUNTS; i++) {
-                BenchmarkResult result =
+                benchmark_result result =
                     run_benchmark(GRID_SIZES[g][0], GRID_SIZES[g][1], ITERATION_COUNTS[i],
                                   SOLVER_PAIRS[pair].simd_solver, SOLVER_PAIRS[pair].gpu_solver,
                                   SOLVER_PAIRS[pair].name);

@@ -1,9 +1,5 @@
-#include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 
 
@@ -18,22 +14,23 @@
  */
 
 // Helper function to calculate max velocity
-double calculate_max_velocity(const FlowField* field, size_t nx, size_t ny) {
+double calculate_max_velocity(const flow_field* field, size_t nx, size_t ny) {
     double max_vel = 0.0;
     for (size_t i = 0; i < nx * ny; i++) {
-        double vel_mag = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-        if (vel_mag > max_vel)
+        double vel_mag = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
+        if (vel_mag > max_vel) {
             max_vel = vel_mag;
+        }
     }
     return max_vel;
 }
 
 // Helper function to run simulation with given parameters
-void run_simulation_case(Solver* solver, FlowField* field, Grid* grid, SolverParams* params,
-                         int steps) {
+void run_simulation_case(struct Solver* solver, flow_field* field, grid* grid,
+                         solver_params* params, int steps) {
     initialize_flow_field(field, grid);
 
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     for (int step = 0; step < steps; step++) {
         solver_step(solver, field, grid, params, &stats);
     }
@@ -48,17 +45,17 @@ int main(int argc, char* argv[]) {
     double xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 1.0;
 
     // Create grid and flow field
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
     // Create solver using modern interface
-    SolverRegistry* registry = cfd_registry_create();
+    struct SolverRegistry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    struct Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     if (!solver) {
         fprintf(stderr, "Failed to create solver\n");
         cfd_registry_destroy(registry);
@@ -75,7 +72,7 @@ int main(int argc, char* argv[]) {
 
     // Example 1: Default parameters
     printf("1. Running simulation with DEFAULT source term parameters:\n");
-    SolverParams params_default = solver_params_default();
+    solver_params params_default = solver_params_default();
     printf("   - Source amplitude U: %.3f\n", params_default.source_amplitude_u);
     printf("   - Source amplitude V: %.3f\n", params_default.source_amplitude_v);
     printf("   - Source decay rate:  %.3f\n", params_default.source_decay_rate);
@@ -94,7 +91,7 @@ int main(int argc, char* argv[]) {
 
     // Example 2: High energy injection (stronger sources)
     printf("2. Running simulation with HIGH ENERGY source terms:\n");
-    SolverParams params_high_energy = solver_params_default();
+    solver_params params_high_energy = solver_params_default();
 
     // Customize source term parameters for high energy injection
     params_high_energy.source_amplitude_u = 0.3;   // 3x stronger U source
@@ -117,7 +114,7 @@ int main(int argc, char* argv[]) {
 
     // Example 3: Low energy injection (weaker sources)
     printf("3. Running simulation with LOW ENERGY source terms:\n");
-    SolverParams params_low_energy = solver_params_default();
+    solver_params params_low_energy = solver_params_default();
 
     // Customize source term parameters for low energy injection
     params_low_energy.source_amplitude_u = 0.03;   // 30% of default
@@ -142,7 +139,7 @@ int main(int argc, char* argv[]) {
 
     // Example 4: Asymmetric flow (different U and V sources)
     printf("4. Running simulation with ASYMMETRIC source terms:\n");
-    SolverParams params_asymmetric = solver_params_default();
+    solver_params params_asymmetric = solver_params_default();
 
     // Create asymmetric flow pattern
     params_asymmetric.source_amplitude_u = 0.2;   // Strong horizontal flow
@@ -171,8 +168,8 @@ int main(int argc, char* argv[]) {
     // Re-run each case briefly to get statistics
     double max_velocities[4];
     const char* case_names[] = {"Default", "High Energy", "Low Energy", "Asymmetric"};
-    SolverParams* all_params[] = {&params_default, &params_high_energy, &params_low_energy,
-                                  &params_asymmetric};
+    solver_params* all_params[] = {&params_default, &params_high_energy, &params_low_energy,
+                                   &params_asymmetric};
 
     for (int case_idx = 0; case_idx < 4; case_idx++) {
         run_simulation_case(solver, field, grid, all_params[case_idx], 5);

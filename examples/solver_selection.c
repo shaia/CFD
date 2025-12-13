@@ -11,15 +11,12 @@
 #include "cfd/api/simulation_api.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
+#include "cfd/core/grid.h"
 #include "cfd/solvers/solver_interface.h"
 
 
 #include "cfd/io/vtk_output.h"
 #include <stdio.h>
-#include <string.h>
 
 
 // Grid parameters
@@ -37,7 +34,7 @@ void print_separator(void) {
     printf("\n========================================\n");
 }
 
-void print_solver_info(const Solver* solver) {
+void print_solver_info(const struct Solver* solver) {
     if (!solver) {
         printf("  Solver: (legacy/default)\n");
         return;
@@ -48,27 +45,35 @@ void print_solver_info(const Solver* solver) {
     printf("  Version: %s\n", solver->version);
     printf("  Capabilities: ");
 
-    if (solver->capabilities & SOLVER_CAP_INCOMPRESSIBLE)
+    if (solver->capabilities & SOLVER_CAP_INCOMPRESSIBLE) {
         printf("incompressible ");
-    if (solver->capabilities & SOLVER_CAP_COMPRESSIBLE)
+    }
+    if (solver->capabilities & SOLVER_CAP_COMPRESSIBLE) {
         printf("compressible ");
-    if (solver->capabilities & SOLVER_CAP_TRANSIENT)
+    }
+    if (solver->capabilities & SOLVER_CAP_TRANSIENT) {
         printf("transient ");
-    if (solver->capabilities & SOLVER_CAP_STEADY_STATE)
+    }
+    if (solver->capabilities & SOLVER_CAP_STEADY_STATE) {
         printf("steady-state ");
-    if (solver->capabilities & SOLVER_CAP_SIMD)
+    }
+    if (solver->capabilities & SOLVER_CAP_SIMD) {
         printf("SIMD ");
-    if (solver->capabilities & SOLVER_CAP_PARALLEL)
+    }
+    if (solver->capabilities & SOLVER_CAP_PARALLEL) {
         printf("parallel ");
-    if (solver->capabilities & SOLVER_CAP_GPU)
+    }
+    if (solver->capabilities & SOLVER_CAP_GPU) {
         printf("GPU ");
+    }
 
     printf("\n");
 }
 
-void print_stats(const SolverStats* stats) {
-    if (!stats)
+void print_stats(const solver_stats* stats) {
+    if (!stats) {
         return;
+    }
 
     printf("  Iterations: %d\n", stats->iterations);
     printf("  Max velocity: %.4f\n", stats->max_velocity);
@@ -99,7 +104,7 @@ void run_solver_comparison(void) {
         print_separator();
 
         // Create simulation with this solver
-        SimulationData* sim =
+        simulation_data* sim =
             init_simulation_with_solver(NX, NY, XMIN, XMAX, YMIN, YMAX, solver_type);
         if (!sim) {
             printf("  ERROR: Failed to create simulation\n");
@@ -107,7 +112,7 @@ void run_solver_comparison(void) {
         }
 
         // Print solver info
-        Solver* solver = simulation_get_solver(sim);
+        struct Solver* solver = simulation_get_solver(sim);
         print_solver_info(solver);
 
         // Set run prefix for this solver test
@@ -143,14 +148,14 @@ void run_dynamic_solver_switch(void) {
 
     // Start with default solver (explicit_euler)
     printf("\n1. Creating simulation with default solver...\n");
-    SimulationData* sim = init_simulation(NX, NY, XMIN, XMAX, YMIN, YMAX);
+    simulation_data* sim = init_simulation(NX, NY, XMIN, XMAX, YMIN, YMAX);
     simulation_set_run_prefix(sim, "dynamic_switch");
     simulation_set_output_dir(sim, "../../artifacts");
 
     // Register output every 10 steps
     simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, 10, "test");
 
-    Solver* solver = simulation_get_solver(sim);
+    struct Solver* solver = simulation_get_solver(sim);
     print_solver_info(solver);
 
     int step_counter = 0;
@@ -191,12 +196,12 @@ void run_direct_solver_usage(void) {
     printf("DIRECT SOLVER API USAGE\n");
     print_separator();
 
-    SolverRegistry* registry = cfd_registry_create();
+    struct SolverRegistry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     // Create solver directly
     printf("\nCreating solver directly via cfd_solver_create()...\n");
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    struct Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     if (!solver) {
         printf("  ERROR: Failed to create solver\n");
         cfd_registry_destroy(registry);
@@ -206,13 +211,13 @@ void run_direct_solver_usage(void) {
     print_solver_info(solver);
 
     // Create grid and flow field manually
-    Grid* grid = grid_create(NX, NY, XMIN, XMAX, YMIN, YMAX);
+    grid* grid = grid_create(NX, NY, XMIN, XMAX, YMIN, YMAX);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(NX, NY);
+    flow_field* field = flow_field_create(NX, NY);
     initialize_flow_field(field, grid);
 
-    SolverParams params = solver_params_default();
+    solver_params params = solver_params_default();
     params.max_iter = 1;
     params.dt = 0.005;
 
@@ -222,7 +227,7 @@ void run_direct_solver_usage(void) {
 
     // Run steps directly
     printf("\nRunning 20 steps using direct solver API...\n");
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
 
     for (int step = 0; step < 20; step++) {
         status = solver_step(solver, field, grid, &params, &stats);

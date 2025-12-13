@@ -61,7 +61,7 @@ if(NOT BUILD_SHARED_LIBS)
 endif()
 
 # Example executables
-option(BUILD_EXAMPLES "Build example programs" OFF)
+option(BUILD_EXAMPLES "Build example programs" ON)
 
 if(BUILD_EXAMPLES)
     # Basic simulation example (original main.c)
