@@ -72,6 +72,8 @@ CMakeUserPresets.json
 #cmake-build-debug
 build/**/*
 
+
+
 include/*
 bin/*
 test/test_runner
@@ -89,6 +91,12 @@ docs/
 
 #vscode
 .vscode/
+
+
+
+
+
+
 
 # Python
 __pycache__/

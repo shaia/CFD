@@ -27,7 +27,7 @@ if(ENABLE_COVERAGE)
     endif()
 endif()
 
-if(ENABLE_ASAN OR ENABLE_UBSAN)
+if(ENABLE_ASAN OR ENABLE_UBSAN)                                                                                                                                             
     if(MSVC)
         message(WARNING "Sanitizers are not fully supported with MSVC, skipping")
     else()
@@ -61,7 +61,7 @@ if(NOT BUILD_SHARED_LIBS)
 endif()
 
 # Example executables
-option(BUILD_EXAMPLES "Build example programs" ON)
+option(BUILD_EXAMPLES "Build example programs" OFF)
 
 if(BUILD_EXAMPLES)
     # Basic simulation example (original main.c)
