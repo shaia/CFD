@@ -1,18 +1,13 @@
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
 #include "unity.h"
-
-
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
 
 // Mock function to test status return
 cfd_status_t mock_allocator(size_t size) {
-    if (size > 1024 * 1024 * 1024) {  // 1GB
+    if (size > (size_t)1024 * 1024 * 1024) {  // 1GB
         // Simulate failure
         cfd_set_error(CFD_ERROR_NOMEM, "Mock allocation failure");
         return CFD_ERROR_NOMEM;

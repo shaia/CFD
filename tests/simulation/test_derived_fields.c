@@ -1,16 +1,12 @@
 #include "cfd/core/derived_fields.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+
 
 #include <math.h>
 
 // Test fixtures
-static FlowField* test_field = NULL;
+static flow_field* test_field = NULL;
 static const size_t NX = 10;
 static const size_t NY = 10;
 
@@ -36,7 +32,7 @@ void tearDown(void) {
 //=============================================================================
 
 void test_derived_fields_create(void) {
-    DerivedFields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY);
 
     TEST_ASSERT_NOT_NULL(derived);
     TEST_ASSERT_NULL(derived->velocity_magnitude);
@@ -52,7 +48,7 @@ void test_derived_fields_destroy_null(void) {
 }
 
 void test_derived_fields_clear(void) {
-    DerivedFields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY);
     derived_fields_compute_velocity_magnitude(derived, test_field);
 
     TEST_ASSERT_NOT_NULL(derived->velocity_magnitude);
@@ -74,7 +70,7 @@ void test_derived_fields_clear_null(void) {
 //=============================================================================
 
 void test_velocity_magnitude_computation(void) {
-    DerivedFields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY);
     derived_fields_compute_velocity_magnitude(derived, test_field);
 
     TEST_ASSERT_NOT_NULL(derived->velocity_magnitude);
@@ -94,13 +90,13 @@ void test_velocity_magnitude_varying_values(void) {
         test_field->v[i] = (double)(NX * NY - i);
     }
 
-    DerivedFields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY);
     derived_fields_compute_velocity_magnitude(derived, test_field);
 
     // Verify each point
     for (size_t i = 0; i < NX * NY; i++) {
-        double expected = sqrt((double)i * (double)i +
-                               (double)(NX * NY - i) * (double)(NX * NY - i));
+        double expected =
+            sqrt((double)i * (double)i + (double)(NX * NY - i) * (double)(NX * NY - i));
         TEST_ASSERT_FLOAT_WITHIN(1e-5f, (float)expected, (float)derived->velocity_magnitude[i]);
     }
 
@@ -114,7 +110,7 @@ void test_velocity_magnitude_zero_velocity(void) {
         test_field->v[i] = 0.0;
     }
 
-    DerivedFields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY);
     derived_fields_compute_velocity_magnitude(derived, test_field);
 
     for (size_t i = 0; i < NX * NY; i++) {
@@ -125,7 +121,7 @@ void test_velocity_magnitude_zero_velocity(void) {
 }
 
 void test_velocity_magnitude_recompute(void) {
-    DerivedFields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY);
 
     // First computation
     derived_fields_compute_velocity_magnitude(derived, test_field);
@@ -154,7 +150,7 @@ void test_velocity_magnitude_null_derived(void) {
 }
 
 void test_velocity_magnitude_null_field(void) {
-    DerivedFields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY);
 
     // Should not crash
     derived_fields_compute_velocity_magnitude(derived, NULL);
@@ -164,7 +160,7 @@ void test_velocity_magnitude_null_field(void) {
 }
 
 void test_velocity_magnitude_null_u(void) {
-    DerivedFields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY);
 
     // Temporarily set u to NULL
     double* original_u = test_field->u;
@@ -178,7 +174,7 @@ void test_velocity_magnitude_null_u(void) {
 }
 
 void test_velocity_magnitude_null_v(void) {
-    DerivedFields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY);
 
     // Temporarily set v to NULL
     double* original_v = test_field->v;

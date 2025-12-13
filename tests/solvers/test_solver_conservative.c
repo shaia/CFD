@@ -1,11 +1,9 @@
+#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+
 
 #include <math.h>
 #include <stdio.h>
@@ -20,8 +18,8 @@ void setUp(void) {
 void tearDown(void) {}
 
 // Simple fixed solver with better stability
-void solve_navier_stokes_conservative(FlowField* field, const Grid* grid,
-                                      const SolverParams* params) {
+void solve_navier_stokes_conservative(flow_field* field, const grid* grid,
+                                      const solver_params* params) {
     printf("Running conservative solver...\n");
 
     // For small grids, just make minimal stable updates
@@ -59,13 +57,13 @@ void solve_navier_stokes_conservative(FlowField* field, const Grid* grid,
     // Update only interior points with very conservative scheme
     for (size_t j = 1; j < field->ny - 1; j++) {
         for (size_t i = 1; i < field->nx - 1; i++) {
-            size_t idx = j * field->nx + i;
+            size_t idx = (j * field->nx) + i;
 
             // Simple pressure diffusion to prevent instabilities
             double p_avg = (field->p[idx - 1] + field->p[idx + 1] + field->p[idx - field->nx] +
                             field->p[idx + field->nx]) *
                            0.25;
-            p_new[idx] = field->p[idx] * 0.9 + p_avg * 0.1;
+            p_new[idx] = field->p[idx] * 0.9 + (p_avg * 0.1);
 
             // Gentle velocity updates
             u_new[idx] = field->u[idx] * 0.99 + 0.01 * p_avg;
@@ -88,8 +86,8 @@ void test_conservative_solver(void) {
     size_t nx = 5, ny = 5;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
-    FlowField* field = flow_field_create(nx, ny);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    flow_field* field = flow_field_create(nx, ny);
 
     // Simple initialization
     for (size_t i = 0; i < nx * ny; i++) {
@@ -100,7 +98,7 @@ void test_conservative_solver(void) {
         field->T[i] = 300.0;
     }
 
-    SolverParams params = solver_params_default();
+    solver_params params = solver_params_default();
     params.max_iter = 5;
     params.dt = 0.001;
 

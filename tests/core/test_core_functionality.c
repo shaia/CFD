@@ -1,8 +1,9 @@
-#include "cfd/core/field_ops.h"
 #include "cfd/api/simulation_api.h"
+#include "cfd/core/field_ops.h"
 #include "unity.h"
 #include <math.h>
 #include <stdlib.h>
+
 
 void setUp(void) {
     // Set up code (if needed)
@@ -17,7 +18,7 @@ void test_simulation_initialization(void) {
     size_t nx = 5, ny = 5;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
 
     TEST_ASSERT_NOT_NULL(sim_data);
     TEST_ASSERT_NOT_NULL(sim_data->field);
@@ -48,7 +49,7 @@ void test_velocity_magnitude_calculation(void) {
     size_t nx = 3, ny = 3;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
 
     // Set some test velocity values
     sim_data->field->u[0] = 3.0;  // u component
@@ -74,7 +75,7 @@ void test_velocity_magnitude_squared_calculation(void) {
     size_t nx = 2, ny = 2;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
 
     // Set test velocity values
     sim_data->field->u[0] = 3.0;
@@ -100,7 +101,7 @@ void test_simulation_step_execution(void) {
     size_t nx = 5, ny = 5;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
 
     // Store initial values to verify the solver runs
     double initial_u = sim_data->field->u[12];  // middle point
@@ -133,7 +134,7 @@ void test_multiple_simulation_steps(void) {
     size_t nx = 4, ny = 4;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
 
     // Run multiple simulation steps
     for (int step = 0; step < 5; step++) {

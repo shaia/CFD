@@ -110,7 +110,7 @@ if(BUILD_EXAMPLES)
 endif()
 
 # Optionally build tests
-option(BUILD_TESTS "Build test executables" OFF)
+option(BUILD_TESTS "Build test executables" ON)
 
 if(BUILD_TESTS)
     # Fetch Unity testing framework

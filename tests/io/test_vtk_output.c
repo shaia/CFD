@@ -1,10 +1,6 @@
-#include "cfd/core/grid.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
 #include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+#include "cfd/core/grid.h"
+
 
 #include "cfd/io/vtk_output.h"
 #include "cfd/solvers/solver_interface.h"
@@ -25,8 +21,8 @@
 #endif
 
 // Test fixtures
-static Grid* test_grid = NULL;
-static FlowField* test_field = NULL;
+static grid* test_grid = NULL;
+static flow_field* test_field = NULL;
 static char test_output_dir[256];
 
 void setUp(void) {
@@ -42,11 +38,11 @@ void setUp(void) {
 
     // Set some known values for testing
     for (size_t i = 0; i < nx * ny; i++) {
-        test_field->u[i] = 0.5 + 0.1 * sin((double)i);
-        test_field->v[i] = 0.3 + 0.05 * cos((double)i);
+        test_field->u[i] = 0.5 + (0.1 * sin((double)i));
+        test_field->v[i] = 0.3 + (0.05 * cos((double)i));
         test_field->p[i] = 100000.0 + 1000.0 * sin((double)i);
-        test_field->rho[i] = 1.2 + 0.01 * cos((double)i);
-        test_field->T[i] = 300.0 + 10.0 * sin((double)i);
+        test_field->rho[i] = 1.2 + (0.01 * cos((double)i));
+        test_field->T[i] = 300.0 + (10.0 * sin((double)i));
     }
 
     // Set up output directory
@@ -72,11 +68,13 @@ static int file_exists(const char* filename) {
 
 // Helper to check if file contains a string
 static int file_contains(const char* filename, const char* str) {
-    if (filename == NULL)
+    if (filename == NULL) {
         return 0;
+    }
     FILE* fp = fopen(filename, "r");
-    if (!fp)
+    if (!fp) {
         return 0;
+    }
 
     char buffer[4096];
     while (fgets(buffer, sizeof(buffer), fp)) {

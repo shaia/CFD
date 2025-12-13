@@ -1,13 +1,14 @@
-#include "cfd/io/csv_output.h"
+#include "cfd/core/cfd_status.h"
 #include "cfd/core/derived_fields.h"
+#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
+#include "cfd/core/math_utils.h"
+#include "cfd/core/memory.h"
+#include "cfd/io/csv_output.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
+
 
 #include <math.h>
 #include <stdio.h>
@@ -23,9 +24,9 @@
 #endif
 
 // Test fixtures
-static Grid* test_grid = NULL;
-static FlowField* test_field = NULL;
-static DerivedFields* test_derived = NULL;
+static grid* test_grid = NULL;
+static flow_field* test_field = NULL;
+static derived_fields* test_derived = NULL;
 static char test_output_dir[256];
 
 void setUp(void) {
@@ -81,7 +82,8 @@ static int file_exists(const char* filename) {
 // Helper to count lines in a file
 static int count_file_lines(const char* filename) {
     FILE* fp = fopen(filename, "r");
-    if (!fp) return -1;
+    if (!fp)
+        return -1;
 
     int lines = 0;
     char buffer[4096];
@@ -95,7 +97,8 @@ static int count_file_lines(const char* filename) {
 // Helper to check if file contains a string
 static int file_contains(const char* filename, const char* str) {
     FILE* fp = fopen(filename, "r");
-    if (!fp) return 0;
+    if (!fp)
+        return 0;
 
     char buffer[4096];
     while (fgets(buffer, sizeof(buffer), fp)) {
@@ -117,14 +120,14 @@ void test_csv_timeseries_creates_file(void) {
     make_output_path(filename, sizeof(filename), "test_timeseries.csv");
     remove(filename);
 
-    SolverParams params = solver_params_default();
-    SolverStats stats = solver_stats_default();
+    solver_params params = solver_params_default();
+    solver_stats stats = solver_stats_default();
     stats.iterations = 10;
     stats.residual = 1e-5;
     stats.elapsed_time_ms = 12.5;
 
-    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats,
-                         test_grid->nx, test_grid->ny, 1);
+    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats, test_grid->nx,
+                         test_grid->ny, 1);
 
     TEST_ASSERT_TRUE(file_exists(filename));
     remove(filename);
@@ -135,11 +138,11 @@ void test_csv_timeseries_has_header(void) {
     make_output_path(filename, sizeof(filename), "test_timeseries_header.csv");
     remove(filename);
 
-    SolverParams params = solver_params_default();
-    SolverStats stats = solver_stats_default();
+    solver_params params = solver_params_default();
+    solver_stats stats = solver_stats_default();
 
-    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats,
-                         test_grid->nx, test_grid->ny, 1);
+    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats, test_grid->nx,
+                         test_grid->ny, 1);
 
     TEST_ASSERT_TRUE(file_contains(filename, "step,time,dt"));
     TEST_ASSERT_TRUE(file_contains(filename, "max_u,max_v,max_p"));
@@ -153,12 +156,12 @@ void test_csv_timeseries_appends_data(void) {
     make_output_path(filename, sizeof(filename), "test_timeseries_append.csv");
     remove(filename);
 
-    SolverParams params = solver_params_default();
-    SolverStats stats = solver_stats_default();
+    solver_params params = solver_params_default();
+    solver_stats stats = solver_stats_default();
 
     // Write first entry (creates file with header)
-    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats,
-                         test_grid->nx, test_grid->ny, 1);
+    write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats, test_grid->nx,
+                         test_grid->ny, 1);
 
     // Write second entry (appends)
     write_csv_timeseries(filename, 1, 0.001, test_field, test_derived, &params, &stats,
@@ -180,8 +183,8 @@ void test_csv_timeseries_null_safety(void) {
     make_output_path(filename, sizeof(filename), "test_null.csv");
     remove(filename);
 
-    SolverParams params = solver_params_default();
-    SolverStats stats = solver_stats_default();
+    solver_params params = solver_params_default();
+    solver_stats stats = solver_stats_default();
 
     // These should not crash - derived is required for stats
     write_csv_timeseries(NULL, 0, 0.0, test_field, test_derived, &params, &stats, 10, 10, 1);
@@ -260,8 +263,8 @@ void test_csv_statistics_creates_file(void) {
     make_output_path(filename, sizeof(filename), "test_statistics.csv");
     remove(filename);
 
-    write_csv_statistics(filename, 0, 0.0, test_field, test_derived,
-                         test_grid->nx, test_grid->ny, 1);
+    write_csv_statistics(filename, 0, 0.0, test_field, test_derived, test_grid->nx, test_grid->ny,
+                         1);
 
     TEST_ASSERT_TRUE(file_exists(filename));
     remove(filename);
@@ -272,8 +275,8 @@ void test_csv_statistics_has_header(void) {
     make_output_path(filename, sizeof(filename), "test_statistics_header.csv");
     remove(filename);
 
-    write_csv_statistics(filename, 0, 0.0, test_field, test_derived,
-                         test_grid->nx, test_grid->ny, 1);
+    write_csv_statistics(filename, 0, 0.0, test_field, test_derived, test_grid->nx, test_grid->ny,
+                         1);
 
     TEST_ASSERT_TRUE(file_contains(filename, "step,time"));
     TEST_ASSERT_TRUE(file_contains(filename, "min_u,max_u,avg_u"));
@@ -325,7 +328,7 @@ void test_csv_statistics_requires_computed(void) {
     remove(filename);
 
     // Create derived fields without computing statistics
-    DerivedFields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny);
+    derived_fields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny);
     TEST_ASSERT_NOT_NULL(derived_no_stats);
     TEST_ASSERT_EQUAL_INT(0, derived_no_stats->stats_computed);
 
@@ -342,11 +345,11 @@ void test_csv_timeseries_requires_computed(void) {
     make_output_path(filename, sizeof(filename), "test_timeseries_not_computed.csv");
     remove(filename);
 
-    SolverParams params = solver_params_default();
-    SolverStats stats = solver_stats_default();
+    solver_params params = solver_params_default();
+    solver_stats stats = solver_stats_default();
 
     // Create derived fields without computing statistics
-    DerivedFields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny);
+    derived_fields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny);
     TEST_ASSERT_NOT_NULL(derived_no_stats);
 
     // Should not write file when stats_computed is false
@@ -366,10 +369,10 @@ void test_csv_timeseries_data_values(void) {
     make_output_path(filename, sizeof(filename), "test_timeseries_values.csv");
     remove(filename);
 
-    SolverParams params = solver_params_default();
+    solver_params params = solver_params_default();
     params.dt = 0.001;
 
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     stats.iterations = 42;
     stats.residual = 1.5e-6;
     stats.elapsed_time_ms = 25.5;
