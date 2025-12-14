@@ -692,7 +692,9 @@ static cfd_status_t gpu_euler_init(Solver* solver, const Grid* grid, const Solve
         return CFD_ERROR;
 
     ctx->gpu_config = gpu_config_default();
-    ctx->use_gpu = gpu_should_use(&ctx->gpu_config, grid->nx, grid->ny, params->max_iter);
+    // For GPU solver, always try to use GPU if available (for testing)
+    // The min_grid_size and min_steps checks are for auto-selection, not forced GPU usage
+    ctx->use_gpu = gpu_is_available();
     ctx->gpu_ctx = NULL;
 
     if (ctx->use_gpu) {
@@ -862,8 +864,14 @@ static cfd_status_t gpu_projection_step(Solver* solver, FlowField* field, const 
     SolverParams step_params = *params;
     step_params.max_iter = 1;
 
-    if (ctx && ctx->use_gpu) {
-        solve_projection_method_gpu(field, grid, &step_params, &ctx->gpu_config);
+    if (ctx && ctx->use_gpu && ctx->gpu_ctx) {
+        // Use persistent GPU context for step
+        if (gpu_solver_upload(ctx->gpu_ctx, field) == CFD_SUCCESS) {
+            GPUSolverStats gpu_stats;
+            if (gpu_solver_step(ctx->gpu_ctx, grid, &step_params, &gpu_stats) == CFD_SUCCESS) {
+                gpu_solver_download(ctx->gpu_ctx, field);
+            }
+        }
     } else {
         solve_projection_method(field, grid, &step_params);
     }
