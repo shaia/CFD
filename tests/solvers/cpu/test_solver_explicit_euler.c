@@ -165,7 +165,7 @@ void test_taylor_green_decay_rate(void) {
     TEST_ASSERT_NOT_NULL(field);
 
     grid_initialize_uniform(g);
-    test_init_taylor_green_full(field, g, U, k);
+    test_init_taylor_green_with_params(field, g, U, k);
 
     double initial_ke = test_compute_kinetic_energy(field, g);
     printf("Initial kinetic energy: %.6e\n", initial_ke);
@@ -246,7 +246,7 @@ void test_spatial_convergence(void) {
         double* analytical_u = (double*)cfd_calloc(n * n, sizeof(double));
 
         grid_initialize_uniform(g);
-        test_init_taylor_green_full(field, g, U, k);
+        test_init_taylor_green_with_params(field, g, U, k);
 
         solver_params params = solver_params_default();
         params.dt = 0.0001;

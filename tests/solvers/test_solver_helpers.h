@@ -216,7 +216,7 @@ static inline double test_compute_kinetic_energy_simple(const flow_field* field,
  * u(x,y) =  U * cos(k*x) * sin(k*y)
  * v(x,y) = -U * sin(k*x) * cos(k*y)
  */
-static inline void test_init_taylor_green_full(flow_field* field, const grid* g,
+static inline void test_init_taylor_green_with_params(flow_field* field, const grid* g,
                                           double U, double k) {
     size_t nx = field->nx;
     size_t ny = field->ny;
@@ -242,7 +242,7 @@ static inline void test_init_taylor_green_full(flow_field* field, const grid* g,
  * Initialize flow field with Taylor-Green vortex using default parameters
  */
 static inline void test_init_taylor_green(flow_field* field, const grid* g) {
-    test_init_taylor_green_full(field, g, 0.1, 2.0 * M_PI);
+    test_init_taylor_green_with_params(field, g, 0.1, 2.0 * M_PI);
 }
 
 /**
