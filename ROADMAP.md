@@ -79,10 +79,10 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Geometric multigrid
 - [ ] Algebraic multigrid (AMG)
 
-**SIMD Poisson Solvers (implemented - needs integration):**
+**SIMD Poisson Solvers (implemented and integrated):**
 - [x] Jacobi SIMD (`poisson_jacobi_simd.c`) - AVX2 vectorized, fully parallelizable
 - [x] Red-Black SOR SIMD (`poisson_redblack_simd.c`) - AVX2 with SOR convergence rate
-- [ ] Integrate SIMD Poisson into projection solver (`solver_projection_simd.c`)
+- [x] Integrate SIMD Poisson into projection solver (`solver_projection_simd.c`)
 - [ ] Improve convergence for non-trivial problems (increase `POISSON_MAX_ITER` or add preconditioning)
 - [ ] Performance benchmarking in Release mode
 
