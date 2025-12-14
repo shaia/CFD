@@ -148,10 +148,11 @@ jobs:
           echo "- **CUDA:** Disabled" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type:** Release" >> $GITHUB_STEP_SUMMARY
 
-  # Windows CUDA build test
+  # Windows CUDA build test (only on manual trigger due to slow toolkit install)
   windows-cuda-build:
     name: Windows CUDA Build
     runs-on: windows-latest
+    if: github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout code
@@ -226,9 +227,15 @@ jobs:
           echo "| CPU-Only Build | ${{ needs.cpu-only-build.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Windows CUDA Build | ${{ needs.windows-cuda-build.result }} |" >> $GITHUB_STEP_SUMMARY
 
+          # Windows build is optional (only runs on workflow_dispatch)
+          WINDOWS_OK="${{ needs.windows-cuda-build.result }}"
+          if [[ "$WINDOWS_OK" == "skipped" || "$WINDOWS_OK" == "success" ]]; then
+            WINDOWS_OK="success"
+          fi
+
           if [[ "${{ needs.cuda-build-cpu-fallback.result }}" == "success" && \
                 "${{ needs.cpu-only-build.result }}" == "success" && \
-                "${{ needs.windows-cuda-build.result }}" == "success" ]]; then
+                "$WINDOWS_OK" == "success" ]]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "✅ **All CUDA tests passed!**" >> $GITHUB_STEP_SUMMARY
           else
