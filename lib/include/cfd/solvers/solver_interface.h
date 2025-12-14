@@ -263,8 +263,8 @@ CFD_LIBRARY_EXPORT const char* cfd_registry_get_description(solver_registry* reg
  * Helper to initialize SolverStats with default values
  */
 static inline solver_stats solver_stats_default(void) {
-    // Use individual assignments for CUDA/NVCC compatibility
-    // (NVCC doesn't fully support C99 designated initializers)
+    // Use individual assignments for NVCC compatibility when this header
+    // is included in CUDA files compiled in C++ mode or with older NVCC versions
     solver_stats stats;
     stats.iterations = 0;
     stats.residual = 0.0;
