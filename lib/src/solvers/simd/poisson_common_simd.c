@@ -77,17 +77,26 @@ int poisson_solve_sor_scalar(double* p, const double* rhs, size_t nx, size_t ny,
                     }
 
                     size_t idx = (j * nx) + i;
-                    double p_xx = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / dx2;
-                    double p_yy = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / dy2;
-                    double residual = p_xx + p_yy - rhs[idx];
+                    double p_c = p[idx];
+                    double p_xp = p[idx + 1];
+                    double p_xm = p[idx - 1];
+                    double p_yp = p[idx + nx];
+                    double p_ym = p[idx - nx];
 
-                    if (fabs(residual) > max_residual) {
-                        max_residual = fabs(residual);
+                    // Compute SOR update first
+                    double p_new = (rhs[idx] - (p_xp + p_xm) / dx2 -
+                                    (p_yp + p_ym) / dy2) * (-inv_factor);
+                    double p_updated = p_c + (POISSON_OMEGA * (p_new - p_c));
+                    p[idx] = p_updated;
+
+                    // Track residual using UPDATED value for accurate convergence check
+                    double p_xx = (p_xp - 2.0 * p_updated + p_xm) / dx2;
+                    double p_yy = (p_yp - 2.0 * p_updated + p_ym) / dy2;
+                    double residual = fabs(p_xx + p_yy - rhs[idx]);
+
+                    if (residual > max_residual) {
+                        max_residual = residual;
                     }
-
-                    double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2 -
-                                    (p[idx + nx] + p[idx - nx]) / dy2) * (-inv_factor);
-                    p[idx] = p[idx] + (POISSON_OMEGA * (p_new - p[idx]));
                 }
             }
         }

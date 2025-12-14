@@ -112,9 +112,9 @@ int poisson_solve_redblack_simd(double* p, double* p_temp, const double* rhs,
                         size_t idx = (j * nx) + i + (k * 2);
                         p[idx] = results[k];
 
-                        // Track residual
-                        double p_xx = (p_xp[k] - 2.0 * vals[k] + p_xm[k]) / dx2;
-                        double p_yy = (p_yp[k] - 2.0 * vals[k] + p_ym[k]) / dy2;
+                        // Track residual using UPDATED values for accurate convergence check
+                        double p_xx = (p_xp[k] - 2.0 * results[k] + p_xm[k]) / dx2;
+                        double p_yy = (p_yp[k] - 2.0 * results[k] + p_ym[k]) / dy2;
                         double res = fabs(p_xx + p_yy - rhs_v[k]);
                         if (res > max_residual) max_residual = res;
                     }
@@ -130,14 +130,17 @@ int poisson_solve_redblack_simd(double* p, double* p_temp, const double* rhs,
                     double p_yp_s = p[idx + nx];
                     double p_ym_s = p[idx - nx];
 
-                    double p_xx = (p_xp_s - 2.0 * p_c + p_xm_s) / dx2;
-                    double p_yy = (p_yp_s - 2.0 * p_c + p_ym_s) / dy2;
-                    double res = fabs(p_xx + p_yy - rhs[idx]);
-                    if (res > max_residual) max_residual = res;
-
+                    // Compute SOR update first
                     double p_new = (rhs[idx] - (p_xp_s + p_xm_s) / dx2
                                              - (p_yp_s + p_ym_s) / dy2) * (-inv_factor);
-                    p[idx] = p_c + POISSON_OMEGA * (p_new - p_c);
+                    double p_updated = p_c + POISSON_OMEGA * (p_new - p_c);
+                    p[idx] = p_updated;
+
+                    // Track residual using UPDATED value for accurate convergence check
+                    double p_xx = (p_xp_s - 2.0 * p_updated + p_xm_s) / dx2;
+                    double p_yy = (p_yp_s - 2.0 * p_updated + p_ym_s) / dy2;
+                    double res = fabs(p_xx + p_yy - rhs[idx]);
+                    if (res > max_residual) max_residual = res;
                 }
             }
         }

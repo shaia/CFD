@@ -16,6 +16,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] Python bindings infrastructure (cfd-python)
 - [x] Visualization library (cfd-visualization)
 - [x] Thread-safe library initialization
+- [x] SIMD Poisson solvers (Jacobi and Red-Black SOR with AVX2)
 
 ### Critical Gaps
 - [ ] Only 2D (no 3D support)
@@ -77,6 +78,15 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Preconditioners (Jacobi, ILU)
 - [ ] Geometric multigrid
 - [ ] Algebraic multigrid (AMG)
+
+**SIMD Poisson Solvers (implemented - needs integration):**
+- [x] Jacobi SIMD (`poisson_jacobi_simd.c`) - AVX2 vectorized, fully parallelizable
+- [x] Red-Black SOR SIMD (`poisson_redblack_simd.c`) - AVX2 with SOR convergence rate
+- [ ] Integrate SIMD Poisson into projection solver (`solver_projection_simd.c`)
+- [ ] Improve convergence for non-trivial problems (increase `POISSON_MAX_ITER` or add preconditioning)
+- [ ] Performance benchmarking in Release mode
+
+**Note:** Current SIMD Poisson solvers produce valid results but may not converge to strict tolerance (1e-6) on challenging problems like sinusoidal RHS within iteration limits. They converge properly on simpler problems (zero RHS, uniform RHS). See `docs/simd-optimization-analysis.md` for details.
 
 ### 1.3 Numerical Schemes (P1)
 - [ ] Upwind differencing (1st order) for stability
@@ -209,7 +219,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Unified memory optimization
 - [ ] Asynchronous transfers
 - [ ] GPU-aware MPI
-- [ ] Red-Black SOR kernel (`kernel_poisson_sor_rb`)
+- [ ] Red-Black SOR GPU kernel (CPU SIMD version available in `poisson_redblack_simd.c`)
 
 ### 4.3 Performance Tools (P2)
 - [ ] Built-in profiling

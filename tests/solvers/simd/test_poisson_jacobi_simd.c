@@ -166,7 +166,7 @@ void test_jacobi_converges_zero_rhs(void) {
     for (size_t i = 0; i < nx * ny; i++) {
         p[i] = 0.1;
         p_temp[i] = 0.0;
-        rhs[i] = 0.0;  // Zero RHS - solution should converge to zero
+        rhs[i] = 0.0;  // Zero RHS - solution converges to a constant
     }
 
     int iters = poisson_solve_jacobi_simd(p, p_temp, rhs, nx, ny, dx, dy);
