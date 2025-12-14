@@ -12,6 +12,10 @@
 #include <stdio.h>
 #include <string.h>
 
+// External reference to scalar projection method
+extern cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
+                                            const solver_params* params);
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -176,141 +180,21 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
 
 cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, const grid* grid,
                                   const solver_params* params, solver_stats* stats) {
-    cfd_status_t status = CFD_SUCCESS;
-    if (!solver || !solver->context || !field || !grid) {
-        return CFD_ERROR_INVALID;
-    }
-    projection_simd_context* ctx = (projection_simd_context*)solver->context;
+    (void)solver;  // Context not used - delegating to scalar solver
 
-    if (field->nx != ctx->nx || field->ny != ctx->ny) {
+    if (!field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }
 
-    size_t size = ctx->nx * ctx->ny;
-    double dt = params->dt;
-    double dx = grid->dx[0];
-    double dy = grid->dy[0];
-    double rho = field->rho[0] > 1e-10 ? field->rho[0] : 1.0;
+    // Delegate to scalar solver with max_iter=1 (one step per call)
+    solver_params step_params = *params;
+    step_params.max_iter = 1;
 
-    // Copy current fields
-    memcpy(ctx->u_star, field->u, size * sizeof(double));
-    memcpy(ctx->v_star, field->v, size * sizeof(double));
-    memcpy(ctx->p_new, field->p, size * sizeof(double));
-
-    // Removed outer loop over max_iter to match interface expectation (one step per call)
-
-
-    // Step 1: Predictor
-    for (size_t j = 1; j < ctx->ny - 1; j++) {
-        for (size_t i = 1; i < ctx->nx - 1; i++) {
-            size_t idx = (j * ctx->nx) + i;
-            double u = field->u[idx];
-            double v = field->v[idx];
-
-            double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2 * dx);
-            double du_dy = (field->u[idx + ctx->nx] - field->u[idx - ctx->nx]) / (2 * dy);
-            double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) / (2 * dx);
-            double dv_dy = (field->v[idx + ctx->nx] - field->v[idx - ctx->nx]) / (2 * dy);
-
-            double d2u_dx2 = (field->u[idx + 1] - 2 * u + field->u[idx - 1]) / (dx * dx);
-            double d2u_dy2 =
-                (field->u[idx + ctx->nx] - 2 * u + field->u[idx - ctx->nx]) / (dy * dy);
-            double d2v_dx2 = (field->v[idx + 1] - 2 * v + field->v[idx - 1]) / (dx * dx);
-            double d2v_dy2 =
-                (field->v[idx + ctx->nx] - 2 * v + field->v[idx - ctx->nx]) / (dy * dy);
-
-            double conv_u = (u * du_dx) + (v * du_dy);
-            double conv_v = (u * dv_dx) + (v * dv_dy);
-            double visc_u = params->mu * (d2u_dx2 + d2u_dy2);
-            double visc_v = params->mu * (d2v_dx2 + d2v_dy2);
-
-            double source_u = 0.0;
-            double source_v = 0.0;
-            if (params->source_amplitude_u > 0) {
-                source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]);
-                source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]);
-            }
-
-            ctx->u_star[idx] = u + (dt * (-conv_u + visc_u + source_u));
-            ctx->v_star[idx] = v + (dt * (-conv_v + visc_v + source_v));
-        }
-    }
-
-    // BCs intermediate
-    for (size_t j = 0; j < ctx->ny; j++) {
-        ctx->u_star[j * ctx->nx] = ctx->u_star[(j * ctx->nx) + 1];
-        ctx->u_star[(j * ctx->nx) + ctx->nx - 1] = ctx->u_star[(j * ctx->nx) + ctx->nx - 2];
-        ctx->v_star[j * ctx->nx] = ctx->v_star[(j * ctx->nx) + 1];
-        ctx->v_star[(j * ctx->nx) + ctx->nx - 1] = ctx->v_star[(j * ctx->nx) + ctx->nx - 2];
-    }
-    for (size_t i = 0; i < ctx->nx; i++) {
-        ctx->u_star[i] = ctx->u_star[ctx->nx + i];
-        ctx->u_star[((ctx->ny - 1) * ctx->nx) + i] = ctx->u_star[((ctx->ny - 2) * ctx->nx) + i];
-        ctx->v_star[i] = ctx->v_star[ctx->nx + i];
-        ctx->v_star[((ctx->ny - 1) * ctx->nx) + i] = ctx->v_star[((ctx->ny - 2) * ctx->nx) + i];
-    }
-
-    // Step 2: RHS
-    for (size_t j = 1; j < ctx->ny - 1; j++) {
-        for (size_t i = 1; i < ctx->nx - 1; i++) {
-            size_t idx = (j * ctx->nx) + i;
-            double du_dx = (ctx->u_star[idx + 1] - ctx->u_star[idx - 1]) / (2 * dx);
-            double dv_dy = (ctx->v_star[idx + ctx->nx] - ctx->v_star[idx - ctx->nx]) / (2 * dy);
-            ctx->rhs[idx] = (rho / dt) * (du_dx + dv_dy);
-        }
-    }
-
-    // Poisson
-    int poisson_iters = solve_poisson_sor(ctx->p_new, ctx->rhs, ctx->nx, ctx->ny, dx, dy);
-    if (poisson_iters < 0) {
-        status = CFD_ERROR_DIVERGED;
-        // Fallback if Poisson solver fails to converge
-        double fallback_factor = 0.1 * dt;
-#if USE_AVX
-        __m256d v_factor = _mm256_set1_pd(fallback_factor);
-        size_t total_cells = ctx->nx * ctx->ny;
-        size_t aligned_n = (total_cells / 4) * 4;
-
-        for (size_t i = 0; i < aligned_n; i += 4) {
-            __m256d v_p = _mm256_loadu_pd(&field->p[i]);    // field->p might not be aligned
-            __m256d v_rhs = _mm256_loadu_pd(&ctx->rhs[i]);  // Safe unaligned load
-            __m256d v_res = _mm256_sub_pd(v_p, _mm256_mul_pd(v_factor, v_rhs));
-            _mm256_storeu_pd(&ctx->p_new[i], v_res);
-        }
-        for (size_t i = aligned_n; i < total_cells; i++) {
-            ctx->p_new[i] = field->p[i] - fallback_factor * ctx->rhs[i];
-        }
-#else
-        for (size_t i = 0; i < ctx->nx * ctx->ny; i++) {
-            ctx->p_new[i] = field->p[i] - (fallback_factor * ctx->rhs[i]);
-        }
-#endif
-    }
-
-    // Step 3: Corrector
-    for (size_t j = 1; j < ctx->ny - 1; j++) {
-        for (size_t i = 1; i < ctx->nx - 1; i++) {
-            size_t idx = (j * ctx->nx) + i;
-            double dp_dx = (ctx->p_new[idx + 1] - ctx->p_new[idx - 1]) / (2 * dx);
-            double dp_dy = (ctx->p_new[idx + ctx->nx] - ctx->p_new[idx - ctx->nx]) / (2 * dy);
-
-            double u_corr = ctx->u_star[idx] - ((dt / rho) * dp_dx);
-            double v_corr = ctx->v_star[idx] - ((dt / rho) * dp_dy);
-
-            ctx->u_new[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, u_corr));
-            ctx->v_new[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, v_corr));
-        }
-    }
-
-    // Update field
-    memcpy(field->u, ctx->u_new, size * sizeof(double));
-    memcpy(field->v, ctx->v_new, size * sizeof(double));
-    memcpy(field->p, ctx->p_new, size * sizeof(double));
-    apply_boundary_conditions(field, grid);
+    cfd_status_t status = solve_projection_method(field, grid, &step_params);
 
     if (stats) {
         stats->iterations = 1;
     }
 
-    return CFD_SUCCESS;
+    return status;
 }

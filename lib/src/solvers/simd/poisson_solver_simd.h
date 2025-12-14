@@ -11,9 +11,10 @@
 #include <stddef.h>
 
 // Poisson solver parameters
-#define POISSON_MAX_ITER  1000
-#define POISSON_TOLERANCE 1e-6
-#define POISSON_OMEGA     1.5  // SOR relaxation parameter (1 < omega < 2)
+#define POISSON_MAX_ITER        1000
+#define POISSON_MAX_ITER_JACOBI 2000  // Jacobi needs ~2x more iterations than SOR
+#define POISSON_TOLERANCE       1e-6
+#define POISSON_OMEGA           1.5   // SOR relaxation parameter (1 < omega < 2)
 
 /**
  * Poisson solver type enumeration

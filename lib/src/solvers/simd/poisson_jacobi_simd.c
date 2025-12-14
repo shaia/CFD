@@ -39,10 +39,11 @@ int poisson_solve_jacobi_simd(double* p, double* p_temp, const double* rhs,
     __m256d dy2_inv_vec = _mm256_set1_pd(1.0 / dy2);
     __m256d inv_factor_vec = _mm256_set1_pd(-inv_factor);
 
-    // Jacobi needs ~2x more iterations than SOR for same convergence
-    int jacobi_max_iter = POISSON_MAX_ITER * 2;
+    // Use local pointers for double-buffering with pointer swapping
+    double* p_old = p;
+    double* p_new = p_temp;
 
-    for (iter = 0; iter < jacobi_max_iter; iter++) {
+    for (iter = 0; iter < POISSON_MAX_ITER_JACOBI; iter++) {
         // Jacobi update: p_new[i] depends only on p_old neighbors
         for (size_t j = 1; j < ny - 1; j++) {
             size_t i;
@@ -51,11 +52,11 @@ int poisson_solve_jacobi_simd(double* p, double* p_temp, const double* rhs,
             for (i = 1; i + 4 <= nx - 1; i += 4) {
                 size_t idx = (j * nx) + i;
 
-                // Load neighbor values from OLD array (p_c not needed for Jacobi)
-                __m256d p_xp = _mm256_loadu_pd(&p[idx + 1]);
-                __m256d p_xm = _mm256_loadu_pd(&p[idx - 1]);
-                __m256d p_yp = _mm256_loadu_pd(&p[idx + nx]);
-                __m256d p_ym = _mm256_loadu_pd(&p[idx - nx]);
+                // Load neighbor values from OLD array
+                __m256d p_xp = _mm256_loadu_pd(&p_old[idx + 1]);
+                __m256d p_xm = _mm256_loadu_pd(&p_old[idx - 1]);
+                __m256d p_yp = _mm256_loadu_pd(&p_old[idx + nx]);
+                __m256d p_ym = _mm256_loadu_pd(&p_old[idx - nx]);
                 __m256d rhs_vec = _mm256_loadu_pd(&rhs[idx]);
 
                 // Compute: p_new = -(rhs - (p_xp + p_xm)/dx2 - (p_yp + p_ym)/dy2) / factor
@@ -65,41 +66,45 @@ int poisson_solve_jacobi_simd(double* p, double* p_temp, const double* rhs,
                 __m256d term_x = _mm256_mul_pd(sum_x, dx2_inv_vec);
                 __m256d term_y = _mm256_mul_pd(sum_y, dy2_inv_vec);
 
-                __m256d p_new = _mm256_mul_pd(
+                __m256d p_result = _mm256_mul_pd(
                     _mm256_sub_pd(rhs_vec, _mm256_add_pd(term_x, term_y)),
                     inv_factor_vec);
 
-                // Store to NEW array (p_temp)
-                _mm256_storeu_pd(&p_temp[idx], p_new);
+                // Store to NEW array
+                _mm256_storeu_pd(&p_new[idx], p_result);
             }
 
             // Scalar remainder
             for (; i < nx - 1; i++) {
                 size_t idx = (j * nx) + i;
-                double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2
-                                         - (p[idx + nx] + p[idx - nx]) / dy2) * (-inv_factor);
-                p_temp[idx] = p_new;
+                double p_result = (rhs[idx] - (p_old[idx + 1] + p_old[idx - 1]) / dx2
+                                            - (p_old[idx + nx] + p_old[idx - nx]) / dy2) * (-inv_factor);
+                p_new[idx] = p_result;
             }
         }
 
-        // Swap: copy p_temp back to p
-        for (size_t j = 1; j < ny - 1; j++) {
-            for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = (j * nx) + i;
-                p[idx] = p_temp[idx];
-            }
-        }
+        // Swap pointers instead of copying data
+        double* tmp = p_old;
+        p_old = p_new;
+        p_new = tmp;
 
-        poisson_apply_bc(p, nx, ny);
+        poisson_apply_bc(p_old, nx, ny);
 
         // Check convergence every 10 iterations (residual computation is expensive)
         if (iter % 10 == 0) {
-            double max_residual = poisson_compute_residual(p, rhs, nx, ny, dx2, dy2);
+            double max_residual = poisson_compute_residual(p_old, rhs, nx, ny, dx2, dy2);
             if (max_residual < POISSON_TOLERANCE) {
                 converged = 1;
                 break;
             }
         }
+    }
+
+    // Ensure final result is in p (the caller's buffer)
+    // After the loop, p_old points to the latest result
+    if (p_old != p) {
+        // Copy final result back to p
+        memcpy(p, p_old, nx * ny * sizeof(double));
     }
 
     return converged ? iter : -1;
