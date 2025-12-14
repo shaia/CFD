@@ -6,7 +6,7 @@
 
 
 // Test fixtures
-static SimulationData* test_sim = NULL;
+static simulation_data* test_sim = NULL;
 
 void setUp(void) {
     // Create a small simulation for testing
@@ -75,21 +75,21 @@ void test_init_simulation_sets_default_params(void) {
 }
 
 void test_init_simulation_with_solver_creates_valid_structure(void) {
-    SimulationData* sim = init_simulation_with_solver(5, 5, 0.0, 1.0, 0.0, 1.0, "explicit_euler");
+    simulation_data* sim = init_simulation_with_solver(5, 5, 0.0, 1.0, 0.0, 1.0, "explicit_euler");
     TEST_ASSERT_NOT_NULL(sim);
     TEST_ASSERT_NOT_NULL(sim->solver);
     free_simulation(sim);
 }
 
 void test_init_simulation_with_null_solver_uses_default(void) {
-    SimulationData* sim = init_simulation_with_solver(5, 5, 0.0, 1.0, 0.0, 1.0, NULL);
+    simulation_data* sim = init_simulation_with_solver(5, 5, 0.0, 1.0, 0.0, 1.0, NULL);
     TEST_ASSERT_NOT_NULL(sim);
     TEST_ASSERT_NOT_NULL(sim->solver);
     free_simulation(sim);
 }
 
 void test_init_simulation_with_invalid_solver_returns_null(void) {
-    SimulationData* sim =
+    simulation_data* sim =
         init_simulation_with_solver(5, 5, 0.0, 1.0, 0.0, 1.0, "nonexistent_solver");
     TEST_ASSERT_NULL(sim);
 }
@@ -99,12 +99,12 @@ void test_init_simulation_with_invalid_solver_returns_null(void) {
 //=============================================================================
 
 void test_simulation_get_solver_returns_solver(void) {
-    Solver* solver = simulation_get_solver(test_sim);
+    solver* solver = simulation_get_solver(test_sim);
     TEST_ASSERT_NOT_NULL(solver);
 }
 
 void test_simulation_get_solver_null_returns_null(void) {
-    Solver* solver = simulation_get_solver(NULL);
+    solver* solver = simulation_get_solver(NULL);
     TEST_ASSERT_NULL(solver);
 }
 
@@ -159,7 +159,7 @@ void test_run_simulation_step_advances_time(void) {
 
 void test_run_simulation_step_updates_stats(void) {
     run_simulation_step(test_sim);
-    const SolverStats* stats = simulation_get_stats(test_sim);
+    const solver_stats* stats = simulation_get_stats(test_sim);
     TEST_ASSERT_NOT_NULL(stats);
 }
 
@@ -169,12 +169,12 @@ void test_run_simulation_step_null_sim_no_crash(void) {
 }
 
 void test_simulation_get_stats_returns_stats(void) {
-    const SolverStats* stats = simulation_get_stats(test_sim);
+    const solver_stats* stats = simulation_get_stats(test_sim);
     TEST_ASSERT_NOT_NULL(stats);
 }
 
 void test_simulation_get_stats_null_returns_null(void) {
-    const SolverStats* stats = simulation_get_stats(NULL);
+    const solver_stats* stats = simulation_get_stats(NULL);
     TEST_ASSERT_NULL(stats);
 }
 
@@ -253,20 +253,20 @@ void test_simulation_set_run_prefix_null_sim_no_crash(void) {
 //=============================================================================
 
 void test_output_registry_create_destroy(void) {
-    OutputRegistry* reg = output_registry_create();
+    output_registry* reg = output_registry_create();
     TEST_ASSERT_NOT_NULL(reg);
     output_registry_destroy(reg);
 }
 
 void test_output_registry_add_and_count(void) {
-    OutputRegistry* reg = output_registry_create();
+    output_registry* reg = output_registry_create();
     output_registry_add(reg, OUTPUT_VELOCITY_MAGNITUDE, 10, "test");
     TEST_ASSERT_EQUAL_INT(1, output_registry_count(reg));
     output_registry_destroy(reg);
 }
 
 void test_output_registry_clear(void) {
-    OutputRegistry* reg = output_registry_create();
+    output_registry* reg = output_registry_create();
     output_registry_add(reg, OUTPUT_VELOCITY_MAGNITUDE, 10, "test1");
     output_registry_add(reg, OUTPUT_VELOCITY, 20, "test2");
     output_registry_clear(reg);
@@ -275,14 +275,14 @@ void test_output_registry_clear(void) {
 }
 
 void test_output_registry_has_type_true(void) {
-    OutputRegistry* reg = output_registry_create();
+    output_registry* reg = output_registry_create();
     output_registry_add(reg, OUTPUT_CSV_TIMESERIES, 10, "test");
     TEST_ASSERT_TRUE(output_registry_has_type(reg, OUTPUT_CSV_TIMESERIES));
     output_registry_destroy(reg);
 }
 
 void test_output_registry_has_type_false(void) {
-    OutputRegistry* reg = output_registry_create();
+    output_registry* reg = output_registry_create();
     output_registry_add(reg, OUTPUT_CSV_TIMESERIES, 10, "test");
     TEST_ASSERT_FALSE(output_registry_has_type(reg, OUTPUT_VELOCITY_MAGNITUDE));
     output_registry_destroy(reg);

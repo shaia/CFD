@@ -1,5 +1,5 @@
 #include "cfd/core/cfd_init.h"
-#include "cfd/core/logging.h"
+#include "cfd/core/cfd_status.h"
 #include "cfd_threading_internal.h"
 #include <stdbool.h>
 
@@ -20,10 +20,9 @@ cfd_status_t cfd_init(void) {
          * Perform global initialization tasks here.
          */
         return CFD_SUCCESS;
-    } else {
-        // Another thread beat us to it or initialization is already done
-        return CFD_SUCCESS;
     }
+    // Another thread beat us to it or initialization is already done
+    return CFD_SUCCESS;
 }
 
 void cfd_finalize(void) {

@@ -4,7 +4,6 @@
 
 
 #ifdef _WIN32
-#include <windows.h>
 static __declspec(thread) cfd_status_t g_last_status = CFD_SUCCESS;
 static __declspec(thread) char g_last_error_msg[256] = {0};
 static __declspec(thread) cfd_log_callback_t s_log_callback = NULL;

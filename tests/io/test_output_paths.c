@@ -1,9 +1,5 @@
-#include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
 
@@ -91,10 +87,10 @@ void test_vtk_output_paths(void) {
     size_t nx = 5, ny = 5;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
     // Ensure output directory exists
@@ -153,13 +149,13 @@ void test_solver_output_paths(void) {
     size_t nx = 8, ny = 6;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
-    SolverParams params = solver_params_default();
+    solver_params params = solver_params_default();
     params.max_iter = 1;
 
     // Test that solvers NO LONGER create automatic output files
@@ -168,12 +164,12 @@ void test_solver_output_paths(void) {
     remove(unwanted_output);  // Clean up any existing file
 
     // Run solver
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
 
@@ -241,31 +237,31 @@ void test_no_scattered_output(void) {
     size_t nx = 5, ny = 5;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
-    SolverParams params = {.dt = 0.001,
-                           .cfl = 0.2,
-                           .gamma = 1.4,
-                           .mu = 0.01,
-                           .k = 0.0242,
-                           .max_iter = 1,
-                           .tolerance = 1e-6,
-                           .source_amplitude_u = 0.1,
-                           .source_amplitude_v = 0.05,
-                           .source_decay_rate = 0.1,
-                           .pressure_coupling = 0.1};
+    solver_params params = {.dt = 0.001,
+                            .cfl = 0.2,
+                            .gamma = 1.4,
+                            .mu = 0.01,
+                            .k = 0.0242,
+                            .max_iter = 1,
+                            .tolerance = 1e-6,
+                            .source_amplitude_u = 0.1,
+                            .source_amplitude_v = 0.05,
+                            .source_decay_rate = 0.1,
+                            .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);

@@ -7,7 +7,6 @@
 #include "cfd/solvers/solver_interface.h"
 #include <stddef.h>
 
-#include "cfd/core/grid.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,8 +48,8 @@ extern "C" {
 // If derived fields available: adds max_vel_mag,avg_vel_mag columns
 // On first write, creates file with header. Subsequent writes append data.
 CFD_LIBRARY_EXPORT void write_csv_timeseries(const char* filename, int step, double time,
-                                             const FlowField* field, const DerivedFields* derived,
-                                             const SolverParams* params, const SolverStats* stats,
+                                             const flow_field* field, const derived_fields* derived,
+                                             const solver_params* params, const solver_stats* stats,
                                              size_t nx, size_t ny, int create_new);
 
 //=============================================================================
@@ -64,12 +63,12 @@ CFD_LIBRARY_EXPORT void write_csv_timeseries(const char* filename, int step, dou
 typedef enum {
     PROFILE_HORIZONTAL,  // Along x-axis at y = domain_height/2
     PROFILE_VERTICAL     // Along y-axis at x = domain_width/2
-} ProfileDirection;
+} profile_direction;
 
-CFD_LIBRARY_EXPORT void write_csv_centerline(const char* filename, const FlowField* field,
-                                             const DerivedFields* derived, const double* x_coords,
+CFD_LIBRARY_EXPORT void write_csv_centerline(const char* filename, const flow_field* field,
+                                             const derived_fields* derived, const double* x_coords,
                                              const double* y_coords, size_t nx, size_t ny,
-                                             ProfileDirection direction);
+                                             profile_direction direction);
 
 //=============================================================================
 // CSV STATISTICS OUTPUT
@@ -80,7 +79,7 @@ CFD_LIBRARY_EXPORT void write_csv_centerline(const char* filename, const FlowFie
 // If derived fields available: adds min_vel_mag,max_vel_mag,avg_vel_mag columns
 // On first write, creates file with header. Subsequent writes append data.
 CFD_LIBRARY_EXPORT void write_csv_statistics(const char* filename, int step, double time,
-                                             const FlowField* field, const DerivedFields* derived,
+                                             const flow_field* field, const derived_fields* derived,
                                              size_t nx, size_t ny, int create_new);
 
 #ifdef __cplusplus

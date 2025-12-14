@@ -29,8 +29,8 @@ void test_basic_solver_runs(void) {
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
     // Create grid and flow field
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
-    FlowField* field = flow_field_create(nx, ny);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    flow_field* field = flow_field_create(nx, ny);
 
     TEST_ASSERT_NOT_NULL(grid);
     TEST_ASSERT_NOT_NULL(field);
@@ -39,18 +39,18 @@ void test_basic_solver_runs(void) {
     initialize_flow_field(field, grid);
 
     // Set up solver parameters for quick test
-    SolverParams params = solver_params_default();
+    solver_params params = solver_params_default();
     params.max_iter = 2;      // Very few iterations for speed
     params.tolerance = 1e-1;  // Very relaxed tolerance
 
     // Create registry
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     // Test that solver runs without crashing using modern interface
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);
@@ -73,8 +73,8 @@ void test_optimized_solver_runs(void) {
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
     // Create grid and flow field
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
-    FlowField* field = flow_field_create(nx, ny);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    flow_field* field = flow_field_create(nx, ny);
 
     TEST_ASSERT_NOT_NULL(grid);
     TEST_ASSERT_NOT_NULL(field);
@@ -86,18 +86,18 @@ void test_optimized_solver_runs(void) {
     double initial_rho = field->rho[0];
 
     // Set up solver parameters for quick test
-    SolverParams params = solver_params_default();
+    solver_params params = solver_params_default();
     params.max_iter = 2;      // Very few iterations for speed
     params.tolerance = 1e-1;  // Very relaxed tolerance
 
     // Create registry
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     // Test that optimized solver runs without crashing and produces valid results
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);
@@ -119,8 +119,8 @@ void test_solver_initialization(void) {
     size_t nx = 3, ny = 3;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
-    FlowField* field = flow_field_create(nx, ny);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    flow_field* field = flow_field_create(nx, ny);
 
     TEST_ASSERT_NOT_NULL(grid);
     TEST_ASSERT_NOT_NULL(field);

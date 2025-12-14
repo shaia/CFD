@@ -6,7 +6,7 @@
 
 typedef volatile LONG cfd_atomic_int;
 
-static inline int cfd_atomic_load(cfd_atomic_int* ptr) {
+static inline int cfd_atomic_load(const cfd_atomic_int* ptr) {
     return *ptr;
 }
 

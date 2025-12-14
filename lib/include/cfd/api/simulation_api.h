@@ -5,6 +5,7 @@
 
 #include "cfd/core/grid.h"
 #include "cfd/solvers/solver_interface.h"
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,52 +16,52 @@ extern "C" {
 //=============================================================================
 
 // Forward declaration for output registry
-typedef struct OutputRegistry OutputRegistry;
+typedef struct OutputRegistry output_registry;
 
 // Main simulation state containing grid, flow field, solver, and parameters
 typedef struct {
-    Grid* grid;                 // Computational grid
-    FlowField* field;           // Flow variables (u, v, p, rho, T)
-    SolverParams params;        // Solver parameters (dt, CFL, viscosity, etc.)
-    Solver* solver;             // Active solver (NULL = default solver)
-    SolverRegistry* registry;   // Solver registry (context-bound)
-    SolverStats last_stats;     // Statistics from last solve step
-    OutputRegistry* outputs;    // Registered output configurations (internal)
+    grid* grid;                 // Computational grid
+    flow_field* field;          // Flow variables (u, v, p, rho, T)
+    solver_params params;       // Solver parameters (dt, CFL, viscosity, etc.)
+    solver* solver;             // Active solver (NULL = default solver)
+    solver_registry* registry;  // Solver registry (context-bound)
+    solver_stats last_stats;    // Statistics from last solve step
+    output_registry* outputs;   // Registered output configurations (internal)
     char* run_prefix;           // Run directory prefix (NULL = default "sim")
     double current_time;        // Current simulation time (accumulated dt)
     char output_base_dir[512];  // Base output directory
-} SimulationData;
+} simulation_data;
 
 //=============================================================================
 // INITIALIZATION & CLEANUP
 //=============================================================================
 
 // Initialize simulation with default solver
-CFD_LIBRARY_EXPORT SimulationData* init_simulation(size_t nx, size_t ny, double xmin, double xmax, double ymin,
-                                double ymax);
+CFD_LIBRARY_EXPORT simulation_data* init_simulation(size_t nx, size_t ny, double xmin, double xmax,
+                                                    double ymin, double ymax);
 
 // Initialize simulation with specific solver type
-CFD_LIBRARY_EXPORT SimulationData* init_simulation_with_solver(size_t nx, size_t ny, double xmin,
-                                                               double xmax, double ymin,
-                                                               double ymax,
-                                                               const char* solver_type);
+CFD_LIBRARY_EXPORT simulation_data* init_simulation_with_solver(size_t nx, size_t ny, double xmin,
+                                                                double xmax, double ymin,
+                                                                double ymax,
+                                                                const char* solver_type);
 
 // Free all simulation resources
-CFD_LIBRARY_EXPORT void free_simulation(SimulationData* sim_data);
+CFD_LIBRARY_EXPORT void free_simulation(simulation_data* sim_data);
 
 //=============================================================================
 // SOLVER MANAGEMENT
 //=============================================================================
 
 // Set solver for existing simulation (takes ownership)
-CFD_LIBRARY_EXPORT void simulation_set_solver(SimulationData* sim_data, Solver* solver);
+CFD_LIBRARY_EXPORT void simulation_set_solver(simulation_data* sim_data, solver* solver);
 
 // Set solver by type name (e.g., "explicit_euler", "projection")
-CFD_LIBRARY_EXPORT int simulation_set_solver_by_name(SimulationData* sim_data,
+CFD_LIBRARY_EXPORT int simulation_set_solver_by_name(simulation_data* sim_data,
                                                      const char* solver_type);
 
 // Get current solver (returns NULL if using default)
-CFD_LIBRARY_EXPORT Solver* simulation_get_solver(SimulationData* sim_data);
+CFD_LIBRARY_EXPORT solver* simulation_get_solver(simulation_data* sim_data);
 
 // List all available solver types
 CFD_LIBRARY_EXPORT int simulation_list_solvers(const char** names, int max_count);
@@ -73,14 +74,14 @@ CFD_LIBRARY_EXPORT int simulation_has_solver(const char* solver_type);
 //=============================================================================
 
 // Run a single simulation time step
-CFD_LIBRARY_EXPORT void run_simulation_step(SimulationData* sim_data);
+CFD_LIBRARY_EXPORT void run_simulation_step(simulation_data* sim_data);
 
 // Run simulation until convergence or max iterations
 // Uses the solver's solve() method instead of step()
-CFD_LIBRARY_EXPORT void run_simulation_solve(SimulationData* sim_data);
+CFD_LIBRARY_EXPORT void run_simulation_solve(simulation_data* sim_data);
 
 // Get statistics from last solve (iterations, residuals, etc.)
-CFD_LIBRARY_EXPORT const SolverStats* simulation_get_stats(const SimulationData* sim_data);
+CFD_LIBRARY_EXPORT const solver_stats* simulation_get_stats(const simulation_data* sim_data);
 
 //=============================================================================
 // OUTPUT CONTROL
@@ -97,14 +98,14 @@ typedef enum {
     OUTPUT_CSV_TIMESERIES,  // Time series: step, time, max_vel, max_p, residual, etc.
     OUTPUT_CSV_CENTERLINE,  // Centerline profile: x or y, u, v, p along domain center
     OUTPUT_CSV_STATISTICS   // Global statistics: min/max/avg for all fields per step
-} OutputFieldType;
+} output_field_type;
 
 // Output configuration for automatic file generation
 typedef struct {
-    OutputFieldType field_type;  // What to output
+    output_field_type field_type;  // What to output
     int interval;                // Output every N steps (0 = disabled)
     const char* prefix;          // Optional filename prefix (NULL = use field type name)
-} OutputConfig;
+} output_config;
 
 //=============================================================================
 // OUTPUT REGISTRATION (Registry/Injection Pattern)
@@ -113,21 +114,20 @@ typedef struct {
 // Register output for automatic generation
 // Example: simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, 10, "velocity_mag");
 //          Automatically writes velocity_mag_000.vtk, velocity_mag_010.vtk, etc.
-CFD_LIBRARY_EXPORT void simulation_register_output(SimulationData* sim_data,
-                                                   OutputFieldType field_type,
-                                                   int interval,
+CFD_LIBRARY_EXPORT void simulation_register_output(simulation_data* sim_data,
+                                                   output_field_type field_type, int interval,
                                                    const char* prefix);
 
 // Clear all registered outputs
-CFD_LIBRARY_EXPORT void simulation_clear_outputs(SimulationData* sim_data);
+CFD_LIBRARY_EXPORT void simulation_clear_outputs(simulation_data* sim_data);
 
 // Set base output directory (default: "../../artifacts")
 // This is the only manual configuration needed - everything else is automatic
-CFD_LIBRARY_EXPORT void simulation_set_output_dir(SimulationData* sim_data, const char* base_dir);
+CFD_LIBRARY_EXPORT void simulation_set_output_dir(simulation_data* sim_data, const char* base_dir);
 
 // Set run name prefix (default: "sim")
 // Creates directories like: {base_dir}/output/{prefix}_{grid}_{timestamp}/
-CFD_LIBRARY_EXPORT void simulation_set_run_prefix(SimulationData* sim_data, const char* prefix);
+CFD_LIBRARY_EXPORT void simulation_set_run_prefix(simulation_data* sim_data, const char* prefix);
 
 //=============================================================================
 // AUTOMATIC OUTPUT GENERATION
@@ -135,7 +135,7 @@ CFD_LIBRARY_EXPORT void simulation_set_run_prefix(SimulationData* sim_data, cons
 
 // Automatically write all registered outputs for current step
 // Handles directory creation, file naming, and output writing internally
-CFD_LIBRARY_EXPORT void simulation_write_outputs(SimulationData* sim_data, int step);
+CFD_LIBRARY_EXPORT void simulation_write_outputs(simulation_data* sim_data, int step);
 
 #ifdef __cplusplus
 }

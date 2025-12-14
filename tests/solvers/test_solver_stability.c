@@ -1,9 +1,5 @@
-#include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
 
@@ -23,7 +19,7 @@ void tearDown(void) {
 }
 
 // Helper function to print field values for debugging
-void print_field_stability(FlowField* field, const char* name) {
+void print_field_stability(flow_field* field, const char* name) {
     printf("\n=== %s ===\n", name);
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
@@ -35,7 +31,7 @@ void print_field_stability(FlowField* field, const char* name) {
 }
 
 // Check if any field contains NaN or infinity
-void check_field_validity(FlowField* field, const char* stage) {
+void check_field_validity(flow_field* field, const char* stage) {
     int nan_count = 0, inf_count = 0;
     for (size_t i = 0; i < field->nx * field->ny; i++) {
         if (isnan(field->u[i]) || isnan(field->v[i]) || isnan(field->p[i]) ||
@@ -57,8 +53,8 @@ void test_solver_step_by_step_stability(void) {
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
     // Create grid and flow field
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
-    FlowField* field = flow_field_create(nx, ny);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    flow_field* field = flow_field_create(nx, ny);
 
     TEST_ASSERT_NOT_NULL(grid);
     TEST_ASSERT_NOT_NULL(field);
@@ -71,7 +67,7 @@ void test_solver_step_by_step_stability(void) {
     print_field_stability(field, "Initial state");
 
     // Set up solver parameters - make them very conservative
-    SolverParams params = solver_params_default();
+    solver_params params = solver_params_default();
     params.max_iter = 1;  // Only 1 iteration
     params.dt = 0.0001;   // Very small timestep
     params.tolerance = 1e-1;
@@ -82,12 +78,12 @@ void test_solver_step_by_step_stability(void) {
            params.pressure_coupling);
 
     // Run solver using modern interface
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);

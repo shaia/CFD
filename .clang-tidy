@@ -57,7 +57,7 @@ CheckOptions:
   - key: readability-identifier-naming.StructCase
     value: CamelCase
   - key: readability-identifier-naming.TypedefCase
-    value: CamelCase
+    value: lower_case
   - key: readability-identifier-naming.MacroDefinitionCase
     value: UPPER_CASE
   - key: readability-function-size.LineThreshold

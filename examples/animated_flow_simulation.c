@@ -1,9 +1,6 @@
 #include "cfd/api/simulation_api.h"
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
+#include "cfd/core/grid.h"
+#include "cfd/solvers/solver_interface.h"
 
 
 #include <math.h>
@@ -25,9 +22,8 @@ int main() {
     printf("Domain: [%.1f, %.1f] x [%.1f, %.1f]\n", xmin, xmax, ymin, ymax);
 
 
-
     // Initialize simulation
-    SimulationData* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
     if (!sim_data) {
         printf("Failed to initialize simulation\n");
         return 1;
@@ -50,23 +46,23 @@ int main() {
     printf("\nRunning enhanced simulation for animation...\n");
     printf("Total steps: %d\n", max_steps);
     printf("Output interval: every %d steps\n", output_interval);
-    printf("Expected frames: %d\n", max_steps / output_interval + 1);
+    printf("Expected frames: %d\n", (max_steps / output_interval) + 1);
 
     // Add more dramatic initial conditions by modifying the flow field
-    FlowField* field = sim_data->field;
-    Grid* grid = sim_data->grid;
+    flow_field* field = sim_data->field;
+    grid* grid = sim_data->grid;
 
     printf("\nSetting up enhanced initial conditions...\n");
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = j * field->nx + i;
+            size_t idx = (j * field->nx) + i;
             double x = grid->x[i];
             double y = grid->y[j];
 
             // Create multiple vortices and pressure waves
 
             // Primary vortex at (1.0, 1.0)
-            double r1 = sqrt((x - 1.0) * (x - 1.0) + (y - 1.0) * (y - 1.0));
+            double r1 = sqrt(((x - 1.0) * (x - 1.0)) + ((y - 1.0) * (y - 1.0)));
             if (r1 < 0.6) {
                 double theta1 = atan2(y - 1.0, x - 1.0);
                 double vortex_strength = 2.0 * exp(-r1 * r1 / 0.2);
@@ -76,7 +72,7 @@ int main() {
             }
 
             // Secondary vortex at (3.0, 1.0) - counter-rotating
-            double r2 = sqrt((x - 3.0) * (x - 3.0) + (y - 1.0) * (y - 1.0));
+            double r2 = sqrt(((x - 3.0) * (x - 3.0)) + ((y - 1.0) * (y - 1.0)));
             if (r2 < 0.5) {
                 double theta2 = atan2(y - 1.0, x - 3.0);
                 double vortex_strength = -1.5 * exp(-r2 * r2 / 0.15);

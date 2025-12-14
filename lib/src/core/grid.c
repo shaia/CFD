@@ -1,50 +1,48 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
 
 
 #include <math.h>
+#include <stddef.h>
 
-Grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin, double ymax) {
+grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin, double ymax) {
     if (nx == 0 || ny == 0) {
-        cfd_set_error(CFD_ERROR_INVALID, "Grid dimensions must be positive");
+        cfd_set_error(CFD_ERROR_INVALID, "grid dimensions must be positive");
         return NULL;
     }
     if (xmax <= xmin || ymax <= ymin) {
-        cfd_set_error(CFD_ERROR_INVALID, "Grid bounds invalid (max must be > min)");
+        cfd_set_error(CFD_ERROR_INVALID, "grid bounds invalid (max must be > min)");
         return NULL;
     }
 
-    Grid* grid = (Grid*)cfd_malloc(sizeof(Grid));
-    if (grid == NULL) {
+    grid* new_grid = (grid*)cfd_malloc(sizeof(grid));
+    if (new_grid == NULL) {
         return NULL;
     }
 
-    grid->nx = nx;
-    grid->ny = ny;
-    grid->xmin = xmin;
-    grid->xmax = xmax;
-    grid->ymin = ymin;
-    grid->ymax = ymax;
+    new_grid->nx = nx;
+    new_grid->ny = ny;
+    new_grid->xmin = xmin;
+    new_grid->xmax = xmax;
+    new_grid->ymin = ymin;
+    new_grid->ymax = ymax;
 
     // Allocate memory for grid arrays
-    grid->x = (double*)cfd_calloc(nx, sizeof(double));
-    grid->y = (double*)cfd_calloc(ny, sizeof(double));
-    grid->dx = (double*)cfd_calloc(nx - 1, sizeof(double));
-    grid->dy = (double*)cfd_calloc(ny - 1, sizeof(double));
+    new_grid->x = (double*)cfd_calloc(nx, sizeof(double));
+    new_grid->y = (double*)cfd_calloc(ny, sizeof(double));
+    new_grid->dx = (double*)cfd_calloc(nx - 1, sizeof(double));
+    new_grid->dy = (double*)cfd_calloc(ny - 1, sizeof(double));
 
-    if (!grid->x || !grid->y || !grid->dx || !grid->dy) {
-        grid_destroy(grid);
+    if (!new_grid->x || !new_grid->y || !new_grid->dx || !new_grid->dy) {
+        grid_destroy(new_grid);
         return NULL;
     }
 
-    return grid;
+    return new_grid;
 }
 
-void grid_destroy(Grid* grid) {
+void grid_destroy(grid* grid) {
     if (grid != NULL) {
         cfd_free(grid->x);
         cfd_free(grid->y);
@@ -54,18 +52,18 @@ void grid_destroy(Grid* grid) {
     }
 }
 
-void grid_initialize_uniform(Grid* grid) {
+void grid_initialize_uniform(grid* grid) {
     double dx = (grid->xmax - grid->xmin) / (grid->nx - 1);
     double dy = (grid->ymax - grid->ymin) / (grid->ny - 1);
 
     // Set x-coordinates
     for (size_t i = 0; i < grid->nx; i++) {
-        grid->x[i] = grid->xmin + i * dx;
+        grid->x[i] = grid->xmin + (i * dx);
     }
 
     // Set y-coordinates
     for (size_t j = 0; j < grid->ny; j++) {
-        grid->y[j] = grid->ymin + j * dy;
+        grid->y[j] = grid->ymin + (j * dy);
     }
 
     // Set cell sizes
@@ -77,19 +75,19 @@ void grid_initialize_uniform(Grid* grid) {
     }
 }
 
-void grid_initialize_stretched(Grid* grid, double beta) {
+void grid_initialize_stretched(grid* grid, double beta) {
     // Initialize x-direction with stretching
     for (size_t i = 0; i < grid->nx; i++) {
         double xi = (double)i / (grid->nx - 1);
-        grid->x[i] = grid->xmin +
-                     (grid->xmax - grid->xmin) * (1.0 - cosh(beta * (1.0 - 2.0 * xi)) / cosh(beta));
+        grid->x[i] = grid->xmin + ((grid->xmax - grid->xmin) *
+                                   (1.0 - cosh(beta * (1.0 - 2.0 * xi)) / cosh(beta)));
     }
 
     // Initialize y-direction with stretching
     for (size_t j = 0; j < grid->ny; j++) {
         double eta = (double)j / (grid->ny - 1);
-        grid->y[j] = grid->ymin + (grid->ymax - grid->ymin) *
-                                      (1.0 - cosh(beta * (1.0 - 2.0 * eta)) / cosh(beta));
+        grid->y[j] = grid->ymin + ((grid->ymax - grid->ymin) *
+                                   (1.0 - cosh(beta * (1.0 - 2.0 * eta)) / cosh(beta)));
     }
 
     // Calculate cell sizes

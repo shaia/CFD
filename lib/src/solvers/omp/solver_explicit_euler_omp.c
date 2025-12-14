@@ -1,9 +1,6 @@
 #include "cfd/core/cfd_status.h"
-#include "cfd/core/cfd_status.h"
+#include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/filesystem.h"
-#include "cfd/core/math_utils.h"
 
 #include "cfd/solvers/solver_interface.h"
 #include <math.h>
@@ -27,8 +24,8 @@
 #define PRESSURE_UPDATE_FACTOR      0.1
 
 // Internal OpenMP explicit Euler implementation
-cfd_status_t explicit_euler_omp_impl(FlowField* field, const Grid* grid,
-                                     const SolverParams* params) {
+cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
+                                     const solver_params* params) {
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
@@ -58,7 +55,7 @@ cfd_status_t explicit_euler_omp_impl(FlowField* field, const Grid* grid,
 #pragma omp parallel for private(i) schedule(static)
         for (j = 1; j < (int)field->ny - 1; j++) {
             for (i = 1; i < (int)field->nx - 1; i++) {
-                size_t idx = j * field->nx + i;
+                size_t idx = (j * field->nx) + i;
 
                 // Derivatives
                 double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
@@ -83,8 +80,9 @@ cfd_status_t explicit_euler_omp_impl(FlowField* field, const Grid* grid,
                     (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) /
                     (grid->dy[j] * grid->dy[j]);
 
-                if (field->rho[idx] <= 1e-10)
+                if (field->rho[idx] <= 1e-10) {
                     continue;
+                }
 
                 double nu = params->mu / fmax(field->rho[idx], 1e-10);
                 nu = fmin(nu, 1.0);

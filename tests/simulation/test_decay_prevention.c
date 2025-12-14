@@ -1,9 +1,4 @@
-#include "cfd/core/cfd_status.h"
-#include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/core/logging.h"
-#include "cfd/core/math_utils.h"
-#include "cfd/core/memory.h"
 #include "cfd/solvers/solver_interface.h"
 #include "unity.h"
 
@@ -28,10 +23,10 @@ void test_flow_energy_maintenance(void) {
     size_t nx = 15, ny = 10;
     double xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
     // Calculate initial kinetic energy
@@ -43,7 +38,7 @@ void test_flow_energy_maintenance(void) {
 
     printf("Initial kinetic energy: %.6f\n", initial_kinetic_energy);
 
-    SolverParams params = {
+    solver_params params = {
         .dt = 0.001,
         .cfl = 0.2,
         .gamma = 1.4,
@@ -61,17 +56,17 @@ void test_flow_energy_maintenance(void) {
     int measurement_steps[] = {0, 5, 10, 15, 20};
 
     // Create solver once and reuse it for all steps
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
 
     for (int step = 0; step < 5; step++) {
         // Run to next measurement point
         if (step > 0) {
-            SolverParams step_params = params;
+            solver_params step_params = params;
             step_params.max_iter = measurement_steps[step] - measurement_steps[step - 1];
             solver_step(solver, field, grid, &step_params, &stats);
         }
@@ -123,10 +118,10 @@ void test_source_term_effectiveness(void) {
     size_t nx = 10, ny = 10;
     double xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 1.0;
 
-    Grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid);
 
-    FlowField* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny);
 
     // Start with nearly zero velocity (would decay without source terms)
     for (size_t j = 0; j < ny; j++) {
@@ -148,25 +143,25 @@ void test_source_term_effectiveness(void) {
     initial_velocity_mag_sq /= (nx * ny);
     double initial_velocity_mag = sqrt(initial_velocity_mag_sq);
 
-    SolverParams params = {.dt = 0.001,
-                           .cfl = 0.2,
-                           .gamma = 1.4,
-                           .mu = 0.01,
-                           .k = 0.0242,
-                           .max_iter = 15,  // Enough time for source terms to act
-                           .tolerance = 1e-6,
-                           .source_amplitude_u = 0.1,
-                           .source_amplitude_v = 0.05,
-                           .source_decay_rate = 0.1,
-                           .pressure_coupling = 0.1};
+    solver_params params = {.dt = 0.001,
+                            .cfl = 0.2,
+                            .gamma = 1.4,
+                            .mu = 0.01,
+                            .k = 0.0242,
+                            .max_iter = 15,  // Enough time for source terms to act
+                            .tolerance = 1e-6,
+                            .source_amplitude_u = 0.1,
+                            .source_amplitude_v = 0.05,
+                            .source_decay_rate = 0.1,
+                            .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    SolverStats stats = solver_stats_default();
+    solver_stats stats = solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);
@@ -198,15 +193,15 @@ void test_decay_prevention_both_solvers(void) {
     double xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 1.0;
 
     // Test basic solver
-    Grid* grid1 = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid1 = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid1);
-    FlowField* field1 = flow_field_create(nx, ny);
+    flow_field* field1 = flow_field_create(nx, ny);
     initialize_flow_field(field1, grid1);
 
     // Test optimized solver
-    Grid* grid2 = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid2 = grid_create(nx, ny, xmin, xmax, ymin, ymax);
     grid_initialize_uniform(grid2);
-    FlowField* field2 = flow_field_create(nx, ny);
+    flow_field* field2 = flow_field_create(nx, ny);
     initialize_flow_field(field2, grid2);
 
     // Make initial conditions identical
@@ -225,31 +220,31 @@ void test_decay_prevention_both_solvers(void) {
         initial_energy2 += field2->u[i] * field2->u[i] + field2->v[i] * field2->v[i];
     }
 
-    SolverParams params = {.dt = 0.001,
-                           .cfl = 0.2,
-                           .gamma = 1.4,
-                           .mu = 0.01,
-                           .k = 0.0242,
-                           .max_iter = 10,
-                           .tolerance = 1e-6,
-                           .source_amplitude_u = 0.1,
-                           .source_amplitude_v = 0.05,
-                           .source_decay_rate = 0.1,
-                           .pressure_coupling = 0.1};
+    solver_params params = {.dt = 0.001,
+                            .cfl = 0.2,
+                            .gamma = 1.4,
+                            .mu = 0.01,
+                            .k = 0.0242,
+                            .max_iter = 10,
+                            .tolerance = 1e-6,
+                            .source_amplitude_u = 0.1,
+                            .source_amplitude_v = 0.05,
+                            .source_decay_rate = 0.1,
+                            .pressure_coupling = 0.1};
 
     // Run both solvers using modern interface
-    SolverRegistry* registry = cfd_registry_create();
+    solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    Solver* solver1 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    solver* solver1 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver1, grid1, &params);
-    SolverStats stats1 = solver_stats_default();
+    solver_stats stats1 = solver_stats_default();
     solver_step(solver1, field1, grid1, &params, &stats1);
     solver_destroy(solver1);
 
-    Solver* solver2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    solver* solver2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
     solver_init(solver2, grid2, &params);
-    SolverStats stats2 = solver_stats_default();
+    solver_stats stats2 = solver_stats_default();
     solver_step(solver2, field2, grid2, &params, &stats2);
     solver_destroy(solver2);
     cfd_registry_destroy(registry);
