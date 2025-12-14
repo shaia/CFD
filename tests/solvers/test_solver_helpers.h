@@ -377,32 +377,30 @@ static inline test_result test_run_stability(
     int num_steps
 ) {
     test_result result = test_result_init();
+    grid* g = NULL;
+    flow_field* field = NULL;
+    solver_registry* registry = NULL;
+    solver* slv = NULL;
 
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
-
+    g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
+    field = flow_field_create(nx, ny);
     if (!g || !field) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Failed to create grid/field");
-        if (g) grid_destroy(g);
-        if (field) flow_field_destroy(field);
-        return result;
+        goto cleanup;
     }
 
     grid_initialize_uniform(g);
     test_init_taylor_green(field, g);
 
-    solver_registry* registry = cfd_registry_create();
+    registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, solver_type);
+    slv = cfd_solver_create(registry, solver_type);
     if (!slv) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Solver not available");
-        cfd_registry_destroy(registry);
-        flow_field_destroy(field);
-        grid_destroy(g);
-        return result;
+        goto cleanup;
     }
 
     solver_init(slv, g, params);
@@ -425,10 +423,11 @@ static inline test_result test_run_stability(
                  "Stable for %d steps", num_steps);
     }
 
-    solver_destroy(slv);
-    cfd_registry_destroy(registry);
-    flow_field_destroy(field);
-    grid_destroy(g);
+cleanup:
+    if (slv) solver_destroy(slv);
+    if (registry) cfd_registry_destroy(registry);
+    if (field) flow_field_destroy(field);
+    if (g) grid_destroy(g);
 
     return result;
 }
@@ -443,16 +442,17 @@ static inline test_result test_run_energy_decay(
     int num_steps
 ) {
     test_result result = test_result_init();
+    grid* g = NULL;
+    flow_field* field = NULL;
+    solver_registry* registry = NULL;
+    solver* slv = NULL;
 
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
-
+    g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
+    field = flow_field_create(nx, ny);
     if (!g || !field) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Failed to create grid/field");
-        if (g) grid_destroy(g);
-        if (field) flow_field_destroy(field);
-        return result;
+        goto cleanup;
     }
 
     grid_initialize_uniform(g);
@@ -460,17 +460,14 @@ static inline test_result test_run_energy_decay(
 
     result.initial_energy = test_compute_kinetic_energy_simple(field, g);
 
-    solver_registry* registry = cfd_registry_create();
+    registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, solver_type);
+    slv = cfd_solver_create(registry, solver_type);
     if (!slv) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Solver not available");
-        cfd_registry_destroy(registry);
-        flow_field_destroy(field);
-        grid_destroy(g);
-        return result;
+        goto cleanup;
     }
 
     solver_init(slv, g, params);
@@ -503,10 +500,11 @@ static inline test_result test_run_energy_decay(
         }
     }
 
-    solver_destroy(slv);
-    cfd_registry_destroy(registry);
-    flow_field_destroy(field);
-    grid_destroy(g);
+cleanup:
+    if (slv) solver_destroy(slv);
+    if (registry) cfd_registry_destroy(registry);
+    if (field) flow_field_destroy(field);
+    if (g) grid_destroy(g);
 
     return result;
 }
@@ -524,21 +522,22 @@ static inline test_result test_run_consistency(
 ) {
     test_result result = test_result_init();
     size_t n = nx * ny;
+    grid* g_a = NULL;
+    grid* g_b = NULL;
+    flow_field* field_a = NULL;
+    flow_field* field_b = NULL;
+    solver_registry* registry = NULL;
+    solver* slv_a = NULL;
+    solver* slv_b = NULL;
 
-    // Create two grids and fields
-    grid* g_a = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    grid* g_b = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field_a = flow_field_create(nx, ny);
-    flow_field* field_b = flow_field_create(nx, ny);
-
+    g_a = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
+    g_b = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
+    field_a = flow_field_create(nx, ny);
+    field_b = flow_field_create(nx, ny);
     if (!g_a || !g_b || !field_a || !field_b) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Failed to create grids/fields");
-        if (g_a) grid_destroy(g_a);
-        if (g_b) grid_destroy(g_b);
-        if (field_a) flow_field_destroy(field_a);
-        if (field_b) flow_field_destroy(field_b);
-        return result;
+        goto cleanup;
     }
 
     grid_initialize_uniform(g_a);
@@ -546,24 +545,16 @@ static inline test_result test_run_consistency(
     test_init_taylor_green(field_a, g_a);
     test_init_taylor_green(field_b, g_b);
 
-    solver_registry* registry = cfd_registry_create();
+    registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv_a = cfd_solver_create(registry, solver_type_a);
-    solver* slv_b = cfd_solver_create(registry, solver_type_b);
-
+    slv_a = cfd_solver_create(registry, solver_type_a);
+    slv_b = cfd_solver_create(registry, solver_type_b);
     if (!slv_a || !slv_b) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message),
                  "One or both solvers not available");
-        if (slv_a) solver_destroy(slv_a);
-        if (slv_b) solver_destroy(slv_b);
-        cfd_registry_destroy(registry);
-        flow_field_destroy(field_a);
-        flow_field_destroy(field_b);
-        grid_destroy(g_a);
-        grid_destroy(g_b);
-        return result;
+        goto cleanup;
     }
 
     solver_init(slv_a, g_a, params);
@@ -609,13 +600,14 @@ static inline test_result test_run_consistency(
         }
     }
 
-    solver_destroy(slv_a);
-    solver_destroy(slv_b);
-    cfd_registry_destroy(registry);
-    flow_field_destroy(field_a);
-    flow_field_destroy(field_b);
-    grid_destroy(g_a);
-    grid_destroy(g_b);
+cleanup:
+    if (slv_a) solver_destroy(slv_a);
+    if (slv_b) solver_destroy(slv_b);
+    if (registry) cfd_registry_destroy(registry);
+    if (field_a) flow_field_destroy(field_a);
+    if (field_b) flow_field_destroy(field_b);
+    if (g_a) grid_destroy(g_a);
+    if (g_b) grid_destroy(g_b);
 
     return result;
 }
@@ -631,16 +623,17 @@ static inline test_result test_run_divergence_free(
     double tolerance
 ) {
     test_result result = test_result_init();
+    grid* g = NULL;
+    flow_field* field = NULL;
+    solver_registry* registry = NULL;
+    solver* slv = NULL;
 
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
-
+    g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
+    field = flow_field_create(nx, ny);
     if (!g || !field) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Failed to create grid/field");
-        if (g) grid_destroy(g);
-        if (field) flow_field_destroy(field);
-        return result;
+        goto cleanup;
     }
 
     grid_initialize_uniform(g);
@@ -664,17 +657,14 @@ static inline test_result test_run_divergence_free(
 
     result.initial_divergence = test_compute_divergence_l2(field, g);
 
-    solver_registry* registry = cfd_registry_create();
+    registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, solver_type);
+    slv = cfd_solver_create(registry, solver_type);
     if (!slv) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Solver not available");
-        cfd_registry_destroy(registry);
-        flow_field_destroy(field);
-        grid_destroy(g);
-        return result;
+        goto cleanup;
     }
 
     solver_init(slv, g, params);
@@ -708,10 +698,11 @@ static inline test_result test_run_divergence_free(
         }
     }
 
-    solver_destroy(slv);
-    cfd_registry_destroy(registry);
-    flow_field_destroy(field);
-    grid_destroy(g);
+cleanup:
+    if (slv) solver_destroy(slv);
+    if (registry) cfd_registry_destroy(registry);
+    if (field) flow_field_destroy(field);
+    if (g) grid_destroy(g);
 
     return result;
 }
