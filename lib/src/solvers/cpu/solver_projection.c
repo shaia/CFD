@@ -139,7 +139,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     double dx = grid->dx[0];
     double dy = grid->dy[0];
     double dt = params->dt;
-    double nu = params->mu;  // Kinematic viscosity
+    double nu = params->mu;  // Viscosity (treated as kinematic for ρ=1)
 
     // Allocate temporary arrays
     double* u_star = (double*)cfd_calloc(size, sizeof(double));

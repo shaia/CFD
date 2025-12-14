@@ -161,7 +161,7 @@ cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, cons
     double dx = grid->dx[0];
     double dy = grid->dy[0];
     double dt = params->dt;
-    double nu = params->mu;  // Kinematic viscosity
+    double nu = params->mu;  // Viscosity (treated as kinematic for ρ=1)
 
     double* u_star = ctx->u_star;
     double* v_star = ctx->v_star;
