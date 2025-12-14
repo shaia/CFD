@@ -25,7 +25,18 @@
 #include "poisson_solver_simd.h"
 #include <math.h>
 #include <string.h>
+
+// Check for x86/x64 architecture before including AVX headers
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#ifdef __AVX2__
 #include <immintrin.h>
+#define USE_AVX2 1
+#else
+#define USE_AVX2 0
+#endif
+#else
+#define USE_AVX2 0
+#endif
 
 int poisson_solve_redblack_simd(double* p, double* p_temp, const double* rhs,
                                  size_t nx, size_t ny, double dx, double dy) {
@@ -43,11 +54,13 @@ int poisson_solve_redblack_simd(double* p, double* p_temp, const double* rhs,
     int converged = 0;
     int iter;
 
+#if USE_AVX2
     // SIMD constants
     __m256d dx2_inv_vec = _mm256_set1_pd(1.0 / dx2);
     __m256d dy2_inv_vec = _mm256_set1_pd(1.0 / dy2);
     __m256d inv_factor_vec = _mm256_set1_pd(-inv_factor);
     __m256d omega_vec = _mm256_set1_pd(POISSON_OMEGA);
+#endif
 
     for (iter = 0; iter < POISSON_MAX_ITER; iter++) {
         double max_residual = 0.0;
@@ -61,6 +74,7 @@ int poisson_solve_redblack_simd(double* p, double* p_temp, const double* rhs,
             for (size_t j = 1; j < ny - 1; j++) {
                 size_t i_start = 1 + ((j + color) % 2);
 
+#if USE_AVX2
                 // For rows with enough same-color cells, use SIMD
                 // Gather 4 same-color values (stride 2 apart)
                 size_t i;
@@ -122,6 +136,10 @@ int poisson_solve_redblack_simd(double* p, double* p_temp, const double* rhs,
 
                 // Scalar remainder
                 for (; i < nx - 1; i += 2) {
+#else
+                // Full scalar loop on non-x86 architectures
+                for (size_t i = i_start; i < nx - 1; i += 2) {
+#endif
                     size_t idx = (j * nx) + i;
 
                     double p_c = p[idx];
