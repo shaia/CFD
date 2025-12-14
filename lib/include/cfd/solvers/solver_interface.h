@@ -263,13 +263,16 @@ CFD_LIBRARY_EXPORT const char* cfd_registry_get_description(solver_registry* reg
  * Helper to initialize SolverStats with default values
  */
 static inline solver_stats solver_stats_default(void) {
-    solver_stats stats = {.iterations = 0,
-                          .residual = 0.0,
-                          .max_velocity = 0.0,
-                          .max_pressure = 0.0,
-                          .cfl_number = 0.0,
-                          .elapsed_time_ms = 0.0,
-                          .status = CFD_SUCCESS};
+    // Use individual assignments for CUDA/NVCC compatibility
+    // (NVCC doesn't fully support C99 designated initializers)
+    solver_stats stats;
+    stats.iterations = 0;
+    stats.residual = 0.0;
+    stats.max_velocity = 0.0;
+    stats.max_pressure = 0.0;
+    stats.cfl_number = 0.0;
+    stats.elapsed_time_ms = 0.0;
+    stats.status = CFD_SUCCESS;
     return stats;
 }
 
