@@ -65,7 +65,7 @@ void test_simd_scalar_consistency(void) {
 
     printf("L2 difference in u: %.6e (relative: %.2e)\n",
            result.error_l2, result.relative_error);
-    printf("L2 difference in v: %.6e\n", result.error_linf);
+    printf("L2 difference in v: %.6e\n", result.error_l2_secondary);
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("PASSED\n");

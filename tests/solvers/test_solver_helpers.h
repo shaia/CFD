@@ -334,10 +334,18 @@ static inline void test_init_pressure_gradient(flow_field* field, const grid* g,
 // GENERIC TEST RESULT STRUCTURE
 //=============================================================================
 
+/**
+ * Generic test result structure for solver validation tests.
+ *
+ * Field usage varies by test type:
+ * - Consistency tests: error_l2 = u L2 error, error_l2_secondary = v L2 error
+ * - Divergence tests: error_l2 = final divergence
+ * - Energy tests: initial_energy, final_energy
+ */
 typedef struct {
     int passed;
-    double error_l2;
-    double error_linf;
+    double error_l2;             // Primary L2 error (u-velocity or main metric)
+    double error_l2_secondary;   // Secondary L2 error (v-velocity in consistency tests)
     double relative_error;
     double initial_energy;
     double final_energy;
@@ -351,7 +359,7 @@ static inline test_result test_result_init(void) {
     test_result r;
     r.passed = 1;
     r.error_l2 = 0.0;
-    r.error_linf = 0.0;
+    r.error_l2_secondary = 0.0;
     r.relative_error = 0.0;
     r.initial_energy = 0.0;
     r.final_energy = 0.0;
@@ -579,7 +587,7 @@ static inline test_result test_run_consistency(
         double v_norm = test_compute_l2_norm(field_a->v, n);
 
         result.error_l2 = u_diff;
-        result.error_linf = v_diff;  // Store v_diff for reporting
+        result.error_l2_secondary = v_diff;
 
         // Calculate relative errors separately for u and v components.
         // For very small norms (< 1e-15), use absolute error instead to avoid
