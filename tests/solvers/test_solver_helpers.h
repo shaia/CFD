@@ -589,10 +589,13 @@ static inline test_result test_run_consistency(
 
         result.error_l2 = u_diff;
         result.error_linf = v_diff;  // Store v_diff for reporting
-        result.relative_error = fmax(
-            u_norm > 1e-15 ? u_diff / u_norm : u_diff,
-            v_norm > 1e-15 ? v_diff / v_norm : v_diff
-        );
+
+        // Calculate relative errors separately for u and v components.
+        // For very small norms (< 1e-15), use absolute error instead to avoid
+        // division by near-zero. Take maximum of both relative errors.
+        double u_rel_error = (u_norm > 1e-15) ? (u_diff / u_norm) : u_diff;
+        double v_rel_error = (v_norm > 1e-15) ? (v_diff / v_norm) : v_diff;
+        result.relative_error = fmax(u_rel_error, v_rel_error);
 
         if (result.relative_error > tolerance) {
             result.passed = 0;
