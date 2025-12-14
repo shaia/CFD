@@ -166,11 +166,10 @@ int main(void) {
     printf("================================================\n");
 
     RUN_TEST(test_simd_projection_creates);
-    // TODO: Re-enable when SIMD projection solver bug is fixed
-    // RUN_TEST(test_simd_scalar_consistency);
-    // RUN_TEST(test_simd_divergence_free);
+    RUN_TEST(test_simd_scalar_consistency);
+    RUN_TEST(test_simd_divergence_free);
     RUN_TEST(test_simd_stability);
-    // RUN_TEST(test_simd_energy_decay);
+    RUN_TEST(test_simd_energy_decay);
     RUN_TEST(test_simd_non_aligned_grid_size);
 
     printf("\n================================================\n");
