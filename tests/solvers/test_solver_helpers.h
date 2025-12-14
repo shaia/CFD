@@ -341,6 +341,8 @@ typedef struct {
     double relative_error;
     double initial_energy;
     double final_energy;
+    double initial_divergence;
+    double final_divergence;
     int steps_completed;
     char message[256];
 } test_result;
@@ -353,6 +355,8 @@ static inline test_result test_result_init(void) {
     r.relative_error = 0.0;
     r.initial_energy = 0.0;
     r.final_energy = 0.0;
+    r.initial_divergence = 0.0;
+    r.final_divergence = 0.0;
     r.steps_completed = 0;
     r.message[0] = '\0';
     return r;
@@ -655,7 +659,7 @@ static inline test_result test_run_divergence_free(
         }
     }
 
-    result.initial_energy = test_compute_divergence_l2(field, g);
+    result.initial_divergence = test_compute_divergence_l2(field, g);
 
     solver_registry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
@@ -685,8 +689,8 @@ static inline test_result test_run_divergence_free(
         }
     }
 
-    result.error_l2 = test_compute_divergence_l2(field, g);
-    result.final_energy = result.error_l2;
+    result.final_divergence = test_compute_divergence_l2(field, g);
+    result.error_l2 = result.final_divergence;
 
     if (result.passed) {
         if (result.error_l2 > tolerance) {
@@ -697,7 +701,7 @@ static inline test_result test_run_divergence_free(
         } else {
             snprintf(result.message, sizeof(result.message),
                      "Divergence reduced from %.6e to %.6e",
-                     result.initial_energy, result.error_l2);
+                     result.initial_divergence, result.final_divergence);
         }
     }
 
