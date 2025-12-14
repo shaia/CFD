@@ -1,5 +1,23 @@
 cmake_minimum_required(VERSION 3.10)
-project(cfd_framework C)
+
+# CUDA support option (must be set before project() for proper language detection)
+option(CFD_ENABLE_CUDA "Enable CUDA GPU acceleration" OFF)
+
+# CUDA architecture configuration
+# Default: Support wide range of GPUs from Turing onwards
+# Users can override with -DCFD_CUDA_ARCHITECTURES="70;75" etc.
+if(NOT DEFINED CFD_CUDA_ARCHITECTURES)
+    set(CFD_CUDA_ARCHITECTURES "75;80;86;89;90" CACHE STRING
+        "CUDA architectures to build for (75=Turing, 80=Ampere, 86=Ampere, 89=Ada, 90=Hopper)")
+endif()
+
+# Define project with appropriate languages
+if(CFD_ENABLE_CUDA)
+    project(cfd_framework C CUDA)
+    message(STATUS "CUDA support enabled at top level")
+else()
+    project(cfd_framework C)
+endif()
 
 # Set C standard
 set(CMAKE_C_STANDARD 11)
@@ -216,3 +234,16 @@ if(BUILD_DOCS)
         message(WARNING "Doxygen not found - documentation will not be built")
     endif()
 endif()
+
+# Print configuration summary
+message(STATUS "")
+message(STATUS "CFD Framework Configuration Summary:")
+message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "  CUDA Support: ${CFD_ENABLE_CUDA}")
+if(CFD_ENABLE_CUDA)
+    message(STATUS "  CUDA Architectures: ${CFD_CUDA_ARCHITECTURES}")
+endif()
+message(STATUS "  Build Examples: ${BUILD_EXAMPLES}")
+message(STATUS "  Build Tests: ${BUILD_TESTS}")
+message(STATUS "  Build Docs: ${BUILD_DOCS}")
+message(STATUS "")

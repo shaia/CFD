@@ -15,7 +15,7 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/solver_gpu.h"
 
-#include <cstdio.h>
+#include <cstdio>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <math.h>
@@ -121,7 +121,7 @@ __global__ void kernel_poisson_jacobi(const double* __restrict__ p_old, double* 
         size_t idx = j * nx + i;
         double sum = (p_old[idx + 1] + p_old[idx - 1]) * inv_dx2 +
                      (p_old[idx + nx] + p_old[idx - nx]) * inv_dy2;
-        p_new[idx] = (rhs[idx] + sum) * inv_factor;
+        p_new[idx] = (sum - rhs[idx]) * inv_factor;
     }
 }
 
