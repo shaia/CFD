@@ -431,8 +431,7 @@ int main(void) {
     RUN_TEST(test_projection_energy_decay);
     RUN_TEST(test_projection_divergence_free);
     RUN_TEST(test_projection_poiseuille_profile);
-    // TODO: Re-enable when SIMD projection solver bug is fixed
-    // RUN_TEST(test_projection_consistency_with_optimized);
+    RUN_TEST(test_projection_consistency_with_optimized);
     RUN_TEST(test_projection_non_square_grid);
 
     printf("\n================================================\n");
