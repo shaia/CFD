@@ -113,6 +113,9 @@ __pycache__/
 *.swp
 *.swo
 *~
+
+# Editor/IDE config files
+compile_flags.txt
 nul
 %USERPROFILE%.actrc
 %USERPROFILE%/
