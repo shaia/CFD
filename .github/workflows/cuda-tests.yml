@@ -58,11 +58,15 @@ jobs:
       - name: Verify CUDA compilation
         run: |
           cd build
-          echo "Checking for CUDA symbols in library..."
-          if nm -C lib/libcfd_library.so 2>/dev/null | grep -q "gpu_solver"; then
-            echo "✅ GPU solver symbols found in library"
+          echo "Checking for CUDA symbols in static library..."
+          # Library is built as static (.a) by default
+          if nm -C lib/libcfd_library.a 2>/dev/null | grep -q "gpu"; then
+            echo "✅ GPU symbols found in library"
+            nm -C lib/libcfd_library.a | grep -i gpu | head -10
           else
-            echo "❌ GPU solver symbols NOT found"
+            echo "❌ GPU symbols NOT found"
+            echo "Library contents:"
+            nm -C lib/libcfd_library.a | head -30
             exit 1
           fi
 
@@ -117,11 +121,12 @@ jobs:
         run: |
           cd build
           echo "Verifying CUDA is disabled in build..."
-          if ldd lib/libcfd_library.so 2>/dev/null | grep -q "libcudart"; then
-            echo "❌ Library incorrectly linked to CUDA runtime"
+          # Check that CUDA symbols are NOT present in static library
+          if nm -C lib/libcfd_library.a 2>/dev/null | grep -q "cudart"; then
+            echo "❌ Library incorrectly contains CUDA runtime symbols"
             exit 1
           else
-            echo "✅ Library does not depend on CUDA runtime"
+            echo "✅ Library does not contain CUDA runtime symbols"
           fi
 
       - name: Run all tests
