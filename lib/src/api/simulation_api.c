@@ -235,31 +235,44 @@ void free_simulation(simulation_data* sim_data) {
     cfd_free(sim_data);
 }
 
-// Solver discovery and listing (creates temporary registry)
+// Static list of available solver names (const strings have static lifetime)
+// This avoids use-after-free issues with dynamically created registries
+static const char* const s_solver_names[] = {
+    SOLVER_TYPE_EXPLICIT_EULER,
+    SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+    SOLVER_TYPE_PROJECTION,
+    SOLVER_TYPE_PROJECTION_OPTIMIZED,
+    SOLVER_TYPE_EXPLICIT_EULER_GPU,
+    SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+#ifdef CFD_ENABLE_OPENMP
+    SOLVER_TYPE_EXPLICIT_EULER_OMP,
+    SOLVER_TYPE_PROJECTION_OMP,
+#endif
+};
+
+static const int s_solver_count = (int)(sizeof(s_solver_names) / sizeof(s_solver_names[0]));
+
+// Solver discovery and listing
 int simulation_list_solvers(const char** names, int max_count) {
-    struct SolverRegistry* registry = cfd_registry_create();
-    if (!registry) {
-        return 0;
+    if (names && max_count > 0) {
+        int fill_count = (s_solver_count < max_count) ? s_solver_count : max_count;
+        for (int i = 0; i < fill_count; i++) {
+            names[i] = s_solver_names[i];
+        }
     }
-
-    cfd_registry_register_defaults(registry);
-    int count = cfd_registry_list(registry, names, max_count);
-
-    cfd_registry_destroy(registry);
-    return count;
+    return s_solver_count;
 }
 
 int simulation_has_solver(const char* solver_type) {
-    struct SolverRegistry* registry = cfd_registry_create();
-    if (!registry) {
+    if (!solver_type) {
         return 0;
     }
-
-    cfd_registry_register_defaults(registry);
-    int result = cfd_registry_has(registry, solver_type);
-
-    cfd_registry_destroy(registry);
-    return result;
+    for (int i = 0; i < s_solver_count; i++) {
+        if (strcmp(s_solver_names[i], solver_type) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 

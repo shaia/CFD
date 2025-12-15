@@ -3,6 +3,7 @@
 #include "cfd/io/output_registry.h"
 #include "unity.h"
 #include <math.h>
+#include <string.h>
 
 
 // Test fixtures
@@ -133,6 +134,72 @@ void test_simulation_list_solvers_returns_available(void) {
     const char* names[10];
     int count = simulation_list_solvers(names, 10);
     TEST_ASSERT_GREATER_THAN(0, count);
+}
+
+void test_simulation_list_solvers_names_are_valid_strings(void) {
+    // This test verifies the fix for use-after-free bug where
+    // solver names were invalidated after function return
+    const char* names[10];
+    int count = simulation_list_solvers(names, 10);
+    TEST_ASSERT_GREATER_THAN(0, count);
+
+    // Verify each name is a valid, non-empty string
+    for (int i = 0; i < count; i++) {
+        TEST_ASSERT_NOT_NULL(names[i]);
+        TEST_ASSERT_GREATER_THAN(0, (int)strlen(names[i]));
+        // Names should be reasonable length (not garbage)
+        TEST_ASSERT_LESS_THAN(64, (int)strlen(names[i]));
+    }
+}
+
+void test_simulation_list_solvers_names_contain_known_solvers(void) {
+    // This test verifies that the returned names include known solver types
+    const char* names[10];
+    int count = simulation_list_solvers(names, 10);
+    TEST_ASSERT_GREATER_THAN(0, count);
+
+    // Look for explicit_euler (should always be present)
+    int found_explicit_euler = 0;
+    int found_projection = 0;
+    for (int i = 0; i < count; i++) {
+        if (strcmp(names[i], "explicit_euler") == 0) {
+            found_explicit_euler = 1;
+        }
+        if (strcmp(names[i], "projection") == 0) {
+            found_projection = 1;
+        }
+    }
+    TEST_ASSERT_TRUE(found_explicit_euler);
+    TEST_ASSERT_TRUE(found_projection);
+}
+
+void test_simulation_list_solvers_names_usable_for_init(void) {
+    // This test verifies that returned names can actually be used
+    // to create simulations (would fail with dangling pointers)
+    const char* names[10];
+    int count = simulation_list_solvers(names, 10);
+    TEST_ASSERT_GREATER_THAN(0, count);
+
+    // Try to create a simulation with the first solver name
+    simulation_data* sim = init_simulation_with_solver(10, 10, 0.0, 1.0, 0.0, 1.0, names[0]);
+    TEST_ASSERT_NOT_NULL(sim);
+    free_simulation(sim);
+}
+
+void test_simulation_list_solvers_null_names_returns_count(void) {
+    // Should be able to query count without providing names array
+    int count = simulation_list_solvers(NULL, 0);
+    TEST_ASSERT_GREATER_THAN(0, count);
+}
+
+void test_simulation_list_solvers_partial_fill(void) {
+    // Request fewer names than available
+    const char* names[2];
+    int count = simulation_list_solvers(names, 2);
+    // Should return total count, but only fill 2 names
+    TEST_ASSERT_GREATER_OR_EQUAL(2, count);
+    TEST_ASSERT_NOT_NULL(names[0]);
+    TEST_ASSERT_NOT_NULL(names[1]);
 }
 
 void test_simulation_has_solver_explicit_euler(void) {
@@ -399,6 +466,11 @@ int main(void) {
     RUN_TEST(test_simulation_set_solver_by_name_null_sim_returns_error);
     RUN_TEST(test_simulation_set_solver_by_name_null_type_returns_error);
     RUN_TEST(test_simulation_list_solvers_returns_available);
+    RUN_TEST(test_simulation_list_solvers_names_are_valid_strings);
+    RUN_TEST(test_simulation_list_solvers_names_contain_known_solvers);
+    RUN_TEST(test_simulation_list_solvers_names_usable_for_init);
+    RUN_TEST(test_simulation_list_solvers_null_names_returns_count);
+    RUN_TEST(test_simulation_list_solvers_partial_fill);
     RUN_TEST(test_simulation_has_solver_explicit_euler);
     RUN_TEST(test_simulation_has_solver_projection);
     RUN_TEST(test_simulation_has_solver_invalid);
