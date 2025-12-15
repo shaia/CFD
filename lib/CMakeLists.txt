@@ -75,6 +75,9 @@ set(CFD_CPU_SOLVER_SOURCES
 set(CFD_SIMD_SOLVER_SOURCES
     src/solvers/simd/solver_explicit_euler_simd.c
     src/solvers/simd/solver_projection_simd.c
+    src/solvers/simd/poisson_common_simd.c
+    src/solvers/simd/poisson_jacobi_simd.c
+    src/solvers/simd/poisson_redblack_simd.c
 )
 
 # Combine all source files
