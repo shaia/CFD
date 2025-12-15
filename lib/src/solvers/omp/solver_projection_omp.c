@@ -87,8 +87,8 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
             }
         }
 
-        // Apply Neumann boundary conditions
-        bc_apply_neumann(p, nx, ny);
+        // Apply Neumann boundary conditions (using OMP backend)
+        bc_apply_scalar_omp(p, nx, ny, BC_TYPE_NEUMANN);
 
         if (max_residual < tolerance) {
             converged = 1;
@@ -183,7 +183,8 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 
 // Apply Neumann BCs (zero gradient) to intermediate velocity for proper
         // divergence computation. Final velocity gets periodic BCs later.
-        bc_apply_velocity(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
+        // Using OMP backend explicitly for optimal parallelization.
+        bc_apply_velocity_omp(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
 
         // STEP 2: Pressure
         double rho = field->rho[0] < 1e-10 ? 1.0 : field->rho[0];

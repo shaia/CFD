@@ -204,8 +204,8 @@ cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, cons
         }
     }
 
-    // Apply boundary conditions to intermediate velocity
-    bc_apply_velocity(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
+    // Apply boundary conditions to intermediate velocity (using SIMD backend)
+    bc_apply_velocity_simd(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
 
     // ============================================================
     // STEP 2: Solve Poisson equation for pressure

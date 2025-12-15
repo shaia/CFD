@@ -51,6 +51,8 @@ set(CFD_CORE_SOURCES
     src/core/field_ops.c
     src/core/derived_fields.c
     src/core/boundary_conditions.c
+    src/core/boundary_conditions_simd.c
+    src/core/boundary_conditions_omp.c
 )
 
 # Collect I/O source files

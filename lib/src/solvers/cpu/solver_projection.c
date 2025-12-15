@@ -97,8 +97,8 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
             }
         }
 
-        // Apply Neumann boundary conditions (zero gradient)
-        bc_apply_neumann(p, nx, ny);
+        // Apply Neumann boundary conditions (using scalar CPU backend)
+        bc_apply_scalar_cpu(p, nx, ny, BC_TYPE_NEUMANN);
 
         // Check convergence
         if (max_residual < tolerance) {
@@ -205,7 +205,8 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
         // Apply Neumann BCs (zero gradient) to intermediate velocity for proper
         // divergence computation. Final velocity gets periodic BCs later.
-        bc_apply_velocity(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
+        // Using scalar CPU backend explicitly for baseline CPU solver.
+        bc_apply_velocity_cpu(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
 
         // ============================================================
         // STEP 2: Solve Poisson equation for pressure

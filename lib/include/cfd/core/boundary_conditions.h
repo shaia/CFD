@@ -3,6 +3,7 @@
 
 #include "cfd/cfd_export.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -22,6 +23,20 @@ typedef enum {
     BC_TYPE_INLET,      // Inlet velocity specification (placeholder for future)
     BC_TYPE_OUTLET      // Outlet/convective (placeholder for future)
 } bc_type_t;
+
+/**
+ * Boundary Condition Backend Types
+ *
+ * Specifies which implementation backend to use for boundary conditions.
+ * This allows runtime selection of the most appropriate implementation
+ * based on the solver type being used.
+ */
+typedef enum {
+    BC_BACKEND_AUTO,    // Auto-select best available (OMP > SIMD > Scalar)
+    BC_BACKEND_SCALAR,  // Force scalar implementation
+    BC_BACKEND_SIMD,    // Force SIMD implementation (AVX2/SSE2)
+    BC_BACKEND_OMP      // Force OpenMP implementation
+} bc_backend_t;
 
 /**
  * Apply boundary conditions to a scalar field (raw array)
@@ -49,6 +64,84 @@ CFD_LIBRARY_EXPORT void bc_apply_velocity(double* u, double* v, size_t nx, size_
  */
 #define bc_apply_neumann(field, nx, ny)  bc_apply_scalar((field), (nx), (ny), BC_TYPE_NEUMANN)
 #define bc_apply_periodic(field, nx, ny) bc_apply_scalar((field), (nx), (ny), BC_TYPE_PERIODIC)
+
+/* ============================================================================
+ * Backend Selection API
+ * ============================================================================ */
+
+/**
+ * Get the currently active BC backend.
+ *
+ * @return The current backend type
+ */
+CFD_LIBRARY_EXPORT bc_backend_t bc_get_backend(void);
+
+/**
+ * Get the name of the currently active BC backend as a string.
+ *
+ * @return Human-readable backend name (e.g., "scalar", "simd", "omp")
+ */
+CFD_LIBRARY_EXPORT const char* bc_get_backend_name(void);
+
+/**
+ * Set the BC backend to use for subsequent operations.
+ *
+ * @param backend The backend to use
+ * @return true if the backend was set successfully, false if unavailable
+ *
+ * Note: BC_BACKEND_AUTO always succeeds and selects the best available.
+ *       Other backends may fail if not compiled in or not supported.
+ */
+CFD_LIBRARY_EXPORT bool bc_set_backend(bc_backend_t backend);
+
+/**
+ * Check if a specific backend is available.
+ *
+ * @param backend The backend to check
+ * @return true if the backend is available, false otherwise
+ */
+CFD_LIBRARY_EXPORT bool bc_backend_available(bc_backend_t backend);
+
+/* ============================================================================
+ * Explicit Backend API
+ *
+ * These functions allow direct selection of a specific implementation,
+ * bypassing the global backend setting. Useful when different solvers
+ * need different BC implementations.
+ * ============================================================================ */
+
+/**
+ * Apply boundary conditions using scalar implementation.
+ * Always available.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply boundary conditions using SIMD implementation (AVX2/SSE2).
+ * Falls back to scalar if SIMD not available.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply boundary conditions using OpenMP implementation.
+ * Falls back to scalar if OpenMP not available.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_scalar_omp(double* field, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply velocity boundary conditions using scalar implementation.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_velocity_cpu(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply velocity boundary conditions using SIMD implementation.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply velocity boundary conditions using OpenMP implementation.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_velocity_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
 
 #ifdef __cplusplus
 }

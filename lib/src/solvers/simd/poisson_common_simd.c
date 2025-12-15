@@ -16,11 +16,11 @@
 /**
  * Apply Neumann boundary conditions (zero gradient) to pressure field
  *
- * Delegates to the unified boundary conditions layer for consistency
- * and to benefit from OpenMP parallelization when available.
+ * Delegates to the unified boundary conditions layer using SIMD backend
+ * explicitly for optimal performance in SIMD solver context.
  */
 void poisson_apply_bc(double* p, size_t nx, size_t ny) {
-    bc_apply_neumann(p, nx, ny);
+    bc_apply_scalar_simd(p, nx, ny, BC_TYPE_NEUMANN);
 }
 
 /**
