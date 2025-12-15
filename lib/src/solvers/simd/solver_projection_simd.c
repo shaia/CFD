@@ -119,7 +119,12 @@ void projection_simd_destroy(struct Solver* solver) {
 }
 
 /**
- * Apply boundary conditions to velocity fields (Neumann: zero gradient)
+ * Apply Neumann boundary conditions (zero gradient) to intermediate velocity arrays.
+ *
+ * Note: This is intentionally separate from apply_boundary_conditions() because:
+ * 1. It operates on raw arrays (u_star, v_star), not flow_field struct
+ * 2. Uses Neumann BCs for the predictor step to properly compute divergence
+ * 3. The final velocity gets periodic BCs via apply_boundary_conditions()
  */
 static void apply_velocity_bc(double* u, double* v, size_t nx, size_t ny) {
     // Left and right boundaries

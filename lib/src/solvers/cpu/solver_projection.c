@@ -212,7 +212,8 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
             }
         }
 
-        // Apply boundary conditions to intermediate velocity
+        // Apply Neumann BCs (zero gradient) to intermediate velocity for proper
+        // divergence computation. Final velocity gets periodic BCs later.
         for (size_t j = 0; j < ny; j++) {
             u_star[(j * nx) + 0] = u_star[(j * nx) + 1];
             u_star[(j * nx) + nx - 1] = u_star[(j * nx) + nx - 2];
