@@ -7,90 +7,9 @@
     },
     "configurePresets": [
         {
-            "name": "base",
-            "hidden": true,
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "cacheVariables": {
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
-            }
-        },
-        {
-            "name": "debug",
-            "displayName": "Debug",
-            "description": "Debug build with full debugging information",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "BUILD_EXAMPLES": "ON",
-                "BUILD_TESTS": "ON"
-            }
-        },
-        {
-            "name": "release",
-            "displayName": "Release",
-            "description": "Optimized release build",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "BUILD_EXAMPLES": "ON",
-                "BUILD_TESTS": "OFF"
-            }
-        },
-        {
-            "name": "relwithdebinfo",
-            "displayName": "Release with Debug Info",
-            "description": "Optimized build with debug symbols",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-                "BUILD_EXAMPLES": "ON",
-                "BUILD_TESTS": "OFF"
-            }
-        },
-        {
-            "name": "ci",
-            "displayName": "CI Build",
-            "description": "Build configuration for continuous integration",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "BUILD_EXAMPLES": "ON",
-                "BUILD_TESTS": "ON",
-                "BUILD_SHARED_LIBS": "OFF",
-                "CMAKE_POSITION_INDEPENDENT_CODE": "ON"
-            }
-        },
-        {
-            "name": "sanitize",
-            "displayName": "Sanitizers",
-            "description": "Debug build with AddressSanitizer and UndefinedBehaviorSanitizer",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "BUILD_EXAMPLES": "ON",
-                "BUILD_TESTS": "ON",
-                "ENABLE_ASAN": "ON",
-                "ENABLE_UBSAN": "ON"
-            }
-        },
-        {
-            "name": "coverage",
-            "displayName": "Coverage",
-            "description": "Debug build with code coverage instrumentation",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "BUILD_EXAMPLES": "OFF",
-                "BUILD_TESTS": "ON",
-                "ENABLE_COVERAGE": "ON"
-            }
-        },
-        {
             "name": "windows-msvc",
             "displayName": "Windows MSVC",
-            "description": "Windows build with Visual Studio",
-            "inherits": "base",
+            "description": "Windows build with Visual Studio and OpenMP",
             "generator": "Visual Studio 17 2022",
             "architecture": {
                 "value": "x64",
@@ -103,62 +22,121 @@
                 "rhs": "Windows"
             },
             "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "BUILD_EXAMPLES": "ON",
+                "BUILD_TESTS": "ON"
+            }
+        },
+        {
+            "name": "windows-msvc-cuda",
+            "displayName": "Windows MSVC + CUDA",
+            "description": "Windows build with CUDA support (requires CUDA Toolkit)",
+            "inherits": "windows-msvc",
+            "cacheVariables": {
+                "CFD_ENABLE_CUDA": "ON"
+            }
+        },
+        {
+            "name": "windows-ninja",
+            "displayName": "Windows Ninja",
+            "description": "Windows build with Ninja, MSVC, OpenMP and CUDA",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-ninja",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe",
                 "BUILD_EXAMPLES": "ON",
                 "BUILD_TESTS": "ON",
-                "CFD_ENABLE_CUDA": "ON",
-                "CMAKE_CUDA_ARCHITECTURES": "native"
+                "CFD_ENABLE_CUDA": "ON"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": ["Windows"]
+                }
+            }
+        },
+        {
+            "name": "linux",
+            "displayName": "Linux",
+            "description": "Linux build with GCC/Clang",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "BUILD_EXAMPLES": "ON",
+                "BUILD_TESTS": "ON"
+            }
+        },
+        {
+            "name": "ci",
+            "displayName": "CI",
+            "description": "Continuous integration build",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_BUILD_TYPE": "Release",
+                "BUILD_EXAMPLES": "ON",
+                "BUILD_TESTS": "ON"
             }
         }
     ],
     "buildPresets": [
         {
-            "name": "debug",
-            "displayName": "Debug Build",
-            "configurePreset": "debug"
+            "name": "windows-debug",
+            "displayName": "Windows Debug",
+            "configurePreset": "windows-msvc",
+            "configuration": "Debug"
         },
         {
-            "name": "release",
-            "displayName": "Release Build",
-            "configurePreset": "release"
+            "name": "windows-release",
+            "displayName": "Windows Release",
+            "configurePreset": "windows-msvc",
+            "configuration": "Release"
         },
         {
-            "name": "relwithdebinfo",
-            "displayName": "RelWithDebInfo Build",
-            "configurePreset": "relwithdebinfo"
+            "name": "windows-ninja",
+            "displayName": "Windows Ninja Build",
+            "configurePreset": "windows-ninja"
+        },
+        {
+            "name": "linux",
+            "displayName": "Linux Build",
+            "configurePreset": "linux"
         },
         {
             "name": "ci",
             "displayName": "CI Build",
             "configurePreset": "ci"
-        },
-        {
-            "name": "sanitize",
-            "displayName": "Sanitizers Build",
-            "configurePreset": "sanitize"
-        },
-        {
-            "name": "coverage",
-            "displayName": "Coverage Build",
-            "configurePreset": "coverage"
-        },
-        {
-            "name": "windows-msvc-debug",
-            "displayName": "Windows MSVC Debug",
-            "configurePreset": "windows-msvc",
-            "configuration": "Debug"
-        },
-        {
-            "name": "windows-msvc-release",
-            "displayName": "Windows MSVC Release",
-            "configurePreset": "windows-msvc",
-            "configuration": "Release"
         }
     ],
     "testPresets": [
         {
-            "name": "debug",
-            "displayName": "Debug Tests",
-            "configurePreset": "debug",
+            "name": "windows",
+            "displayName": "Windows Tests",
+            "configurePreset": "windows-msvc",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "linux",
+            "displayName": "Linux Tests",
+            "configurePreset": "linux",
             "output": {
                 "outputOnFailure": true
             }
@@ -167,22 +145,6 @@
             "name": "ci",
             "displayName": "CI Tests",
             "configurePreset": "ci",
-            "output": {
-                "outputOnFailure": true
-            }
-        },
-        {
-            "name": "sanitize",
-            "displayName": "Sanitizer Tests",
-            "configurePreset": "sanitize",
-            "output": {
-                "outputOnFailure": true
-            }
-        },
-        {
-            "name": "coverage",
-            "displayName": "Coverage Tests",
-            "configurePreset": "coverage",
             "output": {
                 "outputOnFailure": true
             }

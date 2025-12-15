@@ -11,6 +11,11 @@ if(NOT DEFINED CFD_CUDA_ARCHITECTURES)
         "CUDA architectures to build for (75=Turing, 80=Ampere, 86=Ampere, 89=Ada, 90=Hopper)")
 endif()
 
+# Set CMAKE_CUDA_ARCHITECTURES before project() to satisfy CMP0104
+if(CFD_ENABLE_CUDA AND NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES "${CFD_CUDA_ARCHITECTURES}")
+endif()
+
 # Define project with appropriate languages
 if(CFD_ENABLE_CUDA)
     project(cfd_framework C CUDA)
