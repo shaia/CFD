@@ -71,6 +71,7 @@ CMakeUserPresets.json
 
 #cmake-build-debug
 build/**/*
+build-ninja/
 
 
 
