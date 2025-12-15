@@ -13,19 +13,24 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] Cross-platform builds (Windows, Linux, macOS)
 - [x] CI/CD with GitHub Actions
 - [x] Unity test framework integration
-- [x] VTK and CSV output
+- [x] VTK and CSV output with timestamped directories
 - [x] Python bindings infrastructure (cfd-python)
 - [x] Visualization library (cfd-visualization)
 - [x] Thread-safe library initialization
-- [x] SIMD Poisson solvers (Jacobi and Red-Black SOR with AVX2)
+- [x] SIMD Poisson solvers (Jacobi and Red-Black SOR with AVX2/SSE2)
+- [x] Boundary condition abstraction layer with runtime backend selection
+- [x] Neumann and Periodic boundary conditions (all backends)
+- [x] GPU boundary condition kernels (CUDA)
+- [x] Comprehensive test suite (core, solvers, simulation, I/O)
+- [x] 11 example programs demonstrating various features
 
 ### Critical Gaps
 
 - [ ] Only 2D (no 3D support)
-- [ ] Only periodic boundary conditions
+- [ ] Limited boundary conditions (no Dirichlet, no-slip walls, inlets, outlets)
 - [ ] Only structured grids
 - [ ] No turbulence models
-- [ ] Limited linear solvers (SOR/Jacobi only)
+- [ ] Limited linear solvers (SOR/Jacobi only, no CG/BiCGSTAB/multigrid)
 - [ ] No restart/checkpoint capability
 
 ---
@@ -64,7 +69,14 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 ### 1.1 Boundary Conditions (P0 - Critical)
 
-- [ ] Boundary condition abstraction layer
+- [x] Boundary condition abstraction layer (`boundary_conditions.h/.c`)
+- [x] Runtime backend selection (Scalar, SIMD, OpenMP, GPU)
+- [x] Neumann (zero-gradient) boundary conditions
+- [x] Periodic boundary conditions
+- [x] SIMD-optimized BC application (AVX2/SSE2)
+- [x] OpenMP-parallelized BC application
+- [x] CUDA GPU BC kernels
+- [ ] Dirichlet (fixed value) boundary conditions
 - [ ] No-slip wall conditions
 - [ ] Inlet velocity specification
 - [ ] Outlet (zero-gradient/convective)
@@ -72,13 +84,26 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Moving wall boundaries
 - [ ] Time-varying boundary conditions
 
-**Files to modify:**
+**Implemented files:**
 
-- `include/cfd/core/boundary_conditions.h` (new)
-- `src/core/boundary_conditions.c` (new)
-- `src/solvers/*.c` (update BC application)
+- `lib/include/cfd/core/boundary_conditions.h` - Public API with backend selection
+- `lib/src/core/boundary_conditions.c` - Scalar + runtime dispatch
+- `lib/src/core/boundary_conditions_simd.c` - AVX2/SSE2 optimizations
+- `lib/src/core/boundary_conditions_omp.c` - OpenMP parallelization
+- `lib/src/core/boundary_conditions_gpu.cu` - CUDA kernels
+- `lib/src/core/boundary_conditions_internal.h` - Internal declarations
 
 ### 1.2 Linear Solvers (P0 - Critical)
+
+**Implemented:**
+
+- [x] SOR (Successive Over-Relaxation) - CPU baseline
+- [x] Jacobi SIMD (`poisson_jacobi_simd.c`) - AVX2/SSE2 vectorized, fully parallelizable
+- [x] Red-Black SOR SIMD (`poisson_redblack_simd.c`) - AVX2/SSE2 with SOR convergence rate
+- [x] GPU Jacobi Poisson solver (`solver_projection_jacobi_gpu.cu`)
+- [x] Integrate SIMD Poisson into projection solver (`solver_projection_simd.c`)
+
+**Still needed:**
 
 - [ ] Solver abstraction interface
 - [ ] Conjugate Gradient (CG) for SPD systems
@@ -86,13 +111,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Preconditioners (Jacobi, ILU)
 - [ ] Geometric multigrid
 - [ ] Algebraic multigrid (AMG)
-
-**SIMD Poisson Solvers (implemented and integrated):**
-
-- [x] Jacobi SIMD (`poisson_jacobi_simd.c`) - AVX2 vectorized, fully parallelizable
-- [x] Red-Black SOR SIMD (`poisson_redblack_simd.c`) - AVX2 with SOR convergence rate
-- [x] Integrate SIMD Poisson into projection solver (`solver_projection_simd.c`)
-- [ ] Improve convergence for non-trivial problems (increase `POISSON_MAX_ITER` or add preconditioning)
+- [ ] Improve convergence for non-trivial problems (preconditioning)
 - [ ] Performance benchmarking in Release mode
 
 **Note:** Current SIMD Poisson solvers produce valid results but may not converge to strict tolerance (1e-6) on challenging problems like sinusoidal RHS within iteration limits. They converge properly on simpler problems (zero RHS, uniform RHS). See `docs/simd-optimization-analysis.md` for details.
@@ -240,9 +259,21 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 ### 4.2 GPU Improvements (P2)
 
+**Implemented:**
+
+- [x] CUDA device detection and selection
+- [x] GPU device information queries (compute capability, memory)
+- [x] Projection method with Jacobi Poisson solver on GPU
+- [x] GPU memory management (persistent memory, basic async transfers)
+- [x] GPU boundary condition kernels
+- [x] Configurable GPU settings (block size, convergence tolerance)
+- [x] GPU solver statistics (kernel time, transfer time, iterations)
+
+**Still needed:**
+
 - [ ] Multi-GPU support
 - [ ] Unified memory optimization
-- [ ] Asynchronous transfers
+- [ ] Advanced async transfers (multi-stream overlap, double buffering)
 - [ ] GPU-aware MPI
 - [ ] Red-Black SOR GPU kernel (CPU SIMD version available in `poisson_redblack_simd.c`)
 
@@ -268,18 +299,36 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 ### 5.2 Modern VTK (P1)
 
+**Implemented:**
+
+- [x] VTK legacy ASCII format output
+- [x] Scalar field output (`write_vtk_output`)
+- [x] Vector field output (`write_vtk_vector_output`)
+- [x] Full flow field output (`write_vtk_flow_field`)
+- [x] Timestamped run directories (`write_vtk_*_run` functions)
+
+**Still needed:**
+
 - [ ] VTK XML format (.vtu, .pvtu)
 - [ ] Parallel VTK files
 - [ ] Time series support
 - [ ] Binary encoding
 
-### 5.3 Restart Files (P1)
+### 5.3 CSV Output (Implemented)
+
+- [x] Timeseries data (step, time, dt, velocity stats, pressure stats)
+- [x] Centerline profiles (horizontal/vertical)
+- [x] Global statistics (min/max/avg of all fields)
+- [x] Velocity magnitude columns
+- [x] Automatic header creation and append mode
+
+### 5.4 Restart Files (P1)
 
 - [ ] Efficient binary format
 - [ ] Incremental checkpoints
 - [ ] Automatic recovery
 
-### 5.4 In-situ Visualization (P3)
+### 5.5 In-situ Visualization (P3)
 
 - [ ] Catalyst/ParaView integration
 - [ ] ADIOS2 integration
@@ -292,28 +341,98 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 ### 6.0 API & Robustness Testing (P0 - Critical)
 
-- [ ] Negative testing suite (invalid inputs, edge cases)
-- [ ] Error handling verification
-- [ ] Thread-safety stress tests
-- [ ] Memory leak checks (Valgrind/ASan integration)
+**Implemented:**
 
-### 6.1 Benchmark Validation (P0 - Critical)
+- [x] Core functionality tests (`tests/core/`)
+- [x] Input validation tests (`test_input_validation.c`)
+- [x] Error handling tests (`test_error_handling.c`)
+- [x] Re-entrancy/thread-safety tests (`test_reentrancy.c`)
+- [x] Solver tests organized by architecture (CPU, SIMD, OMP, GPU)
+- [x] Simulation API tests (`tests/simulation/`)
+- [x] I/O tests (VTK, CSV, output paths)
+- [x] Physics validation tests (`test_physics_validation.c`)
 
-- [ ] Lid-driven cavity (Re 100, 400, 1000)
-- [ ] Channel flow (Poiseuille)
-- [ ] Backward-facing step
-- [ ] Flow over cylinder
-- [ ] Taylor-Green vortex decay
-- [ ] Comparison with published data
+**Still needed:**
 
-### 6.2 Convergence Studies (P1)
+- [ ] Negative testing suite (more edge cases)
+- [ ] Memory leak checks (Valgrind/ASan integration in CI)
 
-- [ ] Spatial convergence (h-refinement)
-- [ ] Temporal convergence (dt-refinement)
-- [ ] Order of accuracy verification
-- [ ] Method of manufactured solutions
+### 6.1 Mathematical Accuracy Validation (P0 - Critical)
 
-### 6.3 Documentation (P1)
+**Goal:** Verify numerical correctness of all math-oriented computations.
+
+#### 6.1.1 Finite Difference Stencil Tests
+
+Unit tests for individual stencil operations:
+
+- [ ] First derivative (central difference) - verify O(h²) accuracy
+- [ ] Second derivative - verify O(h²) accuracy
+- [ ] 2D Laplacian (5-point stencil) - verify O(h²) accuracy
+- [ ] Divergence operator - verify O(h²) accuracy
+- [ ] Gradient operator - verify O(h²) accuracy
+
+**Test approach:** Use smooth analytical functions (e.g., `sin(kx)*sin(ky)`), compute numerical derivatives, compare to analytical derivatives, verify error scaling.
+
+#### 6.1.2 Convergence Order Verification
+
+- [ ] Spatial convergence tests (h-refinement: 16→32→64→128)
+- [ ] Temporal convergence tests (dt-refinement)
+- [ ] Automated order-of-accuracy computation
+- [ ] Verify 2nd order spatial, 1st order temporal (Euler)
+
+**Success criteria:** Measured convergence rate within 10% of expected order.
+
+#### 6.1.3 Method of Manufactured Solutions (MMS)
+
+- [ ] Define manufactured velocity/pressure fields with known derivatives
+- [ ] Compute analytical source terms from Navier-Stokes substitution
+- [ ] Run solver with manufactured source terms
+- [ ] Compare numerical to manufactured solution
+- [ ] Verify convergence order
+
+**Example manufactured solution:**
+
+```c
+u(x,y,t) = sin(πx) * cos(πy) * exp(-2νπ²t)
+v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
+```
+
+#### 6.1.4 Poisson Solver Accuracy
+
+- [ ] Zero RHS test (solution should remain constant)
+- [ ] Uniform RHS test (quadratic solution)
+- [ ] Sinusoidal RHS test with analytical solution comparison
+- [ ] Convergence rate verification for all Poisson variants (SOR, Jacobi, Red-Black)
+- [ ] Residual convergence tracking
+
+**Files to create:**
+
+- `tests/math/test_finite_differences.c`
+- `tests/math/test_convergence_order.c`
+- `tests/math/test_mms.c`
+- `tests/math/manufactured_solutions.h`
+
+### 6.2 Benchmark Validation (P0 - Critical)
+
+- [ ] Lid-driven cavity (Re 100, 400, 1000) - compare to Ghia et al. (1982)
+- [ ] Channel flow (Poiseuille) - compare to analytical parabolic profile
+- [ ] Backward-facing step - compare to Armaly et al. (1983)
+- [ ] Flow over cylinder - compare to Williamson (1996)
+- [ ] Taylor-Green vortex decay - compare to analytical decay rate
+
+**Files to create:**
+
+- `tests/validation/test_benchmark_cases.c`
+- `tests/validation/reference_data/ghia_cavity.h`
+
+### 6.3 Convergence Studies (P1)
+
+- [ ] Grid independence studies for benchmark cases
+- [ ] Time step independence studies
+- [ ] Richardson extrapolation for error estimation
+- [ ] Automated convergence reporting
+
+### 6.4 Documentation (P1)
 
 - [ ] Doxygen API documentation
 - [ ] Theory/mathematics guide
@@ -323,12 +442,27 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Performance tuning guide
 - [ ] Developer guide
 
-### 6.4 Examples (P1)
+### 6.5 Examples (P1)
 
-- [ ] Basic flow examples
+**Implemented (11 examples):**
+
+- [x] `minimal_example.c` - Simplest usage, basic setup
+- [x] `basic_simulation.c` - Standard incompressible Navier-Stokes
+- [x] `animated_flow_simulation.c` - Time-stepping with visualization
+- [x] `simple_animated_flow.c` - Simpler animation variant
+- [x] `velocity_visualization.c` - Output velocity field visualization
+- [x] `performance_comparison.c` - Compare different solvers
+- [x] `runtime_comparison.c` - Detailed timing comparisons
+- [x] `solver_selection.c` - Demonstrate solver registry and selection
+- [x] `custom_boundary_conditions.c` - Example BC usage
+- [x] `custom_source_terms.c` - Source term implementation
+- [x] `csv_data_export.c` - CSV output examples
+
+**Still needed:**
+
 - [ ] Heat transfer examples
 - [ ] Turbulent flow examples
-- [ ] Parallel computing examples
+- [ ] Parallel computing examples (MPI)
 - [ ] Python interface examples
 
 ---
@@ -356,7 +490,19 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 ## Version Milestones
 
-### v0.1.0 - Foundation
+### v0.1.0 - Foundation (Current)
+
+**Completed:**
+
+- [x] Boundary condition abstraction layer with runtime backend selection
+- [x] Neumann and Periodic boundary conditions (all backends)
+- [x] SIMD Poisson solvers (Jacobi, Red-Black SOR)
+- [x] GPU Jacobi Poisson solver
+- [x] Comprehensive test suite
+- [x] 11 example programs
+- [x] VTK and CSV output
+
+**Remaining for v0.1.0:**
 
 - [ ] Proper boundary conditions (walls, inlet/outlet)
 - [ ] At least one Krylov solver (CG or BiCGSTAB)
