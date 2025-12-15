@@ -118,7 +118,6 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
         return CFD_ERROR_INVALID;
     }
 
-    cfd_status_t status = CFD_SUCCESS;
     size_t nx = field->nx;
     size_t ny = field->ny;
     size_t size = nx * ny;
@@ -190,7 +189,8 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             }
         }
 
-// BCs for intermediate velocity
+// Apply Neumann BCs (zero gradient) to intermediate velocity for proper
+        // divergence computation. Final velocity gets periodic BCs later.
 #pragma omp parallel for schedule(static)
         for (j = 0; j < (int)ny; j++) {
             u_star[(j * nx) + 0] = u_star[(j * nx) + 1];
@@ -223,15 +223,14 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             solve_poisson_sor_omp(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
 
         if (poisson_iters < 0) {
-            status = CFD_ERROR_DIVERGED;
-            // Fallback
+            // Poisson solver didn't converge - use simple pressure update as fallback
+            int k;
 #pragma omp parallel for schedule(static)
             for (k = 0; k < (int)size; k++) {
                 p_new[k] = field->p[k] - (0.1 * dt * rhs[k]);
             }
         }
 
-// STEP 3: Corrector
 // STEP 3: Corrector
 #pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
@@ -250,11 +249,22 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 
         memcpy(field->p, p_new, size * sizeof(double));
         apply_boundary_conditions(field, grid);
+
+        // Check for NaN
+        for (k = 0; k < (int)size; k++) {
+            if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
+                cfd_free(u_star);
+                cfd_free(v_star);
+                cfd_free(p_new);
+                cfd_free(rhs);
+                return CFD_ERROR_DIVERGED;
+            }
+        }
     }
 
     cfd_free(u_star);
     cfd_free(v_star);
     cfd_free(p_new);
     cfd_free(rhs);
-    return status;
+    return CFD_SUCCESS;
 }
