@@ -104,7 +104,9 @@
             },
             "cacheVariables": {
                 "BUILD_EXAMPLES": "ON",
-                "BUILD_TESTS": "ON"
+                "BUILD_TESTS": "ON",
+                "CFD_ENABLE_CUDA": "ON",
+                "CMAKE_CUDA_ARCHITECTURES": "native"
             }
         }
     ],
