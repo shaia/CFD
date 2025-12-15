@@ -16,7 +16,7 @@
  * This ensures ∇·u^(n+1) = 0 (incompressibility constraint)
  */
 
-#include "cfd/core/boundary_conditions.h"
+#include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"

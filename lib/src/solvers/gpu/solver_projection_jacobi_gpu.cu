@@ -9,7 +9,7 @@
  * - Unified boundary conditions via bc_apply_*_gpu() functions
  */
 
-#include "cfd/core/boundary_conditions_gpu.cuh"
+#include "cfd/boundary/boundary_conditions_gpu.cuh"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/logging.h"

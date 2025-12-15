@@ -5,7 +5,7 @@
  * to fields stored in device memory. Mirrors the host-side API for consistency.
  */
 
-#include "cfd/core/boundary_conditions_gpu.cuh"
+#include "cfd/boundary/boundary_conditions_gpu.cuh"
 
 // Block size for 1D boundary kernels
 #define BC_BLOCK_SIZE 256
@@ -109,6 +109,59 @@ __global__ void kernel_bc_periodic_velocity(double* u, double* v, size_t nx, siz
 }
 
 // ============================================================================
+// CUDA Kernels - Dirichlet (Fixed Value)
+// ============================================================================
+
+/**
+ * Apply Dirichlet BC to a scalar field
+ * Sets boundary values to specified fixed values
+ */
+__global__ void kernel_bc_dirichlet_scalar(double* field, size_t nx, size_t ny,
+                                            double val_left, double val_right,
+                                            double val_top, double val_bottom) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Left and right boundaries (one thread per row)
+    if (idx < (int)ny) {
+        field[idx * nx] = val_left;
+        field[idx * nx + nx - 1] = val_right;
+    }
+
+    // Top and bottom boundaries (one thread per column)
+    if (idx < (int)nx) {
+        field[idx] = val_bottom;
+        field[(ny - 1) * nx + idx] = val_top;
+    }
+}
+
+/**
+ * Apply Dirichlet BC to velocity components (u and v)
+ */
+__global__ void kernel_bc_dirichlet_velocity(double* u, double* v, size_t nx, size_t ny,
+                                              double u_left, double u_right,
+                                              double u_top, double u_bottom,
+                                              double v_left, double v_right,
+                                              double v_top, double v_bottom) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Left and right boundaries
+    if (idx < (int)ny) {
+        u[idx * nx] = u_left;
+        u[idx * nx + nx - 1] = u_right;
+        v[idx * nx] = v_left;
+        v[idx * nx + nx - 1] = v_right;
+    }
+
+    // Top and bottom boundaries
+    if (idx < (int)nx) {
+        u[idx] = u_bottom;
+        u[(ny - 1) * nx + idx] = u_top;
+        v[idx] = v_bottom;
+        v[(ny - 1) * nx + idx] = v_top;
+    }
+}
+
+// ============================================================================
 // Host Wrapper Functions
 // ============================================================================
 
@@ -179,4 +232,40 @@ extern "C" void bc_apply_velocity_gpu(double* d_u, double* d_v, size_t nx, size_
             kernel_bc_neumann_velocity<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(d_u, d_v, nx, ny);
             break;
     }
+}
+
+// ============================================================================
+// Dirichlet BC Wrapper Functions
+// ============================================================================
+
+extern "C" void bc_apply_dirichlet_scalar_gpu(double* d_field, size_t nx, size_t ny,
+                                               const bc_dirichlet_values_t* values,
+                                               cudaStream_t stream) {
+    if (!d_field || !values || nx < 3 || ny < 3) {
+        return;
+    }
+
+    size_t max_dim = (nx > ny) ? nx : ny;
+    int num_blocks = (int)((max_dim + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE);
+
+    kernel_bc_dirichlet_scalar<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(
+        d_field, nx, ny,
+        values->left, values->right, values->top, values->bottom);
+}
+
+extern "C" void bc_apply_dirichlet_velocity_gpu(double* d_u, double* d_v, size_t nx, size_t ny,
+                                                 const bc_dirichlet_values_t* u_values,
+                                                 const bc_dirichlet_values_t* v_values,
+                                                 cudaStream_t stream) {
+    if (!d_u || !d_v || !u_values || !v_values || nx < 3 || ny < 3) {
+        return;
+    }
+
+    size_t max_dim = (nx > ny) ? nx : ny;
+    int num_blocks = (int)((max_dim + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE);
+
+    kernel_bc_dirichlet_velocity<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(
+        d_u, d_v, nx, ny,
+        u_values->left, u_values->right, u_values->top, u_values->bottom,
+        v_values->left, v_values->right, v_values->top, v_values->bottom);
 }
