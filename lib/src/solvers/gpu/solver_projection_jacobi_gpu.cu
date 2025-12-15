@@ -6,8 +6,10 @@
  * - Reduced Poisson iterations (50 instead of 1000)
  * - Fixed predictor step logic
  * - Pointer swapping instead of memcpy for Poisson iterations
+ * - Unified boundary conditions via bc_apply_*_gpu() functions
  */
 
+#include "cfd/core/boundary_conditions_gpu.cuh"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/logging.h"
@@ -72,33 +74,8 @@ struct gpu_solver_context_impl {
 // CUDA Kernels
 // ============================================================================
 
-__global__ void kernel_apply_boundary_pressure(double* p, size_t nx, size_t ny) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < ny) {
-        p[idx * nx] = p[idx * nx + 1];
-        p[idx * nx + nx - 1] = p[idx * nx + nx - 2];
-    }
-    if (idx < nx) {
-        p[idx] = p[nx + idx];
-        p[(ny - 1) * nx + idx] = p[(ny - 2) * nx + idx];
-    }
-}
-
-__global__ void kernel_apply_boundary_velocity(double* u, double* v, size_t nx, size_t ny) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < ny) {
-        u[idx * nx] = u[idx * nx + 1];
-        u[idx * nx + nx - 1] = u[idx * nx + nx - 2];
-        v[idx * nx] = v[idx * nx + 1];
-        v[idx * nx + nx - 1] = v[idx * nx + nx - 2];
-    }
-    if (idx < nx) {
-        u[idx] = u[nx + idx];
-        u[(ny - 1) * nx + idx] = u[(ny - 2) * nx + idx];
-        v[idx] = v[nx + idx];
-        v[(ny - 1) * nx + idx] = v[(ny - 2) * nx + idx];
-    }
-}
+// NOTE: Boundary condition kernels have been moved to boundary_conditions_gpu.cu
+// Use bc_apply_scalar_gpu() and bc_apply_velocity_gpu() from the unified BC layer.
 
 __global__ void kernel_compute_divergence(const double* __restrict__ u,
                                           const double* __restrict__ v, double* __restrict__ div,
@@ -406,7 +383,6 @@ cfd_status_t gpu_solver_step(gpu_solver_context* ctx_void, const grid* grid,
            inv_dy2 = 1.0 / (dy * dy);
     dim3 block(ctx->config.block_size_x, ctx->config.block_size_y);
     dim3 grid_dim((nx - 2 + block.x - 1) / block.x, (ny - 2 + block.y - 1) / block.y);
-    int bb = ((int)((nx > ny) ? nx : ny) + 255) / 256;
 
     cudaEventRecord(ctx->start_event, ctx->stream);
     kernel_velocity_rhs<<<grid_dim, block, 0, ctx->stream>>>(
@@ -414,13 +390,13 @@ cfd_status_t gpu_solver_step(gpu_solver_context* ctx_void, const grid* grid,
         inv_dy2, nu, 1.0);
     kernel_velocity_update<<<grid_dim, block, 0, ctx->stream>>>(ctx->d_u, ctx->d_v, ctx->d_u_new,
                                                                 ctx->d_v_new, nx, ny, dt);
-    kernel_apply_boundary_velocity<<<bb, 256, 0, ctx->stream>>>(ctx->d_u, ctx->d_v, nx, ny);
+    bc_apply_velocity_gpu(ctx->d_u, ctx->d_v, nx, ny, BC_TYPE_NEUMANN, ctx->stream);
     kernel_compute_divergence<<<grid_dim, block, 0, ctx->stream>>>(ctx->d_u, ctx->d_v, ctx->d_rhs,
                                                                    nx, ny, inv_2dx, inv_2dy);
 
     kernel_pressure_update<<<grid_dim, block, 0, ctx->stream>>>(ctx->d_p, ctx->d_rhs, nx, ny,
                                                                 0.1 * dt / (dx * dx));
-    kernel_apply_boundary_pressure<<<bb, 256, 0, ctx->stream>>>(ctx->d_p, nx, ny);
+    bc_apply_scalar_gpu(ctx->d_p, nx, ny, BC_TYPE_NEUMANN, ctx->stream);
     cudaEventRecord(ctx->stop_event, ctx->stream);
     cudaStreamSynchronize(ctx->stream);
 
@@ -502,15 +478,13 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
 
     dim3 block(cfg.block_size_x, cfg.block_size_y);
     dim3 grid_dim((nx - 2 + block.x - 1) / block.x, (ny - 2 + block.y - 1) / block.y);
-    int bb = ((int)((nx > ny) ? nx : ny) + 255) / 256;
 
     for (int iter = 0; iter < params->max_iter; iter++) {
         // Step 1: Predictor - compute u* without pressure
         kernel_predictor<<<grid_dim, block, 0, ctx->stream>>>(ctx->d_u, ctx->d_v, ctx->d_u_new,
                                                               ctx->d_v_new, nx, ny, dt, nu, inv_2dx,
                                                               inv_2dy, inv_dx2, inv_dy2);
-        kernel_apply_boundary_velocity<<<bb, 256, 0, ctx->stream>>>(ctx->d_u_new, ctx->d_v_new, nx,
-                                                                    ny);
+        bc_apply_velocity_gpu(ctx->d_u_new, ctx->d_v_new, nx, ny, BC_TYPE_NEUMANN, ctx->stream);
 
         // Step 2: Compute divergence of u*
         kernel_compute_divergence<<<grid_dim, block, 0, ctx->stream>>>(
@@ -523,7 +497,7 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         for (int pi = 0; pi < cfg.poisson_max_iter; pi++) {
             kernel_poisson_jacobi<<<grid_dim, block, 0, ctx->stream>>>(
                 p_src, p_dst, ctx->d_rhs, nx, ny, inv_dx2, inv_dy2, inv_factor);
-            kernel_apply_boundary_pressure<<<bb, 256, 0, ctx->stream>>>(p_dst, nx, ny);
+            bc_apply_scalar_gpu(p_dst, nx, ny, BC_TYPE_NEUMANN, ctx->stream);
             double* tmp = p_src;
             p_src = p_dst;
             p_dst = tmp;
@@ -538,7 +512,7 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         kernel_projection_correct<<<grid_dim, block, 0, ctx->stream>>>(
             ctx->d_u, ctx->d_v, ctx->d_u_new, ctx->d_v_new, ctx->d_p, nx, ny, dt_rho, inv_2dx,
             inv_2dy);
-        kernel_apply_boundary_velocity<<<bb, 256, 0, ctx->stream>>>(ctx->d_u, ctx->d_v, nx, ny);
+        bc_apply_velocity_gpu(ctx->d_u, ctx->d_v, nx, ny, BC_TYPE_NEUMANN, ctx->stream);
     }
 
     cudaStreamSynchronize(ctx->stream);

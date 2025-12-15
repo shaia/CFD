@@ -2,29 +2,25 @@
  * Common Poisson Solver Utilities
  *
  * Shared functions for all Poisson solver implementations:
- * - Boundary condition application
+ * - Boundary condition application (via unified BC layer)
  * - Residual computation
  * - Scalar SOR solver (fallback)
  * - Unified solver interface
  */
 
+#include "cfd/core/boundary_conditions.h"
 #include "poisson_solver_simd.h"
+
 #include <math.h>
 
 /**
  * Apply Neumann boundary conditions (zero gradient) to pressure field
+ *
+ * Delegates to the unified boundary conditions layer for consistency
+ * and to benefit from OpenMP parallelization when available.
  */
 void poisson_apply_bc(double* p, size_t nx, size_t ny) {
-    // Left and right boundaries
-    for (size_t j = 0; j < ny; j++) {
-        p[(j * nx) + 0] = p[(j * nx) + 1];
-        p[(j * nx) + nx - 1] = p[(j * nx) + nx - 2];
-    }
-    // Top and bottom boundaries
-    for (size_t i = 0; i < nx; i++) {
-        p[i] = p[nx + i];
-        p[((ny - 1) * nx) + i] = p[((ny - 2) * nx) + i];
-    }
+    bc_apply_neumann(p, nx, ny);
 }
 
 /**

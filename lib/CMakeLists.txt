@@ -98,7 +98,10 @@ if(CFD_ENABLE_CUDA)
     check_language(CUDA)
 
     if(CMAKE_CUDA_COMPILER)
-        list(APPEND CFD_LIBRARY_SOURCES src/solvers/gpu/solver_projection_jacobi_gpu.cu)
+        list(APPEND CFD_LIBRARY_SOURCES
+            src/core/boundary_conditions_gpu.cu
+            src/solvers/gpu/solver_projection_jacobi_gpu.cu
+        )
         set(CFD_HAS_CUDA TRUE)
         message(STATUS "CUDA compiler found: ${CMAKE_CUDA_COMPILER}")
     else()
