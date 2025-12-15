@@ -59,10 +59,41 @@ CFD_LIBRARY_EXPORT void bc_apply_scalar(double* field, size_t nx, size_t ny, bc_
  */
 CFD_LIBRARY_EXPORT void bc_apply_velocity(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
 
+/* ============================================================================
+ * Convenience Macros
+ *
+ * Shorthand macros for applying common boundary condition types.
+ * These use the global backend setting (see bc_set_backend()).
+ * ============================================================================ */
+
 /**
- * Convenience macros for common boundary condition types
+ * Apply Neumann (zero-gradient) boundary conditions to a scalar field.
+ *
+ * Sets boundary values equal to adjacent interior values:
+ *   - Left:   field[0,j] = field[1,j]
+ *   - Right:  field[nx-1,j] = field[nx-2,j]
+ *   - Bottom: field[i,0] = field[i,1]
+ *   - Top:    field[i,ny-1] = field[i,ny-2]
+ *
+ * @param field Pointer to scalar field array (size nx*ny, row-major)
+ * @param nx    Number of grid points in x-direction
+ * @param ny    Number of grid points in y-direction
  */
 #define bc_apply_neumann(field, nx, ny)  bc_apply_scalar((field), (nx), (ny), BC_TYPE_NEUMANN)
+
+/**
+ * Apply periodic boundary conditions to a scalar field.
+ *
+ * Wraps values from opposite boundaries:
+ *   - Left:   field[0,j] = field[nx-2,j]
+ *   - Right:  field[nx-1,j] = field[1,j]
+ *   - Bottom: field[i,0] = field[i,ny-2]
+ *   - Top:    field[i,ny-1] = field[i,1]
+ *
+ * @param field Pointer to scalar field array (size nx*ny, row-major)
+ * @param nx    Number of grid points in x-direction
+ * @param ny    Number of grid points in y-direction
+ */
 #define bc_apply_periodic(field, nx, ny) bc_apply_scalar((field), (nx), (ny), BC_TYPE_PERIODIC)
 
 /* ============================================================================
