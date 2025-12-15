@@ -50,6 +50,7 @@ set(CFD_CORE_SOURCES
     src/core/math_utils.c
     src/core/field_ops.c
     src/core/derived_fields.c
+    src/core/boundary_conditions.c
 )
 
 # Collect I/O source files
@@ -126,6 +127,7 @@ set(CFD_LIBRARY_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/math_utils.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/field_ops.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/derived_fields.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/boundary_conditions.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/vtk_output.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/csv_output.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/output_registry.h

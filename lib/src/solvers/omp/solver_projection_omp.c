@@ -1,3 +1,4 @@
+#include "cfd/core/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
@@ -86,17 +87,8 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
             }
         }
 
-        // Apply BCs
-#pragma omp parallel for schedule(static)
-        for (j = 0; j < (int)ny; j++) {
-            p[(j * nx) + 0] = p[(j * nx) + 1];
-            p[(j * nx) + nx - 1] = p[(j * nx) + nx - 2];
-        }
-#pragma omp parallel for schedule(static)
-        for (i = 0; i < (int)nx; i++) {
-            p[i] = p[nx + i];
-            p[((ny - 1) * nx) + i] = p[((ny - 2) * nx) + i];
-        }
+        // Apply Neumann boundary conditions
+        bc_apply_neumann(p, nx, ny);
 
         if (max_residual < tolerance) {
             converged = 1;
@@ -191,20 +183,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 
 // Apply Neumann BCs (zero gradient) to intermediate velocity for proper
         // divergence computation. Final velocity gets periodic BCs later.
-#pragma omp parallel for schedule(static)
-        for (j = 0; j < (int)ny; j++) {
-            u_star[(j * nx) + 0] = u_star[(j * nx) + 1];
-            u_star[(j * nx) + nx - 1] = u_star[(j * nx) + nx - 2];
-            v_star[(j * nx) + 0] = v_star[(j * nx) + 1];
-            v_star[(j * nx) + nx - 1] = v_star[(j * nx) + nx - 2];
-        }
-#pragma omp parallel for schedule(static)
-        for (i = 0; i < (int)nx; i++) {
-            u_star[i] = u_star[nx + i];
-            u_star[((ny - 1) * nx) + i] = u_star[((ny - 2) * nx) + i];
-            v_star[i] = v_star[nx + i];
-            v_star[((ny - 1) * nx) + i] = v_star[((ny - 2) * nx) + i];
-        }
+        bc_apply_velocity(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
 
         // STEP 2: Pressure
         double rho = field->rho[0] < 1e-10 ? 1.0 : field->rho[0];

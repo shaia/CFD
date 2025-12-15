@@ -7,6 +7,7 @@
  * The predictor step remains scalar due to its complex stencil access pattern.
  */
 
+#include "cfd/core/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
@@ -118,31 +119,6 @@ void projection_simd_destroy(struct Solver* solver) {
     }
 }
 
-/**
- * Apply Neumann boundary conditions (zero gradient) to intermediate velocity arrays.
- *
- * Note: This is intentionally separate from apply_boundary_conditions() because:
- * 1. It operates on raw arrays (u_star, v_star), not flow_field struct
- * 2. Uses Neumann BCs for the predictor step to properly compute divergence
- * 3. The final velocity gets periodic BCs via apply_boundary_conditions()
- */
-static void apply_velocity_bc(double* u, double* v, size_t nx, size_t ny) {
-    // Left and right boundaries
-    for (size_t j = 0; j < ny; j++) {
-        u[j * nx] = u[(j * nx) + 1];
-        u[(j * nx) + nx - 1] = u[(j * nx) + nx - 2];
-        v[j * nx] = v[(j * nx) + 1];
-        v[(j * nx) + nx - 1] = v[(j * nx) + nx - 2];
-    }
-    // Top and bottom boundaries
-    for (size_t i = 0; i < nx; i++) {
-        u[i] = u[nx + i];
-        u[(ny - 1) * nx + i] = u[(ny - 2) * nx + i];
-        v[i] = v[nx + i];
-        v[(ny - 1) * nx + i] = v[(ny - 2) * nx + i];
-    }
-}
-
 cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, const grid* grid,
                                   const solver_params* params, solver_stats* stats) {
     if (!solver || !solver->context || !field || !grid || !params) {
@@ -229,7 +205,7 @@ cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, cons
     }
 
     // Apply boundary conditions to intermediate velocity
-    apply_velocity_bc(u_star, v_star, nx, ny);
+    bc_apply_velocity(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
 
     // ============================================================
     // STEP 2: Solve Poisson equation for pressure
