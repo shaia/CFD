@@ -16,6 +16,7 @@
  */
 
 #include "boundary_conditions_internal.h"
+#include "cfd/core/logging.h"
 #include <stdbool.h>
 
 /* ============================================================================
@@ -247,11 +248,27 @@ static void apply_scalar_field_bc(double* field, size_t nx, size_t ny, bc_type_t
             break;
 
         case BC_TYPE_DIRICHLET:
+            cfd_warning("BC_TYPE_DIRICHLET not implemented, falling back to Neumann");
+            apply_neumann_with_backend(field, nx, ny, backend);
+            break;
+
         case BC_TYPE_NOSLIP:
+            cfd_warning("BC_TYPE_NOSLIP not implemented, falling back to Neumann");
+            apply_neumann_with_backend(field, nx, ny, backend);
+            break;
+
         case BC_TYPE_INLET:
+            cfd_warning("BC_TYPE_INLET not implemented, falling back to Neumann");
+            apply_neumann_with_backend(field, nx, ny, backend);
+            break;
+
         case BC_TYPE_OUTLET:
+            cfd_warning("BC_TYPE_OUTLET not implemented, falling back to Neumann");
+            apply_neumann_with_backend(field, nx, ny, backend);
+            break;
+
         default:
-            /* Default to Neumann for safety */
+            cfd_warning("Unknown BC type requested, falling back to Neumann");
             apply_neumann_with_backend(field, nx, ny, backend);
             break;
     }
