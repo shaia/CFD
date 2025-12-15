@@ -16,6 +16,7 @@
  * This ensures ∇·u^(n+1) = 0 (incompressibility constraint)
  */
 
+#include "cfd/core/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
@@ -96,18 +97,8 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
             }
         }
 
-        // Apply Neumann boundary conditions (zero gradient)
-        // Left and right boundaries
-        for (size_t j = 0; j < ny; j++) {
-            p[(j * nx) + 0] = p[(j * nx) + 1];
-            p[(j * nx) + nx - 1] = p[(j * nx) + nx - 2];
-        }
-
-        // Top and bottom boundaries
-        for (size_t i = 0; i < nx; i++) {
-            p[i] = p[nx + i];
-            p[((ny - 1) * nx) + i] = p[((ny - 2) * nx) + i];
-        }
+        // Apply Neumann boundary conditions (using scalar CPU backend)
+        bc_apply_scalar_cpu(p, nx, ny, BC_TYPE_NEUMANN);
 
         // Check convergence
         if (max_residual < tolerance) {
@@ -214,18 +205,8 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
         // Apply Neumann BCs (zero gradient) to intermediate velocity for proper
         // divergence computation. Final velocity gets periodic BCs later.
-        for (size_t j = 0; j < ny; j++) {
-            u_star[(j * nx) + 0] = u_star[(j * nx) + 1];
-            u_star[(j * nx) + nx - 1] = u_star[(j * nx) + nx - 2];
-            v_star[(j * nx) + 0] = v_star[(j * nx) + 1];
-            v_star[(j * nx) + nx - 1] = v_star[(j * nx) + nx - 2];
-        }
-        for (size_t i = 0; i < nx; i++) {
-            u_star[i] = u_star[nx + i];
-            u_star[((ny - 1) * nx) + i] = u_star[((ny - 2) * nx) + i];
-            v_star[i] = v_star[nx + i];
-            v_star[((ny - 1) * nx) + i] = v_star[((ny - 2) * nx) + i];
-        }
+        // Using scalar CPU backend explicitly for baseline CPU solver.
+        bc_apply_velocity_cpu(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
 
         // ============================================================
         // STEP 2: Solve Poisson equation for pressure

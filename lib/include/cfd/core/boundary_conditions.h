@@ -1,0 +1,181 @@
+#ifndef CFD_BOUNDARY_CONDITIONS_H
+#define CFD_BOUNDARY_CONDITIONS_H
+
+#include "cfd/cfd_export.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * Boundary Condition Types
+ *
+ * Defines the types of boundary conditions available for CFD simulations.
+ */
+typedef enum {
+    BC_TYPE_PERIODIC,   // Wrap-around: left boundary = right interior, etc.
+    BC_TYPE_NEUMANN,    // Zero gradient: boundary = adjacent interior value
+    BC_TYPE_DIRICHLET,  // Fixed value (placeholder for future implementation)
+    BC_TYPE_NOSLIP,     // No-slip wall: velocity = 0 (placeholder for future)
+    BC_TYPE_INLET,      // Inlet velocity specification (placeholder for future)
+    BC_TYPE_OUTLET      // Outlet/convective (placeholder for future)
+} bc_type_t;
+
+/**
+ * Boundary Condition Backend Types
+ *
+ * Specifies which implementation backend to use for boundary conditions.
+ * This allows runtime selection of the most appropriate implementation
+ * based on the solver type being used.
+ */
+typedef enum {
+    BC_BACKEND_AUTO,    // Auto-select best available (OMP > SIMD > Scalar)
+    BC_BACKEND_SCALAR,  // Force scalar implementation
+    BC_BACKEND_SIMD,    // Force SIMD implementation (AVX2/SSE2)
+    BC_BACKEND_OMP      // Force OpenMP implementation
+} bc_backend_t;
+
+/**
+ * Apply boundary conditions to a scalar field (raw array)
+ *
+ * @param field Pointer to the scalar field array (size nx*ny)
+ * @param nx    Number of grid points in x-direction
+ * @param ny    Number of grid points in y-direction
+ * @param type  Type of boundary condition to apply
+ */
+CFD_LIBRARY_EXPORT void bc_apply_scalar(double* field, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply boundary conditions to velocity components (u, v arrays)
+ *
+ * @param u     Pointer to x-velocity array (size nx*ny)
+ * @param v     Pointer to y-velocity array (size nx*ny)
+ * @param nx    Number of grid points in x-direction
+ * @param ny    Number of grid points in y-direction
+ * @param type  Type of boundary condition to apply
+ */
+CFD_LIBRARY_EXPORT void bc_apply_velocity(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+
+/* ============================================================================
+ * Convenience Macros
+ *
+ * Shorthand macros for applying common boundary condition types.
+ * These use the global backend setting (see bc_set_backend()).
+ * ============================================================================ */
+
+/**
+ * Apply Neumann (zero-gradient) boundary conditions to a scalar field.
+ *
+ * Sets boundary values equal to adjacent interior values:
+ *   - Left:   field[0,j] = field[1,j]
+ *   - Right:  field[nx-1,j] = field[nx-2,j]
+ *   - Bottom: field[i,0] = field[i,1]
+ *   - Top:    field[i,ny-1] = field[i,ny-2]
+ *
+ * @param field Pointer to scalar field array (size nx*ny, row-major)
+ * @param nx    Number of grid points in x-direction
+ * @param ny    Number of grid points in y-direction
+ */
+#define bc_apply_neumann(field, nx, ny)  bc_apply_scalar((field), (nx), (ny), BC_TYPE_NEUMANN)
+
+/**
+ * Apply periodic boundary conditions to a scalar field.
+ *
+ * Wraps values from opposite boundaries:
+ *   - Left:   field[0,j] = field[nx-2,j]
+ *   - Right:  field[nx-1,j] = field[1,j]
+ *   - Bottom: field[i,0] = field[i,ny-2]
+ *   - Top:    field[i,ny-1] = field[i,1]
+ *
+ * @param field Pointer to scalar field array (size nx*ny, row-major)
+ * @param nx    Number of grid points in x-direction
+ * @param ny    Number of grid points in y-direction
+ */
+#define bc_apply_periodic(field, nx, ny) bc_apply_scalar((field), (nx), (ny), BC_TYPE_PERIODIC)
+
+/* ============================================================================
+ * Backend Selection API
+ * ============================================================================ */
+
+/**
+ * Get the currently active BC backend.
+ *
+ * @return The current backend type
+ */
+CFD_LIBRARY_EXPORT bc_backend_t bc_get_backend(void);
+
+/**
+ * Get the name of the currently active BC backend as a string.
+ *
+ * @return Human-readable backend name (e.g., "scalar", "simd", "omp")
+ */
+CFD_LIBRARY_EXPORT const char* bc_get_backend_name(void);
+
+/**
+ * Set the BC backend to use for subsequent operations.
+ *
+ * @param backend The backend to use
+ * @return true if the backend was set successfully, false if unavailable
+ *
+ * Note: BC_BACKEND_AUTO always succeeds and selects the best available.
+ *       Other backends may fail if not compiled in or not supported.
+ */
+CFD_LIBRARY_EXPORT bool bc_set_backend(bc_backend_t backend);
+
+/**
+ * Check if a specific backend is available.
+ *
+ * @param backend The backend to check
+ * @return true if the backend is available, false otherwise
+ */
+CFD_LIBRARY_EXPORT bool bc_backend_available(bc_backend_t backend);
+
+/* ============================================================================
+ * Explicit Backend API
+ *
+ * These functions allow direct selection of a specific implementation,
+ * bypassing the global backend setting. Useful when different solvers
+ * need different BC implementations.
+ * ============================================================================ */
+
+/**
+ * Apply boundary conditions using scalar implementation.
+ * Always available.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply boundary conditions using SIMD implementation (AVX2/SSE2).
+ * Falls back to scalar if SIMD not available.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply boundary conditions using OpenMP implementation.
+ * Falls back to scalar if OpenMP not available.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_scalar_omp(double* field, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply velocity boundary conditions using scalar implementation.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_velocity_cpu(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply velocity boundary conditions using SIMD implementation.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+
+/**
+ * Apply velocity boundary conditions using OpenMP implementation.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_velocity_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif  // CFD_BOUNDARY_CONDITIONS_H
