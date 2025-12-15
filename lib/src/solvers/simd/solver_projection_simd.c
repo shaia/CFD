@@ -254,13 +254,8 @@ cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, cons
     int poisson_iters = poisson_solve(p_new, ctx->u_new, rhs, nx, ny, dx, dy,
                                        DEFAULT_POISSON_SOLVER);
 
-    cfd_status_t status = CFD_SUCCESS;
     if (poisson_iters < 0) {
-        status = CFD_ERROR_DIVERGED;
-        // Poisson solver didn't converge - use simple pressure update as fallback
-        for (size_t idx = 0; idx < size; idx++) {
-            p_new[idx] = field->p[idx] - (0.1 * dt * rhs[idx]);
-        }
+        return CFD_ERROR_DIVERGED;
     }
 
     // ============================================================
@@ -349,5 +344,5 @@ cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, cons
         stats->iterations = 1;
     }
 
-    return status;
+    return CFD_SUCCESS;
 }

@@ -155,8 +155,6 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         return CFD_ERROR_NOMEM;
     }
 
-    cfd_status_t status = CFD_SUCCESS;
-
     // Copy current values
     memcpy(u_star, field->u, size * sizeof(double));
     memcpy(v_star, field->v, size * sizeof(double));
@@ -256,11 +254,11 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
             solve_poisson_sor(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
 
         if (poisson_iters < 0) {
-            status = CFD_ERROR_DIVERGED;
-            // Poisson solver didn't converge - use simple pressure update
-            for (size_t idx = 0; idx < size; idx++) {
-                p_new[idx] = field->p[idx] - (0.1 * dt * rhs[idx]);
-            }
+            cfd_free(u_star);
+            cfd_free(v_star);
+            cfd_free(p_new);
+            cfd_free(rhs);
+            return CFD_ERROR_DIVERGED;
         }
 
         // ============================================================
@@ -290,18 +288,14 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         apply_boundary_conditions(field, grid);
 
         // Check for NaN
-        int has_nan = 0;
         for (size_t k = 0; k < size; k++) {
             if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
-                has_nan = 1;
-                break;
+                cfd_free(u_star);
+                cfd_free(v_star);
+                cfd_free(p_new);
+                cfd_free(rhs);
+                return CFD_ERROR_DIVERGED;
             }
-        }
-
-        if (has_nan) {
-            // Log warning but return diverged status
-            status = CFD_ERROR_DIVERGED;
-            break;
         }
     }
 
@@ -311,5 +305,5 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     cfd_free(p_new);
     cfd_free(rhs);
 
-    return status;
+    return CFD_SUCCESS;
 }
