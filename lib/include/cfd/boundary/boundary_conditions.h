@@ -39,6 +39,19 @@ typedef enum {
 } bc_backend_t;
 
 /**
+ * Dirichlet Boundary Condition Values
+ *
+ * Specifies fixed values for each boundary in Dirichlet (fixed value) BCs.
+ * Used with bc_apply_dirichlet_* functions.
+ */
+typedef struct {
+    double left;    // Value at x=0 boundary (column 0)
+    double right;   // Value at x=Lx boundary (column nx-1)
+    double top;     // Value at y=Ly boundary (row ny-1)
+    double bottom;  // Value at y=0 boundary (row 0)
+} bc_dirichlet_values_t;
+
+/**
  * Apply boundary conditions to a scalar field (raw array)
  *
  * @param field Pointer to the scalar field array (size nx*ny)
@@ -173,6 +186,96 @@ CFD_LIBRARY_EXPORT void bc_apply_velocity_simd(double* u, double* v, size_t nx, 
  * Apply velocity boundary conditions using OpenMP implementation.
  */
 CFD_LIBRARY_EXPORT void bc_apply_velocity_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+
+/* ============================================================================
+ * Dirichlet Boundary Conditions API
+ *
+ * Dirichlet BCs set boundary values to fixed specified values.
+ * Unlike Neumann/Periodic, these require explicit values to be provided.
+ * ============================================================================ */
+
+/**
+ * Apply Dirichlet (fixed value) boundary conditions to a scalar field.
+ *
+ * Sets each boundary to the corresponding value in the values struct:
+ *   - Left:   field[0,j] = values->left
+ *   - Right:  field[nx-1,j] = values->right
+ *   - Bottom: field[i,0] = values->bottom
+ *   - Top:    field[i,ny-1] = values->top
+ *
+ * Uses the currently selected backend (see bc_set_backend()).
+ *
+ * @param field  Pointer to scalar field array (size nx*ny, row-major)
+ * @param nx     Number of grid points in x-direction
+ * @param ny     Number of grid points in y-direction
+ * @param values Pointer to struct containing boundary values
+ */
+CFD_LIBRARY_EXPORT void bc_apply_dirichlet_scalar(double* field, size_t nx, size_t ny,
+                                                   const bc_dirichlet_values_t* values);
+
+/**
+ * Apply Dirichlet boundary conditions to velocity components (u, v).
+ *
+ * @param u        Pointer to x-velocity array (size nx*ny)
+ * @param v        Pointer to y-velocity array (size nx*ny)
+ * @param nx       Number of grid points in x-direction
+ * @param ny       Number of grid points in y-direction
+ * @param u_values Pointer to struct containing u-velocity boundary values
+ * @param v_values Pointer to struct containing v-velocity boundary values
+ */
+CFD_LIBRARY_EXPORT void bc_apply_dirichlet_velocity(double* u, double* v, size_t nx, size_t ny,
+                                                     const bc_dirichlet_values_t* u_values,
+                                                     const bc_dirichlet_values_t* v_values);
+
+/* Backend-specific Dirichlet implementations */
+
+/**
+ * Apply Dirichlet boundary conditions using scalar implementation.
+ * Always available.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_dirichlet_scalar_cpu(double* field, size_t nx, size_t ny,
+                                                       const bc_dirichlet_values_t* values);
+
+/**
+ * Apply Dirichlet boundary conditions using SIMD implementation (AVX2/SSE2).
+ * Falls back to scalar if SIMD not available.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
+                                                        const bc_dirichlet_values_t* values);
+
+/**
+ * Apply Dirichlet boundary conditions using OpenMP implementation.
+ * Falls back to scalar if OpenMP not available.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_dirichlet_scalar_omp(double* field, size_t nx, size_t ny,
+                                                       const bc_dirichlet_values_t* values);
+
+/**
+ * Apply Dirichlet velocity boundary conditions using scalar implementation.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_dirichlet_velocity_cpu(double* u, double* v, size_t nx, size_t ny,
+                                                         const bc_dirichlet_values_t* u_values,
+                                                         const bc_dirichlet_values_t* v_values);
+
+/**
+ * Apply Dirichlet velocity boundary conditions using SIMD implementation.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
+                                                          const bc_dirichlet_values_t* u_values,
+                                                          const bc_dirichlet_values_t* v_values);
+
+/**
+ * Apply Dirichlet velocity boundary conditions using OpenMP implementation.
+ */
+CFD_LIBRARY_EXPORT void bc_apply_dirichlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
+                                                         const bc_dirichlet_values_t* u_values,
+                                                         const bc_dirichlet_values_t* v_values);
+
+/**
+ * Convenience macro for applying Dirichlet BCs to a scalar field.
+ */
+#define bc_apply_dirichlet(field, nx, ny, values) \
+    bc_apply_dirichlet_scalar((field), (nx), (ny), (values))
 
 #ifdef __cplusplus
 }

@@ -6,7 +6,7 @@
  * over columns for top/bottom boundaries.
  */
 
-#include "boundary_conditions_internal.h"
+#include "../boundary_conditions_internal.h"
 
 #ifdef CFD_ENABLE_OPENMP
 #include <omp.h>
@@ -72,6 +72,39 @@ void bc_apply_periodic_omp_impl(double* field, size_t nx, size_t ny) {
     for (i = 0; i < (int)nx; i++) {
         bottom_dst[i] = bottom_src[i];
         top_dst[i] = top_src[i];
+    }
+}
+
+/**
+ * Apply Dirichlet (fixed value) boundary conditions with OpenMP parallelization.
+ *
+ * Sets boundary values to specified fixed values:
+ *   - Left boundary (i=0): field[0,j] = values->left
+ *   - Right boundary (i=nx-1): field[nx-1,j] = values->right
+ *   - Bottom boundary (j=0): field[i,0] = values->bottom
+ *   - Top boundary (j=ny-1): field[i,ny-1] = values->top
+ */
+void bc_apply_dirichlet_omp_impl(double* field, size_t nx, size_t ny,
+                                  const bc_dirichlet_values_t* values) {
+    int j, i;
+
+    /* Left and right boundaries - parallelize over rows */
+#pragma omp parallel for schedule(static)
+    for (j = 0; j < (int)ny; j++) {
+        field[j * nx] = values->left;
+        field[j * nx + (nx - 1)] = values->right;
+    }
+
+    /* Top and bottom boundaries - parallelize over columns */
+    double* bottom_row = field;
+    double* top_row = field + ((ny - 1) * nx);
+    double val_bottom = values->bottom;
+    double val_top = values->top;
+
+#pragma omp parallel for schedule(static)
+    for (i = 0; i < (int)nx; i++) {
+        bottom_row[i] = val_bottom;
+        top_row[i] = val_top;
     }
 }
 

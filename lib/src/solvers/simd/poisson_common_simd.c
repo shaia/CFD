@@ -8,7 +8,7 @@
  * - Unified solver interface
  */
 
-#include "cfd/core/boundary_conditions.h"
+#include "cfd/boundary/boundary_conditions.h"
 #include "poisson_solver_simd.h"
 
 #include <math.h>

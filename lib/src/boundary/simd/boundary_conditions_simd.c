@@ -6,7 +6,7 @@
  * Falls back to scalar for strided access (left/right boundaries).
  */
 
-#include "boundary_conditions_internal.h"
+#include "../boundary_conditions_internal.h"
 
 /* SIMD headers based on detected support */
 #if defined(BC_HAS_AVX2)
@@ -133,6 +133,66 @@ void bc_apply_periodic_simd_impl(double* field, size_t nx, size_t ny) {
     for (i = simd_end; i < nx; i++) {
         bottom_dst[i] = bottom_src[i];
         top_dst[i] = top_src[i];
+    }
+#endif
+}
+
+/**
+ * Apply Dirichlet (fixed value) boundary conditions with SIMD optimization.
+ *
+ * Sets boundary values to specified fixed values:
+ *   - Left boundary (i=0): field[0,j] = values->left
+ *   - Right boundary (i=nx-1): field[nx-1,j] = values->right
+ *   - Bottom boundary (j=0): field[i,0] = values->bottom
+ *   - Top boundary (j=ny-1): field[i,ny-1] = values->top
+ *
+ * SIMD is used for contiguous top/bottom boundaries using broadcast.
+ */
+void bc_apply_dirichlet_simd_impl(double* field, size_t nx, size_t ny,
+                                   const bc_dirichlet_values_t* values) {
+    size_t j, i;
+
+    /* Left and right boundaries - strided access, use scalar */
+    for (j = 0; j < ny; j++) {
+        field[j * nx] = values->left;
+        field[j * nx + (nx - 1)] = values->right;
+    }
+
+    /* Top and bottom boundaries - contiguous memory, use SIMD broadcast */
+    double* bottom_row = field;
+    double* top_row = field + ((ny - 1) * nx);
+
+#if defined(BC_HAS_AVX2)
+    /* AVX2: Broadcast value to 4 doubles and store */
+    __m256d bottom_broadcast = _mm256_set1_pd(values->bottom);
+    __m256d top_broadcast = _mm256_set1_pd(values->top);
+    size_t simd_end = nx & ~(size_t)3;  /* Round down to multiple of 4 */
+
+    for (i = 0; i < simd_end; i += 4) {
+        _mm256_storeu_pd(bottom_row + i, bottom_broadcast);
+        _mm256_storeu_pd(top_row + i, top_broadcast);
+    }
+
+    /* Handle remaining elements */
+    for (i = simd_end; i < nx; i++) {
+        bottom_row[i] = values->bottom;
+        top_row[i] = values->top;
+    }
+#elif defined(BC_HAS_SSE2)
+    /* SSE2: Broadcast value to 2 doubles and store */
+    __m128d bottom_broadcast = _mm_set1_pd(values->bottom);
+    __m128d top_broadcast = _mm_set1_pd(values->top);
+    size_t simd_end = nx & ~(size_t)1;  /* Round down to multiple of 2 */
+
+    for (i = 0; i < simd_end; i += 2) {
+        _mm_storeu_pd(bottom_row + i, bottom_broadcast);
+        _mm_storeu_pd(top_row + i, top_broadcast);
+    }
+
+    /* Handle remaining element */
+    for (i = simd_end; i < nx; i++) {
+        bottom_row[i] = values->bottom;
+        top_row[i] = values->top;
     }
 #endif
 }

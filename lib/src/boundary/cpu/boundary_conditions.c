@@ -15,7 +15,7 @@
  * - boundary_conditions_gpu.cu (CUDA)
  */
 
-#include "boundary_conditions_internal.h"
+#include "../boundary_conditions_internal.h"
 #include "cfd/core/logging.h"
 #include <stdbool.h>
 
@@ -74,6 +74,35 @@ void bc_apply_periodic_scalar_impl(double* field, size_t nx, size_t ny) {
     for (i = 0; i < nx; i++) {
         bottom_dst[i] = bottom_src[i];
         top_dst[i] = top_src[i];
+    }
+}
+
+/**
+ * Apply Dirichlet (fixed value) boundary conditions to a scalar field.
+ */
+void bc_apply_dirichlet_scalar_impl(double* field, size_t nx, size_t ny,
+                                     const bc_dirichlet_values_t* values) {
+    size_t j, i;
+
+    /* Left boundary (column 0) */
+    for (j = 0; j < ny; j++) {
+        field[j * nx] = values->left;
+    }
+
+    /* Right boundary (column nx-1) */
+    for (j = 0; j < ny; j++) {
+        field[j * nx + (nx - 1)] = values->right;
+    }
+
+    /* Bottom boundary (row 0) */
+    for (i = 0; i < nx; i++) {
+        field[i] = values->bottom;
+    }
+
+    /* Top boundary (row ny-1) */
+    double* top_row = field + ((ny - 1) * nx);
+    for (i = 0; i < nx; i++) {
+        top_row[i] = values->top;
     }
 }
 
@@ -233,6 +262,43 @@ static void apply_periodic_with_backend(double* field, size_t nx, size_t ny, bc_
     }
 }
 
+static void apply_dirichlet_with_backend(double* field, size_t nx, size_t ny,
+                                          const bc_dirichlet_values_t* values,
+                                          bc_backend_t backend) {
+    switch (backend) {
+        case BC_BACKEND_SCALAR:
+            bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
+            break;
+
+        case BC_BACKEND_SIMD:
+#ifdef BC_HAS_SIMD
+            bc_apply_dirichlet_simd_impl(field, nx, ny, values);
+#else
+            bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
+#endif
+            break;
+
+        case BC_BACKEND_OMP:
+#ifdef CFD_ENABLE_OPENMP
+            bc_apply_dirichlet_omp_impl(field, nx, ny, values);
+#else
+            bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
+#endif
+            break;
+
+        case BC_BACKEND_AUTO:
+        default:
+#ifdef CFD_ENABLE_OPENMP
+            bc_apply_dirichlet_omp_impl(field, nx, ny, values);
+#elif defined(BC_HAS_SIMD)
+            bc_apply_dirichlet_simd_impl(field, nx, ny, values);
+#else
+            bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
+#endif
+            break;
+    }
+}
+
 static void apply_scalar_field_bc(double* field, size_t nx, size_t ny, bc_type_t type, bc_backend_t backend) {
     if (!field || nx < 3 || ny < 3) {
         return;
@@ -248,7 +314,7 @@ static void apply_scalar_field_bc(double* field, size_t nx, size_t ny, bc_type_t
             break;
 
         case BC_TYPE_DIRICHLET:
-            cfd_warning("BC_TYPE_DIRICHLET not implemented, falling back to Neumann");
+            cfd_warning("BC_TYPE_DIRICHLET requires bc_apply_dirichlet_*() functions with values, falling back to Neumann");
             apply_neumann_with_backend(field, nx, ny, backend);
             break;
 
@@ -328,4 +394,82 @@ void bc_apply_velocity_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t
     }
     apply_scalar_field_bc(u, nx, ny, type, BC_BACKEND_OMP);
     apply_scalar_field_bc(v, nx, ny, type, BC_BACKEND_OMP);
+}
+
+/* ============================================================================
+ * Public API - Dirichlet Boundary Conditions
+ * ============================================================================ */
+
+void bc_apply_dirichlet_scalar(double* field, size_t nx, size_t ny,
+                                const bc_dirichlet_values_t* values) {
+    if (!field || !values || nx < 3 || ny < 3) {
+        return;
+    }
+    apply_dirichlet_with_backend(field, nx, ny, values, g_current_backend);
+}
+
+void bc_apply_dirichlet_velocity(double* u, double* v, size_t nx, size_t ny,
+                                  const bc_dirichlet_values_t* u_values,
+                                  const bc_dirichlet_values_t* v_values) {
+    if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
+        return;
+    }
+    apply_dirichlet_with_backend(u, nx, ny, u_values, g_current_backend);
+    apply_dirichlet_with_backend(v, nx, ny, v_values, g_current_backend);
+}
+
+/* Backend-specific Dirichlet implementations */
+
+void bc_apply_dirichlet_scalar_cpu(double* field, size_t nx, size_t ny,
+                                    const bc_dirichlet_values_t* values) {
+    if (!field || !values || nx < 3 || ny < 3) {
+        return;
+    }
+    apply_dirichlet_with_backend(field, nx, ny, values, BC_BACKEND_SCALAR);
+}
+
+void bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
+                                     const bc_dirichlet_values_t* values) {
+    if (!field || !values || nx < 3 || ny < 3) {
+        return;
+    }
+    apply_dirichlet_with_backend(field, nx, ny, values, BC_BACKEND_SIMD);
+}
+
+void bc_apply_dirichlet_scalar_omp(double* field, size_t nx, size_t ny,
+                                    const bc_dirichlet_values_t* values) {
+    if (!field || !values || nx < 3 || ny < 3) {
+        return;
+    }
+    apply_dirichlet_with_backend(field, nx, ny, values, BC_BACKEND_OMP);
+}
+
+void bc_apply_dirichlet_velocity_cpu(double* u, double* v, size_t nx, size_t ny,
+                                      const bc_dirichlet_values_t* u_values,
+                                      const bc_dirichlet_values_t* v_values) {
+    if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
+        return;
+    }
+    apply_dirichlet_with_backend(u, nx, ny, u_values, BC_BACKEND_SCALAR);
+    apply_dirichlet_with_backend(v, nx, ny, v_values, BC_BACKEND_SCALAR);
+}
+
+void bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
+                                       const bc_dirichlet_values_t* u_values,
+                                       const bc_dirichlet_values_t* v_values) {
+    if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
+        return;
+    }
+    apply_dirichlet_with_backend(u, nx, ny, u_values, BC_BACKEND_SIMD);
+    apply_dirichlet_with_backend(v, nx, ny, v_values, BC_BACKEND_SIMD);
+}
+
+void bc_apply_dirichlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
+                                      const bc_dirichlet_values_t* u_values,
+                                      const bc_dirichlet_values_t* v_values) {
+    if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
+        return;
+    }
+    apply_dirichlet_with_backend(u, nx, ny, u_values, BC_BACKEND_OMP);
+    apply_dirichlet_with_backend(v, nx, ny, v_values, BC_BACKEND_OMP);
 }

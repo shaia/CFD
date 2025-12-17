@@ -8,7 +8,7 @@
 #ifndef CFD_BOUNDARY_CONDITIONS_INTERNAL_H
 #define CFD_BOUNDARY_CONDITIONS_INTERNAL_H
 
-#include "cfd/core/boundary_conditions.h"
+#include "cfd/boundary/boundary_conditions.h"
 #include <stddef.h>
 
 /**
@@ -78,6 +78,46 @@ void bc_apply_neumann_simd_impl(double* field, size_t nx, size_t ny);
  * @param ny     Number of grid points in y-direction
  */
 void bc_apply_periodic_simd_impl(double* field, size_t nx, size_t ny);
+
+/**
+ * Apply Dirichlet boundary conditions with SIMD optimization.
+ *
+ * @param field  Pointer to field array (nx * ny elements)
+ * @param nx     Number of grid points in x-direction
+ * @param ny     Number of grid points in y-direction
+ * @param values Pointer to struct containing boundary values
+ */
+void bc_apply_dirichlet_simd_impl(double* field, size_t nx, size_t ny,
+                                   const bc_dirichlet_values_t* values);
+#endif
+
+/* ============================================================================
+ * Dirichlet Boundary Condition Implementations
+ * ============================================================================ */
+
+/**
+ * Apply Dirichlet (fixed value) boundary conditions using scalar operations.
+ * This is the baseline implementation used when no optimizations are available.
+ *
+ * @param field  Pointer to field array (nx * ny elements)
+ * @param nx     Number of grid points in x-direction
+ * @param ny     Number of grid points in y-direction
+ * @param values Pointer to struct containing boundary values
+ */
+void bc_apply_dirichlet_scalar_impl(double* field, size_t nx, size_t ny,
+                                     const bc_dirichlet_values_t* values);
+
+#ifdef CFD_ENABLE_OPENMP
+/**
+ * Apply Dirichlet boundary conditions with OpenMP parallelization.
+ *
+ * @param field  Pointer to field array (nx * ny elements)
+ * @param nx     Number of grid points in x-direction
+ * @param ny     Number of grid points in y-direction
+ * @param values Pointer to struct containing boundary values
+ */
+void bc_apply_dirichlet_omp_impl(double* field, size_t nx, size_t ny,
+                                  const bc_dirichlet_values_t* values);
 #endif
 
 #endif /* CFD_BOUNDARY_CONDITIONS_INTERNAL_H */
