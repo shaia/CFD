@@ -27,7 +27,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 ### Critical Gaps
 
 - [ ] Only 2D (no 3D support)
-- [ ] Limited boundary conditions (no Dirichlet, no-slip walls, inlets, outlets)
+- [ ] Limited boundary conditions (no no-slip walls, inlets, outlets)
 - [ ] Only structured grids
 - [ ] No turbulence models
 - [ ] Limited linear solvers (SOR/Jacobi only, no CG/BiCGSTAB/multigrid)
@@ -76,7 +76,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] SIMD-optimized BC application (AVX2/SSE2)
 - [x] OpenMP-parallelized BC application
 - [x] CUDA GPU BC kernels
-- [ ] Dirichlet (fixed value) boundary conditions
+- [x] Dirichlet (fixed value) boundary conditions
 - [ ] No-slip wall conditions
 - [ ] Inlet velocity specification
 - [ ] Outlet (zero-gradient/convective)
@@ -86,12 +86,13 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 **Implemented files:**
 
-- `lib/include/cfd/core/boundary_conditions.h` - Public API with backend selection
-- `lib/src/core/boundary_conditions.c` - Scalar + runtime dispatch
-- `lib/src/core/boundary_conditions_simd.c` - AVX2/SSE2 optimizations
-- `lib/src/core/boundary_conditions_omp.c` - OpenMP parallelization
-- `lib/src/core/boundary_conditions_gpu.cu` - CUDA kernels
-- `lib/src/core/boundary_conditions_internal.h` - Internal declarations
+- `lib/include/cfd/boundary/boundary_conditions.h` - Public API with backend selection
+- `lib/include/cfd/boundary/boundary_conditions_gpu.cuh` - GPU API declarations
+- `lib/src/boundary/cpu/boundary_conditions.c` - Scalar + runtime dispatch
+- `lib/src/boundary/simd/boundary_conditions_simd.c` - AVX2/SSE2 optimizations
+- `lib/src/boundary/omp/boundary_conditions_omp.c` - OpenMP parallelization
+- `lib/src/boundary/gpu/boundary_conditions_gpu.cu` - CUDA kernels
+- `lib/src/boundary/boundary_conditions_internal.h` - Internal declarations
 
 ### 1.2 Linear Solvers (P0 - Critical)
 
@@ -444,7 +445,7 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 ### 6.5 Examples (P1)
 
-**Implemented (11 examples):**
+**Implemented (12 examples):**
 
 - [x] `minimal_example.c` - Simplest usage, basic setup
 - [x] `basic_simulation.c` - Standard incompressible Navier-Stokes
@@ -457,6 +458,7 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 - [x] `custom_boundary_conditions.c` - Example BC usage
 - [x] `custom_source_terms.c` - Source term implementation
 - [x] `csv_data_export.c` - CSV output examples
+- [x] `lid_driven_cavity.c` - Lid-driven cavity with Dirichlet BCs
 
 **Still needed:**
 
