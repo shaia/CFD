@@ -130,6 +130,10 @@ if(BUILD_EXAMPLES)
     # CSV data export example - demonstrates CSV output capabilities
     add_executable(csv_data_export examples/csv_data_export.c)
     target_link_libraries(csv_data_export PRIVATE CFD::Library)
+
+    # Lid-driven cavity example - demonstrates Dirichlet boundary conditions
+    add_executable(lid_driven_cavity examples/lid_driven_cavity.c)
+    target_link_libraries(lid_driven_cavity PRIVATE CFD::Library)
 endif()
 
 # Optionally build tests
