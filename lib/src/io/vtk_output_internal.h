@@ -2,7 +2,7 @@
 #define VTK_OUTPUT_INTERNAL_H
 
 #include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 #ifdef __cplusplus
 extern "C" {

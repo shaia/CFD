@@ -53,7 +53,7 @@ const char* cfd_get_error_string(cfd_status_t status) {
         case CFD_ERROR_UNSUPPORTED:
             return "Operation not supported";
         case CFD_ERROR_DIVERGED:
-            return "Solver diverged";
+            return "NSSolver diverged";
         case CFD_ERROR_MAX_ITER:
             return "Max iterations reached";
         case CFD_ERROR_LIMIT_EXCEEDED:

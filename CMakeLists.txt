@@ -182,35 +182,14 @@ if(BUILD_TESTS)
     add_executable(test_solver_explicit_euler_simd tests/solvers/simd/test_solver_explicit_euler_simd.c)
     add_executable(test_solver_projection_simd tests/solvers/simd/test_solver_projection_simd.c)
 
-    # SIMD Poisson solver tests (require access to internal SIMD implementation)
+    # SIMD Poisson solver tests
+    # These now use the poisson_solver interface which is linked via CFD::Library
     # Only build on x86/x64 architectures where AVX2 intrinsics are available
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|x86)")
-        # Note: poisson_common_simd.c calls both jacobi and redblack, so both must be linked
-        add_executable(test_poisson_jacobi_simd
-            tests/solvers/simd/test_poisson_jacobi_simd.c
-            lib/src/solvers/simd/poisson_jacobi_simd.c
-            lib/src/solvers/simd/poisson_redblack_simd.c
-            lib/src/solvers/simd/poisson_common_simd.c
-        )
-        add_executable(test_poisson_redblack_simd
-            tests/solvers/simd/test_poisson_redblack_simd.c
-            lib/src/solvers/simd/poisson_jacobi_simd.c
-            lib/src/solvers/simd/poisson_redblack_simd.c
-            lib/src/solvers/simd/poisson_common_simd.c
-        )
-        # Add include path for internal headers
-        target_include_directories(test_poisson_jacobi_simd PRIVATE lib/src/solvers/simd)
-        target_include_directories(test_poisson_redblack_simd PRIVATE lib/src/solvers/simd)
+        add_executable(test_poisson_jacobi_simd tests/solvers/simd/test_poisson_jacobi_simd.c)
+        add_executable(test_poisson_redblack_simd tests/solvers/simd/test_poisson_redblack_simd.c)
         target_link_libraries(test_poisson_jacobi_simd PRIVATE CFD::Library unity)
         target_link_libraries(test_poisson_redblack_simd PRIVATE CFD::Library unity)
-        # Enable AVX2 for SIMD Poisson tests (required for intrinsics)
-        if(MSVC)
-            target_compile_options(test_poisson_jacobi_simd PRIVATE /arch:AVX2)
-            target_compile_options(test_poisson_redblack_simd PRIVATE /arch:AVX2)
-        else()
-            target_compile_options(test_poisson_jacobi_simd PRIVATE -mavx2 -mfma)
-            target_compile_options(test_poisson_redblack_simd PRIVATE -mavx2 -mfma)
-        endif()
         add_test(NAME PoissonJacobiSimdTest COMMAND test_poisson_jacobi_simd)
         add_test(NAME PoissonRedBlackSimdTest COMMAND test_poisson_redblack_simd)
     else()
@@ -223,6 +202,9 @@ if(BUILD_TESTS)
 
     # GPU projection Jacobi solver tests
     add_executable(test_solver_projection_jacobi_gpu tests/solvers/gpu/test_solver_projection_jacobi_gpu.c)
+
+    # Linear solver abstraction tests
+    add_executable(test_linear_solver tests/solvers/test_linear_solver.c)
 
     # Link test executables with CFD library and Unity
     target_link_libraries(test_simulation_basic PRIVATE CFD::Library unity)
@@ -250,6 +232,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_solver_explicit_euler_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_projection_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_projection_jacobi_gpu PRIVATE CFD::Library unity)
+    target_link_libraries(test_linear_solver PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
     enable_testing()
@@ -278,6 +261,7 @@ if(BUILD_TESTS)
     add_test(NAME SolverExplicitEulerOmpTest COMMAND test_solver_explicit_euler_omp)
     add_test(NAME SolverProjectionOmpTest COMMAND test_solver_projection_omp)
     add_test(NAME SolverProjectionJacobiGpuTest COMMAND test_solver_projection_jacobi_gpu)
+    add_test(NAME LinearSolverTest COMMAND test_linear_solver)
 endif()
 
 # Documentation target (Doxygen)

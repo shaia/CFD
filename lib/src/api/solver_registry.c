@@ -2,7 +2,7 @@
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 
 #ifdef _WIN32
@@ -18,31 +18,31 @@
 
 // Forward declarations for internal solver implementations
 // These are not part of the public API
-cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const solver_params* params);
+cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params);
 void explicit_euler_optimized_impl(flow_field* field, const grid* grid,
-                                   const solver_params* params);
+                                   const ns_solver_params_t* params);
 #ifdef CFD_ENABLE_OPENMP
 cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
-                                     const solver_params* params);
+                                     const ns_solver_params_t* params);
 cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
-                                         const solver_params* params);
+                                         const ns_solver_params_t* params);
 #endif
 
 // SIMD solver functions
 
-cfd_status_t explicit_euler_simd_init(struct Solver* solver, const grid* grid,
-                                      const solver_params* params);
-void explicit_euler_simd_destroy(struct Solver* solver);
+cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
+                                      const ns_solver_params_t* params);
+void explicit_euler_simd_destroy(struct NSSolver* solver);
 
-cfd_status_t explicit_euler_simd_step(struct Solver* solver, flow_field* field, const grid* grid,
-                                      const solver_params* params, solver_stats* stats);
+cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field, const grid* grid,
+                                      const ns_solver_params_t* params, ns_solver_stats_t* stats);
 
 
-cfd_status_t projection_simd_init(solver* solver, const grid* grid, const solver_params* params);
-void projection_simd_destroy(solver* solver);
+cfd_status_t projection_simd_init(ns_solver_t* solver, const grid* grid, const ns_solver_params_t* params);
+void projection_simd_destroy(ns_solver_t* solver);
 
-cfd_status_t projection_simd_step(solver* solver, flow_field* field, const grid* grid,
-                                  const solver_params* params, solver_stats* stats);
+cfd_status_t projection_simd_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params, ns_solver_stats_t* stats);
 
 #ifdef _WIN32
 #else
@@ -55,37 +55,37 @@ cfd_status_t projection_simd_step(solver* solver, flow_field* field, const grid*
 // Registry entry
 typedef struct {
     char name[64];
-    solver_factory_func factory;
+    ns_solver_factory_func factory;
     const char* description;
 } solver_registry_entry;
 
-// solver_registry structure
-struct SolverRegistry {
+// ns_solver_registry_t structure
+struct NSSolverRegistry {
     solver_registry_entry entries[MAX_REGISTERED_SOLVERS];
     int count;
 };
 
 // Forward declarations for built-in solver factories
-static solver* create_explicit_euler_solver(void);
-static solver* create_explicit_euler_optimized_solver(void);
-static solver* create_projection_solver(void);
-static solver* create_projection_optimized_solver(void);
-static solver* create_explicit_euler_gpu_solver(void);
-static solver* create_projection_gpu_solver(void);
+static ns_solver_t* create_explicit_euler_solver(void);
+static ns_solver_t* create_explicit_euler_optimized_solver(void);
+static ns_solver_t* create_projection_solver(void);
+static ns_solver_t* create_projection_optimized_solver(void);
+static ns_solver_t* create_explicit_euler_gpu_solver(void);
+static ns_solver_t* create_projection_gpu_solver(void);
 #ifdef CFD_ENABLE_OPENMP
-static solver* create_explicit_euler_omp_solver(void);
-static solver* create_projection_omp_solver(void);
+static ns_solver_t* create_explicit_euler_omp_solver(void);
+static ns_solver_t* create_projection_omp_solver(void);
 #endif
 
 // External projection method solver functions
 extern cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
-                                            const solver_params* params);
+                                            const ns_solver_params_t* params);
 extern void solve_projection_method_optimized(flow_field* field, const grid* grid,
-                                              const solver_params* params);
+                                              const ns_solver_params_t* params);
 
 // External GPU solver functions (from solver_gpu.cu or solver_gpu_stub.c)
 #include "cfd/core/cfd_status.h"
-#include "cfd/solvers/solver_gpu.h"
+#include "cfd/core/gpu_device.h"
 
 
 // Helper to get current time in milliseconds
@@ -106,48 +106,48 @@ static double get_time_ms(void) {
  * solver Registry Implementation
  */
 
-solver_registry* cfd_registry_create(void) {
-    solver_registry* registry = (solver_registry*)cfd_calloc(1, sizeof(solver_registry));
+ns_solver_registry_t* cfd_registry_create(void) {
+    ns_solver_registry_t* registry = (ns_solver_registry_t*)cfd_calloc(1, sizeof(ns_solver_registry_t));
     return registry;
 }
 
-void cfd_registry_destroy(solver_registry* registry) {
+void cfd_registry_destroy(ns_solver_registry_t* registry) {
     if (registry) {
         cfd_free(registry);
     }
 }
 
-void cfd_registry_register_defaults(solver_registry* registry) {
+void cfd_registry_register_defaults(ns_solver_registry_t* registry) {
     if (!registry) {
         return;
     }
 
     // Register built-in solvers
-    cfd_registry_register(registry, SOLVER_TYPE_EXPLICIT_EULER, create_explicit_euler_solver);
-    cfd_registry_register(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+    cfd_registry_register(registry, NS_SOLVER_TYPE_EXPLICIT_EULER, create_explicit_euler_solver);
+    cfd_registry_register(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
                           create_explicit_euler_optimized_solver);
 
     // Register projection method solvers
-    cfd_registry_register(registry, SOLVER_TYPE_PROJECTION, create_projection_solver);
-    cfd_registry_register(registry, SOLVER_TYPE_PROJECTION_OPTIMIZED,
+    cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION, create_projection_solver);
+    cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
                           create_projection_optimized_solver);
 
     // Register GPU solvers (will use CPU fallback if CUDA not available)
-    cfd_registry_register(registry, SOLVER_TYPE_EXPLICIT_EULER_GPU,
+    cfd_registry_register(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU,
                           create_explicit_euler_gpu_solver);
-    cfd_registry_register(registry, SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+    cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
                           create_projection_gpu_solver);
 
     // Register OpenMP solvers
 #ifdef CFD_ENABLE_OPENMP
-    cfd_registry_register(registry, SOLVER_TYPE_EXPLICIT_EULER_OMP,
+    cfd_registry_register(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
                           create_explicit_euler_omp_solver);
-    cfd_registry_register(registry, SOLVER_TYPE_PROJECTION_OMP, create_projection_omp_solver);
+    cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION_OMP, create_projection_omp_solver);
 #endif
 }
 
-int cfd_registry_register(solver_registry* registry, const char* type_name,
-                          solver_factory_func factory) {
+int cfd_registry_register(ns_solver_registry_t* registry, const char* type_name,
+                          ns_solver_factory_func factory) {
     if (!registry || !type_name || !factory) {
         cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for solver registration");
         return -1;
@@ -179,7 +179,7 @@ int cfd_registry_register(solver_registry* registry, const char* type_name,
     return 0;
 }
 
-int cfd_registry_unregister(solver_registry* registry, const char* type_name) {
+int cfd_registry_unregister(ns_solver_registry_t* registry, const char* type_name) {
     if (!registry || !type_name) {
         return -1;
     }
@@ -197,7 +197,7 @@ int cfd_registry_unregister(solver_registry* registry, const char* type_name) {
     return -1;
 }
 
-int cfd_registry_list(solver_registry* registry, const char** names, int max_count) {
+int cfd_registry_list(ns_solver_registry_t* registry, const char** names, int max_count) {
     if (!registry) {
         return 0;
     }
@@ -211,7 +211,7 @@ int cfd_registry_list(solver_registry* registry, const char** names, int max_cou
     return registry->count;
 }
 
-int cfd_registry_has(solver_registry* registry, const char* type_name) {
+int cfd_registry_has(ns_solver_registry_t* registry, const char* type_name) {
     if (!registry || !type_name) {
         return 0;
     }
@@ -224,13 +224,13 @@ int cfd_registry_has(solver_registry* registry, const char* type_name) {
     return 0;
 }
 
-const char* cfd_registry_get_description(solver_registry* registry, const char* type_name) {
+const char* cfd_registry_get_description(ns_solver_registry_t* registry, const char* type_name) {
     if (!registry || !type_name) {
         return NULL;
     }
 
     // Create a temporary solver to get its description
-    solver* solver = cfd_solver_create(registry, type_name);
+    ns_solver_t* solver = cfd_solver_create(registry, type_name);
     if (solver) {
         const char* desc = solver->description;
         solver_destroy(solver);
@@ -243,7 +243,7 @@ const char* cfd_registry_get_description(solver_registry* registry, const char* 
  * solver Creation and Management
  */
 
-solver* cfd_solver_create(solver_registry* registry, const char* type_name) {
+ns_solver_t* cfd_solver_create(ns_solver_registry_t* registry, const char* type_name) {
     if (!registry || !type_name) {
         cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for solver creation");
         return NULL;
@@ -257,7 +257,7 @@ solver* cfd_solver_create(solver_registry* registry, const char* type_name) {
     return NULL;
 }
 
-void solver_destroy(solver* solver) {
+void solver_destroy(ns_solver_t* solver) {
     if (!solver) {
         return;
     }
@@ -269,7 +269,7 @@ void solver_destroy(solver* solver) {
 }
 
 
-cfd_status_t solver_init(solver* solver, const grid* grid, const solver_params* params) {
+cfd_status_t solver_init(ns_solver_t* solver, const grid* grid, const ns_solver_params_t* params) {
     if (!solver) {
         return CFD_ERROR_INVALID;
     }
@@ -281,8 +281,8 @@ cfd_status_t solver_init(solver* solver, const grid* grid, const solver_params* 
 }
 
 
-cfd_status_t solver_step(solver* solver, flow_field* field, const grid* grid,
-                         const solver_params* params, solver_stats* stats) {
+cfd_status_t solver_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     if (!solver || !field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }
@@ -304,8 +304,8 @@ cfd_status_t solver_step(solver* solver, flow_field* field, const grid* grid,
 }
 
 
-cfd_status_t solver_solve(solver* solver, flow_field* field, const grid* grid,
-                          const solver_params* params, solver_stats* stats) {
+cfd_status_t solver_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                          const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     if (!solver || !field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }
@@ -326,7 +326,7 @@ cfd_status_t solver_solve(solver* solver, flow_field* field, const grid* grid,
     return status;
 }
 
-void solver_apply_boundary(solver* solver, flow_field* field, const grid* grid) {
+void solver_apply_boundary(ns_solver_t* solver, flow_field* field, const grid* grid) {
     if (!solver || !field || !grid) {
         return;
     }
@@ -339,8 +339,8 @@ void solver_apply_boundary(solver* solver, flow_field* field, const grid* grid) 
     }
 }
 
-double solver_compute_dt(solver* solver, const flow_field* field, const grid* grid,
-                         const solver_params* params) {
+double solver_compute_dt(ns_solver_t* solver, const flow_field* field, const grid* grid,
+                         const ns_solver_params_t* params) {
     if (!solver || !field || !grid || !params) {
         return 0.0;
     }
@@ -389,8 +389,8 @@ typedef struct {
     int initialized;
 } explicit_euler_context;
 
-static cfd_status_t explicit_euler_init(solver* solver, const grid* grid,
-                                        const solver_params* params) {
+static cfd_status_t explicit_euler_init(ns_solver_t* solver, const grid* grid,
+                                        const ns_solver_params_t* params) {
     (void)grid;
     (void)params;
 
@@ -405,15 +405,15 @@ static cfd_status_t explicit_euler_init(solver* solver, const grid* grid,
     return CFD_SUCCESS;
 }
 
-static void explicit_euler_destroy(solver* solver) {
+static void explicit_euler_destroy(ns_solver_t* solver) {
     if (solver->context) {
         cfd_free(solver->context);
         solver->context = NULL;
     }
 }
 
-static cfd_status_t explicit_euler_step(solver* solver, flow_field* field, const grid* grid,
-                                        const solver_params* params, solver_stats* stats) {
+static cfd_status_t explicit_euler_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                        const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -421,7 +421,7 @@ static cfd_status_t explicit_euler_step(solver* solver, flow_field* field, const
     }
 
     // Create params with single iteration
-    solver_params step_params = *params;
+    ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
     explicit_euler_impl(field, grid, &step_params);
@@ -448,8 +448,8 @@ static cfd_status_t explicit_euler_step(solver* solver, flow_field* field, const
     return CFD_SUCCESS;
 }
 
-static cfd_status_t explicit_euler_solve(solver* solver, flow_field* field, const grid* grid,
-                                         const solver_params* params, solver_stats* stats) {
+static cfd_status_t explicit_euler_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -479,16 +479,16 @@ static cfd_status_t explicit_euler_solve(solver* solver, flow_field* field, cons
     return CFD_SUCCESS;
 }
 
-static solver* create_explicit_euler_solver(void) {
-    solver* s = (solver*)cfd_calloc(1, sizeof(*s));
+static ns_solver_t* create_explicit_euler_solver(void) {
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
     if (!s) {
         return NULL;
     }
 
-    s->name = SOLVER_TYPE_EXPLICIT_EULER;
+    s->name = NS_SOLVER_TYPE_EXPLICIT_EULER;
     s->description = "Basic explicit Euler finite difference solver for 2D Navier-Stokes";
     s->version = "1.0.0";
-    s->capabilities = SOLVER_CAP_INCOMPRESSIBLE | SOLVER_CAP_TRANSIENT;
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT;
 
     s->init = explicit_euler_init;
     s->destroy = explicit_euler_destroy;
@@ -501,8 +501,8 @@ static solver* create_explicit_euler_solver(void) {
 }
 
 
-static cfd_status_t explicit_euler_simd_solve(solver* solver, flow_field* field, const grid* grid,
-                                              const solver_params* params, solver_stats* stats) {
+static cfd_status_t explicit_euler_simd_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                              const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     if (!solver || !field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }
@@ -533,16 +533,16 @@ static cfd_status_t explicit_euler_simd_solve(solver* solver, flow_field* field,
     return CFD_SUCCESS;
 }
 
-static solver* create_explicit_euler_optimized_solver(void) {
-    solver* s = (solver*)cfd_calloc(1, sizeof(*s));
+static ns_solver_t* create_explicit_euler_optimized_solver(void) {
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
     if (!s) {
         return NULL;
     }
 
-    s->name = SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED;
+    s->name = NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED;
     s->description = "SIMD-optimized explicit Euler solver (AVX2)";
     s->version = "1.0.0";
-    s->capabilities = SOLVER_CAP_INCOMPRESSIBLE | SOLVER_CAP_TRANSIENT | SOLVER_CAP_SIMD;
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_SIMD;
 
     s->init = explicit_euler_simd_init;
     s->destroy = explicit_euler_simd_destroy;
@@ -562,7 +562,7 @@ typedef struct {
     int initialized;
 } projection_context;
 
-static cfd_status_t projection_init(solver* solver, const grid* grid, const solver_params* params) {
+static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const ns_solver_params_t* params) {
     (void)grid;
     (void)params;
     projection_context* ctx = (projection_context*)cfd_malloc(sizeof(projection_context));
@@ -574,21 +574,21 @@ static cfd_status_t projection_init(solver* solver, const grid* grid, const solv
     return CFD_SUCCESS;
 }
 
-static void projection_destroy(solver* solver) {
+static void projection_destroy(ns_solver_t* solver) {
     if (solver->context) {
         cfd_free(solver->context);
         solver->context = NULL;
     }
 }
 
-static cfd_status_t projection_step(solver* solver, flow_field* field, const grid* grid,
-                                    const solver_params* params, solver_stats* stats) {
+static cfd_status_t projection_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                    const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
 
-    solver_params step_params = *params;
+    ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
     solve_projection_method(field, grid, &step_params);
@@ -613,8 +613,8 @@ static cfd_status_t projection_step(solver* solver, flow_field* field, const gri
     return CFD_SUCCESS;
 }
 
-static cfd_status_t projection_solve(solver* solver, flow_field* field, const grid* grid,
-                                     const solver_params* params, solver_stats* stats) {
+static cfd_status_t projection_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                     const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
@@ -642,16 +642,16 @@ static cfd_status_t projection_solve(solver* solver, flow_field* field, const gr
     return CFD_SUCCESS;
 }
 
-static solver* create_projection_solver(void) {
-    solver* s = (solver*)cfd_calloc(1, sizeof(*s));
+static ns_solver_t* create_projection_solver(void) {
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
     if (!s) {
         return NULL;
     }
 
-    s->name = SOLVER_TYPE_PROJECTION;
+    s->name = NS_SOLVER_TYPE_PROJECTION;
     s->description = "Projection method (Chorin's method)";
     s->version = "1.0.0";
-    s->capabilities = SOLVER_CAP_INCOMPRESSIBLE | SOLVER_CAP_TRANSIENT;
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT;
 
     s->init = projection_init;
     s->destroy = projection_destroy;
@@ -663,8 +663,8 @@ static solver* create_projection_solver(void) {
     return s;
 }
 
-static cfd_status_t projection_simd_solve(solver* solver, flow_field* field, const grid* grid,
-                                          const solver_params* params, solver_stats* stats) {
+static cfd_status_t projection_simd_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                          const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     if (!solver || !field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }
@@ -698,16 +698,16 @@ static cfd_status_t projection_simd_solve(solver* solver, flow_field* field, con
     return CFD_SUCCESS;
 }
 
-static solver* create_projection_optimized_solver(void) {
-    solver* s = (solver*)cfd_calloc(1, sizeof(*s));
+static ns_solver_t* create_projection_optimized_solver(void) {
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
     if (!s) {
         return NULL;
     }
 
-    s->name = SOLVER_TYPE_PROJECTION_OPTIMIZED;
+    s->name = NS_SOLVER_TYPE_PROJECTION_OPTIMIZED;
     s->description = "SIMD-optimized Projection solver (AVX2)";
     s->version = "1.0.0";
-    s->capabilities = SOLVER_CAP_INCOMPRESSIBLE | SOLVER_CAP_TRANSIENT | SOLVER_CAP_SIMD;
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_SIMD;
 
     s->init = projection_simd_init;
     s->destroy = projection_simd_destroy;
@@ -725,24 +725,24 @@ static solver* create_projection_optimized_solver(void) {
  */
 
 typedef struct {
-    gpu_solver_context* gpu_ctx;
-    gpu_config gpu_config;
+    gpu_solver_context_t* gpu_ctx;
+    gpu_config_t gpu_config_t;
     int use_gpu;
 } gpu_solver_wrapper_context;
 
-static cfd_status_t gpu_euler_init(solver* solver, const grid* grid, const solver_params* params) {
+static cfd_status_t gpu_euler_init(ns_solver_t* solver, const grid* grid, const ns_solver_params_t* params) {
     gpu_solver_wrapper_context* ctx =
         (gpu_solver_wrapper_context*)cfd_malloc(sizeof(gpu_solver_wrapper_context));
     if (!ctx) {
         return CFD_ERROR;
     }
 
-    ctx->gpu_config = gpu_config_default();
-    ctx->use_gpu = gpu_should_use(&ctx->gpu_config, grid->nx, grid->ny, params->max_iter);
+    ctx->gpu_config_t = gpu_config_default();
+    ctx->use_gpu = gpu_should_use(&ctx->gpu_config_t, grid->nx, grid->ny, params->max_iter);
     ctx->gpu_ctx = NULL;
 
     if (ctx->use_gpu) {
-        ctx->gpu_ctx = gpu_solver_create(grid->nx, grid->ny, &ctx->gpu_config);
+        ctx->gpu_ctx = gpu_solver_create(grid->nx, grid->ny, &ctx->gpu_config_t);
         if (!ctx->gpu_ctx) {
             ctx->use_gpu = 0;  // Fall back to CPU
         }
@@ -752,7 +752,7 @@ static cfd_status_t gpu_euler_init(solver* solver, const grid* grid, const solve
     return CFD_SUCCESS;
 }
 
-static void gpu_euler_destroy(solver* solver) {
+static void gpu_euler_destroy(ns_solver_t* solver) {
     if (solver->context) {
         gpu_solver_wrapper_context* ctx = (gpu_solver_wrapper_context*)solver->context;
         if (ctx->gpu_ctx) {
@@ -763,21 +763,21 @@ static void gpu_euler_destroy(solver* solver) {
     }
 }
 
-static cfd_status_t gpu_euler_step(solver* solver, flow_field* field, const grid* grid,
-                                   const solver_params* params, solver_stats* stats) {
+static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                   const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     gpu_solver_wrapper_context* ctx = (gpu_solver_wrapper_context*)solver->context;
 
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
 
-    solver_params step_params = *params;
+    ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
     if (ctx && ctx->use_gpu && ctx->gpu_ctx) {
         // Upload, step, download
         if (gpu_solver_upload(ctx->gpu_ctx, field) == 0) {
-            gpu_solver_stats gpu_stats;
+            gpu_solver_stats_t gpu_stats;
             if (gpu_solver_step(ctx->gpu_ctx, grid, &step_params, &gpu_stats) == 0) {
                 gpu_solver_download(ctx->gpu_ctx, field);
 
@@ -827,8 +827,8 @@ static cfd_status_t gpu_euler_step(solver* solver, flow_field* field, const grid
     return CFD_SUCCESS;
 }
 
-static cfd_status_t gpu_euler_solve(solver* solver, flow_field* field, const grid* grid,
-                                    const solver_params* params, solver_stats* stats) {
+static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                    const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     gpu_solver_wrapper_context* ctx = (gpu_solver_wrapper_context*)solver->context;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -837,11 +837,11 @@ static cfd_status_t gpu_euler_solve(solver* solver, flow_field* field, const gri
 
     if (ctx && ctx->use_gpu && ctx->gpu_ctx) {
         // Use full GPU solver
-        solve_navier_stokes_gpu(field, grid, params, &ctx->gpu_config);
+        solve_navier_stokes_gpu(field, grid, params, &ctx->gpu_config_t);
 
         if (stats) {
             stats->iterations = params->max_iter;
-            gpu_solver_stats gpu_stats = gpu_solver_get_stats(ctx->gpu_ctx);
+            gpu_solver_stats_t gpu_stats = gpu_solver_get_stats(ctx->gpu_ctx);
             stats->elapsed_time_ms = gpu_stats.kernel_time_ms;
 
             double max_vel = 0.0, max_p = 0.0;
@@ -882,16 +882,16 @@ static cfd_status_t gpu_euler_solve(solver* solver, flow_field* field, const gri
     return CFD_SUCCESS;
 }
 
-static solver* create_explicit_euler_gpu_solver(void) {
-    solver* s = (solver*)cfd_calloc(1, sizeof(*s));
+static ns_solver_t* create_explicit_euler_gpu_solver(void) {
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
     if (!s) {
         return NULL;
     }
 
-    s->name = SOLVER_TYPE_EXPLICIT_EULER_GPU;
+    s->name = NS_SOLVER_TYPE_EXPLICIT_EULER_GPU;
     s->description = "GPU-accelerated explicit Euler solver (CUDA) with automatic fallback";
     s->version = "1.0.0";
-    s->capabilities = SOLVER_CAP_INCOMPRESSIBLE | SOLVER_CAP_TRANSIENT | SOLVER_CAP_GPU;
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
 
     s->init = gpu_euler_init;
     s->destroy = gpu_euler_destroy;
@@ -908,34 +908,34 @@ static solver* create_explicit_euler_gpu_solver(void) {
  */
 
 #if 0
-static cfd_status_t gpu_projection_step(solver* solver, flow_field* field, const grid* grid,
-                                        const solver_params* params, solver_stats* stats) {
+static cfd_status_t gpu_projection_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                        const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     // Dummy implementation
-    solver_params step_params = *params;
+    ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
     solve_projection_method(field, grid, &step_params);
     return CFD_SUCCESS;
 }
 
-static cfd_status_t gpu_projection_solve(solver* solver, flow_field* field, const grid* grid,
-                                         const solver_params* params, solver_stats* stats) {
+static cfd_status_t gpu_projection_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     solve_projection_method(field, grid, params);
     return CFD_SUCCESS;
 }
 #endif
 
-static solver* create_projection_gpu_solver(void) {
+static ns_solver_t* create_projection_gpu_solver(void) {
     return NULL;
     /*
-        solver* s = (solver*)cfd_calloc(1, sizeof(*s));
+        ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
         if (!s) {
             return NULL;
         }
 
-        s->name = SOLVER_TYPE_PROJECTION_JACOBI_GPU;
+        s->name = NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU;
         s->description = "GPU-accelerated projection method with Jacobi iteration (CUDA)";
         s->version = "1.0.0";
-        s->capabilities = SOLVER_CAP_INCOMPRESSIBLE | SOLVER_CAP_TRANSIENT | SOLVER_CAP_GPU;
+        s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
 
         s->init = gpu_euler_init;  // Same init handles GPU context
         s->destroy = gpu_euler_destroy;
@@ -953,14 +953,14 @@ static solver* create_projection_gpu_solver(void) {
  * Built-in solver: Explicit Euler OpenMP
  */
 
-static cfd_status_t explicit_euler_omp_step(solver* solver, flow_field* field, const grid* grid,
-                                            const solver_params* params, solver_stats* stats) {
+static cfd_status_t explicit_euler_omp_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                            const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
 
-    solver_params step_params = *params;
+    ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
     explicit_euler_omp_impl(field, grid, &step_params);
@@ -983,8 +983,8 @@ static cfd_status_t explicit_euler_omp_step(solver* solver, flow_field* field, c
     return CFD_SUCCESS;
 }
 
-static cfd_status_t explicit_euler_omp_solve(solver* solver, flow_field* field, const grid* grid,
-                                             const solver_params* params, solver_stats* stats) {
+static cfd_status_t explicit_euler_omp_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                             const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
@@ -1010,16 +1010,16 @@ static cfd_status_t explicit_euler_omp_solve(solver* solver, flow_field* field, 
     return CFD_SUCCESS;
 }
 
-static solver* create_explicit_euler_omp_solver(void) {
-    solver* s = (solver*)cfd_calloc(1, sizeof(*s));
+static ns_solver_t* create_explicit_euler_omp_solver(void) {
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
     if (!s) {
         return NULL;
     }
 
-    s->name = SOLVER_TYPE_EXPLICIT_EULER_OMP;
+    s->name = NS_SOLVER_TYPE_EXPLICIT_EULER_OMP;
     s->description = "OpenMP-parallelized explicit Euler solver";
     s->version = "1.0.0";
-    s->capabilities = SOLVER_CAP_INCOMPRESSIBLE | SOLVER_CAP_TRANSIENT | SOLVER_CAP_PARALLEL;
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_PARALLEL;
 
     s->init = explicit_euler_init;        // Can reuse existing init
     s->destroy = explicit_euler_destroy;  // Can reuse existing destroy
@@ -1032,17 +1032,17 @@ static solver* create_explicit_euler_omp_solver(void) {
 }
 
 /**
- * Built-in Solver: Projection OpenMP
+ * Built-in NSSolver: Projection OpenMP
  */
 
-static cfd_status_t projection_omp_step(solver* solver, flow_field* field, const grid* grid,
-                                        const solver_params* params, solver_stats* stats) {
+static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                        const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
 
-    solver_params step_params = *params;
+    ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
     solve_projection_method_omp(field, grid, &step_params);
@@ -1065,8 +1065,8 @@ static cfd_status_t projection_omp_step(solver* solver, flow_field* field, const
     return CFD_SUCCESS;
 }
 
-static cfd_status_t projection_omp_solve(solver* solver, flow_field* field, const grid* grid,
-                                         const solver_params* params, solver_stats* stats) {
+static cfd_status_t projection_omp_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
@@ -1092,16 +1092,16 @@ static cfd_status_t projection_omp_solve(solver* solver, flow_field* field, cons
     return CFD_SUCCESS;
 }
 
-static solver* create_projection_omp_solver(void) {
-    solver* s = (solver*)cfd_calloc(1, sizeof(*s));
+static ns_solver_t* create_projection_omp_solver(void) {
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
     if (!s) {
         return NULL;
     }
 
-    s->name = SOLVER_TYPE_PROJECTION_OMP;
+    s->name = NS_SOLVER_TYPE_PROJECTION_OMP;
     s->description = "OpenMP-parallelized Projection solver";
     s->version = "1.0.0";
-    s->capabilities = SOLVER_CAP_INCOMPRESSIBLE | SOLVER_CAP_TRANSIENT | SOLVER_CAP_PARALLEL;
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_PARALLEL;
 
     s->init = projection_init;        // Can reuse existing init
     s->destroy = projection_destroy;  // Can reuse existing destroy

@@ -15,7 +15,7 @@
 #include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_gpu.h"
+#include "cfd/core/gpu_device.h"
 
 #include <cstdio>
 #include <cuda_runtime.h>
@@ -61,8 +61,8 @@ struct gpu_solver_context_impl {
     double* d_y;
     double* d_dx;
     double* d_dy;
-    gpu_config config;
-    gpu_solver_stats stats;
+    gpu_config_t config;
+    gpu_solver_stats_t stats;
     cudaStream_t stream;
     cudaEvent_t start_event;
     cudaEvent_t stop_event;
@@ -208,8 +208,8 @@ __global__ void kernel_scale_rhs(double* __restrict__ rhs, size_t nx, size_t ny,
 
 extern "C" {
 
-gpu_config gpu_config_default(void) {
-    gpu_config config;
+gpu_config_t gpu_config_default(void) {
+    gpu_config_t config;
     config.enable_gpu = 1;
     config.min_grid_size = 10000;
     config.min_steps = 10;
@@ -241,7 +241,7 @@ int gpu_is_available(void) {
     return 0;
 }
 
-int gpu_get_device_info(gpu_device_info* info, int max_devices) {
+int gpu_get_device_info(gpu_device_info_t* info, int max_devices) {
     int device_count = 0;
     cudaError_t err = cudaGetDeviceCount(&device_count);
     if (err != cudaSuccess)
@@ -272,7 +272,7 @@ cfd_status_t gpu_select_device(int device_id) {
     return (cudaSetDevice(device_id) == cudaSuccess) ? CFD_SUCCESS : CFD_ERROR;
 }
 
-int gpu_should_use(const gpu_config* config, size_t nx, size_t ny, int num_steps) {
+int gpu_should_use(const gpu_config_t* config, size_t nx, size_t ny, int num_steps) {
     if (!config || !config->enable_gpu)
         return 0;
     if (!gpu_is_available())
@@ -284,7 +284,7 @@ int gpu_should_use(const gpu_config* config, size_t nx, size_t ny, int num_steps
     return 1;
 }
 
-gpu_solver_context* gpu_solver_create(size_t nx, size_t ny, const gpu_config* config) {
+gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, const gpu_config_t* config) {
     if (!gpu_is_available())
         return nullptr;
     struct gpu_solver_context_impl* ctx =
@@ -315,16 +315,16 @@ gpu_solver_context* gpu_solver_create(size_t nx, size_t ny, const gpu_config* co
         cudaMalloc(&ctx->d_y, ny * sizeof(double)) != cudaSuccess ||
         cudaMalloc(&ctx->d_dx, (nx - 1) * sizeof(double)) != cudaSuccess ||
         cudaMalloc(&ctx->d_dy, (ny - 1) * sizeof(double)) != cudaSuccess) {
-        gpu_solver_destroy((gpu_solver_context*)ctx);
+        gpu_solver_destroy((gpu_solver_context_t*)ctx);
         return nullptr;
     }
     ctx->memory_allocated = 1;
     ctx->initialized = 1;
     ctx->stats.memory_allocated = bytes * 8 + (nx + ny + nx - 1 + ny - 1 + 1) * sizeof(double);
-    return (gpu_solver_context*)ctx;
+    return (gpu_solver_context_t*)ctx;
 }
 
-void gpu_solver_destroy(gpu_solver_context* ctx_void) {
+void gpu_solver_destroy(gpu_solver_context_t* ctx_void) {
     if (!ctx_void)
         return;
     struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
@@ -347,7 +347,7 @@ void gpu_solver_destroy(gpu_solver_context* ctx_void) {
     cfd_free(ctx);
 }
 
-cfd_status_t gpu_solver_upload(gpu_solver_context* ctx_void, const flow_field* field) {
+cfd_status_t gpu_solver_upload(gpu_solver_context_t* ctx_void, const flow_field* field) {
     if (!ctx_void || !field)
         return CFD_ERROR_INVALID;
     struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
@@ -360,7 +360,7 @@ cfd_status_t gpu_solver_upload(gpu_solver_context* ctx_void, const flow_field* f
     return CFD_SUCCESS;
 }
 
-cfd_status_t gpu_solver_download(gpu_solver_context* ctx_void, flow_field* field) {
+cfd_status_t gpu_solver_download(gpu_solver_context_t* ctx_void, flow_field* field) {
     if (!ctx_void || !field)
         return CFD_ERROR_INVALID;
     struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
@@ -372,8 +372,8 @@ cfd_status_t gpu_solver_download(gpu_solver_context* ctx_void, flow_field* field
     return CFD_SUCCESS;
 }
 
-cfd_status_t gpu_solver_step(gpu_solver_context* ctx_void, const grid* grid,
-                             const solver_params* params, gpu_solver_stats* stats) {
+cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
+                             const ns_solver_params_t* params, gpu_solver_stats_t* stats) {
     if (!ctx_void || !grid || !params)
         return CFD_ERROR_INVALID;
     struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
@@ -409,38 +409,38 @@ cfd_status_t gpu_solver_step(gpu_solver_context* ctx_void, const grid* grid,
     return CFD_SUCCESS;
 }
 
-gpu_solver_stats gpu_solver_get_stats(const gpu_solver_context* ctx_void) {
+gpu_solver_stats_t gpu_solver_get_stats(const gpu_solver_context_t* ctx_void) {
     if (!ctx_void) {
-        gpu_solver_stats e = {0};
+        gpu_solver_stats_t e = {0};
         return e;
     }
     const struct gpu_solver_context_impl* ctx = (const struct gpu_solver_context_impl*)ctx_void;
     return ctx->stats;
 }
 
-void gpu_solver_reset_stats(gpu_solver_context* ctx_void) {
+void gpu_solver_reset_stats(gpu_solver_context_t* ctx_void) {
     if (!ctx_void)
         return;
     struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
-    memset(&ctx->stats, 0, sizeof(gpu_solver_stats));
+    memset(&ctx->stats, 0, sizeof(gpu_solver_stats_t));
     ctx->stats.memory_allocated = ctx->size * sizeof(double) * 8;
 }
 
 cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
-                                     const solver_params* params, const gpu_config* config) {
+                                     const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
-    gpu_config cfg = config ? *config : gpu_config_default();
+    gpu_config_t cfg = config ? *config : gpu_config_default();
     if (!gpu_should_use(&cfg, field->nx, field->ny, params->max_iter))
         return CFD_ERROR;
-    gpu_solver_context* ctx = gpu_solver_create(field->nx, field->ny, &cfg);
+    gpu_solver_context_t* ctx = gpu_solver_create(field->nx, field->ny, &cfg);
     if (!ctx)
         return CFD_ERROR_NOMEM;
     if (gpu_solver_upload(ctx, field) != CFD_SUCCESS) {
         gpu_solver_destroy(ctx);
         return CFD_ERROR;
     }
-    gpu_solver_stats stats;
+    gpu_solver_stats_t stats;
     for (int iter = 0; iter < params->max_iter; iter++) {
         if (gpu_solver_step(ctx, grid, params, &stats) != CFD_SUCCESS)
             break;
@@ -451,10 +451,10 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
 }
 
 cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
-                                         const solver_params* params, const gpu_config* config) {
+                                         const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
-    gpu_config cfg = config ? *config : gpu_config_default();
+    gpu_config_t cfg = config ? *config : gpu_config_default();
     if (!gpu_should_use(&cfg, field->nx, field->ny, params->max_iter))
         return CFD_ERROR;
 
@@ -467,7 +467,7 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
     double rho = (field->rho[0] > 1e-10) ? field->rho[0] : 1.0;
     double dt_rho = dt / rho;
 
-    gpu_solver_context* ctx_void = gpu_solver_create(nx, ny, &cfg);
+    gpu_solver_context_t* ctx_void = gpu_solver_create(nx, ny, &cfg);
     if (!ctx_void)
         return CFD_ERROR_NOMEM;
     if (gpu_solver_upload(ctx_void, field) != CFD_SUCCESS) {

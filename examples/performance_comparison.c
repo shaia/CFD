@@ -6,7 +6,7 @@
  */
 
 #include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 
 #include <stdio.h>
@@ -19,11 +19,11 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
     printf("\n=== %s Benchmark ===\n", solver_name);
     printf("Grid size: %zux%zu, Iterations: %d\n", nx, ny, iterations);
 
-    struct SolverRegistry* registry = cfd_registry_create();
+    struct NSSolverRegistry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     // Create solver using modern interface
-    struct Solver* solver = cfd_solver_create(registry, solver_type);
+    struct NSSolver* solver = cfd_solver_create(registry, solver_type);
     if (!solver) {
         fprintf(stderr, "Failed to create solver: %s\n", solver_type);
         cfd_registry_destroy(registry);
@@ -36,7 +36,7 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
     initialize_flow_field(field, grid);
 
     // Initialize solver parameters
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.cfl = 0.5;
     params.tolerance = 1e-6;
@@ -46,7 +46,7 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
 
     // Measure execution time
     clock_t start = clock();
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     for (int i = 0; i < iterations; i++) {
         solver_step(solver, field, grid, &params, &stats);
@@ -98,20 +98,20 @@ int main() {
         printf("\n");
 
         // Benchmark basic solver
-        benchmark_solver("Basic Solver", SOLVER_TYPE_EXPLICIT_EULER, nx, ny, iterations);
+        benchmark_solver("Basic NSSolver", NS_SOLVER_TYPE_EXPLICIT_EULER, nx, ny, iterations);
 
         // Benchmark optimized solver
-        benchmark_solver("Optimized Solver", SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, nx, ny,
+        benchmark_solver("Optimized NSSolver", NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, nx, ny,
                          iterations);
 
         // Benchmark OpenMP solver
-        benchmark_solver("OpenMP Solver", SOLVER_TYPE_EXPLICIT_EULER_OMP, nx, ny, iterations);
+        benchmark_solver("OpenMP NSSolver", NS_SOLVER_TYPE_EXPLICIT_EULER_OMP, nx, ny, iterations);
 
         // Benchmark Projection solvers
-        benchmark_solver("Projection Solver", SOLVER_TYPE_PROJECTION, nx, ny, iterations);
-        benchmark_solver("Projection Optimized", SOLVER_TYPE_PROJECTION_OPTIMIZED, nx, ny,
+        benchmark_solver("Projection NSSolver", NS_SOLVER_TYPE_PROJECTION, nx, ny, iterations);
+        benchmark_solver("Projection Optimized", NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, nx, ny,
                          iterations);
-        benchmark_solver("Projection OpenMP", SOLVER_TYPE_PROJECTION_OMP, nx, ny, iterations);
+        benchmark_solver("Projection OpenMP", NS_SOLVER_TYPE_PROJECTION_OMP, nx, ny, iterations);
 
 
         // Calculate speedup
@@ -127,7 +127,7 @@ int main() {
     printf("Benchmark completed!\n");
     printf("Note: Performance varies by hardware and system load.\n");
     printf("For production use, consider the optimized solver for large grids.\n");
-    printf("\nModern Solver Interface Benefits:\n");
+    printf("\nModern NSSolver Interface Benefits:\n");
     printf("- Easy to switch between solver types\n");
     printf("- Consistent API across all solvers\n");
     printf("- Access to detailed solver statistics\n");

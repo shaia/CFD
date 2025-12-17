@@ -5,7 +5,7 @@
 #include "cfd/core/memory.h"
 
 
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -48,9 +48,9 @@
 #define UPDATE_LIMIT           1.0
 #define PRESSURE_UPDATE_FACTOR 0.1
 
-// Helper function to initialize solver_params with default values
-solver_params solver_params_default(void) {
-    solver_params params = {.dt = DEFAULT_TIME_STEP,
+// Helper function to initialize ns_solver_params_t with default values
+ns_solver_params_t ns_solver_params_default(void) {
+    ns_solver_params_t params = {.dt = DEFAULT_TIME_STEP,
                             .cfl = DEFAULT_CFL_NUMBER,
                             .gamma = DEFAULT_GAMMA,
                             .mu = DEFAULT_VISCOSITY,
@@ -142,7 +142,7 @@ void initialize_flow_field(flow_field* field, const grid* grid) {
     }
 }
 
-void compute_time_step(flow_field* field, const grid* grid, solver_params* params) {
+void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* params) {
     double max_speed = 0.0;
     double dx_min = grid->dx[0];
     double dy_min = grid->dy[0];
@@ -223,7 +223,7 @@ void apply_boundary_conditions(flow_field* field, const grid* grid) {
 }
 
 // Helper function to compute source terms consistently across all solvers
-void compute_source_terms(double x, double y, int iter, double dt, const solver_params* params,
+void compute_source_terms(double x, double y, int iter, double dt, const ns_solver_params_t* params,
                           double* source_u, double* source_v) {
     *source_u =
         params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * dt);
@@ -233,7 +233,7 @@ void compute_source_terms(double x, double y, int iter, double dt, const solver_
 
 // Internal explicit Euler implementation
 // This is called by the solver registry - not part of public API
-cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const solver_params* params) {
+cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params) {
     // Check for minimum grid size - prevent crashes on small grids
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;  // Skip solver for grids too small for finite differences

@@ -106,7 +106,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 **Still needed:**
 
-- [ ] Solver abstraction interface
+- [x] Solver abstraction interface
 - [ ] Conjugate Gradient (CG) for SPD systems
 - [ ] BiCGSTAB for non-symmetric systems
 - [ ] Preconditioners (Jacobi, ILU)
@@ -154,6 +154,37 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Save/restore complete simulation state
 - [ ] Portable across platforms
 - [ ] Version compatibility
+
+### 1.7 Nonlinear Solvers (P2)
+
+Solve F(x)=0 where F is nonlinear. Required for steady-state Navier-Stokes.
+
+- [ ] Newton-Raphson iteration
+- [ ] Picard iteration (successive substitution)
+- [ ] Quasi-Newton methods (BFGS, L-BFGS)
+- [ ] Line search and globalization
+- [ ] Nonlinear solver abstraction interface
+
+**Files to create:**
+
+- `include/cfd/solvers/nonlinear_solver.h`
+- `src/solvers/nonlinear/newton.c`
+- `src/solvers/nonlinear/picard.c`
+
+### 1.8 Eigenvalue Solvers (P3)
+
+Find eigenvalues/eigenvectors for stability analysis.
+
+- [ ] Power iteration
+- [ ] Inverse iteration
+- [ ] Arnoldi iteration
+- [ ] Stability analysis framework
+
+**Files to create:**
+
+- `include/cfd/solvers/eigen_solver.h`
+- `src/solvers/eigen/power_iteration.c`
+- `src/solvers/eigen/arnoldi.c`
 
 ---
 

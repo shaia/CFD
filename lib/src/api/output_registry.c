@@ -120,14 +120,14 @@ const char* output_registry_get_run_dir(output_registry* reg, const char* base_d
 typedef void (*output_dispatch_func)(const char* run_dir, const char* prefix, int step,
                                      double current_time, const flow_field* field,
                                      const derived_fields* derived, const grid* grid,
-                                     const solver_params* params, const solver_stats* stats);
+                                     const ns_solver_params_t* params, const ns_solver_stats_t* stats);
 
 // VTK output wrappers
 static void dispatch_vtk_velocity_magnitude(const char* run_dir, const char* prefix, int step,
                                             double current_time, const flow_field* field,
                                             const derived_fields* derived, const grid* grid,
-                                            const solver_params* params,
-                                            const solver_stats* stats) {
+                                            const ns_solver_params_t* params,
+                                            const ns_solver_stats_t* stats) {
     (void)current_time;
     (void)field;
     (void)params;
@@ -142,7 +142,7 @@ static void dispatch_vtk_velocity_magnitude(const char* run_dir, const char* pre
 static void dispatch_vtk_velocity(const char* run_dir, const char* prefix, int step,
                                   double current_time, const flow_field* field,
                                   const derived_fields* derived, const grid* grid,
-                                  const solver_params* params, const solver_stats* stats) {
+                                  const ns_solver_params_t* params, const ns_solver_stats_t* stats) {
     (void)current_time;
     (void)derived;
     (void)params;
@@ -153,7 +153,7 @@ static void dispatch_vtk_velocity(const char* run_dir, const char* prefix, int s
 static void dispatch_vtk_full_field(const char* run_dir, const char* prefix, int step,
                                     double current_time, const flow_field* field,
                                     const derived_fields* derived, const grid* grid,
-                                    const solver_params* params, const solver_stats* stats) {
+                                    const ns_solver_params_t* params, const ns_solver_stats_t* stats) {
     (void)current_time;
     (void)derived;
     (void)params;
@@ -165,7 +165,7 @@ static void dispatch_vtk_full_field(const char* run_dir, const char* prefix, int
 static void dispatch_csv_timeseries(const char* run_dir, const char* prefix, int step,
                                     double current_time, const flow_field* field,
                                     const derived_fields* derived, const grid* grid,
-                                    const solver_params* params, const solver_stats* stats) {
+                                    const ns_solver_params_t* params, const ns_solver_stats_t* stats) {
     csv_dispatch_output(CSV_OUTPUT_TIMESERIES, run_dir, prefix, step, current_time, field, derived,
                         grid, params, stats);
 }
@@ -173,7 +173,7 @@ static void dispatch_csv_timeseries(const char* run_dir, const char* prefix, int
 static void dispatch_csv_centerline(const char* run_dir, const char* prefix, int step,
                                     double current_time, const flow_field* field,
                                     const derived_fields* derived, const grid* grid,
-                                    const solver_params* params, const solver_stats* stats) {
+                                    const ns_solver_params_t* params, const ns_solver_stats_t* stats) {
     csv_dispatch_output(CSV_OUTPUT_CENTERLINE, run_dir, prefix, step, current_time, field, derived,
                         grid, params, stats);
 }
@@ -181,7 +181,7 @@ static void dispatch_csv_centerline(const char* run_dir, const char* prefix, int
 static void dispatch_csv_statistics(const char* run_dir, const char* prefix, int step,
                                     double current_time, const flow_field* field,
                                     const derived_fields* derived, const grid* grid,
-                                    const solver_params* params, const solver_stats* stats) {
+                                    const ns_solver_params_t* params, const ns_solver_stats_t* stats) {
     csv_dispatch_output(CSV_OUTPUT_STATISTICS, run_dir, prefix, step, current_time, field, derived,
                         grid, params, stats);
 }
@@ -207,7 +207,7 @@ static const output_dispatch_func output_dispatch_table[] = {
 void output_registry_write_outputs(output_registry* reg, const char* run_dir, int step,
                                    double current_time, const flow_field* field,
                                    const derived_fields* derived, const grid* grid,
-                                   const solver_params* params, const solver_stats* stats) {
+                                   const ns_solver_params_t* params, const ns_solver_stats_t* stats) {
     if (!reg || !run_dir) {
         return;
     }

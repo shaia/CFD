@@ -11,7 +11,7 @@
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 #include <stdio.h>
@@ -32,16 +32,16 @@ void tearDown(void) {
 void test_creates_successfully(void) {
     printf("\n=== Test: Explicit Euler Creates Successfully ===\n");
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     TEST_ASSERT_NOT_NULL(registry);
 
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     TEST_ASSERT_NOT_NULL_MESSAGE(slv, "Failed to create explicit Euler solver");
 
     TEST_ASSERT_NOT_NULL(slv->name);
-    printf("Solver name: %s\n", slv->name);
+    printf("NSSolver name: %s\n", slv->name);
 
     solver_destroy(slv);
     cfd_registry_destroy(registry);
@@ -57,14 +57,14 @@ void test_initializes_correctly(void) {
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     TEST_ASSERT_NOT_NULL(slv);
 
     cfd_status_t status = solver_init(slv, g, &params);
@@ -84,13 +84,13 @@ void test_initializes_correctly(void) {
 void test_stability_small_cfl(void) {
     printf("\n=== Test: Stability with Small CFL ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0005;
     params.mu = 0.01;
     params.max_iter = 1;
 
     test_result result = test_run_stability(
-        SOLVER_TYPE_EXPLICIT_EULER,
+        NS_SOLVER_TYPE_EXPLICIT_EULER,
         32, 32, &params, 100
     );
 
@@ -103,13 +103,13 @@ void test_stability_small_cfl(void) {
 void test_stability_large_grid(void) {
     printf("\n=== Test: Stability with Large Grid ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0002;
     params.mu = 0.01;
     params.max_iter = 1;
 
     test_result result = test_run_stability(
-        SOLVER_TYPE_EXPLICIT_EULER,
+        NS_SOLVER_TYPE_EXPLICIT_EULER,
         64, 64, &params, 50
     );
 
@@ -126,13 +126,13 @@ void test_stability_large_grid(void) {
 void test_energy_dissipation(void) {
     printf("\n=== Test: Energy Dissipation ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0005;
     params.mu = 0.01;
     params.max_iter = 1;
 
     test_result result = test_run_energy_decay(
-        SOLVER_TYPE_EXPLICIT_EULER,
+        NS_SOLVER_TYPE_EXPLICIT_EULER,
         32, 32, &params, 100
     );
 
@@ -170,17 +170,17 @@ void test_taylor_green_decay_rate(void) {
     double initial_ke = test_compute_kinetic_energy(field, g);
     printf("Initial kinetic energy: %.6e\n", initial_ke);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = nu;
     params.max_iter = 1;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(slv, g, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Run simulation
     int num_steps = 100;
@@ -235,7 +235,7 @@ void test_spatial_convergence(void) {
     int num_grids = 3;
     double errors[3];
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     for (int g_idx = 0; g_idx < num_grids; g_idx++) {
@@ -248,14 +248,14 @@ void test_spatial_convergence(void) {
         grid_initialize_uniform(g);
         test_init_taylor_green_with_params(field, g, U, k);
 
-        solver_params params = solver_params_default();
+        ns_solver_params_t params = ns_solver_params_default();
         params.dt = 0.0001;
         params.mu = nu;
         params.max_iter = 1;
 
-        solver* slv = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+        ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
         solver_init(slv, g, &params);
-        solver_stats stats = solver_stats_default();
+        ns_solver_stats_t stats = ns_solver_stats_default();
 
         double t = 0.0;
         int num_steps = 50;
@@ -337,18 +337,18 @@ void test_cfl_stability(void) {
         }
     }
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.cfl = cfl_safe;
     params.mu = 0.01;
     params.max_iter = 1;
     params.dt = cfl_safe * fmin(dx, dy) / 0.5;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(slv, g, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     int stable = 1;
     for (int step = 0; step < 200; step++) {
@@ -376,16 +376,16 @@ void test_cfl_stability(void) {
 //=============================================================================
 
 void test_consistency_with_optimized(void) {
-    printf("\n=== Test: Consistency with Optimized Solver ===\n");
+    printf("\n=== Test: Consistency with Optimized NSSolver ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0005;
     params.mu = 0.01;
     params.max_iter = 1;
 
     test_result result = test_run_consistency(
-        SOLVER_TYPE_EXPLICIT_EULER,
-        SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+        NS_SOLVER_TYPE_EXPLICIT_EULER,
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
         32, 32, &params, 20, 0.05
     );
 
@@ -418,17 +418,17 @@ void test_zero_velocity(void) {
         field->T[i] = 300.0;
     }
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(slv, g, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     for (int step = 0; step < 10; step++) {
         solver_step(slv, field, g, &params, &stats);
@@ -455,13 +455,13 @@ void test_zero_velocity(void) {
 void test_non_square_grid(void) {
     printf("\n=== Test: Non-Square Grid ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0003;
     params.mu = 0.01;
     params.max_iter = 1;
 
     test_result result = test_run_stability(
-        SOLVER_TYPE_EXPLICIT_EULER,
+        NS_SOLVER_TYPE_EXPLICIT_EULER,
         64, 32, &params, 50
     );
 
@@ -480,7 +480,7 @@ int main(void) {
 
     printf("\n");
     printf("================================================\n");
-    printf("  Explicit Euler Solver Validation Tests\n");
+    printf("  Explicit Euler NSSolver Validation Tests\n");
     printf("================================================\n");
 
     // Basic functionality

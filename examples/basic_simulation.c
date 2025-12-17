@@ -1,6 +1,6 @@
 #include "cfd/api/simulation_api.h"
 #include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 
 #include <stdio.h>

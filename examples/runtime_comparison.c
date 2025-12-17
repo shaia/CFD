@@ -7,7 +7,7 @@
  * Tests:
  * 1. grid size scaling (small to large grids)
  * 2. Iteration count scaling (few to many iterations)
- * 3. Solver type comparison (Euler vs Projection)
+ * 3. NSSolver type comparison (Euler vs Projection)
  * 4. GPU threshold analysis (when GPU becomes faster)
  */
 
@@ -18,8 +18,8 @@
 
 #include "cfd/api/simulation_api.h"
 #include "cfd/core/filesystem.h"
-#include "cfd/solvers/solver_gpu.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/gpu_device.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 
 #include <math.h>
@@ -49,7 +49,7 @@ static const size_t GRID_SIZES[][2] = {
 static const int ITERATION_COUNTS[] = {10, 50, 100};
 #define NUM_ITERATION_COUNTS (sizeof(ITERATION_COUNTS) / sizeof(ITERATION_COUNTS[0]))
 
-// Solver pairs to compare (SIMD vs GPU)
+// NSSolver pairs to compare (SIMD vs GPU)
 typedef struct {
     const char* simd_solver;
     const char* gpu_solver;
@@ -57,8 +57,8 @@ typedef struct {
 } solver_pair;
 
 static const solver_pair SOLVER_PAIRS[] = {
-    {SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, SOLVER_TYPE_EXPLICIT_EULER_GPU, "Explicit Euler"},
-    {SOLVER_TYPE_PROJECTION_OPTIMIZED, SOLVER_TYPE_PROJECTION_JACOBI_GPU, "Projection Method"},
+    {NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU, "Explicit Euler"},
+    {NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, "Projection Method"},
 };
 #define NUM_SOLVER_PAIRS (sizeof(SOLVER_PAIRS) / sizeof(SOLVER_PAIRS[0]))
 
@@ -153,7 +153,7 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
         result.simd_time_ms = total_time / REPEAT_COUNT;
 
         // Get final stats
-        const solver_stats* stats = simulation_get_stats(sim);
+        const ns_solver_stats_t* stats = simulation_get_stats(sim);
         if (stats) {
             result.max_velocity = stats->max_velocity;
             result.max_pressure = stats->max_pressure;
@@ -219,7 +219,7 @@ static void print_result(const benchmark_result* r) {
 // Test 1: grid size scaling
 static void test_grid_size_scaling(void) {
     print_header("TEST 1: grid Size Scaling (100 iterations)");
-    printf("| grid Size | Iter | Solver             | SIMD (ms)  | GPU (ms)   | Speedup     |\n");
+    printf("| grid Size | Iter | NSSolver             | SIMD (ms)  | GPU (ms)   | Speedup     |\n");
     print_separator();
 
     for (size_t pair = 0; pair < NUM_SOLVER_PAIRS; pair++) {
@@ -238,7 +238,7 @@ static void test_grid_size_scaling(void) {
 // Test 2: Iteration count scaling
 static void test_iteration_scaling(void) {
     print_header("TEST 2: Iteration Count Scaling (200x100 grid)");
-    printf("| grid Size | Iter | Solver             | SIMD (ms)  | GPU (ms)   | Speedup     |\n");
+    printf("| grid Size | Iter | NSSolver             | SIMD (ms)  | GPU (ms)   | Speedup     |\n");
     print_separator();
 
     size_t nx = 200, ny = 100;
@@ -262,7 +262,7 @@ static void test_gpu_crossover(void) {
     printf("Finding the grid size where GPU becomes faster than SIMD...\n\n");
 
     for (size_t pair = 0; pair < NUM_SOLVER_PAIRS; pair++) {
-        printf("Solver: %s\n", SOLVER_PAIRS[pair].name);
+        printf("NSSolver: %s\n", SOLVER_PAIRS[pair].name);
         printf("| grid Size  | Points    | SIMD (ms) | GPU (ms)  | Winner | Speedup |\n");
         printf("|------------|-----------|-----------|-----------|--------|----------|\n");
 
@@ -309,9 +309,9 @@ static void test_all_solvers(void) {
     print_header("TEST 4: All Solvers Comparison (200x100 grid, 100 iterations)");
 
     const char* all_solvers[] = {
-        SOLVER_TYPE_EXPLICIT_EULER,       SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
-        SOLVER_TYPE_EXPLICIT_EULER_GPU,   SOLVER_TYPE_PROJECTION,
-        SOLVER_TYPE_PROJECTION_OPTIMIZED, SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+        NS_SOLVER_TYPE_EXPLICIT_EULER,       NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+        NS_SOLVER_TYPE_EXPLICIT_EULER_GPU,   NS_SOLVER_TYPE_PROJECTION,
+        NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
     };
     size_t num_solvers = sizeof(all_solvers) / sizeof(all_solvers[0]);
 
@@ -320,7 +320,7 @@ static void test_all_solvers(void) {
     double xmin = 0.0, xmax = 2.0;
     double ymin = 0.0, ymax = 1.0;
 
-    printf("| Solver                       | Time (ms) | Max Vel | Max Press | Cells/sec   |\n");
+    printf("| NSSolver                       | Time (ms) | Max Vel | Max Press | Cells/sec   |\n");
     print_separator();
 
     double best_time = 1e9;
@@ -350,7 +350,7 @@ static void test_all_solvers(void) {
         double end = get_time_ms();
         double time_ms = end - start;
 
-        const solver_stats* stats = simulation_get_stats(sim);
+        const ns_solver_stats_t* stats = simulation_get_stats(sim);
         double max_vel = stats ? stats->max_velocity : 0.0;
         double max_press = stats ? stats->max_pressure : 0.0;
 
@@ -390,8 +390,8 @@ static void test_large_grid(void) {
         size_t nx = large_sizes[i][0];
         size_t ny = large_sizes[i][1];
 
-        benchmark_result result = run_benchmark(nx, ny, 50, SOLVER_TYPE_PROJECTION_OPTIMIZED,
-                                                SOLVER_TYPE_PROJECTION_JACOBI_GPU, "Projection");
+        benchmark_result result = run_benchmark(nx, ny, 50, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
+                                                NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, "Projection");
 
         const char* winner = (result.speedup >= 1.0) ? "GPU" : "SIMD";
         double best_time = (result.speedup >= 1.0) ? result.gpu_time_ms : result.simd_time_ms;
@@ -410,7 +410,7 @@ static void print_system_info(void) {
            gpu_is_available() ? "Available" : "Not available (using CPU fallback)");
 
     if (gpu_is_available()) {
-        gpu_device_info info[4];
+        gpu_device_info_t info[4];
         int num_devices = gpu_get_device_info(info, 4);
 
         printf("GPU Devices: %d\n", num_devices);

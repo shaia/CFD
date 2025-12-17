@@ -1,5 +1,5 @@
 #include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 
@@ -38,7 +38,7 @@ void test_flow_energy_maintenance(void) {
 
     printf("Initial kinetic energy: %.6f\n", initial_kinetic_energy);
 
-    solver_params params = {
+    ns_solver_params_t params = {
         .dt = 0.001,
         .cfl = 0.2,
         .gamma = 1.4,
@@ -56,17 +56,17 @@ void test_flow_energy_maintenance(void) {
     int measurement_steps[] = {0, 5, 10, 15, 20};
 
     // Create solver once and reuse it for all steps
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     for (int step = 0; step < 5; step++) {
         // Run to next measurement point
         if (step > 0) {
-            solver_params step_params = params;
+            ns_solver_params_t step_params = params;
             step_params.max_iter = measurement_steps[step] - measurement_steps[step - 1];
             solver_step(solver, field, grid, &step_params, &stats);
         }
@@ -143,7 +143,7 @@ void test_source_term_effectiveness(void) {
     initial_velocity_mag_sq /= (nx * ny);
     double initial_velocity_mag = sqrt(initial_velocity_mag_sq);
 
-    solver_params params = {.dt = 0.001,
+    ns_solver_params_t params = {.dt = 0.001,
                             .cfl = 0.2,
                             .gamma = 1.4,
                             .mu = 0.01,
@@ -156,12 +156,12 @@ void test_source_term_effectiveness(void) {
                             .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);
@@ -220,7 +220,7 @@ void test_decay_prevention_both_solvers(void) {
         initial_energy2 += field2->u[i] * field2->u[i] + field2->v[i] * field2->v[i];
     }
 
-    solver_params params = {.dt = 0.001,
+    ns_solver_params_t params = {.dt = 0.001,
                             .cfl = 0.2,
                             .gamma = 1.4,
                             .mu = 0.01,
@@ -233,18 +233,18 @@ void test_decay_prevention_both_solvers(void) {
                             .pressure_coupling = 0.1};
 
     // Run both solvers using modern interface
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* solver1 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* solver1 = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver1, grid1, &params);
-    solver_stats stats1 = solver_stats_default();
+    ns_solver_stats_t stats1 = ns_solver_stats_default();
     solver_step(solver1, field1, grid1, &params, &stats1);
     solver_destroy(solver1);
 
-    solver* solver2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    ns_solver_t* solver2 = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
     solver_init(solver2, grid2, &params);
-    solver_stats stats2 = solver_stats_default();
+    ns_solver_stats_t stats2 = ns_solver_stats_default();
     solver_step(solver2, field2, grid2, &params, &stats2);
     solver_destroy(solver2);
     cfd_registry_destroy(registry);

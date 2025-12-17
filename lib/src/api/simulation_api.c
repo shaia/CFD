@@ -4,7 +4,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
 #include "cfd/io/output_registry.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 
 #include "cfd/core/cfd_init.h"
@@ -16,7 +16,7 @@
 // simulation_data struct is defined in simulation_api.h
 
 // Default solver type used when none is specified
-#define DEFAULT_SOLVER_TYPE SOLVER_TYPE_EXPLICIT_EULER
+#define DEFAULT_SOLVER_TYPE NS_SOLVER_TYPE_EXPLICIT_EULER
 
 // Ensure registry is initialized
 // Internal helper to create simulation with a specific solver
@@ -67,14 +67,14 @@ static simulation_data* create_simulation_with_solver(size_t nx, size_t ny, doub
     initialize_flow_field(sim_data->field, sim_data->grid);
 
     // Initialize solver parameters with defaults
-    sim_data->params = solver_params_default();
+    sim_data->params = ns_solver_params_default();
     sim_data->params.dt = 0.001;
     sim_data->params.cfl = 0.2;
     sim_data->params.mu = 0.01;
     sim_data->params.max_iter = 1;
 
     // Initialize stats
-    sim_data->last_stats = solver_stats_default();
+    sim_data->last_stats = ns_solver_stats_default();
 
     // Create output registry
     sim_data->outputs = output_registry_create();
@@ -87,7 +87,7 @@ static simulation_data* create_simulation_with_solver(size_t nx, size_t ny, doub
     sim_data->run_prefix = NULL;
     sim_data->current_time = 0.0;
 
-    // Initialize Solver Registry
+    // Initialize NSSolver Registry
     sim_data->registry = cfd_registry_create();
     if (!sim_data->registry) {
         output_registry_destroy(sim_data->outputs);
@@ -131,7 +131,7 @@ simulation_data* init_simulation_with_solver(size_t nx, size_t ny, double xmin, 
 }
 
 // Set the solver for an existing simulation
-void simulation_set_solver(simulation_data* sim_data, struct Solver* solver) {
+void simulation_set_solver(simulation_data* sim_data, struct NSSolver* solver) {
     if (!sim_data || !solver) {
         cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for simulation_set_solver");
         return;
@@ -153,7 +153,7 @@ int simulation_set_solver_by_name(simulation_data* sim_data, const char* solver_
         return -1;
     }
 
-    struct Solver* solver = cfd_solver_create(sim_data->registry, solver_type);
+    struct NSSolver* solver = cfd_solver_create(sim_data->registry, solver_type);
     if (!solver) {
         return -1;
     }
@@ -163,12 +163,12 @@ int simulation_set_solver_by_name(simulation_data* sim_data, const char* solver_
 }
 
 // Get the current solver
-struct Solver* simulation_get_solver(simulation_data* sim_data) {
+struct NSSolver* simulation_get_solver(simulation_data* sim_data) {
     return sim_data ? sim_data->solver : NULL;
 }
 
 // Get statistics from the last solve
-const solver_stats* simulation_get_stats(const simulation_data* sim_data) {
+const ns_solver_stats_t* simulation_get_stats(const simulation_data* sim_data) {
     return sim_data ? &sim_data->last_stats : NULL;
 }
 
@@ -238,21 +238,21 @@ void free_simulation(simulation_data* sim_data) {
 // Static list of available solver names (const strings have static lifetime)
 // This avoids use-after-free issues with dynamically created registries
 static const char* const s_solver_names[] = {
-    SOLVER_TYPE_EXPLICIT_EULER,
-    SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
-    SOLVER_TYPE_PROJECTION,
-    SOLVER_TYPE_PROJECTION_OPTIMIZED,
-    SOLVER_TYPE_EXPLICIT_EULER_GPU,
-    SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+    NS_SOLVER_TYPE_EXPLICIT_EULER,
+    NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+    NS_SOLVER_TYPE_PROJECTION,
+    NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
+    NS_SOLVER_TYPE_EXPLICIT_EULER_GPU,
+    NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
 #ifdef CFD_ENABLE_OPENMP
-    SOLVER_TYPE_EXPLICIT_EULER_OMP,
-    SOLVER_TYPE_PROJECTION_OMP,
+    NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
+    NS_SOLVER_TYPE_PROJECTION_OMP,
 #endif
 };
 
 static const int s_solver_count = (int)(sizeof(s_solver_names) / sizeof(s_solver_names[0]));
 
-// Solver discovery and listing
+// NSSolver discovery and listing
 int simulation_list_solvers(const char** names, int max_count) {
     if (names && max_count > 0) {
         int fill_count = (s_solver_count < max_count) ? s_solver_count : max_count;

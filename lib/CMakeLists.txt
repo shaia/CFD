@@ -87,10 +87,24 @@ set(CFD_CPU_SOLVER_SOURCES
 set(CFD_SIMD_SOLVER_SOURCES
     src/solvers/simd/solver_explicit_euler_simd.c
     src/solvers/simd/solver_projection_simd.c
-    src/solvers/simd/poisson_common_simd.c
-    src/solvers/simd/poisson_jacobi_simd.c
-    src/solvers/simd/poisson_redblack_simd.c
 )
+
+# Collect Poisson solver sources (abstraction layer)
+set(CFD_POISSON_SOLVER_SOURCES
+    src/solvers/linear/linear_solver.c
+    src/solvers/linear/cpu/linear_solver_jacobi.c
+    src/solvers/linear/cpu/linear_solver_sor.c
+    src/solvers/linear/cpu/linear_solver_redblack.c
+    src/solvers/linear/simd/linear_solver_jacobi_simd.c
+    src/solvers/linear/simd/linear_solver_redblack_simd.c
+)
+
+# OMP Poisson solver (if OpenMP is available)
+if(OpenMP_C_FOUND)
+    list(APPEND CFD_POISSON_SOLVER_SOURCES
+        src/solvers/linear/omp/linear_solver_redblack_omp.c
+    )
+endif()
 
 # Combine all source files
 set(CFD_LIBRARY_SOURCES
@@ -101,6 +115,7 @@ set(CFD_LIBRARY_SOURCES
     ${CFD_CPU_SOLVER_SOURCES}
     ${CFD_SIMD_SOLVER_SOURCES}
     ${CFD_OMP_SOLVER_SOURCES}
+    ${CFD_POISSON_SOLVER_SOURCES}
 )
 
 # Add GPU sources based on CUDA availability
@@ -128,12 +143,10 @@ else()
 endif()
 
 # Collect all header files
-# Collect all header files
 set(CFD_LIBRARY_HEADERS
+    # Core headers
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/grid.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/solver_interface.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/cfd_status.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/solver_gpu.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/memory.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/filesystem.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/logging.h
@@ -142,10 +155,17 @@ set(CFD_LIBRARY_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/math_utils.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/field_ops.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/derived_fields.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/gpu_device.h
+    # Solver headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/navier_stokes_solver.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/poisson_solver.h
+    # Boundary headers
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/boundary/boundary_conditions.h
+    # IO headers
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/vtk_output.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/csv_output.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/output_registry.h
+    # API headers
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/api/simulation_api.h
 )
 
@@ -248,19 +268,36 @@ if(BUILD_SHARED_LIBS)
     target_compile_definitions(cfd_library_static PUBLIC CFD_LIBRARY_STATIC_DEFINE)
 endif()
 
+# Option to enable AVX2 SIMD optimizations (requires AVX2-capable CPU)
+option(CFD_ENABLE_AVX2 "Enable AVX2 SIMD optimizations (requires AVX2-capable CPU)" OFF)
+
+# Detect x86/x64 architecture (case-insensitive)
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" CFD_PROCESSOR_LOWER)
+if(CFD_PROCESSOR_LOWER MATCHES "x86_64|amd64|i686|x86")
+    set(CFD_IS_X86 TRUE CACHE INTERNAL "Is x86/x64 architecture")
+else()
+    set(CFD_IS_X86 FALSE CACHE INTERNAL "Is x86/x64 architecture")
+endif()
+
+if(CFD_ENABLE_AVX2 AND CFD_IS_X86)
+    message(STATUS "AVX2 SIMD optimizations ENABLED (${CMAKE_SYSTEM_PROCESSOR})")
+else()
+    message(STATUS "AVX2 SIMD optimizations DISABLED - using scalar fallback")
+endif()
+
 # Function to apply compiler options to a target
 function(apply_compiler_options target_name)
     if(MSVC)
         # Only apply MSVC flags to C/CXX, not CUDA
         target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/W3>)
-        # Enable AVX2 if available on x86/x64
-        if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+        # Enable AVX2 only if explicitly requested
+        if(CFD_ENABLE_AVX2 AND CFD_IS_X86)
             target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/arch:AVX2>)
         endif()
     else()
         target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:-Wall -Wextra -O3>)
-        # Enable AVX2 and other optimizations if available on x86/x64
-        if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+        # Enable AVX2 only if explicitly requested
+        if(CFD_ENABLE_AVX2 AND CFD_IS_X86)
             target_compile_options(${target_name} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:-mavx2 -mfma>)
         elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
             # ARM64-specific optimizations

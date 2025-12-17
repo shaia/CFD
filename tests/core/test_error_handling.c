@@ -66,7 +66,7 @@ void test_error_string_mapping(void) {
     TEST_ASSERT_EQUAL_STRING("I/O error", cfd_get_error_string(CFD_ERROR_IO));
     TEST_ASSERT_EQUAL_STRING("Operation not supported",
                              cfd_get_error_string(CFD_ERROR_UNSUPPORTED));
-    TEST_ASSERT_EQUAL_STRING("Solver diverged", cfd_get_error_string(CFD_ERROR_DIVERGED));
+    TEST_ASSERT_EQUAL_STRING("NSSolver diverged", cfd_get_error_string(CFD_ERROR_DIVERGED));
     TEST_ASSERT_EQUAL_STRING("Max iterations reached", cfd_get_error_string(CFD_ERROR_MAX_ITER));
     TEST_ASSERT_EQUAL_STRING("Unknown error", cfd_get_error_string((cfd_status_t)999));
 }

@@ -1,6 +1,6 @@
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 
@@ -155,7 +155,7 @@ void test_solver_output_paths(void) {
     flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.max_iter = 1;
 
     // Test that solvers NO LONGER create automatic output files
@@ -164,12 +164,12 @@ void test_solver_output_paths(void) {
     remove(unwanted_output);  // Clean up any existing file
 
     // Run solver
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
 
@@ -243,7 +243,7 @@ void test_no_scattered_output(void) {
     flow_field* field = flow_field_create(nx, ny);
     initialize_flow_field(field, grid);
 
-    solver_params params = {.dt = 0.001,
+    ns_solver_params_t params = {.dt = 0.001,
                             .cfl = 0.2,
                             .gamma = 1.4,
                             .mu = 0.01,
@@ -256,12 +256,12 @@ void test_no_scattered_output(void) {
                             .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);

@@ -6,7 +6,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 
 #include <math.h>
@@ -47,14 +47,14 @@ typedef struct {
 } explicit_euler_simd_context;
 
 // Public API functions
-cfd_status_t explicit_euler_simd_init(struct Solver* solver, const grid* grid,
-                                      const solver_params* params);
-void explicit_euler_simd_destroy(struct Solver* solver);
-cfd_status_t explicit_euler_simd_step(struct Solver* solver, flow_field* field, const grid* grid,
-                                      const solver_params* params, solver_stats* stats);
+cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
+                                      const ns_solver_params_t* params);
+void explicit_euler_simd_destroy(struct NSSolver* solver);
+cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field, const grid* grid,
+                                      const ns_solver_params_t* params, ns_solver_stats_t* stats);
 
-cfd_status_t explicit_euler_simd_init(struct Solver* solver, const grid* grid,
-                                      const solver_params* params) {
+cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
+                                      const ns_solver_params_t* params) {
     (void)params;  // Unused
     if (!solver || !grid) {
         return CFD_ERROR_INVALID;
@@ -116,7 +116,7 @@ cfd_status_t explicit_euler_simd_init(struct Solver* solver, const grid* grid,
     return CFD_SUCCESS;
 }
 
-void explicit_euler_simd_destroy(struct Solver* solver) {
+void explicit_euler_simd_destroy(struct NSSolver* solver) {
     if (solver && solver->context) {
         explicit_euler_simd_context* ctx = (explicit_euler_simd_context*)solver->context;
         if (ctx->initialized) {
@@ -157,7 +157,7 @@ typedef struct {
     __m256d zero;
 } simd_constants;
 
-static void init_simd_constants(simd_constants* c, const solver_params* params,
+static void init_simd_constants(simd_constants* c, const ns_solver_params_t* params,
                                 double conservative_dt) {
     c->dt_vec = _mm256_set1_pd(conservative_dt);
     c->max_deriv = _mm256_set1_pd(MAX_DERIVATIVE_LIMIT);
@@ -278,7 +278,7 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
 
 #if !USE_AVX
 static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* field,
-                               const grid* grid, const solver_params* params, size_t j,
+                               const grid* grid, const ns_solver_params_t* params, size_t j,
                                double conservative_dt) {
     for (size_t i = 1; i < ctx->nx - 1; i++) {
         size_t idx = (j * ctx->nx) + i;
@@ -337,8 +337,8 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
 }
 #endif
 
-cfd_status_t explicit_euler_simd_step(struct Solver* solver, flow_field* field, const grid* grid,
-                                      const solver_params* params, solver_stats* stats) {
+cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field, const grid* grid,
+                                      const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     if (!solver || !solver->context || !field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }

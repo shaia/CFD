@@ -3,7 +3,7 @@
 
 
 #include "cfd/io/vtk_output.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 #include <math.h>
 #include <stdio.h>

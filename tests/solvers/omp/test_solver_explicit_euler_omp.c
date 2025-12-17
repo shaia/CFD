@@ -10,7 +10,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 #include <math.h>
@@ -33,8 +33,8 @@ void tearDown(void) {
 // HELPER: Check if OpenMP solver is available
 //=============================================================================
 
-static int omp_solver_available(solver_registry* registry, const char* type) {
-    solver* slv = cfd_solver_create(registry, type);
+static int omp_solver_available(ns_solver_registry_t* registry, const char* type) {
+    ns_solver_t* slv = cfd_solver_create(registry, type);
     if (slv == NULL) {
         return 0;
     }
@@ -55,11 +55,11 @@ void test_omp_explicit_euler_creates(void) {
     printf("OpenMP not available in this build\n");
 #endif
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     TEST_ASSERT_NOT_NULL(registry);
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OMP);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP);
     if (slv == NULL) {
         printf("OpenMP explicit Euler solver not available (expected if OpenMP disabled)\n");
         cfd_registry_destroy(registry);
@@ -67,7 +67,7 @@ void test_omp_explicit_euler_creates(void) {
         return;
     }
 
-    printf("Solver name: %s\n", slv->name ? slv->name : "NULL");
+    printf("NSSolver name: %s\n", slv->name ? slv->name : "NULL");
 
     solver_destroy(slv);
     cfd_registry_destroy(registry);
@@ -82,10 +82,10 @@ void test_omp_explicit_euler_creates(void) {
 void test_omp_serial_consistency(void) {
     printf("\n=== Test: OpenMP vs Serial Consistency ===\n");
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    if (!omp_solver_available(registry, SOLVER_TYPE_EXPLICIT_EULER_OMP)) {
+    if (!omp_solver_available(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP)) {
         printf("OpenMP solver not available, skipping consistency test\n");
         cfd_registry_destroy(registry);
         TEST_PASS();
@@ -93,13 +93,13 @@ void test_omp_serial_consistency(void) {
     }
     cfd_registry_destroy(registry);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0005;
     params.mu = 0.01;
     params.max_iter = 1;
 
     test_result result = test_run_consistency(
-        SOLVER_TYPE_EXPLICIT_EULER, SOLVER_TYPE_EXPLICIT_EULER_OMP,
+        NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
         32, 32, &params, 20, 0.01);  // 1% relative tolerance
 
     printf("L2 difference in u: %.6e (relative: %.2e)\n",
@@ -117,10 +117,10 @@ void test_omp_serial_consistency(void) {
 void test_omp_stability_large_grid(void) {
     printf("\n=== Test: OpenMP Stability with Large Grid ===\n");
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    if (!omp_solver_available(registry, SOLVER_TYPE_EXPLICIT_EULER_OMP)) {
+    if (!omp_solver_available(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP)) {
         printf("OpenMP solver not available, skipping\n");
         cfd_registry_destroy(registry);
         TEST_PASS();
@@ -128,14 +128,14 @@ void test_omp_stability_large_grid(void) {
     }
     cfd_registry_destroy(registry);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0002;
     params.mu = 0.01;
     params.max_iter = 1;
     params.cfl = 0.2;
 
     // Larger grid to benefit from parallelization
-    test_result result = test_run_stability(SOLVER_TYPE_EXPLICIT_EULER_OMP, 128, 128, &params, 100);
+    test_result result = test_run_stability(NS_SOLVER_TYPE_EXPLICIT_EULER_OMP, 128, 128, &params, 100);
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("OMP solver stable for 100 steps on 128x128 grid\n");
@@ -149,10 +149,10 @@ void test_omp_stability_large_grid(void) {
 void test_omp_deterministic_results(void) {
     printf("\n=== Test: OpenMP Deterministic Results ===\n");
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    if (!omp_solver_available(registry, SOLVER_TYPE_EXPLICIT_EULER_OMP)) {
+    if (!omp_solver_available(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP)) {
         printf("OpenMP solver not available, skipping\n");
         cfd_registry_destroy(registry);
         TEST_PASS();
@@ -172,19 +172,19 @@ void test_omp_deterministic_results(void) {
     test_init_taylor_green(field1, g);
     test_init_taylor_green(field2, g);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0005;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    solver* slv1 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OMP);
-    solver* slv2 = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER_OMP);
+    ns_solver_t* slv1 = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP);
+    ns_solver_t* slv2 = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP);
 
     solver_init(slv1, g, &params);
     solver_init(slv2, g, &params);
 
-    solver_stats stats1 = solver_stats_default();
-    solver_stats stats2 = solver_stats_default();
+    ns_solver_stats_t stats1 = ns_solver_stats_default();
+    ns_solver_stats_t stats2 = ns_solver_stats_default();
 
     // Run both with same number of steps
     for (int step = 0; step < 20; step++) {
@@ -219,10 +219,10 @@ void test_omp_deterministic_results(void) {
 void test_omp_energy_decay(void) {
     printf("\n=== Test: OpenMP Energy Decay ===\n");
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    if (!omp_solver_available(registry, SOLVER_TYPE_EXPLICIT_EULER_OMP)) {
+    if (!omp_solver_available(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP)) {
         printf("OpenMP solver not available, skipping\n");
         cfd_registry_destroy(registry);
         TEST_PASS();
@@ -230,12 +230,12 @@ void test_omp_energy_decay(void) {
     }
     cfd_registry_destroy(registry);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0005;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    test_result result = test_run_energy_decay(SOLVER_TYPE_EXPLICIT_EULER_OMP, 32, 32, &params, 50);
+    test_result result = test_run_energy_decay(NS_SOLVER_TYPE_EXPLICIT_EULER_OMP, 32, 32, &params, 50);
 
     printf("Initial kinetic energy: %.6e\n", result.initial_energy);
     printf("Final kinetic energy: %.6e\n", result.final_energy);
@@ -254,7 +254,7 @@ int main(void) {
 
     printf("\n");
     printf("================================================\n");
-    printf("  OpenMP Explicit Euler Solver Tests\n");
+    printf("  OpenMP Explicit Euler NSSolver Tests\n");
     printf("================================================\n");
 
 #ifdef _OPENMP

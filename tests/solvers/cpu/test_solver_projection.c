@@ -14,7 +14,7 @@
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 #include <math.h>
@@ -38,18 +38,18 @@ void tearDown(void) {
 //=============================================================================
 
 void test_projection_creates_successfully(void) {
-    printf("\n=== Test: Projection Solver Creates Successfully ===\n");
+    printf("\n=== Test: Projection NSSolver Creates Successfully ===\n");
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     TEST_ASSERT_NOT_NULL(registry);
 
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
     TEST_ASSERT_NOT_NULL_MESSAGE(slv, "Failed to create projection solver");
 
     TEST_ASSERT_NOT_NULL(slv->name);
-    printf("Solver name: %s\n", slv->name);
+    printf("NSSolver name: %s\n", slv->name);
 
     solver_destroy(slv);
     cfd_registry_destroy(registry);
@@ -58,21 +58,21 @@ void test_projection_creates_successfully(void) {
 }
 
 void test_projection_initializes_correctly(void) {
-    printf("\n=== Test: Projection Solver Initializes Correctly ===\n");
+    printf("\n=== Test: Projection NSSolver Initializes Correctly ===\n");
 
     size_t nx = 16, ny = 16;
     grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
     TEST_ASSERT_NOT_NULL(slv);
 
     cfd_status_t status = solver_init(slv, g, &params);
@@ -120,17 +120,17 @@ void test_projection_enforces_divergence_free(void) {
     double initial_div = test_compute_divergence_l2(field, g);
     printf("Initial divergence (L2): %.6e\n", initial_div);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
     solver_init(slv, g, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Run projection steps
     for (int step = 0; step < 20; step++) {
@@ -195,17 +195,17 @@ void test_projection_pressure_gradient_response(void) {
         initial_u_sum += field->u[i];
     }
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
     solver_init(slv, g, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Run a few steps
     for (int step = 0; step < 5; step++) {
@@ -239,18 +239,18 @@ void test_projection_pressure_gradient_response(void) {
 //=============================================================================
 
 void test_projection_stability(void) {
-    printf("\n=== Test: Projection Solver Stability ===\n");
+    printf("\n=== Test: Projection NSSolver Stability ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
     params.cfl = 0.2;
 
-    test_result result = test_run_stability(SOLVER_TYPE_PROJECTION, 32, 32, &params, 100);
+    test_result result = test_run_stability(NS_SOLVER_TYPE_PROJECTION, 32, 32, &params, 100);
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
-    printf("Solver remained stable for 100 steps\n");
+    printf("NSSolver remained stable for 100 steps\n");
     printf("PASSED\n");
 }
 
@@ -261,12 +261,12 @@ void test_projection_stability(void) {
 void test_projection_energy_decay(void) {
     printf("\n=== Test: Projection Energy Decay ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    test_result result = test_run_energy_decay(SOLVER_TYPE_PROJECTION, 32, 32, &params, 50);
+    test_result result = test_run_energy_decay(NS_SOLVER_TYPE_PROJECTION, 32, 32, &params, 50);
 
     printf("Initial kinetic energy: %.6e\n", result.initial_energy);
     printf("Final kinetic energy: %.6e\n", result.final_energy);
@@ -283,14 +283,14 @@ void test_projection_energy_decay(void) {
 void test_projection_divergence_free(void) {
     printf("\n=== Test: Projection Divergence-Free Constraint ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
     // Note: Divergence tolerance is relaxed because the projection solver
     // uses a simple iterative method that may not fully converge
-    test_result result = test_run_divergence_free(SOLVER_TYPE_PROJECTION, 32, 32, &params, 10, 1.0);
+    test_result result = test_run_divergence_free(NS_SOLVER_TYPE_PROJECTION, 32, 32, &params, 10, 1.0);
 
     printf("Final divergence (L2): %.6e\n", result.error_l2);
 
@@ -319,17 +319,17 @@ void test_projection_poiseuille_profile(void) {
     // Initialize with Poiseuille profile using shared helper
     test_init_poiseuille(field, g, U_max);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
     solver_init(slv, g, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Run a few steps
     for (int step = 0; step < 10; step++) {
@@ -374,13 +374,13 @@ void test_projection_poiseuille_profile(void) {
 void test_projection_consistency_with_optimized(void) {
     printf("\n=== Test: Projection Consistency with Optimized ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
     test_result result = test_run_consistency(
-        SOLVER_TYPE_PROJECTION, SOLVER_TYPE_PROJECTION_OPTIMIZED,
+        NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
         32, 32, &params, 10, 0.05);  // 5% relative tolerance
 
     printf("L2 difference in u: %.6e (relative: %.2e)\n",
@@ -426,28 +426,28 @@ void test_projection_fail_fast_on_divergence(void) {
         }
     }
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
     TEST_ASSERT_NOT_NULL(slv);
     solver_init(slv, g, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Run solver - it should either succeed or fail gracefully
     cfd_status_t status = solver_step(slv, field, g, &params, &stats);
 
-    printf("Solver returned status: %d\n", status);
+    printf("NSSolver returned status: %d\n", status);
 
     // Verify the solver returns a valid status (not some garbage value)
     // Valid statuses are CFD_SUCCESS (0) or one of the error codes (negative)
     TEST_ASSERT_TRUE_MESSAGE(status == CFD_SUCCESS || status < 0,
-        "Solver should return a valid status code");
+        "NSSolver should return a valid status code");
 
     // Check that field is valid after solver step (no memory corruption)
     int valid_field = 1;
@@ -459,12 +459,12 @@ void test_projection_fail_fast_on_divergence(void) {
 
     if (status == CFD_SUCCESS) {
         TEST_ASSERT_TRUE_MESSAGE(valid_field, "Field should be valid when solver succeeds");
-        printf("Solver succeeded with valid field\n");
+        printf("NSSolver succeeded with valid field\n");
     } else if (status == CFD_ERROR_DIVERGED) {
-        printf("Solver reported divergence (fail-fast behavior working)\n");
+        printf("NSSolver reported divergence (fail-fast behavior working)\n");
     }
 
-    printf("Solver handled input without crashing\n");
+    printf("NSSolver handled input without crashing\n");
 
     solver_destroy(slv);
     cfd_registry_destroy(registry);
@@ -481,16 +481,16 @@ void test_projection_fail_fast_on_divergence(void) {
 void test_projection_non_square_grid(void) {
     printf("\n=== Test: Projection Non-Square Grid ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
     // Use non-aligned grid sizes
-    test_result result = test_run_stability(SOLVER_TYPE_PROJECTION, 33, 35, &params, 10);
+    test_result result = test_run_stability(NS_SOLVER_TYPE_PROJECTION, 33, 35, &params, 10);
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
-    printf("Solver handles 33x35 grid correctly\n");
+    printf("NSSolver handles 33x35 grid correctly\n");
     printf("PASSED\n");
 }
 
@@ -503,7 +503,7 @@ int main(void) {
 
     printf("\n");
     printf("================================================\n");
-    printf("  Projection Method Solver Validation Tests\n");
+    printf("  Projection Method NSSolver Validation Tests\n");
     printf("================================================\n");
 
     RUN_TEST(test_projection_creates_successfully);

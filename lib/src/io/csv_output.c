@@ -2,7 +2,7 @@
 #include "cfd/core/derived_fields.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/logging.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "csv_output_internal.h"
 
 
@@ -39,13 +39,13 @@ static int file_exists(const char* filename) {
 typedef void (*csv_output_handler)(const char* run_dir, const char* prefix, int step,
                                    double current_time, const flow_field* field,
                                    const derived_fields* derived, const grid* grid,
-                                   const solver_params* params, const solver_stats* stats);
+                                   const ns_solver_params_t* params, const ns_solver_stats_t* stats);
 
 // CSV output handler functions
 static void write_timeseries_csv(const char* run_dir, const char* prefix, int step,
                                  double current_time, const flow_field* field,
                                  const derived_fields* derived, const grid* grid,
-                                 const solver_params* params, const solver_stats* stats) {
+                                 const ns_solver_params_t* params, const ns_solver_stats_t* stats) {
     const char* name = prefix ? prefix : "timeseries";
     char filename[256], filepath[512];
 
@@ -60,7 +60,7 @@ static void write_timeseries_csv(const char* run_dir, const char* prefix, int st
 static void write_centerline_csv(const char* run_dir, const char* prefix, int step,
                                  double current_time, const flow_field* field,
                                  const derived_fields* derived, const grid* grid,
-                                 const solver_params* params, const solver_stats* stats) {
+                                 const ns_solver_params_t* params, const ns_solver_stats_t* stats) {
     (void)current_time;
     (void)params;
     (void)stats;  // Unused for centerline
@@ -77,7 +77,7 @@ static void write_centerline_csv(const char* run_dir, const char* prefix, int st
 static void write_statistics_csv(const char* run_dir, const char* prefix, int step,
                                  double current_time, const flow_field* field,
                                  const derived_fields* derived, const grid* grid,
-                                 const solver_params* params, const solver_stats* stats) {
+                                 const ns_solver_params_t* params, const ns_solver_stats_t* stats) {
     (void)params;
     (void)stats;  // Unused for statistics
     const char* name = prefix ? prefix : "statistics";
@@ -103,7 +103,7 @@ static const csv_output_handler csv_output_table[] = {
 void csv_dispatch_output(csv_output_type csv_type, const char* run_dir, const char* prefix,
                          int step, double current_time, const flow_field* field,
                          const derived_fields* derived, const grid* grid,
-                         const solver_params* params, const solver_stats* stats) {
+                         const ns_solver_params_t* params, const ns_solver_stats_t* stats) {
     // Bounds check and dispatch via function table
     if (csv_type < CSV_OUTPUT_TABLE_SIZE) {
         csv_output_table[csv_type](run_dir, prefix, step, current_time, field, derived, grid,
@@ -118,8 +118,8 @@ void csv_dispatch_output(csv_output_type csv_type, const char* run_dir, const ch
 //=============================================================================
 
 void write_csv_timeseries(const char* filename, int step, double time, const flow_field* field,
-                          const derived_fields* derived, const solver_params* params,
-                          const solver_stats* stats, size_t nx, size_t ny, int create_new) {
+                          const derived_fields* derived, const ns_solver_params_t* params,
+                          const ns_solver_stats_t* stats, size_t nx, size_t ny, int create_new) {
     (void)field;  // Statistics come from derived
     (void)nx;
     (void)ny;

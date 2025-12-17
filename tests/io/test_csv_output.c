@@ -6,7 +6,7 @@
 #include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
 #include "cfd/io/csv_output.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 
@@ -120,8 +120,8 @@ void test_csv_timeseries_creates_file(void) {
     make_output_path(filename, sizeof(filename), "test_timeseries.csv");
     remove(filename);
 
-    solver_params params = solver_params_default();
-    solver_stats stats = solver_stats_default();
+    ns_solver_params_t params = ns_solver_params_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
     stats.iterations = 10;
     stats.residual = 1e-5;
     stats.elapsed_time_ms = 12.5;
@@ -138,8 +138,8 @@ void test_csv_timeseries_has_header(void) {
     make_output_path(filename, sizeof(filename), "test_timeseries_header.csv");
     remove(filename);
 
-    solver_params params = solver_params_default();
-    solver_stats stats = solver_stats_default();
+    ns_solver_params_t params = ns_solver_params_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats, test_grid->nx,
                          test_grid->ny, 1);
@@ -156,8 +156,8 @@ void test_csv_timeseries_appends_data(void) {
     make_output_path(filename, sizeof(filename), "test_timeseries_append.csv");
     remove(filename);
 
-    solver_params params = solver_params_default();
-    solver_stats stats = solver_stats_default();
+    ns_solver_params_t params = ns_solver_params_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Write first entry (creates file with header)
     write_csv_timeseries(filename, 0, 0.0, test_field, test_derived, &params, &stats, test_grid->nx,
@@ -183,8 +183,8 @@ void test_csv_timeseries_null_safety(void) {
     make_output_path(filename, sizeof(filename), "test_null.csv");
     remove(filename);
 
-    solver_params params = solver_params_default();
-    solver_stats stats = solver_stats_default();
+    ns_solver_params_t params = ns_solver_params_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // These should not crash - derived is required for stats
     write_csv_timeseries(NULL, 0, 0.0, test_field, test_derived, &params, &stats, 10, 10, 1);
@@ -345,8 +345,8 @@ void test_csv_timeseries_requires_computed(void) {
     make_output_path(filename, sizeof(filename), "test_timeseries_not_computed.csv");
     remove(filename);
 
-    solver_params params = solver_params_default();
-    solver_stats stats = solver_stats_default();
+    ns_solver_params_t params = ns_solver_params_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Create derived fields without computing statistics
     derived_fields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny);
@@ -369,10 +369,10 @@ void test_csv_timeseries_data_values(void) {
     make_output_path(filename, sizeof(filename), "test_timeseries_values.csv");
     remove(filename);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
 
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
     stats.iterations = 42;
     stats.residual = 1.5e-6;
     stats.elapsed_time_ms = 25.5;

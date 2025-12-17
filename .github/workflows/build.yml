@@ -269,6 +269,77 @@ jobs:
           ls -la >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
+  # SIMD (AVX2) build - Test SIMD optimizations on capable hardware
+  simd-test:
+    name: SIMD AVX2 (Linux GCC)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check CPU features
+        id: cpu-check
+        run: |
+          echo "CPU Info:"
+          lscpu | grep -E "(Model name|Flags)" || cat /proc/cpuinfo | grep -E "(model name|flags)" | head -2
+          echo ""
+          if grep -q avx2 /proc/cpuinfo; then
+            echo "✅ AVX2 is supported on this runner"
+            echo "has_avx2=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ AVX2 is NOT supported - skipping SIMD tests"
+            echo "has_avx2=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout code
+        if: steps.cpu-check.outputs.has_avx2 == 'true'
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        if: steps.cpu-check.outputs.has_avx2 == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Configure with AVX2
+        if: steps.cpu-check.outputs.has_avx2 == 'true'
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON \
+            -DCFD_ENABLE_AVX2=ON
+
+      - name: Build
+        if: steps.cpu-check.outputs.has_avx2 == 'true'
+        run: |
+          cd build
+          cmake --build . --parallel $(nproc)
+
+      - name: Run tests
+        if: steps.cpu-check.outputs.has_avx2 == 'true'
+        run: |
+          cd build
+          ctest --output-on-failure
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## SIMD AVX2 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.cpu-check.outputs.has_avx2 }}" == "true" ]; then
+            echo "- **AVX2 Enabled**: Yes" >> $GITHUB_STEP_SUMMARY
+            echo "- **Hardware AVX2**: Supported ✅" >> $GITHUB_STEP_SUMMARY
+            echo "- **Tests**: Executed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **AVX2 Enabled**: No (hardware not supported)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Hardware AVX2**: Not supported ⚠️" >> $GITHUB_STEP_SUMMARY
+            echo "- **Tests**: Skipped (no AVX2 hardware)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- **Compiler**: GCC" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
+
   # Sanitizer build - Debug build with ASan and UBSan
   sanitizers:
     name: Sanitizers (Linux GCC)
@@ -428,7 +499,7 @@ jobs:
   build-status:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: [build-matrix, sanitizers, coverage, docs]
+    needs: [build-matrix, simd-test, sanitizers, coverage, docs]
     if: always()
 
     steps:
@@ -436,7 +507,7 @@ jobs:
         run: |
           # docs job may be skipped on feature branches, so treat 'skipped' as success
           DOCS_OK="${{ needs.docs.result == 'success' || needs.docs.result == 'skipped' }}"
-          if [[ "${{ needs.build-matrix.result }}" == "success" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
+          if [[ "${{ needs.build-matrix.result }}" == "success" && "${{ needs.simd-test.result }}" == "success" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
             echo "✅ All builds passed successfully!"
             echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
             echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
