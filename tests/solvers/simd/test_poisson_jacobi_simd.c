@@ -841,7 +841,7 @@ int main(void) {
 
     printf("\n");
     printf("================================================\n");
-    printf("  Jacobi SIMD Poisson NSSolver Tests\n");
+    printf("  Jacobi SIMD Poisson Solver Tests\n");
     printf("================================================\n");
 
     RUN_TEST(test_jacobi_runs_sinusoidal);

@@ -1,5 +1,5 @@
 /**
- * Common Test Utilities for SIMD Poisson NSSolver Tests
+ * Common Test Utilities for SIMD Poisson Solver Tests
  *
  * Shared helper functions for memory allocation, initialization, and
  * error computation used by both Jacobi and Red-Black SIMD Poisson tests.

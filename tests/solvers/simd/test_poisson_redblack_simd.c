@@ -880,7 +880,7 @@ int main(void) {
 
     printf("\n");
     printf("================================================\n");
-    printf("  Red-Black SIMD Poisson NSSolver Tests\n");
+    printf("  Red-Black SIMD Poisson Solver Tests\n");
     printf("================================================\n");
 
     RUN_TEST(test_redblack_runs_sinusoidal);
