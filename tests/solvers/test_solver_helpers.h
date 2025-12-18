@@ -1,5 +1,5 @@
 /**
- * Shared Test Helper Functions for Solver Validation
+ * Shared Test Helper Functions for NSSolver Validation
  *
  * This header provides common utilities for mathematical validation of CFD solvers:
  * - Error norm computations (L2, L-infinity)
@@ -15,7 +15,7 @@
 
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -381,14 +381,14 @@ static inline test_result test_result_init(void) {
 static inline test_result test_run_stability(
     const char* solver_type,
     size_t nx, size_t ny,
-    const solver_params* params,
+    const ns_solver_params_t* params,
     int num_steps
 ) {
     test_result result = test_result_init();
     grid* g = NULL;
     flow_field* field = NULL;
-    solver_registry* registry = NULL;
-    solver* slv = NULL;
+    ns_solver_registry_t* registry = NULL;
+    ns_solver_t* slv = NULL;
 
     g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
     field = flow_field_create(nx, ny);
@@ -407,12 +407,12 @@ static inline test_result test_run_stability(
     slv = cfd_solver_create(registry, solver_type);
     if (!slv) {
         result.passed = 0;
-        snprintf(result.message, sizeof(result.message), "Solver not available");
+        snprintf(result.message, sizeof(result.message), "NSSolver not available");
         goto cleanup;
     }
 
     solver_init(slv, g, params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     for (int step = 0; step < num_steps; step++) {
         solver_step(slv, field, g, params, &stats);
@@ -446,14 +446,14 @@ cleanup:
 static inline test_result test_run_energy_decay(
     const char* solver_type,
     size_t nx, size_t ny,
-    const solver_params* params,
+    const ns_solver_params_t* params,
     int num_steps
 ) {
     test_result result = test_result_init();
     grid* g = NULL;
     flow_field* field = NULL;
-    solver_registry* registry = NULL;
-    solver* slv = NULL;
+    ns_solver_registry_t* registry = NULL;
+    ns_solver_t* slv = NULL;
 
     g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
     field = flow_field_create(nx, ny);
@@ -474,12 +474,12 @@ static inline test_result test_run_energy_decay(
     slv = cfd_solver_create(registry, solver_type);
     if (!slv) {
         result.passed = 0;
-        snprintf(result.message, sizeof(result.message), "Solver not available");
+        snprintf(result.message, sizeof(result.message), "NSSolver not available");
         goto cleanup;
     }
 
     solver_init(slv, g, params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     for (int step = 0; step < num_steps; step++) {
         solver_step(slv, field, g, params, &stats);
@@ -524,7 +524,7 @@ static inline test_result test_run_consistency(
     const char* solver_type_a,
     const char* solver_type_b,
     size_t nx, size_t ny,
-    const solver_params* params,
+    const ns_solver_params_t* params,
     int num_steps,
     double tolerance
 ) {
@@ -534,9 +534,9 @@ static inline test_result test_run_consistency(
     grid* g_b = NULL;
     flow_field* field_a = NULL;
     flow_field* field_b = NULL;
-    solver_registry* registry = NULL;
-    solver* slv_a = NULL;
-    solver* slv_b = NULL;
+    ns_solver_registry_t* registry = NULL;
+    ns_solver_t* slv_a = NULL;
+    ns_solver_t* slv_b = NULL;
 
     g_a = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
     g_b = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
@@ -568,8 +568,8 @@ static inline test_result test_run_consistency(
     solver_init(slv_a, g_a, params);
     solver_init(slv_b, g_b, params);
 
-    solver_stats stats_a = solver_stats_default();
-    solver_stats stats_b = solver_stats_default();
+    ns_solver_stats_t stats_a = ns_solver_stats_default();
+    ns_solver_stats_t stats_b = ns_solver_stats_default();
 
     for (int step = 0; step < num_steps; step++) {
         solver_step(slv_a, field_a, g_a, params, &stats_a);
@@ -626,15 +626,15 @@ cleanup:
 static inline test_result test_run_divergence_free(
     const char* solver_type,
     size_t nx, size_t ny,
-    const solver_params* params,
+    const ns_solver_params_t* params,
     int num_steps,
     double tolerance
 ) {
     test_result result = test_result_init();
     grid* g = NULL;
     flow_field* field = NULL;
-    solver_registry* registry = NULL;
-    solver* slv = NULL;
+    ns_solver_registry_t* registry = NULL;
+    ns_solver_t* slv = NULL;
 
     g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
     field = flow_field_create(nx, ny);
@@ -671,12 +671,12 @@ static inline test_result test_run_divergence_free(
     slv = cfd_solver_create(registry, solver_type);
     if (!slv) {
         result.passed = 0;
-        snprintf(result.message, sizeof(result.message), "Solver not available");
+        snprintf(result.message, sizeof(result.message), "NSSolver not available");
         goto cleanup;
     }
 
     solver_init(slv, g, params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     for (int step = 0; step < num_steps; step++) {
         solver_step(slv, field, g, params, &stats);

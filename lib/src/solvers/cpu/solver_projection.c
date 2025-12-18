@@ -1,5 +1,5 @@
 /**
- * Projection Method Solver (Chorin's Method)
+ * Projection Method NSSolver (Chorin's Method)
  *
  * The projection method solves the incompressible Navier-Stokes equations
  * by splitting the solution into two steps:
@@ -20,7 +20,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -114,7 +114,7 @@ static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny,
  * Projection Method Solver
  */
 cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
-                                     const solver_params* params) {
+                                     const ns_solver_params_t* params) {
     if (!field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }

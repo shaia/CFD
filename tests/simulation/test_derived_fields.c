@@ -1,5 +1,5 @@
 #include "cfd/core/derived_fields.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 

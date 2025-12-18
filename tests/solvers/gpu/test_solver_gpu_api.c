@@ -7,8 +7,8 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/solvers/solver_gpu.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/gpu_device.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 #include <math.h>
@@ -28,7 +28,7 @@ void tearDown(void) {
 
 // Test GPU configuration defaults
 void test_gpu_config_defaults(void) {
-    gpu_config config = gpu_config_default();
+    gpu_config_t config = gpu_config_default();
 
     // config.enable_gpu defaults to 1 if GPU is available at runtime
     int expected_enable = gpu_is_available() ? 1 : 0;
@@ -46,7 +46,7 @@ void test_gpu_should_use(void) {
         return;
     }
 
-    gpu_config config = gpu_config_default();
+    gpu_config_t config = gpu_config_default();
     config.min_grid_size = 100;
     config.min_steps = 10;
 
@@ -71,7 +71,7 @@ void test_gpu_device_info(void) {
         return;
     }
 
-    gpu_device_info info[4];
+    gpu_device_info_t info[4];
     int device_count = gpu_get_device_info(info, 4);
 
     TEST_ASSERT_TRUE(device_count > 0);
@@ -108,15 +108,15 @@ void test_gpu_solver_context_lifecycle(void) {
         return;
     }
 
-    gpu_config config = gpu_config_default();
+    gpu_config_t config = gpu_config_default();
     size_t nx = 64, ny = 64;
 
     // Create context
-    gpu_solver_context* ctx = gpu_solver_create(nx, ny, &config);
+    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
     // Get initial stats
-    gpu_solver_stats stats = gpu_solver_get_stats(ctx);
+    gpu_solver_stats_t stats = gpu_solver_get_stats(ctx);
     TEST_ASSERT_EQUAL_INT(0, stats.kernels_launched);
 
     // Reset stats
@@ -141,9 +141,9 @@ void test_gpu_data_transfer(void) {
     }
 
     size_t nx = 32, ny = 32;
-    gpu_config config = gpu_config_default();
+    gpu_config_t config = gpu_config_default();
 
-    gpu_solver_context* ctx = gpu_solver_create(nx, ny, &config);
+    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
     flow_field* field = flow_field_create(nx, ny);
@@ -199,11 +199,11 @@ void test_gpu_solver_step_direct(void) {
     TEST_ASSERT_NOT_NULL(field);
     initialize_flow_field(field, g);
 
-    gpu_config config = gpu_config_default();
-    gpu_solver_context* ctx = gpu_solver_create(nx, ny, &config);
+    gpu_config_t config = gpu_config_default();
+    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0001;
     params.mu = 0.01;
 
@@ -212,7 +212,7 @@ void test_gpu_solver_step_direct(void) {
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     // Run a single step
-    gpu_solver_stats stats = {0};
+    gpu_solver_stats_t stats = {0};
     status = gpu_solver_step(ctx, g, &params, &stats);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
@@ -250,10 +250,10 @@ void test_gpu_solver_multiple_steps(void) {
     TEST_ASSERT_NOT_NULL(field);
     initialize_flow_field(field, g);
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* s = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* s = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
     if (s == NULL) {
         printf("Skipping test_gpu_solver_multiple_steps - GPU solver not available via registry\n");
         cfd_registry_destroy(registry);
@@ -262,13 +262,13 @@ void test_gpu_solver_multiple_steps(void) {
         return;
     }
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0001;
     params.mu = 0.01;
 
     solver_init(s, g, &params);
 
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Run 50 time steps
     for (int step = 0; step < 50; step++) {
@@ -306,18 +306,18 @@ static void run_grid_size_test(size_t nx, size_t ny) {
     TEST_ASSERT_NOT_NULL(field);
     initialize_flow_field(field, g);
 
-    gpu_config config = gpu_config_default();
-    gpu_solver_context* ctx = gpu_solver_create(nx, ny, &config);
+    gpu_config_t config = gpu_config_default();
+    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0001;
     params.mu = 0.01;
 
     cfd_status_t status = gpu_solver_upload(ctx, field);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
-    gpu_solver_stats stats = {0};
+    gpu_solver_stats_t stats = {0};
     status = gpu_solver_step(ctx, g, &params, &stats);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
@@ -414,10 +414,10 @@ void test_gpu_solver_lid_driven_cavity(void) {
         field->u[(ny - 1) * nx + i] = 1.0;
     }
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* s = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* s = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
     if (s == NULL) {
         printf("Skipping test_gpu_solver_lid_driven_cavity - GPU solver not available via registry\n");
         cfd_registry_destroy(registry);
@@ -426,13 +426,13 @@ void test_gpu_solver_lid_driven_cavity(void) {
         return;
     }
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0001;
     params.mu = 0.01;
 
     solver_init(s, g, &params);
 
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Run a few steps
     for (int step = 0; step < 10; step++) {
@@ -469,7 +469,7 @@ void test_gpu_solver_error_handling(void) {
         return;
     }
 
-    gpu_config config = gpu_config_default();
+    gpu_config_t config = gpu_config_default();
 
     // NULL config for gpu_should_use
     TEST_ASSERT_FALSE(gpu_should_use(NULL, 100, 100, 10));
@@ -485,7 +485,7 @@ void test_gpu_solver_error_handling(void) {
     TEST_ASSERT_NOT_EQUAL(CFD_SUCCESS, status);
 
     // Upload/download with NULL field
-    gpu_solver_context* ctx = gpu_solver_create(32, 32, &config);
+    gpu_solver_context_t* ctx = gpu_solver_create(32, 32, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
     status = gpu_solver_upload(ctx, NULL);
@@ -523,15 +523,15 @@ void test_gpu_solver_execution(void) {
     TEST_ASSERT_NOT_NULL(field);
     initialize_flow_field(field, g);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.max_iter = 5;
     params.dt = 0.001;
     params.mu = 0.01;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* s = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* s = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
 
     if (s == NULL) {
         printf("Skipping test_gpu_solver_execution - GPU solver not available via registry\n");
@@ -542,7 +542,7 @@ void test_gpu_solver_execution(void) {
     }
 
     solver_init(s, g, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Run a few steps
     for (int i = 0; i < 3; i++) {
@@ -578,7 +578,7 @@ int main(void) {
     // Data transfer tests
     RUN_TEST(test_gpu_data_transfer);
 
-    // Solver step tests
+    // NSSolver step tests
     RUN_TEST(test_gpu_solver_step_direct);
     RUN_TEST(test_gpu_solver_execution);
 

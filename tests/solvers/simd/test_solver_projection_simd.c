@@ -10,7 +10,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 #include <math.h>
@@ -32,14 +32,14 @@ void tearDown(void) {
 void test_simd_projection_creates(void) {
     printf("\n=== Test: SIMD Projection Creates ===\n");
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     TEST_ASSERT_NOT_NULL(registry);
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION_OPTIMIZED);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED);
     TEST_ASSERT_NOT_NULL_MESSAGE(slv, "Failed to create SIMD projection solver");
 
-    printf("Solver name: %s\n", slv->name ? slv->name : "NULL");
+    printf("NSSolver name: %s\n", slv->name ? slv->name : "NULL");
 
     solver_destroy(slv);
     cfd_registry_destroy(registry);
@@ -54,13 +54,13 @@ void test_simd_projection_creates(void) {
 void test_simd_scalar_consistency(void) {
     printf("\n=== Test: SIMD vs Scalar Consistency ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
     test_result result = test_run_consistency(
-        SOLVER_TYPE_PROJECTION, SOLVER_TYPE_PROJECTION_OPTIMIZED,
+        NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
         32, 32, &params, 10, 0.05);  // 5% relative tolerance for projection
 
     printf("L2 difference in u: %.6e (relative: %.2e)\n",
@@ -78,13 +78,13 @@ void test_simd_scalar_consistency(void) {
 void test_simd_divergence_free(void) {
     printf("\n=== Test: SIMD Divergence-Free Constraint ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
     // Tolerance relaxed because projection method may not fully converge
-    test_result result = test_run_divergence_free(SOLVER_TYPE_PROJECTION_OPTIMIZED, 32, 32, &params, 10, 1.0);
+    test_result result = test_run_divergence_free(NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, 32, 32, &params, 10, 1.0);
 
     printf("Divergence norm after projection: %.6e\n", result.error_l2);
 
@@ -99,12 +99,12 @@ void test_simd_divergence_free(void) {
 void test_simd_stability(void) {
     printf("\n=== Test: SIMD Projection Stability ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    test_result result = test_run_stability(SOLVER_TYPE_PROJECTION_OPTIMIZED, 64, 64, &params, 100);
+    test_result result = test_run_stability(NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, 64, 64, &params, 100);
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("SIMD solver remained stable for 100 steps\n");
@@ -118,12 +118,12 @@ void test_simd_stability(void) {
 void test_simd_energy_decay(void) {
     printf("\n=== Test: SIMD Energy Decay ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    test_result result = test_run_energy_decay(SOLVER_TYPE_PROJECTION_OPTIMIZED, 32, 32, &params, 30);
+    test_result result = test_run_energy_decay(NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, 32, 32, &params, 30);
 
     printf("Initial kinetic energy: %.6e\n", result.initial_energy);
     printf("Final kinetic energy: %.6e\n", result.final_energy);
@@ -140,13 +140,13 @@ void test_simd_energy_decay(void) {
 void test_simd_non_aligned_grid_size(void) {
     printf("\n=== Test: SIMD Non-Aligned Grid Size ===\n");
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
     // Use grid size that's not a multiple of 4 (typical SIMD width)
-    test_result result = test_run_stability(SOLVER_TYPE_PROJECTION_OPTIMIZED, 33, 35, &params, 10);
+    test_result result = test_run_stability(NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, 33, 35, &params, 10);
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("SIMD handles 33x35 grid correctly\n");
@@ -188,18 +188,18 @@ void test_simd_fail_fast_on_divergence(void) {
         }
     }
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION_OPTIMIZED);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED);
     TEST_ASSERT_NOT_NULL(slv);
     solver_init(slv, g, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Run solver - it should either succeed or fail gracefully
     cfd_status_t status = solver_step(slv, field, g, &params, &stats);
@@ -244,7 +244,7 @@ int main(void) {
 
     printf("\n");
     printf("================================================\n");
-    printf("  SIMD Projection Solver Tests\n");
+    printf("  SIMD Projection NSSolver Tests\n");
     printf("================================================\n");
 
     RUN_TEST(test_simd_projection_creates);

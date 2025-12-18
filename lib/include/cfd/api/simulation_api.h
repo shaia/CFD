@@ -4,7 +4,7 @@
 #include "cfd/cfd_export.h"
 
 #include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -22,10 +22,10 @@ typedef struct OutputRegistry output_registry;
 typedef struct {
     grid* grid;                 // Computational grid
     flow_field* field;          // Flow variables (u, v, p, rho, T)
-    solver_params params;       // Solver parameters (dt, CFL, viscosity, etc.)
-    solver* solver;             // Active solver (NULL = default solver)
-    solver_registry* registry;  // Solver registry (context-bound)
-    solver_stats last_stats;    // Statistics from last solve step
+    ns_solver_params_t params;       // Solver parameters (dt, CFL, viscosity, etc.)
+    ns_solver_t* solver;             // Active solver (NULL = default solver)
+    ns_solver_registry_t* registry;  // Solver registry (context-bound)
+    ns_solver_stats_t last_stats;    // Statistics from last solve step
     output_registry* outputs;   // Registered output configurations (internal)
     char* run_prefix;           // Run directory prefix (NULL = default "sim")
     double current_time;        // Current simulation time (accumulated dt)
@@ -54,14 +54,14 @@ CFD_LIBRARY_EXPORT void free_simulation(simulation_data* sim_data);
 //=============================================================================
 
 // Set solver for existing simulation (takes ownership)
-CFD_LIBRARY_EXPORT void simulation_set_solver(simulation_data* sim_data, solver* solver);
+CFD_LIBRARY_EXPORT void simulation_set_solver(simulation_data* sim_data, ns_solver_t* solver);
 
 // Set solver by type name (e.g., "explicit_euler", "projection")
 CFD_LIBRARY_EXPORT int simulation_set_solver_by_name(simulation_data* sim_data,
                                                      const char* solver_type);
 
 // Get current solver (returns NULL if using default)
-CFD_LIBRARY_EXPORT solver* simulation_get_solver(simulation_data* sim_data);
+CFD_LIBRARY_EXPORT ns_solver_t* simulation_get_solver(simulation_data* sim_data);
 
 // List all available solver types
 CFD_LIBRARY_EXPORT int simulation_list_solvers(const char** names, int max_count);
@@ -81,7 +81,7 @@ CFD_LIBRARY_EXPORT void run_simulation_step(simulation_data* sim_data);
 CFD_LIBRARY_EXPORT void run_simulation_solve(simulation_data* sim_data);
 
 // Get statistics from last solve (iterations, residuals, etc.)
-CFD_LIBRARY_EXPORT const solver_stats* simulation_get_stats(const simulation_data* sim_data);
+CFD_LIBRARY_EXPORT const ns_solver_stats_t* simulation_get_stats(const simulation_data* sim_data);
 
 //=============================================================================
 // OUTPUT CONTROL

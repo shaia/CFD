@@ -2,7 +2,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 #include <math.h>
 #include <omp.h>
@@ -102,7 +102,7 @@ static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t
 }
 
 cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
-                                         const solver_params* params) {
+                                         const ns_solver_params_t* params) {
     if (!field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }

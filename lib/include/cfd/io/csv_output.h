@@ -4,7 +4,7 @@
 #include "cfd/cfd_export.h"
 
 #include "cfd/core/derived_fields.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include <stddef.h>
 
 
@@ -49,7 +49,7 @@ extern "C" {
 // On first write, creates file with header. Subsequent writes append data.
 CFD_LIBRARY_EXPORT void write_csv_timeseries(const char* filename, int step, double time,
                                              const flow_field* field, const derived_fields* derived,
-                                             const solver_params* params, const solver_stats* stats,
+                                             const ns_solver_params_t* params, const ns_solver_stats_t* stats,
                                              size_t nx, size_t ny, int create_new);
 
 //=============================================================================

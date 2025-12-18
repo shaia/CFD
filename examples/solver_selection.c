@@ -1,5 +1,5 @@
 /**
- * Solver Selection Example
+ * NSSolver Selection Example
  *
  * This example demonstrates the new pluggable solver architecture:
  * - Listing available solvers
@@ -12,7 +12,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 
 #include "cfd/io/vtk_output.h"
@@ -34,9 +34,9 @@ void print_separator(void) {
     printf("\n========================================\n");
 }
 
-void print_solver_info(const struct Solver* solver) {
+void print_solver_info(const struct NSSolver* solver) {
     if (!solver) {
-        printf("  Solver: (legacy/default)\n");
+        printf("  NSSolver: (legacy/default)\n");
         return;
     }
 
@@ -45,32 +45,32 @@ void print_solver_info(const struct Solver* solver) {
     printf("  Version: %s\n", solver->version);
     printf("  Capabilities: ");
 
-    if (solver->capabilities & SOLVER_CAP_INCOMPRESSIBLE) {
+    if (solver->capabilities & NS_SOLVER_CAP_INCOMPRESSIBLE) {
         printf("incompressible ");
     }
-    if (solver->capabilities & SOLVER_CAP_COMPRESSIBLE) {
+    if (solver->capabilities & NS_SOLVER_CAP_COMPRESSIBLE) {
         printf("compressible ");
     }
-    if (solver->capabilities & SOLVER_CAP_TRANSIENT) {
+    if (solver->capabilities & NS_SOLVER_CAP_TRANSIENT) {
         printf("transient ");
     }
-    if (solver->capabilities & SOLVER_CAP_STEADY_STATE) {
+    if (solver->capabilities & NS_SOLVER_CAP_STEADY_STATE) {
         printf("steady-state ");
     }
-    if (solver->capabilities & SOLVER_CAP_SIMD) {
+    if (solver->capabilities & NS_SOLVER_CAP_SIMD) {
         printf("SIMD ");
     }
-    if (solver->capabilities & SOLVER_CAP_PARALLEL) {
+    if (solver->capabilities & NS_SOLVER_CAP_PARALLEL) {
         printf("parallel ");
     }
-    if (solver->capabilities & SOLVER_CAP_GPU) {
+    if (solver->capabilities & NS_SOLVER_CAP_GPU) {
         printf("GPU ");
     }
 
     printf("\n");
 }
 
-void print_stats(const solver_stats* stats) {
+void print_stats(const ns_solver_stats_t* stats) {
     if (!stats) {
         return;
     }
@@ -112,7 +112,7 @@ void run_solver_comparison(void) {
         }
 
         // Print solver info
-        struct Solver* solver = simulation_get_solver(sim);
+        struct NSSolver* solver = simulation_get_solver(sim);
         print_solver_info(solver);
 
         // Set run prefix for this solver test
@@ -155,7 +155,7 @@ void run_dynamic_solver_switch(void) {
     // Register output every 10 steps
     simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, 10, "test");
 
-    struct Solver* solver = simulation_get_solver(sim);
+    struct NSSolver* solver = simulation_get_solver(sim);
     print_solver_info(solver);
 
     int step_counter = 0;
@@ -169,7 +169,7 @@ void run_dynamic_solver_switch(void) {
 
     // Switch to optimized solver
     printf("\n2. Switching to optimized solver...\n");
-    if (simulation_set_solver_by_name(sim, SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED) == 0) {
+    if (simulation_set_solver_by_name(sim, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED) == 0) {
         solver = simulation_get_solver(sim);
         print_solver_info(solver);
 
@@ -196,12 +196,12 @@ void run_direct_solver_usage(void) {
     printf("DIRECT SOLVER API USAGE\n");
     print_separator();
 
-    struct SolverRegistry* registry = cfd_registry_create();
+    struct NSSolverRegistry* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     // Create solver directly
     printf("\nCreating solver directly via cfd_solver_create()...\n");
-    struct Solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    struct NSSolver* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     if (!solver) {
         printf("  ERROR: Failed to create solver\n");
         cfd_registry_destroy(registry);
@@ -217,7 +217,7 @@ void run_direct_solver_usage(void) {
     flow_field* field = flow_field_create(NX, NY);
     initialize_flow_field(field, grid);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.max_iter = 1;
     params.dt = 0.005;
 
@@ -227,7 +227,7 @@ void run_direct_solver_usage(void) {
 
     // Run steps directly
     printf("\nRunning 20 steps using direct solver API...\n");
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
 
     for (int step = 0; step < 20; step++) {
         status = solver_step(solver, field, grid, &params, &stats);
@@ -255,7 +255,7 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
 
-    printf("CFD Framework - Solver Selection Example\n");
+    printf("CFD Framework - NSSolver Selection Example\n");
     printf("=========================================\n");
 
 

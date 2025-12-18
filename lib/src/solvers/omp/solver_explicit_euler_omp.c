@@ -2,7 +2,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
 
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include <math.h>
 #include <omp.h>
 #include <stdio.h>
@@ -25,7 +25,7 @@
 
 // Internal OpenMP explicit Euler implementation
 cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
-                                     const solver_params* params) {
+                                     const ns_solver_params_t* params) {
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }

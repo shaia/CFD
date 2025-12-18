@@ -18,8 +18,8 @@
 // Common test utilities (memory allocation, initialization, error computation)
 #include "poisson_test_utils.h"
 
-// Include the Poisson solver header directly for testing
-#include "../../../lib/src/solvers/simd/poisson_solver_simd.h"
+// Use the public Poisson solver API
+#include "cfd/solvers/poisson_solver.h"
 
 void setUp(void) {
     cfd_init();

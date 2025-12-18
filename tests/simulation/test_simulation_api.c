@@ -100,12 +100,12 @@ void test_init_simulation_with_invalid_solver_returns_null(void) {
 //=============================================================================
 
 void test_simulation_get_solver_returns_solver(void) {
-    solver* solver = simulation_get_solver(test_sim);
+    ns_solver_t* solver = simulation_get_solver(test_sim);
     TEST_ASSERT_NOT_NULL(solver);
 }
 
 void test_simulation_get_solver_null_returns_null(void) {
-    solver* solver = simulation_get_solver(NULL);
+    ns_solver_t* solver = simulation_get_solver(NULL);
     TEST_ASSERT_NULL(solver);
 }
 
@@ -226,7 +226,7 @@ void test_run_simulation_step_advances_time(void) {
 
 void test_run_simulation_step_updates_stats(void) {
     run_simulation_step(test_sim);
-    const solver_stats* stats = simulation_get_stats(test_sim);
+    const ns_solver_stats_t* stats = simulation_get_stats(test_sim);
     TEST_ASSERT_NOT_NULL(stats);
 }
 
@@ -236,12 +236,12 @@ void test_run_simulation_step_null_sim_no_crash(void) {
 }
 
 void test_simulation_get_stats_returns_stats(void) {
-    const solver_stats* stats = simulation_get_stats(test_sim);
+    const ns_solver_stats_t* stats = simulation_get_stats(test_sim);
     TEST_ASSERT_NOT_NULL(stats);
 }
 
 void test_simulation_get_stats_null_returns_null(void) {
-    const solver_stats* stats = simulation_get_stats(NULL);
+    const ns_solver_stats_t* stats = simulation_get_stats(NULL);
     TEST_ASSERT_NULL(stats);
 }
 
@@ -458,7 +458,7 @@ int main(void) {
     RUN_TEST(test_init_simulation_with_null_solver_uses_default);
     RUN_TEST(test_init_simulation_with_invalid_solver_returns_null);
 
-    // Solver management tests
+    // NSSolver management tests
     RUN_TEST(test_simulation_get_solver_returns_solver);
     RUN_TEST(test_simulation_get_solver_null_returns_null);
     RUN_TEST(test_simulation_set_solver_by_name_success);

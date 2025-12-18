@@ -4,7 +4,7 @@
 #include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 
@@ -64,7 +64,7 @@ void test_viscous_diffusion(void) {
         }
     }
 
-    solver_params params = {.dt = 0.001,
+    ns_solver_params_t params = {.dt = 0.001,
                             .cfl = 0.2,
                             .gamma = 1.4,
                             .mu = 0.1,  // High viscosity for visible diffusion
@@ -77,12 +77,12 @@ void test_viscous_diffusion(void) {
                             .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);
@@ -145,7 +145,7 @@ void test_pressure_gradient_effects(void) {
         initial_velocity_sum += fabs(field->u[i]) + fabs(field->v[i]);
     }
 
-    solver_params params = {.dt = 0.001,
+    ns_solver_params_t params = {.dt = 0.001,
                             .cfl = 0.2,
                             .gamma = 1.4,
                             .mu = 0.001,  // Low viscosity so pressure gradient dominates
@@ -158,12 +158,12 @@ void test_pressure_gradient_effects(void) {
                             .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);
@@ -224,7 +224,7 @@ void test_conservation_properties(void) {
         initial_momentum_y += field->rho[i] * field->v[i];
     }
 
-    solver_params params = {.dt = 0.0005,
+    ns_solver_params_t params = {.dt = 0.0005,
                             .cfl = 0.2,
                             .gamma = 1.4,
                             .mu = 0.01,
@@ -237,12 +237,12 @@ void test_conservation_properties(void) {
                             .pressure_coupling = 0.1};
 
     // Run solver using modern interface
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    solver* solver = cfd_solver_create(registry, SOLVER_TYPE_EXPLICIT_EULER);
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     solver_init(solver, grid, &params);
-    solver_stats stats = solver_stats_default();
+    ns_solver_stats_t stats = ns_solver_stats_default();
     solver_step(solver, field, grid, &params, &stats);
     solver_destroy(solver);
     cfd_registry_destroy(registry);

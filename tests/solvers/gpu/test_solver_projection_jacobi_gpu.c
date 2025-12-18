@@ -10,8 +10,8 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_gpu.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/core/gpu_device.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 #include <math.h>
@@ -30,8 +30,8 @@ void tearDown(void) {
 // HELPER: Check if GPU solver is available
 //=============================================================================
 
-static int gpu_solver_available(solver_registry* registry) {
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+static int gpu_solver_available(ns_solver_registry_t* registry) {
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
     if (slv == NULL) {
         return 0;
     }
@@ -50,7 +50,7 @@ void test_gpu_availability(void) {
     printf("GPU available: %s\n", available ? "YES" : "NO");
 
     if (available) {
-        gpu_device_info info;
+        gpu_device_info_t info;
         int num_devices = gpu_get_device_info(&info, 1);
         if (num_devices > 0 && info.is_available) {
             printf("GPU Name: %s\n", info.name);
@@ -70,13 +70,13 @@ void test_gpu_availability(void) {
 //=============================================================================
 
 void test_gpu_solver_creates(void) {
-    printf("\n=== Test: GPU Solver Creates ===\n");
+    printf("\n=== Test: GPU NSSolver Creates ===\n");
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     TEST_ASSERT_NOT_NULL(registry);
     cfd_registry_register_defaults(registry);
 
-    solver* slv = cfd_solver_create(registry, SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
     if (slv == NULL) {
         printf("GPU solver not available (expected if CUDA not enabled)\n");
         cfd_registry_destroy(registry);
@@ -84,7 +84,7 @@ void test_gpu_solver_creates(void) {
         return;
     }
 
-    printf("Solver name: %s\n", slv->name ? slv->name : "NULL");
+    printf("NSSolver name: %s\n", slv->name ? slv->name : "NULL");
 
     solver_destroy(slv);
     cfd_registry_destroy(registry);
@@ -105,7 +105,7 @@ void test_gpu_cpu_consistency(void) {
         return;
     }
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     if (!gpu_solver_available(registry)) {
@@ -116,7 +116,7 @@ void test_gpu_cpu_consistency(void) {
     }
     cfd_registry_destroy(registry);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
@@ -124,7 +124,7 @@ void test_gpu_cpu_consistency(void) {
     // GPU and CPU may have larger differences due to different algorithms
     // and floating-point order of operations
     test_result result = test_run_consistency(
-        SOLVER_TYPE_PROJECTION, SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+        NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
         32, 32, &params, 10, 0.10);  // 10% tolerance
 
     printf("L2 difference in u: %.6e (relative: %.2e)\n",
@@ -140,7 +140,7 @@ void test_gpu_cpu_consistency(void) {
 //=============================================================================
 
 void test_gpu_stability(void) {
-    printf("\n=== Test: GPU Solver Stability ===\n");
+    printf("\n=== Test: GPU NSSolver Stability ===\n");
 
     if (!gpu_is_available()) {
         printf("No GPU available, skipping stability test\n");
@@ -148,7 +148,7 @@ void test_gpu_stability(void) {
         return;
     }
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     if (!gpu_solver_available(registry)) {
@@ -159,12 +159,12 @@ void test_gpu_stability(void) {
     }
     cfd_registry_destroy(registry);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    test_result result = test_run_stability(SOLVER_TYPE_PROJECTION_JACOBI_GPU, 64, 64, &params, 50);
+    test_result result = test_run_stability(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, 64, 64, &params, 50);
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("GPU solver stable for 50 steps\n");
@@ -184,7 +184,7 @@ void test_gpu_energy_decay(void) {
         return;
     }
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     if (!gpu_solver_available(registry)) {
@@ -195,12 +195,12 @@ void test_gpu_energy_decay(void) {
     }
     cfd_registry_destroy(registry);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    test_result result = test_run_energy_decay(SOLVER_TYPE_PROJECTION_JACOBI_GPU, 32, 32, &params, 30);
+    test_result result = test_run_energy_decay(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, 32, 32, &params, 30);
 
     printf("Initial kinetic energy: %.6e\n", result.initial_energy);
     printf("Final kinetic energy: %.6e\n", result.final_energy);
@@ -223,7 +223,7 @@ void test_gpu_various_grid_sizes(void) {
         return;
     }
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     if (!gpu_solver_available(registry)) {
@@ -243,7 +243,7 @@ void test_gpu_various_grid_sizes(void) {
     };
     int num_tests = 5;
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
@@ -252,7 +252,7 @@ void test_gpu_various_grid_sizes(void) {
         size_t nx = test_sizes[t][0];
         size_t ny = test_sizes[t][1];
 
-        test_result result = test_run_stability(SOLVER_TYPE_PROJECTION_JACOBI_GPU, nx, ny, &params, 5);
+        test_result result = test_run_stability(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, nx, ny, &params, 5);
 
         printf("Grid %zux%zu: %s\n", nx, ny, result.passed ? "OK" : "FAILED");
         TEST_ASSERT_TRUE_MESSAGE(result.passed, "GPU should handle this grid size");
@@ -270,7 +270,7 @@ void test_gpu_various_grid_sizes(void) {
 void test_gpu_config_defaults(void) {
     printf("\n=== Test: GPU Config Defaults ===\n");
 
-    gpu_config config = gpu_config_default();
+    gpu_config_t config = gpu_config_default();
 
     printf("Default config:\n");
     printf("  enable_gpu: %d\n", config.enable_gpu);
@@ -302,7 +302,7 @@ void test_gpu_divergence_free(void) {
         return;
     }
 
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
     if (!gpu_solver_available(registry)) {
@@ -313,12 +313,12 @@ void test_gpu_divergence_free(void) {
     }
     cfd_registry_destroy(registry);
 
-    solver_params params = solver_params_default();
+    ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.001;
     params.mu = 0.01;
     params.max_iter = 1;
 
-    test_result result = test_run_divergence_free(SOLVER_TYPE_PROJECTION_JACOBI_GPU, 32, 32, &params, 10, 0.1);
+    test_result result = test_run_divergence_free(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, 32, 32, &params, 10, 0.1);
 
     printf("Divergence norm after projection: %.6e\n", result.error_l2);
 
@@ -335,7 +335,7 @@ int main(void) {
 
     printf("\n");
     printf("================================================\n");
-    printf("  GPU Projection Jacobi Solver Validation Tests\n");
+    printf("  GPU Projection Jacobi NSSolver Validation Tests\n");
     printf("================================================\n");
 
     RUN_TEST(test_gpu_availability);

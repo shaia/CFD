@@ -3,7 +3,7 @@
 
 #include "cfd/core/derived_fields.h"
 #include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,7 +26,7 @@ typedef enum {
 void csv_dispatch_output(csv_output_type csv_type, const char* run_dir, const char* prefix,
                          int step, double current_time, const flow_field* field,
                          const derived_fields* derived, const grid* grid,
-                         const solver_params* params, const solver_stats* stats);
+                         const ns_solver_params_t* params, const ns_solver_stats_t* stats);
 
 #ifdef __cplusplus
 }

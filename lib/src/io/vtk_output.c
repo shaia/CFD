@@ -4,7 +4,7 @@
 #include "cfd/core/logging.h"
 
 
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include "vtk_output_internal.h"
 #include <stdio.h>
 #include <stdlib.h>

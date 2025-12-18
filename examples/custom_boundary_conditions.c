@@ -7,7 +7,7 @@
 
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 #include "cfd/io/vtk_output.h"
 #include <math.h>
@@ -106,8 +106,8 @@ int main() {
     // Setup initial conditions and cylinder
     setup_cylinder_flow(field, grid);
 
-    // Solver parameters for external flow
-    solver_params params = {
+    // NSSolver parameters for external flow
+    ns_solver_params_t params = {
         .max_iter = 2000,  // More iterations for convergence
         .dt = 0.0005,      // Smaller time step for stability
         .cfl = 0.3,        // Conservative CFL number

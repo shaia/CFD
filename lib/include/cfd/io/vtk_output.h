@@ -3,7 +3,7 @@
 
 #include "cfd/cfd_export.h"
 
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 #include <stddef.h>
 
 #ifdef __cplusplus

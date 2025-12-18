@@ -75,7 +75,7 @@ void test_simulation_init_invalid_bounds(void) {
 }
 
 // Dummy factory for testing
-solver* dummy_factory(void) {
+ns_solver_t* dummy_factory(void) {
     return NULL;
 }
 
@@ -86,7 +86,7 @@ void test_registry_register_null_registry(void) {
 }
 
 void test_registry_register_null_factory(void) {
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     int res = cfd_registry_register(registry, "test", NULL);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
@@ -94,7 +94,7 @@ void test_registry_register_null_factory(void) {
 }
 
 void test_registry_register_empty_name(void) {
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
     int res = cfd_registry_register(registry, "", dummy_factory);
     TEST_ASSERT_EQUAL(-1, res);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
@@ -102,7 +102,7 @@ void test_registry_register_empty_name(void) {
 }
 
 void test_registry_register_limit_exceeded(void) {
-    solver_registry* registry = cfd_registry_create();
+    ns_solver_registry_t* registry = cfd_registry_create();
 
     // Fill the registry
     char name_buf[32];

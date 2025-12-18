@@ -1,5 +1,5 @@
 /**
- * Optimized Projection Method Solver (Chorin's Method) with SIMD
+ * Optimized Projection Method NSSolver (Chorin's Method) with SIMD
  *
  * This implementation uses SIMD acceleration for the corrector step and
  * calls the optimized SIMD Poisson solver for pressure computation.
@@ -11,8 +11,8 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
-#include "poisson_solver_simd.h"
+#include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/poisson_solver.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -45,14 +45,14 @@ typedef struct {
 } projection_simd_context;
 
 // Public API
-cfd_status_t projection_simd_init(struct Solver* solver, const grid* grid,
-                                  const solver_params* params);
-void projection_simd_destroy(struct Solver* solver);
-cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, const grid* grid,
-                                  const solver_params* params, solver_stats* stats);
+cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
+                                  const ns_solver_params_t* params);
+void projection_simd_destroy(struct NSSolver* solver);
+cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params, ns_solver_stats_t* stats);
 
-cfd_status_t projection_simd_init(struct Solver* solver, const grid* grid,
-                                  const solver_params* params) {
+cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
+                                  const ns_solver_params_t* params) {
     (void)params;
     if (!solver || !grid) {
         return CFD_ERROR_INVALID;
@@ -103,7 +103,7 @@ cfd_status_t projection_simd_init(struct Solver* solver, const grid* grid,
     return CFD_SUCCESS;
 }
 
-void projection_simd_destroy(struct Solver* solver) {
+void projection_simd_destroy(struct NSSolver* solver) {
     if (solver && solver->context) {
         projection_simd_context* ctx = (projection_simd_context*)solver->context;
         if (ctx->initialized) {
@@ -119,8 +119,8 @@ void projection_simd_destroy(struct Solver* solver) {
     }
 }
 
-cfd_status_t projection_simd_step(struct Solver* solver, flow_field* field, const grid* grid,
-                                  const solver_params* params, solver_stats* stats) {
+cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     if (!solver || !solver->context || !field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }

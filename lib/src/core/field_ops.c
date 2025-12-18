@@ -1,6 +1,6 @@
 #include "cfd/core/field_ops.h"
 #include "cfd/core/memory.h"
-#include "cfd/solvers/solver_interface.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 #include <math.h>
 #include <stdlib.h>
