@@ -15,6 +15,7 @@
 #include "cfd/core/memory.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #if POISSON_HAS_AVX2
@@ -185,7 +186,7 @@ poisson_solver_t* create_jacobi_simd_solver(void) {
 
     return solver;
 #else
-    /* Fallback to scalar if SIMD not available */
-    return create_jacobi_scalar_solver();
+    fprintf(stderr, "SIMD Jacobi solver: AVX2 not available (compiled without AVX2 support)\n");
+    return NULL;
 #endif
 }
