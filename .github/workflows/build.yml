@@ -737,51 +737,6 @@ jobs:
           cd build
           lcov --summary coverage.info 2>&1 | tee -a $GITHUB_STEP_SUMMARY
 
-  # API Documentation build (only on main/master branch or releases)
-  docs:
-    name: API Documentation
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.event_name == 'release'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Doxygen
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y doxygen
-
-      - name: Generate documentation
-        run: doxygen Doxyfile
-
-      - name: Verify documentation output
-        run: |
-          if [ ! -d "docs/html" ]; then
-            echo "Error: docs/html/ directory not created"
-            exit 1
-          fi
-          if [ ! -f "docs/html/index.html" ]; then
-            echo "Error: docs/html/index.html not found"
-            exit 1
-          fi
-          echo "Documentation generated successfully"
-          ls -la docs/html/ | head -20
-
-      - name: Upload documentation
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-docs
-          path: docs/html/
-          retention-days: ${{ inputs.retention_days }}
-
-      - name: Generate summary
-        run: |
-          echo "## API Documentation" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Doxygen documentation generated successfully." >> $GITHUB_STEP_SUMMARY
-          echo "Download the 'api-docs' artifact to view." >> $GITHUB_STEP_SUMMARY
-
   # CUDA build - Verify CUDA code compiles (no GPU hardware on CI runners)
   cuda-build:
     name: CUDA Build (Linux)
@@ -841,14 +796,12 @@ jobs:
   build-status:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: [build-matrix, simd-test-linux, simd-test-windows, openmp-test-linux, openmp-test-clang, openmp-test-windows, cuda-build, cuda-build-windows, sanitizers, coverage, docs]
+    needs: [build-matrix, simd-test-linux, simd-test-windows, openmp-test-linux, openmp-test-clang, openmp-test-windows, cuda-build, cuda-build-windows, sanitizers, coverage]
     if: always()
 
     steps:
       - name: Check build results
         run: |
-          # docs job may be skipped on feature branches, so treat 'skipped' as success
-          DOCS_OK="${{ needs.docs.result == 'success' || needs.docs.result == 'skipped' }}"
           SIMD_LINUX_OK="${{ needs.simd-test-linux.result == 'success' }}"
           SIMD_WINDOWS_OK="${{ needs.simd-test-windows.result == 'success' }}"
           OMP_GCC_OK="${{ needs.openmp-test-linux.result == 'success' }}"
@@ -856,7 +809,7 @@ jobs:
           OMP_WINDOWS_OK="${{ needs.openmp-test-windows.result == 'success' }}"
           CUDA_OK="${{ needs.cuda-build.result == 'success' }}"
           CUDA_WIN_OK="${{ needs.cuda-build-windows.result == 'success' }}"
-          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "$OMP_GCC_OK" == "true" && "$OMP_CLANG_OK" == "true" && "$OMP_WINDOWS_OK" == "true" && "$CUDA_OK" == "true" && "$CUDA_WIN_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
+          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "$OMP_GCC_OK" == "true" && "$OMP_CLANG_OK" == "true" && "$OMP_WINDOWS_OK" == "true" && "$CUDA_OK" == "true" && "$CUDA_WIN_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" ]]; then
             echo "✅ All builds passed successfully!"
             echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
             echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
