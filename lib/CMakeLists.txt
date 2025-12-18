@@ -59,7 +59,8 @@ set(CFD_CORE_SOURCES
 
 # Collect boundary condition source files (organized by backend)
 set(CFD_BOUNDARY_SOURCES
-    src/boundary/cpu/boundary_conditions.c
+    src/boundary/boundary_conditions.c
+    src/boundary/cpu/boundary_conditions_scalar.c
     src/boundary/simd/boundary_conditions_simd.c
     src/boundary/omp/boundary_conditions_omp.c
 )

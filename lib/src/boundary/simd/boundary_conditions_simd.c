@@ -8,6 +8,17 @@
 
 #include "../boundary_conditions_internal.h"
 
+/* SIMD detection - must match what internal header expects */
+#if defined(__AVX2__) || defined(__AVX__) || (defined(_MSC_VER) && defined(__AVX2__))
+#define BC_HAS_AVX2 1
+#elif defined(__SSE2__) || defined(_M_X64) || defined(_M_AMD64)
+#define BC_HAS_SSE2 1
+#endif
+
+#if defined(BC_HAS_AVX2) || defined(BC_HAS_SSE2)
+#define BC_HAS_SIMD 1
+#endif
+
 /* SIMD headers based on detected support */
 #if defined(BC_HAS_AVX2)
 #include <immintrin.h>
@@ -19,16 +30,8 @@
 
 /**
  * Apply Neumann boundary conditions (zero gradient) with SIMD optimization.
- *
- * Sets boundary values equal to adjacent interior values:
- *   - Left boundary (i=0): field[0] = field[1]
- *   - Right boundary (i=nx-1): field[nx-1] = field[nx-2]
- *   - Bottom boundary (j=0): field[j=0] = field[j=1]
- *   - Top boundary (j=ny-1): field[j=ny-1] = field[j=ny-2]
- *
- * SIMD is used for contiguous top/bottom boundaries.
  */
-void bc_apply_neumann_simd_impl(double* field, size_t nx, size_t ny) {
+static void bc_apply_neumann_simd_impl(double* field, size_t nx, size_t ny) {
     size_t j, i;
 
     /* Left and right boundaries - strided access, use scalar */
@@ -80,16 +83,8 @@ void bc_apply_neumann_simd_impl(double* field, size_t nx, size_t ny) {
 
 /**
  * Apply periodic boundary conditions with SIMD optimization.
- *
- * Wraps values from opposite boundaries:
- *   - Left boundary (i=0): copies from right interior (i=nx-2)
- *   - Right boundary (i=nx-1): copies from left interior (i=1)
- *   - Bottom boundary (j=0): copies from top interior (j=ny-2)
- *   - Top boundary (j=ny-1): copies from bottom interior (j=1)
- *
- * SIMD is used for contiguous top/bottom boundaries.
  */
-void bc_apply_periodic_simd_impl(double* field, size_t nx, size_t ny) {
+static void bc_apply_periodic_simd_impl(double* field, size_t nx, size_t ny) {
     size_t j, i;
 
     /* Left and right boundaries (periodic in x) - strided access, use scalar */
@@ -139,17 +134,9 @@ void bc_apply_periodic_simd_impl(double* field, size_t nx, size_t ny) {
 
 /**
  * Apply Dirichlet (fixed value) boundary conditions with SIMD optimization.
- *
- * Sets boundary values to specified fixed values:
- *   - Left boundary (i=0): field[0,j] = values->left
- *   - Right boundary (i=nx-1): field[nx-1,j] = values->right
- *   - Bottom boundary (j=0): field[i,0] = values->bottom
- *   - Top boundary (j=ny-1): field[i,ny-1] = values->top
- *
- * SIMD is used for contiguous top/bottom boundaries using broadcast.
  */
-void bc_apply_dirichlet_simd_impl(double* field, size_t nx, size_t ny,
-                                   const bc_dirichlet_values_t* values) {
+static void bc_apply_dirichlet_simd_impl(double* field, size_t nx, size_t ny,
+                                          const bc_dirichlet_values_t* values) {
     size_t j, i;
 
     /* Left and right boundaries - strided access, use scalar */
@@ -196,5 +183,21 @@ void bc_apply_dirichlet_simd_impl(double* field, size_t nx, size_t ny,
     }
 #endif
 }
+
+/* SIMD backend implementation table */
+const bc_backend_impl_t bc_impl_simd = {
+    .apply_neumann = bc_apply_neumann_simd_impl,
+    .apply_periodic = bc_apply_periodic_simd_impl,
+    .apply_dirichlet = bc_apply_dirichlet_simd_impl
+};
+
+#else /* !BC_HAS_SIMD */
+
+/* SIMD not available - provide empty table */
+const bc_backend_impl_t bc_impl_simd = {
+    .apply_neumann = NULL,
+    .apply_periodic = NULL,
+    .apply_dirichlet = NULL
+};
 
 #endif /* BC_HAS_SIMD */
