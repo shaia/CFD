@@ -588,17 +588,19 @@ jobs:
           echo "- **Compiler**: MSVC" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
 
-  # CUDA build on Windows - Verify CUDA code compiles
+  # CUDA build on Windows - Verify CUDA code compiles (optional, slow)
+  # Only runs on PRs to main/master or releases to save CI time
   cuda-build-windows:
     name: CUDA Build (Windows)
     runs-on: windows-latest
+    if: github.event_name == 'release' || (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'master'))
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup MSVC
-        uses: microsoft/setup-msbuild@v1.3
+      - name: Setup MSVC Developer Environment
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.16
@@ -625,28 +627,24 @@ jobs:
           cmake --build . --config Release --parallel
 
       - name: Verify CUDA compilation
-        shell: pwsh
+        shell: cmd
         run: |
           cd build
-          Write-Host "Checking for GPU symbols in library..."
-          $libPath = "lib/Release/cfd_library.lib"
-          if (Test-Path $libPath) {
-            # Use dumpbin to check for GPU symbols
-            $symbols = & dumpbin /symbols $libPath 2>&1 | Select-String -Pattern "gpu" -CaseSensitive:$false
-            if ($symbols) {
-              Write-Host "✅ GPU symbols found in library:"
-              $symbols | Select-Object -First 10 | ForEach-Object { Write-Host $_ }
-            } else {
-              Write-Host "❌ GPU symbols NOT found in library"
-              Write-Host "Library symbols (first 30):"
-              & dumpbin /symbols $libPath 2>&1 | Select-Object -First 30 | ForEach-Object { Write-Host $_ }
-              exit 1
-            }
-          } else {
-            Write-Host "❌ Library not found at $libPath"
-            Get-ChildItem -Recurse -Filter "*.lib" | Select-Object FullName
-            exit 1
-          }
+          echo Checking for GPU symbols in library...
+          if exist "lib\Release\cfd_library.lib" (
+            dumpbin /symbols lib\Release\cfd_library.lib | findstr /i "gpu" > nul
+            if %errorlevel% equ 0 (
+              echo GPU symbols found in library
+              dumpbin /symbols lib\Release\cfd_library.lib | findstr /i "gpu"
+            ) else (
+              echo GPU symbols NOT found in library
+              exit /b 1
+            )
+          ) else (
+            echo Library not found at lib\Release\cfd_library.lib
+            dir /s /b *.lib
+            exit /b 1
+          )
 
       - name: Generate summary
         if: always()
@@ -850,12 +848,30 @@ jobs:
           echo "## Build Status Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
+          # Check required job (must pass)
           check_job() {
             local name="$1"
             local result="$2"
             if [[ "$result" == "success" ]]; then
               echo "✅ $name: passed"
               echo "- ✅ **$name**: passed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ $name: $result"
+              echo "- ❌ **$name**: $result" >> $GITHUB_STEP_SUMMARY
+              ALL_PASSED=false
+            fi
+          }
+
+          # Check optional job (skipped is OK)
+          check_optional_job() {
+            local name="$1"
+            local result="$2"
+            if [[ "$result" == "success" ]]; then
+              echo "✅ $name: passed"
+              echo "- ✅ **$name**: passed" >> $GITHUB_STEP_SUMMARY
+            elif [[ "$result" == "skipped" ]]; then
+              echo "⏭️ $name: skipped"
+              echo "- ⏭️ **$name**: skipped (optional)" >> $GITHUB_STEP_SUMMARY
             else
               echo "❌ $name: $result"
               echo "- ❌ **$name**: $result" >> $GITHUB_STEP_SUMMARY
@@ -870,7 +886,7 @@ jobs:
           check_job "OpenMP (Linux Clang)" "${{ needs.openmp-test-clang.result }}"
           check_job "OpenMP (Windows)" "${{ needs.openmp-test-windows.result }}"
           check_job "CUDA (Linux)" "${{ needs.cuda-build.result }}"
-          check_job "CUDA (Windows)" "${{ needs.cuda-build-windows.result }}"
+          check_optional_job "CUDA (Windows)" "${{ needs.cuda-build-windows.result }}"
           check_job "Sanitizers" "${{ needs.sanitizers.result }}"
           check_job "Coverage" "${{ needs.coverage.result }}"
 
