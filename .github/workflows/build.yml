@@ -562,15 +562,13 @@ jobs:
         shell: bash
         run: |
           cd build
-          # Check CMakeCache.txt for OpenMP configuration
-          if grep -q "CFD_ENABLE_OPENMP:INTERNAL=1" CMakeCache.txt 2>/dev/null; then
-            echo "✅ OpenMP is enabled (CFD_ENABLE_OPENMP=1)"
-          elif grep -q "OpenMP_C_FOUND:INTERNAL=TRUE" CMakeCache.txt 2>/dev/null; then
-            echo "✅ OpenMP found by CMake"
+          # Run the linear solver test and check that OMP backend is available
+          OUTPUT=$(./Release/test_linear_solver.exe 2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "OMP backend available: YES"; then
+            echo "✅ OpenMP backend is correctly enabled"
           else
-            echo "❌ ERROR: OpenMP was expected but not found in CMakeCache.txt"
-            echo "CMakeCache.txt OpenMP entries:"
-            grep -i "openmp" CMakeCache.txt || echo "(none found)"
+            echo "❌ ERROR: OpenMP was expected but OMP backend reports NO"
             exit 1
           fi
 

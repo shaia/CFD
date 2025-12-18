@@ -454,7 +454,7 @@ void test_stats_timing(void) {
 }
 
 /* ============================================================================
- * SIMD AVAILABILITY DIAGNOSTIC
+ * BACKEND AVAILABILITY DIAGNOSTICS
  * ============================================================================ */
 
 void test_simd_backend_diagnostic(void) {
@@ -485,6 +485,25 @@ void test_simd_backend_diagnostic(void) {
     TEST_PASS();
 }
 
+void test_omp_backend_diagnostic(void) {
+    printf("\n");
+    printf("=== OMP Backend Diagnostic ===\n");
+    printf("OMP backend available: %s\n",
+           poisson_solver_backend_available(POISSON_BACKEND_OMP) ? "YES" : "NO");
+
+    if (poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
+        poisson_solver_t* solver = poisson_solver_create(
+            POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_OMP);
+        if (solver) {
+            printf("OMP Red-Black solver name: %s\n", solver->name);
+            printf("OMP Red-Black solver description: %s\n", solver->description);
+            poisson_solver_destroy(solver);
+        }
+    }
+    printf("==============================\n\n");
+    TEST_PASS();
+}
+
 /* ============================================================================
  * TEST RUNNER
  * ============================================================================ */
@@ -492,8 +511,9 @@ void test_simd_backend_diagnostic(void) {
 int main(void) {
     UNITY_BEGIN();
 
-    /* SIMD diagnostic (run first to show availability) */
+    /* Backend diagnostics (run first to show availability) */
     RUN_TEST(test_simd_backend_diagnostic);
+    RUN_TEST(test_omp_backend_diagnostic);
 
     /* Parameter tests */
     RUN_TEST(test_params_default);
