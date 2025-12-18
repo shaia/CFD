@@ -530,6 +530,103 @@ jobs:
           echo "- **Compiler**: Clang" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
 
+  # OpenMP build - Test OpenMP on Windows MSVC
+  openmp-test-windows:
+    name: OpenMP (Windows MSVC)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: microsoft/setup-msbuild@v1.3
+
+      - name: Configure with OpenMP
+        shell: bash
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON
+
+      - name: Build
+        shell: bash
+        run: |
+          cd build
+          cmake --build . --config Release --parallel
+
+      - name: Run tests
+        shell: bash
+        run: |
+          cd build
+          ctest -C Release --output-on-failure
+
+      - name: Generate summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## OpenMP (Windows MSVC) Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **OpenMP**: Enabled (MSVC built-in)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compiler**: MSVC" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
+
+  # CUDA build on Windows - Verify CUDA code compiles
+  cuda-build-windows:
+    name: CUDA Build (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: microsoft/setup-msbuild@v1.3
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.16
+        id: cuda-toolkit
+        with:
+          cuda: '12.4.0'
+          method: 'network'
+
+      - name: Configure CMake with CUDA
+        shell: pwsh
+        run: |
+          mkdir build
+          cd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCFD_ENABLE_CUDA=ON `
+            -DBUILD_TESTS=ON `
+            -DBUILD_EXAMPLES=OFF
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cd build
+          cmake --build . --config Release --parallel
+
+      - name: Verify CUDA compilation
+        shell: pwsh
+        run: |
+          cd build
+          Write-Host "Build completed successfully with CUDA support"
+          Get-ChildItem -Recurse -Filter "*.lib" | Select-Object FullName
+
+      - name: Generate summary
+        if: always()
+        shell: pwsh
+        run: |
+          echo "## CUDA Build (Windows) Summary" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **CUDA Version:** ${{ steps.cuda-toolkit.outputs.cuda }}" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Compiler:** MSVC" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Purpose:** Verify CUDA code compiles correctly" >> $env:GITHUB_STEP_SUMMARY
+
   # Sanitizer build - Debug build with ASan and UBSan
   sanitizers:
     name: Sanitizers (Linux GCC)
@@ -744,7 +841,7 @@ jobs:
   build-status:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: [build-matrix, simd-test-linux, simd-test-windows, openmp-test-linux, openmp-test-clang, cuda-build, sanitizers, coverage, docs]
+    needs: [build-matrix, simd-test-linux, simd-test-windows, openmp-test-linux, openmp-test-clang, openmp-test-windows, cuda-build, cuda-build-windows, sanitizers, coverage, docs]
     if: always()
 
     steps:
@@ -756,8 +853,10 @@ jobs:
           SIMD_WINDOWS_OK="${{ needs.simd-test-windows.result == 'success' }}"
           OMP_GCC_OK="${{ needs.openmp-test-linux.result == 'success' }}"
           OMP_CLANG_OK="${{ needs.openmp-test-clang.result == 'success' }}"
+          OMP_WINDOWS_OK="${{ needs.openmp-test-windows.result == 'success' }}"
           CUDA_OK="${{ needs.cuda-build.result == 'success' }}"
-          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "$OMP_GCC_OK" == "true" && "$OMP_CLANG_OK" == "true" && "$CUDA_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
+          CUDA_WIN_OK="${{ needs.cuda-build-windows.result == 'success' }}"
+          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "$OMP_GCC_OK" == "true" && "$OMP_CLANG_OK" == "true" && "$OMP_WINDOWS_OK" == "true" && "$CUDA_OK" == "true" && "$CUDA_WIN_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
             echo "✅ All builds passed successfully!"
             echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
             echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
