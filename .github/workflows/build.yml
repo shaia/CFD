@@ -685,11 +685,66 @@ jobs:
           echo "Doxygen documentation generated successfully." >> $GITHUB_STEP_SUMMARY
           echo "Download the 'api-docs' artifact to view." >> $GITHUB_STEP_SUMMARY
 
+  # CUDA build - Verify CUDA code compiles (no GPU hardware on CI runners)
+  cuda-build:
+    name: CUDA Build (Linux)
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.2.0-devel-ubuntu22.04
+
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential cmake git
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure CMake with CUDA
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCFD_ENABLE_CUDA=ON \
+            -DBUILD_TESTS=ON \
+            -DBUILD_EXAMPLES=OFF
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --parallel $(nproc)
+
+      - name: Verify CUDA compilation
+        run: |
+          cd build
+          echo "Checking for GPU symbols in library..."
+          if nm -C lib/libcfd_library.a 2>/dev/null | grep -q "gpu"; then
+            echo "✅ GPU symbols found in library"
+            nm -C lib/libcfd_library.a | grep -i gpu | head -10
+          else
+            echo "❌ GPU symbols NOT found"
+            nm -C lib/libcfd_library.a | head -30
+            exit 1
+          fi
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## CUDA Build (Linux) Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **CUDA Version:** 12.2" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type:** Release" >> $GITHUB_STEP_SUMMARY
+          echo "- **Purpose:** Verify CUDA code compiles correctly" >> $GITHUB_STEP_SUMMARY
+
   # Status check job - Required for PR merges
   build-status:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: [build-matrix, simd-test-linux, simd-test-windows, openmp-test-linux, openmp-test-clang, sanitizers, coverage, docs]
+    needs: [build-matrix, simd-test-linux, simd-test-windows, openmp-test-linux, openmp-test-clang, cuda-build, sanitizers, coverage, docs]
     if: always()
 
     steps:
@@ -701,7 +756,8 @@ jobs:
           SIMD_WINDOWS_OK="${{ needs.simd-test-windows.result == 'success' }}"
           OMP_GCC_OK="${{ needs.openmp-test-linux.result == 'success' }}"
           OMP_CLANG_OK="${{ needs.openmp-test-clang.result == 'success' }}"
-          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "$OMP_GCC_OK" == "true" && "$OMP_CLANG_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
+          CUDA_OK="${{ needs.cuda-build.result == 'success' }}"
+          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "$OMP_GCC_OK" == "true" && "$OMP_CLANG_OK" == "true" && "$CUDA_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
             echo "✅ All builds passed successfully!"
             echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
             echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
