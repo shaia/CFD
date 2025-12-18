@@ -831,26 +831,60 @@ jobs:
   build-status:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: [build-matrix, simd-test-linux, simd-test-windows, openmp-test-linux, openmp-test-clang, openmp-test-windows, cuda-build, cuda-build-windows, sanitizers, coverage]
+    needs:
+      - build-matrix
+      - simd-test-linux
+      - simd-test-windows
+      - openmp-test-linux
+      - openmp-test-clang
+      - openmp-test-windows
+      - cuda-build
+      - cuda-build-windows
+      - sanitizers
+      - coverage
     if: always()
 
     steps:
       - name: Check build results
         run: |
-          SIMD_LINUX_OK="${{ needs.simd-test-linux.result == 'success' }}"
-          SIMD_WINDOWS_OK="${{ needs.simd-test-windows.result == 'success' }}"
-          OMP_GCC_OK="${{ needs.openmp-test-linux.result == 'success' }}"
-          OMP_CLANG_OK="${{ needs.openmp-test-clang.result == 'success' }}"
-          OMP_WINDOWS_OK="${{ needs.openmp-test-windows.result == 'success' }}"
-          CUDA_OK="${{ needs.cuda-build.result == 'success' }}"
-          CUDA_WIN_OK="${{ needs.cuda-build-windows.result == 'success' }}"
-          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "$OMP_GCC_OK" == "true" && "$OMP_CLANG_OK" == "true" && "$OMP_WINDOWS_OK" == "true" && "$CUDA_OK" == "true" && "$CUDA_WIN_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" ]]; then
+          # Track overall status
+          ALL_PASSED=true
+
+          # Check each job and report status
+          echo "## Build Status Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          check_job() {
+            local name="$1"
+            local result="$2"
+            if [[ "$result" == "success" ]]; then
+              echo "✅ $name: passed"
+              echo "- ✅ **$name**: passed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ $name: $result"
+              echo "- ❌ **$name**: $result" >> $GITHUB_STEP_SUMMARY
+              ALL_PASSED=false
+            fi
+          }
+
+          check_job "Build Matrix" "${{ needs.build-matrix.result }}"
+          check_job "SIMD (Linux)" "${{ needs.simd-test-linux.result }}"
+          check_job "SIMD (Windows)" "${{ needs.simd-test-windows.result }}"
+          check_job "OpenMP (Linux GCC)" "${{ needs.openmp-test-linux.result }}"
+          check_job "OpenMP (Linux Clang)" "${{ needs.openmp-test-clang.result }}"
+          check_job "OpenMP (Windows)" "${{ needs.openmp-test-windows.result }}"
+          check_job "CUDA (Linux)" "${{ needs.cuda-build.result }}"
+          check_job "CUDA (Windows)" "${{ needs.cuda-build-windows.result }}"
+          check_job "Sanitizers" "${{ needs.sanitizers.result }}"
+          check_job "Coverage" "${{ needs.coverage.result }}"
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$ALL_PASSED" == "true" ]]; then
             echo "✅ All builds passed successfully!"
-            echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
-            echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
+            echo "**Result: SUCCESS** - All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ One or more builds failed!"
-            echo "Build Status: FAILED" >> $GITHUB_STEP_SUMMARY
-            echo "Check individual build jobs for details." >> $GITHUB_STEP_SUMMARY
+            echo "**Result: FAILED** - Check individual build jobs for details." >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
