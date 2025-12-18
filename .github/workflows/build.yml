@@ -589,11 +589,11 @@ jobs:
           echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
 
   # CUDA build on Windows - Verify CUDA code compiles (optional, slow)
-  # Only runs on PRs to main/master or releases to save CI time
+  # Only runs on releases to save CI time
   cuda-build-windows:
     name: CUDA Build (Windows)
     runs-on: windows-latest
-    if: github.event_name == 'release' || (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'master'))
+    if: github.event_name == 'release'
 
     steps:
       - name: Checkout code
