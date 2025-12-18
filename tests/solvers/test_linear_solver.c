@@ -17,6 +17,7 @@
 #include "unity.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -453,11 +454,46 @@ void test_stats_timing(void) {
 }
 
 /* ============================================================================
+ * SIMD AVAILABILITY DIAGNOSTIC
+ * ============================================================================ */
+
+void test_simd_backend_diagnostic(void) {
+    printf("\n");
+    printf("=== SIMD Backend Diagnostic ===\n");
+    printf("SIMD backend available: %s\n",
+           poisson_solver_backend_available(POISSON_BACKEND_SIMD) ? "YES" : "NO");
+    printf("Current backend: %s\n", poisson_solver_get_backend_name());
+
+    if (poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
+        poisson_solver_t* solver = poisson_solver_create(
+            POISSON_METHOD_JACOBI, POISSON_BACKEND_SIMD);
+        if (solver) {
+            printf("SIMD Jacobi solver name: %s\n", solver->name);
+            printf("SIMD Jacobi solver description: %s\n", solver->description);
+            poisson_solver_destroy(solver);
+        }
+
+        solver = poisson_solver_create(
+            POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD);
+        if (solver) {
+            printf("SIMD Red-Black solver name: %s\n", solver->name);
+            printf("SIMD Red-Black solver description: %s\n", solver->description);
+            poisson_solver_destroy(solver);
+        }
+    }
+    printf("===============================\n\n");
+    TEST_PASS();
+}
+
+/* ============================================================================
  * TEST RUNNER
  * ============================================================================ */
 
 int main(void) {
     UNITY_BEGIN();
+
+    /* SIMD diagnostic (run first to show availability) */
+    RUN_TEST(test_simd_backend_diagnostic);
 
     /* Parameter tests */
     RUN_TEST(test_params_default);

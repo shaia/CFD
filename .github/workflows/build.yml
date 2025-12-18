@@ -269,38 +269,34 @@ jobs:
           ls -la >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
-  # SIMD (AVX2) build - Test SIMD optimizations on capable hardware
-  simd-test:
+  # SIMD (AVX2) build - Test SIMD optimizations (AVX2 REQUIRED)
+  simd-test-linux:
     name: SIMD AVX2 (Linux GCC)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check CPU features
-        id: cpu-check
+      - name: Verify AVX2 hardware support (REQUIRED)
         run: |
           echo "CPU Info:"
           lscpu | grep -E "(Model name|Flags)" || cat /proc/cpuinfo | grep -E "(model name|flags)" | head -2
           echo ""
           if grep -q avx2 /proc/cpuinfo; then
             echo "✅ AVX2 is supported on this runner"
-            echo "has_avx2=true" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ AVX2 is NOT supported - skipping SIMD tests"
-            echo "has_avx2=false" >> $GITHUB_OUTPUT
+            echo "❌ ERROR: AVX2 is NOT supported on this runner"
+            echo "This job REQUIRES AVX2 hardware. GitHub runners should have AVX2."
+            exit 1
           fi
 
       - name: Checkout code
-        if: steps.cpu-check.outputs.has_avx2 == 'true'
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        if: steps.cpu-check.outputs.has_avx2 == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake
 
       - name: Configure with AVX2
-        if: steps.cpu-check.outputs.has_avx2 == 'true'
         run: |
           mkdir -p build
           cd build
@@ -312,32 +308,121 @@ jobs:
             -DCFD_ENABLE_AVX2=ON
 
       - name: Build
-        if: steps.cpu-check.outputs.has_avx2 == 'true'
         run: |
           cd build
           cmake --build . --parallel $(nproc)
 
       - name: Run tests
-        if: steps.cpu-check.outputs.has_avx2 == 'true'
         run: |
           cd build
           ctest --output-on-failure
 
+      - name: Verify AVX2 code is running
+        run: |
+          cd build
+          # Run the linear solver test and check that SIMD is reported as available
+          OUTPUT=$(./test_linear_solver 2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "SIMD backend available: YES"; then
+            echo "✅ AVX2 SIMD backend is correctly enabled"
+          else
+            echo "❌ ERROR: AVX2 was expected but SIMD backend reports NO"
+            echo "This means the code was not compiled with AVX2 support"
+            exit 1
+          fi
+          # Verify we see the AVX2 description
+          if echo "$OUTPUT" | grep -q "AVX2 SIMD"; then
+            echo "✅ AVX2 SIMD solver descriptions found"
+          else
+            echo "❌ ERROR: AVX2 SIMD solver not found in output"
+            exit 1
+          fi
+
       - name: Generate summary
         if: always()
         run: |
-          echo "## SIMD AVX2 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## SIMD AVX2 (Linux GCC) Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.cpu-check.outputs.has_avx2 }}" == "true" ]; then
-            echo "- **AVX2 Enabled**: Yes" >> $GITHUB_STEP_SUMMARY
-            echo "- **Hardware AVX2**: Supported ✅" >> $GITHUB_STEP_SUMMARY
-            echo "- **Tests**: Executed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **AVX2 Enabled**: No (hardware not supported)" >> $GITHUB_STEP_SUMMARY
-            echo "- **Hardware AVX2**: Not supported ⚠️" >> $GITHUB_STEP_SUMMARY
-            echo "- **Tests**: Skipped (no AVX2 hardware)" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "- **AVX2 Required**: Yes (mandatory for this job)" >> $GITHUB_STEP_SUMMARY
           echo "- **Compiler**: GCC" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
+
+  # SIMD (AVX2) build - Windows (AVX2 REQUIRED)
+  simd-test-windows:
+    name: SIMD AVX2 (Windows MSVC)
+    runs-on: windows-latest
+
+    steps:
+      - name: Verify AVX2 hardware support (REQUIRED)
+        shell: powershell
+        run: |
+          $cpu = Get-CimInstance Win32_Processor
+          Write-Host "CPU: $($cpu.Name)"
+          Write-Host ""
+          # Windows GitHub runners (Azure VMs) use Intel Xeon which has AVX2
+          # If this ever fails, the runner changed and we need to investigate
+          Write-Host "✅ AVX2 is required on this runner (Intel Xeon expected)"
+          Write-Host "This job REQUIRES AVX2 hardware. GitHub runners should have AVX2."
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: microsoft/setup-msbuild@v1.3
+
+      - name: Configure with AVX2
+        shell: bash
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON \
+            -DCFD_ENABLE_AVX2=ON
+
+      - name: Build
+        shell: bash
+        run: |
+          cd build
+          cmake --build . --config Release --parallel
+
+      - name: Run tests
+        shell: bash
+        run: |
+          cd build
+          ctest -C Release --output-on-failure
+
+      - name: Verify AVX2 code is running
+        shell: bash
+        run: |
+          cd build
+          # Run the linear solver test and check that SIMD is reported as available
+          OUTPUT=$(./Release/test_linear_solver.exe 2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "SIMD backend available: YES"; then
+            echo "✅ AVX2 SIMD backend is correctly enabled"
+          else
+            echo "❌ ERROR: AVX2 was expected but SIMD backend reports NO"
+            echo "This means the code was not compiled with AVX2 support"
+            exit 1
+          fi
+          # Verify we see the AVX2 description
+          if echo "$OUTPUT" | grep -q "AVX2 SIMD"; then
+            echo "✅ AVX2 SIMD solver descriptions found"
+          else
+            echo "❌ ERROR: AVX2 SIMD solver not found in output"
+            exit 1
+          fi
+
+      - name: Generate summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## SIMD AVX2 (Windows MSVC) Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **AVX2 Required**: Yes (mandatory for this job)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compiler**: MSVC" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
 
   # Sanitizer build - Debug build with ASan and UBSan
@@ -499,7 +584,7 @@ jobs:
   build-status:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: [build-matrix, simd-test, sanitizers, coverage, docs]
+    needs: [build-matrix, simd-test-linux, simd-test-windows, sanitizers, coverage, docs]
     if: always()
 
     steps:
@@ -507,7 +592,9 @@ jobs:
         run: |
           # docs job may be skipped on feature branches, so treat 'skipped' as success
           DOCS_OK="${{ needs.docs.result == 'success' || needs.docs.result == 'skipped' }}"
-          if [[ "${{ needs.build-matrix.result }}" == "success" && "${{ needs.simd-test.result }}" == "success" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
+          SIMD_LINUX_OK="${{ needs.simd-test-linux.result == 'success' }}"
+          SIMD_WINDOWS_OK="${{ needs.simd-test-windows.result == 'success' }}"
+          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
             echo "✅ All builds passed successfully!"
             echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
             echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
