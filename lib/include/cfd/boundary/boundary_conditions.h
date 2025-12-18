@@ -35,7 +35,7 @@ typedef enum {
 typedef enum {
     BC_BACKEND_AUTO,    // Auto-select best available (OMP > SIMD > Scalar)
     BC_BACKEND_SCALAR,  // Force scalar implementation
-    BC_BACKEND_SIMD,    // Force SIMD implementation (AVX2/SSE2)
+    BC_BACKEND_SIMD,    // Force SIMD implementation (AVX2)
     BC_BACKEND_OMP      // Force OpenMP implementation
 } bc_backend_t;
 
@@ -165,7 +165,7 @@ CFD_LIBRARY_EXPORT bool bc_backend_available(bc_backend_t backend);
 CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t type);
 
 /**
- * Apply boundary conditions using SIMD implementation (AVX2/SSE2).
+ * Apply boundary conditions using SIMD implementation (AVX2).
  * Returns CFD_ERROR_UNSUPPORTED if SIMD not available.
  * @return CFD_SUCCESS on success, error code on failure
  */
@@ -249,7 +249,7 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_cpu(double* field, siz
                                                                const bc_dirichlet_values_t* values);
 
 /**
- * Apply Dirichlet boundary conditions using SIMD implementation (AVX2/SSE2).
+ * Apply Dirichlet boundary conditions using SIMD implementation (AVX2).
  * Returns CFD_ERROR_UNSUPPORTED if SIMD not available.
  * @return CFD_SUCCESS on success, error code on failure
  */

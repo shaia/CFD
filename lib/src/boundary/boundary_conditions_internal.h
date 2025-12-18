@@ -47,7 +47,7 @@ typedef struct {
 /** Scalar (baseline) implementation - always available */
 extern const bc_backend_impl_t bc_impl_scalar;
 
-/** SIMD (AVX2/SSE2) implementation - NULL if not compiled with SIMD */
+/** SIMD (AVX2) implementation - NULL if not compiled with AVX2 */
 extern const bc_backend_impl_t bc_impl_simd;
 
 /** OpenMP implementation - NULL if not compiled with OpenMP */
