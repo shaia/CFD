@@ -558,6 +558,24 @@ jobs:
           cd build
           cmake --build . --config Release --parallel
 
+      - name: Verify OpenMP is enabled
+        shell: bash
+        run: |
+          cd build
+          # Check CMake output shows OpenMP found
+          if grep -q "OpenMP found" CMakeCache.txt 2>/dev/null || grep -q "CFD_ENABLE_OPENMP" CMakeCache.txt; then
+            echo "✅ OpenMP support detected in build"
+          fi
+          # Run the linear solver test and check that OMP backend is available
+          OUTPUT=$(./Release/test_linear_solver.exe 2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "OMP backend available: YES"; then
+            echo "✅ OpenMP backend is correctly enabled"
+          else
+            echo "❌ ERROR: OpenMP was expected but OMP backend reports NO"
+            exit 1
+          fi
+
       - name: Run tests
         shell: bash
         run: |
