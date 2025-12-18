@@ -50,7 +50,8 @@ static cfd_status_t jacobi_simd_init(
 {
     (void)nx; (void)ny; (void)params;
 
-    jacobi_simd_context_t* ctx = (jacobi_simd_context_t*)cfd_calloc(1, sizeof(jacobi_simd_context_t));
+    /* Use aligned allocation for struct containing __m256d members */
+    jacobi_simd_context_t* ctx = (jacobi_simd_context_t*)cfd_aligned_calloc(1, sizeof(jacobi_simd_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
@@ -73,7 +74,7 @@ static cfd_status_t jacobi_simd_init(
 
 static void jacobi_simd_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
-        cfd_free(solver->context);
+        cfd_aligned_free(solver->context);
         solver->context = NULL;
     }
 }
