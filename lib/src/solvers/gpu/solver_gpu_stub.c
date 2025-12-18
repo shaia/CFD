@@ -12,13 +12,6 @@
 #include <stdio.h>
 #include <string.h>
 
-// Forward declarations for CPU fallback solvers
-
-extern cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid,
-                                        const ns_solver_params_t* params);
-extern cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
-                                            const ns_solver_params_t* params);
-
 gpu_config_t gpu_config_default(void) {
     gpu_config_t config;
     memset(&config, 0, sizeof(gpu_config_t));
@@ -106,24 +99,22 @@ void gpu_solver_reset_stats(gpu_solver_context_t* ctx) {
 
 cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params, const gpu_config_t* config) {
+    (void)field;
+    (void)grid;
+    (void)params;
     (void)config;
 
-    // Fall back to CPU implementation
-    if (config && config->verbose) {
-        printf("GPU NSSolver: CUDA not available, using CPU solver\n");
-    }
-
-    return explicit_euler_impl(field, grid, params);
+    fprintf(stderr, "GPU NSSolver: CUDA not available (compiled without CUDA support)\n");
+    return CFD_ERROR_UNSUPPORTED;
 }
 
 cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, const gpu_config_t* config) {
+    (void)field;
+    (void)grid;
+    (void)params;
     (void)config;
 
-    // Fall back to CPU implementation
-    if (config && config->verbose) {
-        printf("GPU Projection: CUDA not available, using CPU solver\n");
-    }
-
-    return solve_projection_method(field, grid, params);
+    fprintf(stderr, "GPU Projection: CUDA not available (compiled without CUDA support)\n");
+    return CFD_ERROR_UNSUPPORTED;
 }

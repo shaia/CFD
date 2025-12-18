@@ -18,6 +18,7 @@
 #include "../boundary_conditions_internal.h"
 #include "cfd/core/logging.h"
 #include <stdbool.h>
+#include <stdio.h>
 
 /* ============================================================================
  * Global Backend State
@@ -179,7 +180,7 @@ const char* bc_get_backend_name(void) {
 
 bool bc_set_backend(bc_backend_t backend) {
     if (!bc_backend_available(backend) && backend != BC_BACKEND_AUTO) {
-        /* Still set it - will fall back to scalar */
+        /* Backend not available - set anyway but return false to indicate failure */
         g_current_backend = backend;
         return false;
     }
@@ -201,7 +202,7 @@ static void apply_neumann_with_backend(double* field, size_t nx, size_t ny, bc_b
 #ifdef BC_HAS_SIMD
             bc_apply_neumann_simd_impl(field, nx, ny);
 #else
-            bc_apply_neumann_scalar_impl(field, nx, ny);
+            fprintf(stderr, "BC SIMD backend: AVX2 not available (compiled without AVX2 support)\n");
 #endif
             break;
 
@@ -209,7 +210,7 @@ static void apply_neumann_with_backend(double* field, size_t nx, size_t ny, bc_b
 #ifdef CFD_ENABLE_OPENMP
             bc_apply_neumann_omp_impl(field, nx, ny);
 #else
-            bc_apply_neumann_scalar_impl(field, nx, ny);
+            fprintf(stderr, "BC OMP backend: OpenMP not available (compiled without OpenMP support)\n");
 #endif
             break;
 
@@ -237,7 +238,7 @@ static void apply_periodic_with_backend(double* field, size_t nx, size_t ny, bc_
 #ifdef BC_HAS_SIMD
             bc_apply_periodic_simd_impl(field, nx, ny);
 #else
-            bc_apply_periodic_scalar_impl(field, nx, ny);
+            fprintf(stderr, "BC SIMD backend: AVX2 not available (compiled without AVX2 support)\n");
 #endif
             break;
 
@@ -245,7 +246,7 @@ static void apply_periodic_with_backend(double* field, size_t nx, size_t ny, bc_
 #ifdef CFD_ENABLE_OPENMP
             bc_apply_periodic_omp_impl(field, nx, ny);
 #else
-            bc_apply_periodic_scalar_impl(field, nx, ny);
+            fprintf(stderr, "BC OMP backend: OpenMP not available (compiled without OpenMP support)\n");
 #endif
             break;
 
@@ -274,7 +275,7 @@ static void apply_dirichlet_with_backend(double* field, size_t nx, size_t ny,
 #ifdef BC_HAS_SIMD
             bc_apply_dirichlet_simd_impl(field, nx, ny, values);
 #else
-            bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
+            fprintf(stderr, "BC SIMD backend: AVX2 not available (compiled without AVX2 support)\n");
 #endif
             break;
 
@@ -282,7 +283,7 @@ static void apply_dirichlet_with_backend(double* field, size_t nx, size_t ny,
 #ifdef CFD_ENABLE_OPENMP
             bc_apply_dirichlet_omp_impl(field, nx, ny, values);
 #else
-            bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
+            fprintf(stderr, "BC OMP backend: OpenMP not available (compiled without OpenMP support)\n");
 #endif
             break;
 

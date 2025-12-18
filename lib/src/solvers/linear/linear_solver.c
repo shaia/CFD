@@ -160,10 +160,7 @@ poisson_solver_t* poisson_solver_create(
         case POISSON_METHOD_JACOBI:
             switch (backend) {
                 case POISSON_BACKEND_SIMD:
-#if POISSON_HAS_SIMD
                     return create_jacobi_simd_solver();
-#endif
-                    /* Fall through to scalar */
                 case POISSON_BACKEND_SCALAR:
                 default:
                     return create_jacobi_scalar_solver();
@@ -181,10 +178,7 @@ poisson_solver_t* poisson_solver_create(
                     return create_redblack_omp_solver();
 #endif
                 case POISSON_BACKEND_SIMD:
-#if POISSON_HAS_SIMD
                     return create_redblack_simd_solver();
-#endif
-                    /* Fall through to scalar */
                 case POISSON_BACKEND_SCALAR:
                 default:
                     return create_redblack_scalar_solver();
