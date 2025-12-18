@@ -883,6 +883,13 @@ int main(void) {
     printf("  Red-Black SIMD Poisson Solver Tests\n");
     printf("================================================\n");
 
+    /* Check if SIMD backend is available - skip all tests if not */
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
+        printf("\n  SIMD backend not available - skipping all tests\n");
+        printf("================================================\n\n");
+        return UNITY_END();
+    }
+
     RUN_TEST(test_redblack_runs_sinusoidal);
     RUN_TEST(test_redblack_converges_zero_rhs);
     RUN_TEST(test_redblack_accuracy);

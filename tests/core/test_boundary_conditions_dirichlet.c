@@ -204,6 +204,11 @@ void test_dirichlet_scalar_large_grid(void) {
  * ============================================================================ */
 
 void test_dirichlet_simd_basic(void) {
+    if (!bc_backend_available(BC_BACKEND_SIMD)) {
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
+        return;
+    }
+
     size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
     double* field = create_test_field(nx, ny);
     TEST_ASSERT_NOT_NULL(field);
@@ -226,6 +231,11 @@ void test_dirichlet_simd_basic(void) {
 }
 
 void test_dirichlet_simd_consistency_with_scalar(void) {
+    if (!bc_backend_available(BC_BACKEND_SIMD)) {
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
+        return;
+    }
+
     size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
     double* field_scalar = create_test_field(nx, ny);
     double* field_simd = create_test_field(nx, ny);
@@ -262,6 +272,11 @@ void test_dirichlet_simd_consistency_with_scalar(void) {
  * ============================================================================ */
 
 void test_dirichlet_omp_basic(void) {
+    if (!bc_backend_available(BC_BACKEND_OMP)) {
+        TEST_IGNORE_MESSAGE("OpenMP backend not available");
+        return;
+    }
+
     size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
     double* field = create_test_field(nx, ny);
     TEST_ASSERT_NOT_NULL(field);
@@ -284,6 +299,11 @@ void test_dirichlet_omp_basic(void) {
 }
 
 void test_dirichlet_omp_consistency_with_scalar(void) {
+    if (!bc_backend_available(BC_BACKEND_OMP)) {
+        TEST_IGNORE_MESSAGE("OpenMP backend not available");
+        return;
+    }
+
     size_t nx = TEST_NX_LARGE, ny = TEST_NY_LARGE;
     double* field_scalar = create_test_field(nx, ny);
     double* field_omp = create_test_field(nx, ny);

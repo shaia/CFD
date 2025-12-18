@@ -132,7 +132,7 @@ void cfd_registry_register_defaults(ns_solver_registry_t* registry) {
     cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
                           create_projection_optimized_solver);
 
-    // Register GPU solvers (will use CPU fallback if CUDA not available)
+    // Register GPU solvers (requires CUDA)
     cfd_registry_register(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU,
                           create_explicit_euler_gpu_solver);
     cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
@@ -721,7 +721,7 @@ static ns_solver_t* create_projection_optimized_solver(void) {
 
 /**
  * Built-in solver: GPU-Accelerated Explicit Euler
- * Uses CUDA for GPU acceleration with automatic fallback
+ * Uses CUDA for GPU acceleration (requires CUDA support)
  */
 
 typedef struct {
@@ -744,7 +744,9 @@ static cfd_status_t gpu_euler_init(ns_solver_t* solver, const grid* grid, const 
     if (ctx->use_gpu) {
         ctx->gpu_ctx = gpu_solver_create(grid->nx, grid->ny, &ctx->gpu_config_t);
         if (!ctx->gpu_ctx) {
-            ctx->use_gpu = 0;  // Fall back to CPU
+            cfd_free(ctx);
+            fprintf(stderr, "GPU Euler init: Failed to create GPU context\n");
+            return CFD_ERROR_UNSUPPORTED;
         }
     }
 
@@ -802,29 +804,15 @@ static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const
                 return CFD_SUCCESS;
             }
         }
-        // GPU failed, fall through to CPU
+        // GPU operation failed
+        fprintf(stderr, "GPU Euler step: GPU operation failed\n");
+        return CFD_ERROR_INVALID;
     }
 
-    // CPU fallback
-    explicit_euler_impl(field, grid, &step_params);
-
-    if (stats) {
-        stats->iterations = 1;
-        double max_vel = 0.0, max_p = 0.0;
-        for (size_t i = 0; i < field->nx * field->ny; i++) {
-            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
-            if (vel > max_vel) {
-                max_vel = vel;
-            }
-            if (fabs(field->p[i]) > max_p) {
-                max_p = fabs(field->p[i]);
-            }
-        }
-        stats->max_velocity = max_vel;
-        stats->max_pressure = max_p;
-    }
-
-    return CFD_SUCCESS;
+    // GPU not available - could be: CUDA not compiled in, gpu_should_use() returned false,
+    // or GPU initialization failed
+    fprintf(stderr, "GPU Euler step: GPU solver not initialized\n");
+    return CFD_ERROR_UNSUPPORTED;
 }
 
 static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
@@ -860,26 +848,10 @@ static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, cons
         return CFD_SUCCESS;
     }
 
-    // CPU fallback
-    explicit_euler_impl(field, grid, params);
-
-    if (stats) {
-        stats->iterations = params->max_iter;
-        double max_vel = 0.0, max_p = 0.0;
-        for (size_t i = 0; i < field->nx * field->ny; i++) {
-            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
-            if (vel > max_vel) {
-                max_vel = vel;
-            }
-            if (fabs(field->p[i]) > max_p) {
-                max_p = fabs(field->p[i]);
-            }
-        }
-        stats->max_velocity = max_vel;
-        stats->max_pressure = max_p;
-    }
-
-    return CFD_SUCCESS;
+    // GPU not available - could be: CUDA not compiled in, gpu_should_use() returned false,
+    // or GPU initialization failed
+    fprintf(stderr, "GPU Euler solve: GPU solver not initialized\n");
+    return CFD_ERROR_UNSUPPORTED;
 }
 
 static ns_solver_t* create_explicit_euler_gpu_solver(void) {
@@ -889,7 +861,7 @@ static ns_solver_t* create_explicit_euler_gpu_solver(void) {
     }
 
     s->name = NS_SOLVER_TYPE_EXPLICIT_EULER_GPU;
-    s->description = "GPU-accelerated explicit Euler solver (CUDA) with automatic fallback";
+    s->description = "GPU-accelerated explicit Euler solver (CUDA)";
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
 

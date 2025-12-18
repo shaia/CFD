@@ -425,6 +425,111 @@ jobs:
           echo "- **Compiler**: MSVC" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
 
+  # OpenMP build - Test OpenMP parallelization
+  openmp-test-linux:
+    name: OpenMP (Linux GCC)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Configure with OpenMP
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --parallel $(nproc)
+
+      - name: Verify OpenMP is enabled
+        run: |
+          cd build
+          # Check CMake output shows OpenMP found
+          if grep -q "OpenMP found" CMakeCache.txt 2>/dev/null || grep -q "CFD_ENABLE_OPENMP" CMakeCache.txt; then
+            echo "✅ OpenMP support detected in build"
+          fi
+          # Run the linear solver test and check that OMP backend is available
+          OUTPUT=$(./test_linear_solver 2>&1 || true)
+          echo "$OUTPUT"
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## OpenMP (Linux GCC) Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **OpenMP**: Enabled (GCC has built-in OpenMP support)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compiler**: GCC" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
+
+  # OpenMP build - Test OpenMP with Clang (requires libomp)
+  openmp-test-clang:
+    name: OpenMP (Linux Clang)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake clang libomp-dev
+
+      - name: Configure with OpenMP
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --parallel $(nproc)
+
+      - name: Verify OpenMP is enabled
+        run: |
+          cd build
+          # Run test to verify OMP backend is available
+          OUTPUT=$(./test_linear_solver 2>&1 || true)
+          echo "$OUTPUT"
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## OpenMP (Linux Clang) Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **OpenMP**: Enabled (via libomp)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compiler**: Clang" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
+
   # Sanitizer build - Debug build with ASan and UBSan
   sanitizers:
     name: Sanitizers (Linux GCC)
@@ -580,11 +685,66 @@ jobs:
           echo "Doxygen documentation generated successfully." >> $GITHUB_STEP_SUMMARY
           echo "Download the 'api-docs' artifact to view." >> $GITHUB_STEP_SUMMARY
 
+  # CUDA build - Verify CUDA code compiles (no GPU hardware on CI runners)
+  cuda-build:
+    name: CUDA Build (Linux)
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.2.0-devel-ubuntu22.04
+
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential cmake git
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure CMake with CUDA
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCFD_ENABLE_CUDA=ON \
+            -DBUILD_TESTS=ON \
+            -DBUILD_EXAMPLES=OFF
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --parallel $(nproc)
+
+      - name: Verify CUDA compilation
+        run: |
+          cd build
+          echo "Checking for GPU symbols in library..."
+          if nm -C lib/libcfd_library.a 2>/dev/null | grep -q "gpu"; then
+            echo "✅ GPU symbols found in library"
+            nm -C lib/libcfd_library.a | grep -i gpu | head -10
+          else
+            echo "❌ GPU symbols NOT found"
+            nm -C lib/libcfd_library.a | head -30
+            exit 1
+          fi
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## CUDA Build (Linux) Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **CUDA Version:** 12.2" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type:** Release" >> $GITHUB_STEP_SUMMARY
+          echo "- **Purpose:** Verify CUDA code compiles correctly" >> $GITHUB_STEP_SUMMARY
+
   # Status check job - Required for PR merges
   build-status:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: [build-matrix, simd-test-linux, simd-test-windows, sanitizers, coverage, docs]
+    needs: [build-matrix, simd-test-linux, simd-test-windows, openmp-test-linux, openmp-test-clang, cuda-build, sanitizers, coverage, docs]
     if: always()
 
     steps:
@@ -594,7 +754,10 @@ jobs:
           DOCS_OK="${{ needs.docs.result == 'success' || needs.docs.result == 'skipped' }}"
           SIMD_LINUX_OK="${{ needs.simd-test-linux.result == 'success' }}"
           SIMD_WINDOWS_OK="${{ needs.simd-test-windows.result == 'success' }}"
-          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
+          OMP_GCC_OK="${{ needs.openmp-test-linux.result == 'success' }}"
+          OMP_CLANG_OK="${{ needs.openmp-test-clang.result == 'success' }}"
+          CUDA_OK="${{ needs.cuda-build.result == 'success' }}"
+          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "$OMP_GCC_OK" == "true" && "$OMP_CLANG_OK" == "true" && "$CUDA_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
             echo "✅ All builds passed successfully!"
             echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
             echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY

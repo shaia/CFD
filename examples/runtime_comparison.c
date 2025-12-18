@@ -407,7 +407,7 @@ static void print_system_info(void) {
     print_header("SYSTEM INFORMATION");
 
     printf("GPU Status: %s\n",
-           gpu_is_available() ? "Available" : "Not available (using CPU fallback)");
+           gpu_is_available() ? "Available" : "Not available");
 
     if (gpu_is_available()) {
         gpu_device_info_t info[4];
@@ -501,7 +501,7 @@ int main(int argc, char** argv) {
     printf("- Projection method is more compute-intensive, benefits more from GPU\n");
 
     if (!gpu_is_available()) {
-        printf("\nNote: CUDA was not available. GPU times show CPU fallback performance.\n");
+        printf("\nNote: CUDA was not available. GPU solver benchmarks were skipped.\n");
         printf("Build with -DCFD_ENABLE_CUDA=ON and run on a CUDA-capable system for GPU "
                "benchmarks.\n");
     }

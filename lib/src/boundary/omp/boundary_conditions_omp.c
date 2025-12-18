@@ -13,14 +13,8 @@
 
 /**
  * Apply Neumann boundary conditions (zero gradient) with OpenMP parallelization.
- *
- * Sets boundary values equal to adjacent interior values:
- *   - Left boundary (i=0): field[0] = field[1]
- *   - Right boundary (i=nx-1): field[nx-1] = field[nx-2]
- *   - Bottom boundary (j=0): field[j=0] = field[j=1]
- *   - Top boundary (j=ny-1): field[j=ny-1] = field[j=ny-2]
  */
-void bc_apply_neumann_omp_impl(double* field, size_t nx, size_t ny) {
+static void bc_apply_neumann_omp_impl(double* field, size_t nx, size_t ny) {
     int j, i;
 
     /* Left and right boundaries - parallelize over rows */
@@ -45,14 +39,8 @@ void bc_apply_neumann_omp_impl(double* field, size_t nx, size_t ny) {
 
 /**
  * Apply periodic boundary conditions with OpenMP parallelization.
- *
- * Wraps values from opposite boundaries:
- *   - Left boundary (i=0): copies from right interior (i=nx-2)
- *   - Right boundary (i=nx-1): copies from left interior (i=1)
- *   - Bottom boundary (j=0): copies from top interior (j=ny-2)
- *   - Top boundary (j=ny-1): copies from bottom interior (j=1)
  */
-void bc_apply_periodic_omp_impl(double* field, size_t nx, size_t ny) {
+static void bc_apply_periodic_omp_impl(double* field, size_t nx, size_t ny) {
     int j, i;
 
     /* Left and right boundaries (periodic in x) - parallelize over rows */
@@ -77,15 +65,9 @@ void bc_apply_periodic_omp_impl(double* field, size_t nx, size_t ny) {
 
 /**
  * Apply Dirichlet (fixed value) boundary conditions with OpenMP parallelization.
- *
- * Sets boundary values to specified fixed values:
- *   - Left boundary (i=0): field[0,j] = values->left
- *   - Right boundary (i=nx-1): field[nx-1,j] = values->right
- *   - Bottom boundary (j=0): field[i,0] = values->bottom
- *   - Top boundary (j=ny-1): field[i,ny-1] = values->top
  */
-void bc_apply_dirichlet_omp_impl(double* field, size_t nx, size_t ny,
-                                  const bc_dirichlet_values_t* values) {
+static void bc_apply_dirichlet_omp_impl(double* field, size_t nx, size_t ny,
+                                         const bc_dirichlet_values_t* values) {
     int j, i;
 
     /* Left and right boundaries - parallelize over rows */
@@ -107,5 +89,21 @@ void bc_apply_dirichlet_omp_impl(double* field, size_t nx, size_t ny,
         top_row[i] = val_top;
     }
 }
+
+/* OpenMP backend implementation table */
+const bc_backend_impl_t bc_impl_omp = {
+    .apply_neumann = bc_apply_neumann_omp_impl,
+    .apply_periodic = bc_apply_periodic_omp_impl,
+    .apply_dirichlet = bc_apply_dirichlet_omp_impl
+};
+
+#else /* !CFD_ENABLE_OPENMP */
+
+/* OpenMP not available - provide empty table */
+const bc_backend_impl_t bc_impl_omp = {
+    .apply_neumann = NULL,
+    .apply_periodic = NULL,
+    .apply_dirichlet = NULL
+};
 
 #endif /* CFD_ENABLE_OPENMP */
