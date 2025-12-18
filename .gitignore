@@ -108,6 +108,7 @@ __pycache__/
 
 # Claude AI assistant files
 .claude/
+CLAUDE.md
 
 # Other temporary/local files
 *.tmp
