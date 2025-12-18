@@ -1,32 +1,23 @@
 /**
  * Boundary Conditions - SIMD Implementation
  *
- * AVX2 and SSE2 optimized boundary condition implementations.
+ * AVX2 optimized boundary condition implementations.
  * Uses SIMD for contiguous memory operations (top/bottom boundaries).
  * Falls back to scalar for strided access (left/right boundaries).
+ *
+ * Requires AVX2 support (available on all x86-64 CPUs from 2013+).
+ * Falls back to scalar implementation when AVX2 is not available.
  */
 
 #include "../boundary_conditions_internal.h"
 
-/* SIMD detection - must match what internal header expects */
-#if defined(__AVX2__) || defined(__AVX__) || (defined(_MSC_VER) && defined(__AVX2__))
+/* AVX2 detection */
+#if defined(__AVX2__)
 #define BC_HAS_AVX2 1
-#elif defined(__SSE2__) || defined(_M_X64) || defined(_M_AMD64)
-#define BC_HAS_SSE2 1
-#endif
-
-#if defined(BC_HAS_AVX2) || defined(BC_HAS_SSE2)
-#define BC_HAS_SIMD 1
-#endif
-
-/* SIMD headers based on detected support */
-#if defined(BC_HAS_AVX2)
 #include <immintrin.h>
-#elif defined(BC_HAS_SSE2)
-#include <emmintrin.h>
 #endif
 
-#if defined(BC_HAS_SIMD)
+#if defined(BC_HAS_AVX2)
 
 /**
  * Apply Neumann boundary conditions (zero gradient) with SIMD optimization.
@@ -40,13 +31,12 @@ static void bc_apply_neumann_simd_impl(double* field, size_t nx, size_t ny) {
         field[(j * nx) + nx - 1] = field[(j * nx) + nx - 2];
     }
 
-    /* Top and bottom boundaries - contiguous memory, use SIMD */
+    /* Top and bottom boundaries - contiguous memory, use AVX2 */
     double* bottom_dst = field;
     double* bottom_src = field + nx;
     double* top_dst = field + ((ny - 1) * nx);
     double* top_src = field + ((ny - 2) * nx);
 
-#if defined(BC_HAS_AVX2)
     /* AVX2: Process 4 doubles per iteration */
     size_t simd_end = nx & ~(size_t)3;  /* Round down to multiple of 4 */
 
@@ -62,23 +52,6 @@ static void bc_apply_neumann_simd_impl(double* field, size_t nx, size_t ny) {
         bottom_dst[i] = bottom_src[i];
         top_dst[i] = top_src[i];
     }
-#elif defined(BC_HAS_SSE2)
-    /* SSE2: Process 2 doubles per iteration */
-    size_t simd_end = nx & ~(size_t)1;  /* Round down to multiple of 2 */
-
-    for (i = 0; i < simd_end; i += 2) {
-        __m128d bottom_vals = _mm_loadu_pd(bottom_src + i);
-        __m128d top_vals = _mm_loadu_pd(top_src + i);
-        _mm_storeu_pd(bottom_dst + i, bottom_vals);
-        _mm_storeu_pd(top_dst + i, top_vals);
-    }
-
-    /* Handle remaining element */
-    for (i = simd_end; i < nx; i++) {
-        bottom_dst[i] = bottom_src[i];
-        top_dst[i] = top_src[i];
-    }
-#endif
 }
 
 /**
@@ -93,13 +66,12 @@ static void bc_apply_periodic_simd_impl(double* field, size_t nx, size_t ny) {
         field[(j * nx) + nx - 1] = field[(j * nx) + 1];
     }
 
-    /* Top and bottom boundaries (periodic in y) - contiguous memory, use SIMD */
+    /* Top and bottom boundaries (periodic in y) - contiguous memory, use AVX2 */
     double* bottom_dst = field;
     double* bottom_src = field + ((ny - 2) * nx);  /* Copy from top interior */
     double* top_dst = field + ((ny - 1) * nx);
     double* top_src = field + nx;  /* Copy from bottom interior */
 
-#if defined(BC_HAS_AVX2)
     /* AVX2: Process 4 doubles per iteration */
     size_t simd_end = nx & ~(size_t)3;
 
@@ -110,26 +82,11 @@ static void bc_apply_periodic_simd_impl(double* field, size_t nx, size_t ny) {
         _mm256_storeu_pd(top_dst + i, top_vals);
     }
 
+    /* Handle remaining elements */
     for (i = simd_end; i < nx; i++) {
         bottom_dst[i] = bottom_src[i];
         top_dst[i] = top_src[i];
     }
-#elif defined(BC_HAS_SSE2)
-    /* SSE2: Process 2 doubles per iteration */
-    size_t simd_end = nx & ~(size_t)1;
-
-    for (i = 0; i < simd_end; i += 2) {
-        __m128d bottom_vals = _mm_loadu_pd(bottom_src + i);
-        __m128d top_vals = _mm_loadu_pd(top_src + i);
-        _mm_storeu_pd(bottom_dst + i, bottom_vals);
-        _mm_storeu_pd(top_dst + i, top_vals);
-    }
-
-    for (i = simd_end; i < nx; i++) {
-        bottom_dst[i] = bottom_src[i];
-        top_dst[i] = top_src[i];
-    }
-#endif
 }
 
 /**
@@ -145,11 +102,10 @@ static void bc_apply_dirichlet_simd_impl(double* field, size_t nx, size_t ny,
         field[j * nx + (nx - 1)] = values->right;
     }
 
-    /* Top and bottom boundaries - contiguous memory, use SIMD broadcast */
+    /* Top and bottom boundaries - contiguous memory, use AVX2 broadcast */
     double* bottom_row = field;
     double* top_row = field + ((ny - 1) * nx);
 
-#if defined(BC_HAS_AVX2)
     /* AVX2: Broadcast value to 4 doubles and store */
     __m256d bottom_broadcast = _mm256_set1_pd(values->bottom);
     __m256d top_broadcast = _mm256_set1_pd(values->top);
@@ -165,23 +121,6 @@ static void bc_apply_dirichlet_simd_impl(double* field, size_t nx, size_t ny,
         bottom_row[i] = values->bottom;
         top_row[i] = values->top;
     }
-#elif defined(BC_HAS_SSE2)
-    /* SSE2: Broadcast value to 2 doubles and store */
-    __m128d bottom_broadcast = _mm_set1_pd(values->bottom);
-    __m128d top_broadcast = _mm_set1_pd(values->top);
-    size_t simd_end = nx & ~(size_t)1;  /* Round down to multiple of 2 */
-
-    for (i = 0; i < simd_end; i += 2) {
-        _mm_storeu_pd(bottom_row + i, bottom_broadcast);
-        _mm_storeu_pd(top_row + i, top_broadcast);
-    }
-
-    /* Handle remaining element */
-    for (i = simd_end; i < nx; i++) {
-        bottom_row[i] = values->bottom;
-        top_row[i] = values->top;
-    }
-#endif
 }
 
 /* SIMD backend implementation table */
@@ -191,13 +130,13 @@ const bc_backend_impl_t bc_impl_simd = {
     .apply_dirichlet = bc_apply_dirichlet_simd_impl
 };
 
-#else /* !BC_HAS_SIMD */
+#else /* !BC_HAS_AVX2 */
 
-/* SIMD not available - provide empty table */
+/* AVX2 not available - provide empty table (falls back to scalar) */
 const bc_backend_impl_t bc_impl_simd = {
     .apply_neumann = NULL,
     .apply_periodic = NULL,
     .apply_dirichlet = NULL
 };
 
-#endif /* BC_HAS_SIMD */
+#endif /* BC_HAS_AVX2 */

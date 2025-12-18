@@ -3,7 +3,7 @@
  *
  * Tests the bc_apply_dirichlet_* functions across all backends:
  * - Scalar (CPU baseline)
- * - SIMD (AVX2/SSE2)
+ * - SIMD (AVX2)
  * - OpenMP
  */
 

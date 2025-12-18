@@ -63,34 +63,18 @@ double poisson_solver_get_time_ms(void);
 
 /* ============================================================================
  * SIMD DETECTION (Compile-time)
+ *
+ * SIMD implementations require AVX2 (available on x86-64 CPUs from 2013+).
+ * Falls back to scalar implementation when AVX2 is not available.
  * ============================================================================ */
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    #ifdef __AVX2__
-        #define POISSON_HAS_AVX2 1
-    #else
-        #define POISSON_HAS_AVX2 0
-    #endif
-    #ifdef __SSE2__
-        #define POISSON_HAS_SSE2 1
-    #elif defined(_M_X64) || defined(_M_AMD64)
-        /* MSVC on x64 always has SSE2 */
-        #define POISSON_HAS_SSE2 1
-    #else
-        #define POISSON_HAS_SSE2 0
-    #endif
+#if defined(__AVX2__)
+    #define POISSON_HAS_AVX2 1
 #else
     #define POISSON_HAS_AVX2 0
-    #define POISSON_HAS_SSE2 0
 #endif
 
-#ifdef __ARM_NEON
-    #define POISSON_HAS_NEON 1
-#else
-    #define POISSON_HAS_NEON 0
-#endif
-
-/* SIMD implementations currently only support AVX2 */
+/* SIMD requires AVX2 */
 #define POISSON_HAS_SIMD POISSON_HAS_AVX2
 
 #ifdef __cplusplus

@@ -17,7 +17,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] Python bindings infrastructure (cfd-python)
 - [x] Visualization library (cfd-visualization)
 - [x] Thread-safe library initialization
-- [x] SIMD Poisson solvers (Jacobi and Red-Black SOR with AVX2/SSE2)
+- [x] SIMD Poisson solvers (Jacobi and Red-Black SOR with AVX2)
 - [x] Boundary condition abstraction layer with runtime backend selection
 - [x] Neumann and Periodic boundary conditions (all backends)
 - [x] GPU boundary condition kernels (CUDA)
@@ -73,7 +73,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] Runtime backend selection (Scalar, SIMD, OpenMP, GPU)
 - [x] Neumann (zero-gradient) boundary conditions
 - [x] Periodic boundary conditions
-- [x] SIMD-optimized BC application (AVX2/SSE2)
+- [x] SIMD-optimized BC application (AVX2)
 - [x] OpenMP-parallelized BC application
 - [x] CUDA GPU BC kernels
 - [x] Dirichlet (fixed value) boundary conditions
@@ -89,7 +89,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - `lib/include/cfd/boundary/boundary_conditions.h` - Public API with backend selection
 - `lib/include/cfd/boundary/boundary_conditions_gpu.cuh` - GPU API declarations
 - `lib/src/boundary/cpu/boundary_conditions.c` - Scalar + runtime dispatch
-- `lib/src/boundary/simd/boundary_conditions_simd.c` - AVX2/SSE2 optimizations
+- `lib/src/boundary/simd/boundary_conditions_simd.c` - AVX2 optimizations
 - `lib/src/boundary/omp/boundary_conditions_omp.c` - OpenMP parallelization
 - `lib/src/boundary/gpu/boundary_conditions_gpu.cu` - CUDA kernels
 - `lib/src/boundary/boundary_conditions_internal.h` - Internal declarations
@@ -99,8 +99,8 @@ This document outlines the development roadmap for achieving a commercial-grade,
 **Implemented:**
 
 - [x] SOR (Successive Over-Relaxation) - CPU baseline
-- [x] Jacobi SIMD (`poisson_jacobi_simd.c`) - AVX2/SSE2 vectorized, fully parallelizable
-- [x] Red-Black SOR SIMD (`poisson_redblack_simd.c`) - AVX2/SSE2 with SOR convergence rate
+- [x] Jacobi SIMD (`poisson_jacobi_simd.c`) - AVX2 vectorized, fully parallelizable
+- [x] Red-Black SOR SIMD (`poisson_redblack_simd.c`) - AVX2 with SOR convergence rate
 - [x] GPU Jacobi Poisson solver (`solver_projection_jacobi_gpu.cu`)
 - [x] Integrate SIMD Poisson into projection solver (`solver_projection_simd.c`)
 

@@ -66,7 +66,7 @@ typedef enum {
 typedef enum {
     POISSON_BACKEND_AUTO,   /**< Auto-select best available */
     POISSON_BACKEND_SCALAR, /**< Scalar CPU implementation */
-    POISSON_BACKEND_SIMD,   /**< SIMD (AVX2/SSE2/NEON) */
+    POISSON_BACKEND_SIMD,   /**< SIMD (AVX2) */
     POISSON_BACKEND_OMP,    /**< OpenMP parallelized */
     POISSON_BACKEND_GPU     /**< CUDA GPU (future) */
 } poisson_solver_backend_t;
@@ -233,7 +233,7 @@ struct poisson_solver {
  * @return New solver instance, or NULL on error
  *
  * If backend is AUTO, the best available backend is selected:
- * 1. SIMD if available (AVX2/SSE2)
+ * 1. SIMD if available (AVX2)
  * 2. Scalar otherwise
  */
 CFD_LIBRARY_EXPORT poisson_solver_t* poisson_solver_create(

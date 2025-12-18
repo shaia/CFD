@@ -11,7 +11,7 @@
  *
  * Backend implementations are in separate folders:
  * - cpu/boundary_conditions_scalar.c (baseline)
- * - simd/boundary_conditions_simd.c (AVX2/SSE2)
+ * - simd/boundary_conditions_simd.c (AVX2)
  * - omp/boundary_conditions_omp.c (OpenMP)
  */
 
