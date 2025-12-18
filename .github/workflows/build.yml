@@ -632,8 +632,25 @@ jobs:
         shell: pwsh
         run: |
           cd build
-          Write-Host "Build completed successfully with CUDA support"
-          Get-ChildItem -Recurse -Filter "*.lib" | Select-Object FullName
+          Write-Host "Checking for GPU symbols in library..."
+          $libPath = "lib/Release/cfd_library.lib"
+          if (Test-Path $libPath) {
+            # Use dumpbin to check for GPU symbols
+            $symbols = & dumpbin /symbols $libPath 2>&1 | Select-String -Pattern "gpu" -CaseSensitive:$false
+            if ($symbols) {
+              Write-Host "✅ GPU symbols found in library:"
+              $symbols | Select-Object -First 10 | ForEach-Object { Write-Host $_ }
+            } else {
+              Write-Host "❌ GPU symbols NOT found in library"
+              Write-Host "Library symbols (first 30):"
+              & dumpbin /symbols $libPath 2>&1 | Select-Object -First 30 | ForEach-Object { Write-Host $_ }
+              exit 1
+            }
+          } else {
+            Write-Host "❌ Library not found at $libPath"
+            Get-ChildItem -Recurse -Filter "*.lib" | Select-Object FullName
+            exit 1
+          }
 
       - name: Generate summary
         if: always()
