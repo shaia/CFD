@@ -161,22 +161,29 @@ int main(int argc, char* argv[]) {
         /* Apply boundary conditions */
         apply_lid_driven_cavity_bc(field, lid_velocity);
 
-        /* Simple explicit update (for demonstration) */
-        /* In a real simulation, you would use projection method here */
+        /*
+         * Simplified diffusion update (for BC demonstration only).
+         *
+         * NOTE: This uses in-place updates which creates Gauss-Seidel-like
+         * behavior rather than proper explicit Euler. A correct implementation
+         * would use temporary arrays to store new values, ensuring all updates
+         * use synchronized values from time t. For proper Navier-Stokes solving,
+         * use the projection method solvers (e.g., solve_projection_method()).
+         */
+        double dx = L / (nx - 1);
+        double dy = L / (ny - 1);
+
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
                 size_t idx = j * nx + i;
 
                 /* Diffusion term (Laplacian) */
-                double dx = L / (nx - 1);
-                double dy = L / (ny - 1);
-
                 double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) / (dx * dx);
                 double d2u_dy2 = (field->u[idx + nx] - 2.0 * field->u[idx] + field->u[idx - nx]) / (dy * dy);
                 double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) / (dx * dx);
                 double d2v_dy2 = (field->v[idx + nx] - 2.0 * field->v[idx] + field->v[idx - nx]) / (dy * dy);
 
-                /* Update velocities (diffusion only for simplicity) */
+                /* Update velocities (diffusion only, in-place) */
                 field->u[idx] += dt * nu * (d2u_dx2 + d2u_dy2);
                 field->v[idx] += dt * nu * (d2v_dx2 + d2v_dy2);
             }
