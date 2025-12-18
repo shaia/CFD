@@ -530,6 +530,132 @@ jobs:
           echo "- **Compiler**: Clang" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
 
+  # OpenMP build - Test OpenMP on Windows MSVC
+  openmp-test-windows:
+    name: OpenMP (Windows MSVC)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: microsoft/setup-msbuild@v1.3
+
+      - name: Configure with OpenMP
+        shell: bash
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON
+
+      - name: Build
+        shell: bash
+        run: |
+          cd build
+          cmake --build . --config Release --parallel
+
+      - name: Verify OpenMP is enabled
+        shell: bash
+        run: |
+          cd build
+          # Run the linear solver test and check that OMP backend is available
+          OUTPUT=$(./Release/test_linear_solver.exe 2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "OMP backend available: YES"; then
+            echo "✅ OpenMP backend is correctly enabled"
+          else
+            echo "❌ ERROR: OpenMP was expected but OMP backend reports NO"
+            exit 1
+          fi
+
+      - name: Run tests
+        shell: bash
+        run: |
+          cd build
+          ctest -C Release --output-on-failure
+
+      - name: Generate summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## OpenMP (Windows MSVC) Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **OpenMP**: Enabled (MSVC built-in)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compiler**: MSVC" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
+
+  # CUDA build on Windows - Verify CUDA code compiles (optional, slow)
+  # Only runs on releases to save CI time
+  cuda-build-windows:
+    name: CUDA Build (Windows)
+    runs-on: windows-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC Developer Environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.16
+        id: cuda-toolkit
+        with:
+          cuda: '12.4.0'
+          method: 'network'
+
+      - name: Configure CMake with CUDA
+        shell: pwsh
+        run: |
+          mkdir build
+          cd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCFD_ENABLE_CUDA=ON `
+            -DBUILD_TESTS=ON `
+            -DBUILD_EXAMPLES=OFF
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cd build
+          cmake --build . --config Release --parallel
+
+      - name: Verify CUDA compilation
+        shell: cmd
+        run: |
+          cd build
+          echo Checking for GPU symbols in library...
+          if exist "lib\Release\cfd_library.lib" (
+            dumpbin /symbols lib\Release\cfd_library.lib | findstr /i "gpu" > nul
+            if %errorlevel% equ 0 (
+              echo GPU symbols found in library
+              dumpbin /symbols lib\Release\cfd_library.lib | findstr /i "gpu"
+            ) else (
+              echo GPU symbols NOT found in library
+              exit /b 1
+            )
+          ) else (
+            echo Library not found at lib\Release\cfd_library.lib
+            dir /s /b *.lib
+            exit /b 1
+          )
+
+      - name: Generate summary
+        if: always()
+        shell: pwsh
+        run: |
+          echo "## CUDA Build (Windows) Summary" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **CUDA Version:** ${{ steps.cuda-toolkit.outputs.cuda }}" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Compiler:** MSVC" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Purpose:** Verify CUDA code compiles correctly" >> $env:GITHUB_STEP_SUMMARY
+
   # Sanitizer build - Debug build with ASan and UBSan
   sanitizers:
     name: Sanitizers (Linux GCC)
@@ -640,51 +766,6 @@ jobs:
           cd build
           lcov --summary coverage.info 2>&1 | tee -a $GITHUB_STEP_SUMMARY
 
-  # API Documentation build (only on main/master branch or releases)
-  docs:
-    name: API Documentation
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.event_name == 'release'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Doxygen
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y doxygen
-
-      - name: Generate documentation
-        run: doxygen Doxyfile
-
-      - name: Verify documentation output
-        run: |
-          if [ ! -d "docs/html" ]; then
-            echo "Error: docs/html/ directory not created"
-            exit 1
-          fi
-          if [ ! -f "docs/html/index.html" ]; then
-            echo "Error: docs/html/index.html not found"
-            exit 1
-          fi
-          echo "Documentation generated successfully"
-          ls -la docs/html/ | head -20
-
-      - name: Upload documentation
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-docs
-          path: docs/html/
-          retention-days: ${{ inputs.retention_days }}
-
-      - name: Generate summary
-        run: |
-          echo "## API Documentation" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Doxygen documentation generated successfully." >> $GITHUB_STEP_SUMMARY
-          echo "Download the 'api-docs' artifact to view." >> $GITHUB_STEP_SUMMARY
-
   # CUDA build - Verify CUDA code compiles (no GPU hardware on CI runners)
   cuda-build:
     name: CUDA Build (Linux)
@@ -744,26 +825,78 @@ jobs:
   build-status:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: [build-matrix, simd-test-linux, simd-test-windows, openmp-test-linux, openmp-test-clang, cuda-build, sanitizers, coverage, docs]
+    needs:
+      - build-matrix
+      - simd-test-linux
+      - simd-test-windows
+      - openmp-test-linux
+      - openmp-test-clang
+      - openmp-test-windows
+      - cuda-build
+      - cuda-build-windows
+      - sanitizers
+      - coverage
     if: always()
 
     steps:
       - name: Check build results
         run: |
-          # docs job may be skipped on feature branches, so treat 'skipped' as success
-          DOCS_OK="${{ needs.docs.result == 'success' || needs.docs.result == 'skipped' }}"
-          SIMD_LINUX_OK="${{ needs.simd-test-linux.result == 'success' }}"
-          SIMD_WINDOWS_OK="${{ needs.simd-test-windows.result == 'success' }}"
-          OMP_GCC_OK="${{ needs.openmp-test-linux.result == 'success' }}"
-          OMP_CLANG_OK="${{ needs.openmp-test-clang.result == 'success' }}"
-          CUDA_OK="${{ needs.cuda-build.result == 'success' }}"
-          if [[ "${{ needs.build-matrix.result }}" == "success" && "$SIMD_LINUX_OK" == "true" && "$SIMD_WINDOWS_OK" == "true" && "$OMP_GCC_OK" == "true" && "$OMP_CLANG_OK" == "true" && "$CUDA_OK" == "true" && "${{ needs.sanitizers.result }}" == "success" && "${{ needs.coverage.result }}" == "success" && "$DOCS_OK" == "true" ]]; then
+          # Track overall status
+          ALL_PASSED=true
+
+          # Check each job and report status
+          echo "## Build Status Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check required job (must pass)
+          check_job() {
+            local name="$1"
+            local result="$2"
+            if [[ "$result" == "success" ]]; then
+              echo "✅ $name: passed"
+              echo "- ✅ **$name**: passed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ $name: $result"
+              echo "- ❌ **$name**: $result" >> $GITHUB_STEP_SUMMARY
+              ALL_PASSED=false
+            fi
+          }
+
+          # Check optional job (skipped is OK)
+          check_optional_job() {
+            local name="$1"
+            local result="$2"
+            if [[ "$result" == "success" ]]; then
+              echo "✅ $name: passed"
+              echo "- ✅ **$name**: passed" >> $GITHUB_STEP_SUMMARY
+            elif [[ "$result" == "skipped" ]]; then
+              echo "⏭️ $name: skipped"
+              echo "- ⏭️ **$name**: skipped (optional)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ $name: $result"
+              echo "- ❌ **$name**: $result" >> $GITHUB_STEP_SUMMARY
+              ALL_PASSED=false
+            fi
+          }
+
+          check_job "Build Matrix" "${{ needs.build-matrix.result }}"
+          check_job "SIMD (Linux)" "${{ needs.simd-test-linux.result }}"
+          check_job "SIMD (Windows)" "${{ needs.simd-test-windows.result }}"
+          check_job "OpenMP (Linux GCC)" "${{ needs.openmp-test-linux.result }}"
+          check_job "OpenMP (Linux Clang)" "${{ needs.openmp-test-clang.result }}"
+          check_job "OpenMP (Windows)" "${{ needs.openmp-test-windows.result }}"
+          check_job "CUDA (Linux)" "${{ needs.cuda-build.result }}"
+          check_optional_job "CUDA (Windows)" "${{ needs.cuda-build-windows.result }}"
+          check_job "Sanitizers" "${{ needs.sanitizers.result }}"
+          check_job "Coverage" "${{ needs.coverage.result }}"
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$ALL_PASSED" == "true" ]]; then
             echo "✅ All builds passed successfully!"
-            echo "Build Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
-            echo "All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
+            echo "**Result: SUCCESS** - All platforms built and tested successfully." >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ One or more builds failed!"
-            echo "Build Status: FAILED" >> $GITHUB_STEP_SUMMARY
-            echo "Check individual build jobs for details." >> $GITHUB_STEP_SUMMARY
+            echo "**Result: FAILED** - Check individual build jobs for details." >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
