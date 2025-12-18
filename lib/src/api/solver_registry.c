@@ -809,8 +809,9 @@ static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const
         return CFD_ERROR_INVALID;
     }
 
-    // GPU not available
-    fprintf(stderr, "GPU Euler step: GPU not available (compiled without CUDA support)\n");
+    // GPU not available - could be: CUDA not compiled in, gpu_should_use() returned false,
+    // or GPU initialization failed
+    fprintf(stderr, "GPU Euler step: GPU solver not initialized\n");
     return CFD_ERROR_UNSUPPORTED;
 }
 
@@ -847,8 +848,9 @@ static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, cons
         return CFD_SUCCESS;
     }
 
-    // GPU not available
-    fprintf(stderr, "GPU Euler solve: GPU not available (compiled without CUDA support)\n");
+    // GPU not available - could be: CUDA not compiled in, gpu_should_use() returned false,
+    // or GPU initialization failed
+    fprintf(stderr, "GPU Euler solve: GPU solver not initialized\n");
     return CFD_ERROR_UNSUPPORTED;
 }
 
