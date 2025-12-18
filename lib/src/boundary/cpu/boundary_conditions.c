@@ -16,6 +16,7 @@
  */
 
 #include "../boundary_conditions_internal.h"
+#include "cfd/core/cfd_status.h"
 #include "cfd/core/logging.h"
 #include <stdbool.h>
 #include <stdio.h>
@@ -192,27 +193,23 @@ bool bc_set_backend(bc_backend_t backend) {
  * Internal Dispatch Helpers
  * ============================================================================ */
 
-static void apply_neumann_with_backend(double* field, size_t nx, size_t ny, bc_backend_t backend) {
+static cfd_status_t apply_neumann_with_backend(double* field, size_t nx, size_t ny, bc_backend_t backend) {
     switch (backend) {
         case BC_BACKEND_SCALAR:
             bc_apply_neumann_scalar_impl(field, nx, ny);
-            break;
+            return CFD_SUCCESS;
 
-        case BC_BACKEND_SIMD:
 #ifdef BC_HAS_SIMD
+        case BC_BACKEND_SIMD:
             bc_apply_neumann_simd_impl(field, nx, ny);
-#else
-            fprintf(stderr, "BC SIMD backend: AVX2 not available (compiled without AVX2 support)\n");
+            return CFD_SUCCESS;
 #endif
-            break;
 
-        case BC_BACKEND_OMP:
 #ifdef CFD_ENABLE_OPENMP
+        case BC_BACKEND_OMP:
             bc_apply_neumann_omp_impl(field, nx, ny);
-#else
-            fprintf(stderr, "BC OMP backend: OpenMP not available (compiled without OpenMP support)\n");
+            return CFD_SUCCESS;
 #endif
-            break;
 
         case BC_BACKEND_AUTO:
         default:
@@ -224,31 +221,27 @@ static void apply_neumann_with_backend(double* field, size_t nx, size_t ny, bc_b
 #else
             bc_apply_neumann_scalar_impl(field, nx, ny);
 #endif
-            break;
+            return CFD_SUCCESS;
     }
 }
 
-static void apply_periodic_with_backend(double* field, size_t nx, size_t ny, bc_backend_t backend) {
+static cfd_status_t apply_periodic_with_backend(double* field, size_t nx, size_t ny, bc_backend_t backend) {
     switch (backend) {
         case BC_BACKEND_SCALAR:
             bc_apply_periodic_scalar_impl(field, nx, ny);
-            break;
+            return CFD_SUCCESS;
 
-        case BC_BACKEND_SIMD:
 #ifdef BC_HAS_SIMD
+        case BC_BACKEND_SIMD:
             bc_apply_periodic_simd_impl(field, nx, ny);
-#else
-            fprintf(stderr, "BC SIMD backend: AVX2 not available (compiled without AVX2 support)\n");
+            return CFD_SUCCESS;
 #endif
-            break;
 
-        case BC_BACKEND_OMP:
 #ifdef CFD_ENABLE_OPENMP
+        case BC_BACKEND_OMP:
             bc_apply_periodic_omp_impl(field, nx, ny);
-#else
-            fprintf(stderr, "BC OMP backend: OpenMP not available (compiled without OpenMP support)\n");
+            return CFD_SUCCESS;
 #endif
-            break;
 
         case BC_BACKEND_AUTO:
         default:
@@ -259,33 +252,29 @@ static void apply_periodic_with_backend(double* field, size_t nx, size_t ny, bc_
 #else
             bc_apply_periodic_scalar_impl(field, nx, ny);
 #endif
-            break;
+            return CFD_SUCCESS;
     }
 }
 
-static void apply_dirichlet_with_backend(double* field, size_t nx, size_t ny,
-                                          const bc_dirichlet_values_t* values,
-                                          bc_backend_t backend) {
+static cfd_status_t apply_dirichlet_with_backend(double* field, size_t nx, size_t ny,
+                                                  const bc_dirichlet_values_t* values,
+                                                  bc_backend_t backend) {
     switch (backend) {
         case BC_BACKEND_SCALAR:
             bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
-            break;
+            return CFD_SUCCESS;
 
-        case BC_BACKEND_SIMD:
 #ifdef BC_HAS_SIMD
+        case BC_BACKEND_SIMD:
             bc_apply_dirichlet_simd_impl(field, nx, ny, values);
-#else
-            fprintf(stderr, "BC SIMD backend: AVX2 not available (compiled without AVX2 support)\n");
+            return CFD_SUCCESS;
 #endif
-            break;
 
-        case BC_BACKEND_OMP:
 #ifdef CFD_ENABLE_OPENMP
+        case BC_BACKEND_OMP:
             bc_apply_dirichlet_omp_impl(field, nx, ny, values);
-#else
-            fprintf(stderr, "BC OMP backend: OpenMP not available (compiled without OpenMP support)\n");
+            return CFD_SUCCESS;
 #endif
-            break;
 
         case BC_BACKEND_AUTO:
         default:
@@ -296,48 +285,41 @@ static void apply_dirichlet_with_backend(double* field, size_t nx, size_t ny,
 #else
             bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
 #endif
-            break;
+            return CFD_SUCCESS;
     }
 }
 
-static void apply_scalar_field_bc(double* field, size_t nx, size_t ny, bc_type_t type, bc_backend_t backend) {
+static cfd_status_t apply_scalar_field_bc(double* field, size_t nx, size_t ny, bc_type_t type, bc_backend_t backend) {
     if (!field || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
 
     switch (type) {
         case BC_TYPE_NEUMANN:
-            apply_neumann_with_backend(field, nx, ny, backend);
-            break;
+            return apply_neumann_with_backend(field, nx, ny, backend);
 
         case BC_TYPE_PERIODIC:
-            apply_periodic_with_backend(field, nx, ny, backend);
-            break;
+            return apply_periodic_with_backend(field, nx, ny, backend);
 
         case BC_TYPE_DIRICHLET:
-            cfd_warning("BC_TYPE_DIRICHLET requires bc_apply_dirichlet_*() functions with values, falling back to Neumann");
-            apply_neumann_with_backend(field, nx, ny, backend);
-            break;
+            cfd_warning("BC_TYPE_DIRICHLET requires bc_apply_dirichlet_*() functions with values");
+            return CFD_ERROR_INVALID;
 
         case BC_TYPE_NOSLIP:
-            cfd_warning("BC_TYPE_NOSLIP not implemented, falling back to Neumann");
-            apply_neumann_with_backend(field, nx, ny, backend);
-            break;
+            cfd_warning("BC_TYPE_NOSLIP not implemented");
+            return CFD_ERROR_UNSUPPORTED;
 
         case BC_TYPE_INLET:
-            cfd_warning("BC_TYPE_INLET not implemented, falling back to Neumann");
-            apply_neumann_with_backend(field, nx, ny, backend);
-            break;
+            cfd_warning("BC_TYPE_INLET not implemented");
+            return CFD_ERROR_UNSUPPORTED;
 
         case BC_TYPE_OUTLET:
-            cfd_warning("BC_TYPE_OUTLET not implemented, falling back to Neumann");
-            apply_neumann_with_backend(field, nx, ny, backend);
-            break;
+            cfd_warning("BC_TYPE_OUTLET not implemented");
+            return CFD_ERROR_UNSUPPORTED;
 
         default:
-            cfd_warning("Unknown BC type requested, falling back to Neumann");
-            apply_neumann_with_backend(field, nx, ny, backend);
-            break;
+            cfd_warning("Unknown BC type requested");
+            return CFD_ERROR_INVALID;
     }
 }
 
@@ -345,132 +327,196 @@ static void apply_scalar_field_bc(double* field, size_t nx, size_t ny, bc_type_t
  * Public API - Global Backend
  * ============================================================================ */
 
-void bc_apply_scalar(double* field, size_t nx, size_t ny, bc_type_t type) {
-    apply_scalar_field_bc(field, nx, ny, type, g_current_backend);
+cfd_status_t bc_apply_scalar(double* field, size_t nx, size_t ny, bc_type_t type) {
+    return apply_scalar_field_bc(field, nx, ny, type, g_current_backend);
 }
 
-void bc_apply_velocity(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
+cfd_status_t bc_apply_velocity(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
     if (!u || !v || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_scalar_field_bc(u, nx, ny, type, g_current_backend);
-    apply_scalar_field_bc(v, nx, ny, type, g_current_backend);
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, type, g_current_backend);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_scalar_field_bc(v, nx, ny, type, g_current_backend);
 }
 
 /* ============================================================================
  * Public API - Explicit Backend Selection
  * ============================================================================ */
 
-void bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t type) {
-    apply_scalar_field_bc(field, nx, ny, type, BC_BACKEND_SCALAR);
+cfd_status_t bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t type) {
+    return apply_scalar_field_bc(field, nx, ny, type, BC_BACKEND_SCALAR);
 }
 
-void bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type) {
-    apply_scalar_field_bc(field, nx, ny, type, BC_BACKEND_SIMD);
+cfd_status_t bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type) {
+#ifdef BC_HAS_SIMD
+    return apply_scalar_field_bc(field, nx, ny, type, BC_BACKEND_SIMD);
+#else
+    (void)field; (void)nx; (void)ny; (void)type;
+    return CFD_ERROR_UNSUPPORTED;
+#endif
 }
 
-void bc_apply_scalar_omp(double* field, size_t nx, size_t ny, bc_type_t type) {
-    apply_scalar_field_bc(field, nx, ny, type, BC_BACKEND_OMP);
+cfd_status_t bc_apply_scalar_omp(double* field, size_t nx, size_t ny, bc_type_t type) {
+#ifdef CFD_ENABLE_OPENMP
+    return apply_scalar_field_bc(field, nx, ny, type, BC_BACKEND_OMP);
+#else
+    (void)field; (void)nx; (void)ny; (void)type;
+    return CFD_ERROR_UNSUPPORTED;
+#endif
 }
 
-void bc_apply_velocity_cpu(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
+cfd_status_t bc_apply_velocity_cpu(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
     if (!u || !v || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_scalar_field_bc(u, nx, ny, type, BC_BACKEND_SCALAR);
-    apply_scalar_field_bc(v, nx, ny, type, BC_BACKEND_SCALAR);
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, type, BC_BACKEND_SCALAR);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_scalar_field_bc(v, nx, ny, type, BC_BACKEND_SCALAR);
 }
 
-void bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
+cfd_status_t bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
+#ifdef BC_HAS_SIMD
     if (!u || !v || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_scalar_field_bc(u, nx, ny, type, BC_BACKEND_SIMD);
-    apply_scalar_field_bc(v, nx, ny, type, BC_BACKEND_SIMD);
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, type, BC_BACKEND_SIMD);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_scalar_field_bc(v, nx, ny, type, BC_BACKEND_SIMD);
+#else
+    (void)u; (void)v; (void)nx; (void)ny; (void)type;
+    return CFD_ERROR_UNSUPPORTED;
+#endif
 }
 
-void bc_apply_velocity_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
+cfd_status_t bc_apply_velocity_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
+#ifdef CFD_ENABLE_OPENMP
     if (!u || !v || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_scalar_field_bc(u, nx, ny, type, BC_BACKEND_OMP);
-    apply_scalar_field_bc(v, nx, ny, type, BC_BACKEND_OMP);
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, type, BC_BACKEND_OMP);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_scalar_field_bc(v, nx, ny, type, BC_BACKEND_OMP);
+#else
+    (void)u; (void)v; (void)nx; (void)ny; (void)type;
+    return CFD_ERROR_UNSUPPORTED;
+#endif
 }
 
 /* ============================================================================
  * Public API - Dirichlet Boundary Conditions
  * ============================================================================ */
 
-void bc_apply_dirichlet_scalar(double* field, size_t nx, size_t ny,
-                                const bc_dirichlet_values_t* values) {
+cfd_status_t bc_apply_dirichlet_scalar(double* field, size_t nx, size_t ny,
+                                        const bc_dirichlet_values_t* values) {
     if (!field || !values || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_dirichlet_with_backend(field, nx, ny, values, g_current_backend);
+    return apply_dirichlet_with_backend(field, nx, ny, values, g_current_backend);
 }
 
-void bc_apply_dirichlet_velocity(double* u, double* v, size_t nx, size_t ny,
-                                  const bc_dirichlet_values_t* u_values,
-                                  const bc_dirichlet_values_t* v_values) {
+cfd_status_t bc_apply_dirichlet_velocity(double* u, double* v, size_t nx, size_t ny,
+                                          const bc_dirichlet_values_t* u_values,
+                                          const bc_dirichlet_values_t* v_values) {
     if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_dirichlet_with_backend(u, nx, ny, u_values, g_current_backend);
-    apply_dirichlet_with_backend(v, nx, ny, v_values, g_current_backend);
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, u_values, g_current_backend);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_dirichlet_with_backend(v, nx, ny, v_values, g_current_backend);
 }
 
 /* Backend-specific Dirichlet implementations */
 
-void bc_apply_dirichlet_scalar_cpu(double* field, size_t nx, size_t ny,
-                                    const bc_dirichlet_values_t* values) {
+cfd_status_t bc_apply_dirichlet_scalar_cpu(double* field, size_t nx, size_t ny,
+                                            const bc_dirichlet_values_t* values) {
     if (!field || !values || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_dirichlet_with_backend(field, nx, ny, values, BC_BACKEND_SCALAR);
+    return apply_dirichlet_with_backend(field, nx, ny, values, BC_BACKEND_SCALAR);
 }
 
-void bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
-                                     const bc_dirichlet_values_t* values) {
+cfd_status_t bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
+                                             const bc_dirichlet_values_t* values) {
+#ifdef BC_HAS_SIMD
     if (!field || !values || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_dirichlet_with_backend(field, nx, ny, values, BC_BACKEND_SIMD);
+    return apply_dirichlet_with_backend(field, nx, ny, values, BC_BACKEND_SIMD);
+#else
+    (void)field; (void)nx; (void)ny; (void)values;
+    return CFD_ERROR_UNSUPPORTED;
+#endif
 }
 
-void bc_apply_dirichlet_scalar_omp(double* field, size_t nx, size_t ny,
-                                    const bc_dirichlet_values_t* values) {
+cfd_status_t bc_apply_dirichlet_scalar_omp(double* field, size_t nx, size_t ny,
+                                            const bc_dirichlet_values_t* values) {
+#ifdef CFD_ENABLE_OPENMP
     if (!field || !values || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_dirichlet_with_backend(field, nx, ny, values, BC_BACKEND_OMP);
+    return apply_dirichlet_with_backend(field, nx, ny, values, BC_BACKEND_OMP);
+#else
+    (void)field; (void)nx; (void)ny; (void)values;
+    return CFD_ERROR_UNSUPPORTED;
+#endif
 }
 
-void bc_apply_dirichlet_velocity_cpu(double* u, double* v, size_t nx, size_t ny,
-                                      const bc_dirichlet_values_t* u_values,
-                                      const bc_dirichlet_values_t* v_values) {
+cfd_status_t bc_apply_dirichlet_velocity_cpu(double* u, double* v, size_t nx, size_t ny,
+                                              const bc_dirichlet_values_t* u_values,
+                                              const bc_dirichlet_values_t* v_values) {
     if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_dirichlet_with_backend(u, nx, ny, u_values, BC_BACKEND_SCALAR);
-    apply_dirichlet_with_backend(v, nx, ny, v_values, BC_BACKEND_SCALAR);
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, u_values, BC_BACKEND_SCALAR);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_dirichlet_with_backend(v, nx, ny, v_values, BC_BACKEND_SCALAR);
 }
 
-void bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
-                                       const bc_dirichlet_values_t* u_values,
-                                       const bc_dirichlet_values_t* v_values) {
+cfd_status_t bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
+                                               const bc_dirichlet_values_t* u_values,
+                                               const bc_dirichlet_values_t* v_values) {
+#ifdef BC_HAS_SIMD
     if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_dirichlet_with_backend(u, nx, ny, u_values, BC_BACKEND_SIMD);
-    apply_dirichlet_with_backend(v, nx, ny, v_values, BC_BACKEND_SIMD);
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, u_values, BC_BACKEND_SIMD);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_dirichlet_with_backend(v, nx, ny, v_values, BC_BACKEND_SIMD);
+#else
+    (void)u; (void)v; (void)nx; (void)ny; (void)u_values; (void)v_values;
+    return CFD_ERROR_UNSUPPORTED;
+#endif
 }
 
-void bc_apply_dirichlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
-                                      const bc_dirichlet_values_t* u_values,
-                                      const bc_dirichlet_values_t* v_values) {
+cfd_status_t bc_apply_dirichlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
+                                              const bc_dirichlet_values_t* u_values,
+                                              const bc_dirichlet_values_t* v_values) {
+#ifdef CFD_ENABLE_OPENMP
     if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
-        return;
+        return CFD_ERROR_INVALID;
     }
-    apply_dirichlet_with_backend(u, nx, ny, u_values, BC_BACKEND_OMP);
-    apply_dirichlet_with_backend(v, nx, ny, v_values, BC_BACKEND_OMP);
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, u_values, BC_BACKEND_OMP);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_dirichlet_with_backend(v, nx, ny, v_values, BC_BACKEND_OMP);
+#else
+    (void)u; (void)v; (void)nx; (void)ny; (void)u_values; (void)v_values;
+    return CFD_ERROR_UNSUPPORTED;
+#endif
 }

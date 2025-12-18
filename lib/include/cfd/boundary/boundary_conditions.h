@@ -2,6 +2,7 @@
 #define CFD_BOUNDARY_CONDITIONS_H
 
 #include "cfd/cfd_export.h"
+#include "cfd/core/cfd_status.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -58,8 +59,9 @@ typedef struct {
  * @param nx    Number of grid points in x-direction
  * @param ny    Number of grid points in y-direction
  * @param type  Type of boundary condition to apply
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_scalar(double* field, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar(double* field, size_t nx, size_t ny, bc_type_t type);
 
 /**
  * Apply boundary conditions to velocity components (u, v arrays)
@@ -69,8 +71,9 @@ CFD_LIBRARY_EXPORT void bc_apply_scalar(double* field, size_t nx, size_t ny, bc_
  * @param nx    Number of grid points in x-direction
  * @param ny    Number of grid points in y-direction
  * @param type  Type of boundary condition to apply
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_velocity(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
 
 /* ============================================================================
  * Convenience Macros
@@ -157,35 +160,41 @@ CFD_LIBRARY_EXPORT bool bc_backend_available(bc_backend_t backend);
 /**
  * Apply boundary conditions using scalar implementation.
  * Always available.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t type);
 
 /**
  * Apply boundary conditions using SIMD implementation (AVX2/SSE2).
- * Falls back to scalar if SIMD not available.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD not available.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type);
 
 /**
  * Apply boundary conditions using OpenMP implementation.
- * Falls back to scalar if OpenMP not available.
+ * Returns CFD_ERROR_UNSUPPORTED if OpenMP not available.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_scalar_omp(double* field, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_omp(double* field, size_t nx, size_t ny, bc_type_t type);
 
 /**
  * Apply velocity boundary conditions using scalar implementation.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_velocity_cpu(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_cpu(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
 
 /**
  * Apply velocity boundary conditions using SIMD implementation.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
 
 /**
  * Apply velocity boundary conditions using OpenMP implementation.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_velocity_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
 
 /* ============================================================================
  * Dirichlet Boundary Conditions API
@@ -209,9 +218,10 @@ CFD_LIBRARY_EXPORT void bc_apply_velocity_omp(double* u, double* v, size_t nx, s
  * @param nx     Number of grid points in x-direction
  * @param ny     Number of grid points in y-direction
  * @param values Pointer to struct containing boundary values
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_dirichlet_scalar(double* field, size_t nx, size_t ny,
-                                                   const bc_dirichlet_values_t* values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar(double* field, size_t nx, size_t ny,
+                                                           const bc_dirichlet_values_t* values);
 
 /**
  * Apply Dirichlet boundary conditions to velocity components (u, v).
@@ -222,54 +232,61 @@ CFD_LIBRARY_EXPORT void bc_apply_dirichlet_scalar(double* field, size_t nx, size
  * @param ny       Number of grid points in y-direction
  * @param u_values Pointer to struct containing u-velocity boundary values
  * @param v_values Pointer to struct containing v-velocity boundary values
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_dirichlet_velocity(double* u, double* v, size_t nx, size_t ny,
-                                                     const bc_dirichlet_values_t* u_values,
-                                                     const bc_dirichlet_values_t* v_values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity(double* u, double* v, size_t nx, size_t ny,
+                                                             const bc_dirichlet_values_t* u_values,
+                                                             const bc_dirichlet_values_t* v_values);
 
 /* Backend-specific Dirichlet implementations */
 
 /**
  * Apply Dirichlet boundary conditions using scalar implementation.
  * Always available.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_dirichlet_scalar_cpu(double* field, size_t nx, size_t ny,
-                                                       const bc_dirichlet_values_t* values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_cpu(double* field, size_t nx, size_t ny,
+                                                               const bc_dirichlet_values_t* values);
 
 /**
  * Apply Dirichlet boundary conditions using SIMD implementation (AVX2/SSE2).
- * Falls back to scalar if SIMD not available.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD not available.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
-                                                        const bc_dirichlet_values_t* values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
+                                                                const bc_dirichlet_values_t* values);
 
 /**
  * Apply Dirichlet boundary conditions using OpenMP implementation.
- * Falls back to scalar if OpenMP not available.
+ * Returns CFD_ERROR_UNSUPPORTED if OpenMP not available.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_dirichlet_scalar_omp(double* field, size_t nx, size_t ny,
-                                                       const bc_dirichlet_values_t* values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_omp(double* field, size_t nx, size_t ny,
+                                                               const bc_dirichlet_values_t* values);
 
 /**
  * Apply Dirichlet velocity boundary conditions using scalar implementation.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_dirichlet_velocity_cpu(double* u, double* v, size_t nx, size_t ny,
-                                                         const bc_dirichlet_values_t* u_values,
-                                                         const bc_dirichlet_values_t* v_values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_cpu(double* u, double* v, size_t nx, size_t ny,
+                                                                 const bc_dirichlet_values_t* u_values,
+                                                                 const bc_dirichlet_values_t* v_values);
 
 /**
  * Apply Dirichlet velocity boundary conditions using SIMD implementation.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
-                                                          const bc_dirichlet_values_t* u_values,
-                                                          const bc_dirichlet_values_t* v_values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
+                                                                  const bc_dirichlet_values_t* u_values,
+                                                                  const bc_dirichlet_values_t* v_values);
 
 /**
  * Apply Dirichlet velocity boundary conditions using OpenMP implementation.
+ * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT void bc_apply_dirichlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
-                                                         const bc_dirichlet_values_t* u_values,
-                                                         const bc_dirichlet_values_t* v_values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
+                                                                 const bc_dirichlet_values_t* u_values,
+                                                                 const bc_dirichlet_values_t* v_values);
 
 /**
  * Convenience macro for applying Dirichlet BCs to a scalar field.
