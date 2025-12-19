@@ -41,9 +41,28 @@
 #include <stdio.h>
 
 /* ============================================================================
- * Helper: Report error and fall back to scalar
+ * Helper: Get SIMD backend based on runtime detection
+ *
+ * Returns the appropriate backend implementation table (AVX2 or NEON) based
+ * on runtime CPU detection. Returns NULL if no SIMD backend is available.
  * ============================================================================ */
 
+static const bc_backend_impl_t* get_simd_backend(void) {
+    cfd_simd_arch_t arch = cfd_detect_simd_arch();
+
+    if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_neumann != NULL) {
+        return &bc_impl_avx2_omp;
+    }
+    if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_neumann != NULL) {
+        return &bc_impl_neon_omp;
+    }
+    return NULL;
+}
+
+/**
+ * Report error when SIMD backend is unavailable.
+ * Called as a programming error fallback - callers should check availability first.
+ */
 static void report_no_simd_error(const char* function) {
     char message[128];
     snprintf(message, sizeof(message),
@@ -57,58 +76,36 @@ static void report_no_simd_error(const char* function) {
 /* ============================================================================
  * Runtime Dispatching Functions
  *
- * These functions check the detected architecture and delegate to the
- * appropriate backend (AVX2 or NEON) at runtime.
+ * These functions use get_simd_backend() for unified dispatch logic.
  * ============================================================================ */
 
 static void bc_simd_omp_neumann(double* field, size_t nx, size_t ny) {
-    cfd_simd_arch_t arch = cfd_detect_simd_arch();
-
-    if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_neumann != NULL) {
-        bc_impl_avx2_omp.apply_neumann(field, nx, ny);
+    const bc_backend_impl_t* impl = get_simd_backend();
+    if (impl != NULL) {
+        impl->apply_neumann(field, nx, ny);
         return;
     }
-    if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_neumann != NULL) {
-        bc_impl_neon_omp.apply_neumann(field, nx, ny);
-        return;
-    }
-
-    /* No SIMD backend available - report error and fall back to scalar */
     report_no_simd_error("bc_simd_omp_neumann");
     bc_apply_neumann_scalar_impl(field, nx, ny);
 }
 
 static void bc_simd_omp_periodic(double* field, size_t nx, size_t ny) {
-    cfd_simd_arch_t arch = cfd_detect_simd_arch();
-
-    if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_periodic != NULL) {
-        bc_impl_avx2_omp.apply_periodic(field, nx, ny);
+    const bc_backend_impl_t* impl = get_simd_backend();
+    if (impl != NULL) {
+        impl->apply_periodic(field, nx, ny);
         return;
     }
-    if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_periodic != NULL) {
-        bc_impl_neon_omp.apply_periodic(field, nx, ny);
-        return;
-    }
-
-    /* No SIMD backend available - report error and fall back to scalar */
     report_no_simd_error("bc_simd_omp_periodic");
     bc_apply_periodic_scalar_impl(field, nx, ny);
 }
 
 static void bc_simd_omp_dirichlet(double* field, size_t nx, size_t ny,
                                    const bc_dirichlet_values_t* values) {
-    cfd_simd_arch_t arch = cfd_detect_simd_arch();
-
-    if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_dirichlet != NULL) {
-        bc_impl_avx2_omp.apply_dirichlet(field, nx, ny, values);
+    const bc_backend_impl_t* impl = get_simd_backend();
+    if (impl != NULL) {
+        impl->apply_dirichlet(field, nx, ny, values);
         return;
     }
-    if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_dirichlet != NULL) {
-        bc_impl_neon_omp.apply_dirichlet(field, nx, ny, values);
-        return;
-    }
-
-    /* No SIMD backend available - report error and fall back to scalar */
     report_no_simd_error("bc_simd_omp_dirichlet");
     bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
 }
