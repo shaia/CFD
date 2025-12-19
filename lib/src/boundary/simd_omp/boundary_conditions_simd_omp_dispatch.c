@@ -11,11 +11,18 @@
  * - neon/boundary_conditions_neon_omp.c
  *
  * Runtime detection is provided by the cpu_features module.
+ *
+ * IMPORTANT: These dispatcher functions will abort if called when no SIMD
+ * backend is available. Callers MUST check bc_simd_omp_backend_available()
+ * before using this backend. This is a programming error, not a runtime error.
  */
 
 #include "../boundary_conditions_internal.h"
 #include "cfd/core/cpu_features.h"
 #include <stdbool.h>
+#include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 /* ============================================================================
  * Runtime Dispatching Functions
@@ -29,10 +36,20 @@ static void bc_simd_omp_neumann(double* field, size_t nx, size_t ny) {
 
     if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_neumann != NULL) {
         bc_impl_avx2_omp.apply_neumann(field, nx, ny);
-    } else if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_neumann != NULL) {
-        bc_impl_neon_omp.apply_neumann(field, nx, ny);
+        return;
     }
-    /* If no SIMD available, caller should check bc_impl_simd_omp for NULL */
+    if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_neumann != NULL) {
+        bc_impl_neon_omp.apply_neumann(field, nx, ny);
+        return;
+    }
+
+    /* No SIMD backend available - this is a programming error.
+     * Caller should have checked bc_simd_omp_backend_available() first. */
+    fprintf(stderr, "FATAL: SIMD+OMP neumann called but no SIMD backend available "
+                    "(detected arch: %s). Check bc_simd_omp_backend_available() "
+                    "before using BC_BACKEND_SIMD_OMP.\n", cfd_get_simd_name());
+    assert(0 && "SIMD+OMP backend called without available implementation");
+    abort();
 }
 
 static void bc_simd_omp_periodic(double* field, size_t nx, size_t ny) {
@@ -40,9 +57,19 @@ static void bc_simd_omp_periodic(double* field, size_t nx, size_t ny) {
 
     if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_periodic != NULL) {
         bc_impl_avx2_omp.apply_periodic(field, nx, ny);
-    } else if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_periodic != NULL) {
-        bc_impl_neon_omp.apply_periodic(field, nx, ny);
+        return;
     }
+    if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_periodic != NULL) {
+        bc_impl_neon_omp.apply_periodic(field, nx, ny);
+        return;
+    }
+
+    /* No SIMD backend available - this is a programming error. */
+    fprintf(stderr, "FATAL: SIMD+OMP periodic called but no SIMD backend available "
+                    "(detected arch: %s). Check bc_simd_omp_backend_available() "
+                    "before using BC_BACKEND_SIMD_OMP.\n", cfd_get_simd_name());
+    assert(0 && "SIMD+OMP backend called without available implementation");
+    abort();
 }
 
 static void bc_simd_omp_dirichlet(double* field, size_t nx, size_t ny,
@@ -51,9 +78,19 @@ static void bc_simd_omp_dirichlet(double* field, size_t nx, size_t ny,
 
     if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_dirichlet != NULL) {
         bc_impl_avx2_omp.apply_dirichlet(field, nx, ny, values);
-    } else if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_dirichlet != NULL) {
-        bc_impl_neon_omp.apply_dirichlet(field, nx, ny, values);
+        return;
     }
+    if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_dirichlet != NULL) {
+        bc_impl_neon_omp.apply_dirichlet(field, nx, ny, values);
+        return;
+    }
+
+    /* No SIMD backend available - this is a programming error. */
+    fprintf(stderr, "FATAL: SIMD+OMP dirichlet called but no SIMD backend available "
+                    "(detected arch: %s). Check bc_simd_omp_backend_available() "
+                    "before using BC_BACKEND_SIMD_OMP.\n", cfd_get_simd_name());
+    assert(0 && "SIMD+OMP backend called without available implementation");
+    abort();
 }
 
 /* ============================================================================
