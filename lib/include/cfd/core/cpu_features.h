@@ -28,11 +28,19 @@ typedef enum {
 /**
  * Detect the best available SIMD architecture at runtime.
  *
- * On x86/x64: Uses CPUID to check for AVX2 support.
- * On ARM64: NEON is always available.
+ * On x86/x64: Verifies both CPU and OS support for AVX2:
+ *   1. CPUID leaf 7 EBX bit 5 for CPU AVX2 support
+ *   2. OSXSAVE enabled (CPUID leaf 1 ECX bit 27)
+ *   3. XCR0 bits 1-2 set (OS saves AVX state on context switch)
+ *   AVX2 is only reported if all three conditions are met. This prevents
+ *   illegal instruction exceptions on systems where the OS hasn't enabled
+ *   AVX state saving.
+ *
+ * On ARM64: NEON is always available (mandatory in ARMv8-A).
+ *
  * On other platforms: Returns CFD_SIMD_NONE.
  *
- * The result is cached after the first call for performance.
+ * The result is cached after the first call. Thread-safe.
  *
  * @return The detected SIMD architecture type
  */
