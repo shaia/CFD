@@ -14,8 +14,12 @@
 
 #include "../boundary_conditions_internal.h"
 
-/* ARM NEON + OpenMP detection */
-#if (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
+/* ARM NEON + OpenMP detection
+ * NEON is mandatory in ARMv8-A (AArch64/ARM64), so we enable NEON code
+ * whenever building for ARM64, even if __ARM_NEON isn't explicitly defined.
+ * For ARMv7 (32-bit ARM), we require the __ARM_NEON macro.
+ */
+#if (defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
 #define BC_HAS_NEON_OMP 1
 #include <arm_neon.h>
 #include <omp.h>
