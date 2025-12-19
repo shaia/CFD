@@ -70,15 +70,26 @@ const char* bc_get_backend_name(void) {
     const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
 
     if (impl == &bc_impl_simd_omp) {
-        /* Report which SIMD variant is active based on runtime detection */
+        /* Report which SIMD variant is active based on runtime detection.
+         * Use predefined string literals for thread safety. */
         const char* arch = bc_simd_omp_get_arch_name();
-        static char name_buf[64];
         if (g_current_backend == BC_BACKEND_AUTO) {
-            snprintf(name_buf, sizeof(name_buf), "auto (simd_omp/%s)", arch);
+            /* Auto mode selected SIMD+OMP */
+            if (arch[0] == 'a') {  /* "avx2" */
+                return "auto (simd_omp/avx2)";
+            } else if (arch[0] == 'n') {  /* "neon" */
+                return "auto (simd_omp/neon)";
+            }
+            return "auto (simd_omp)";
         } else {
-            snprintf(name_buf, sizeof(name_buf), "simd_omp (%s)", arch);
+            /* Explicit SIMD+OMP selection */
+            if (arch[0] == 'a') {
+                return "simd_omp (avx2)";
+            } else if (arch[0] == 'n') {
+                return "simd_omp (neon)";
+            }
+            return "simd_omp";
         }
-        return name_buf;
     }
     if (impl == &bc_impl_omp) {
         return (g_current_backend == BC_BACKEND_AUTO) ? "auto (omp)" : "omp";
