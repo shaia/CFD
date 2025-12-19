@@ -10,7 +10,19 @@
  * - avx2/boundary_conditions_avx2_omp.c
  * - neon/boundary_conditions_neon_omp.c
  *
- * Runtime detection is provided by the cpu_features module.
+ * Compile-Time vs Runtime Detection:
+ * ----------------------------------
+ * The availability check (simd_omp_available) uses BOTH:
+ * 1. Runtime CPU detection: cfd_detect_simd_arch() checks if CPU supports AVX2/NEON
+ * 2. Compile-time availability: Checks if function pointers are non-NULL
+ *
+ * This two-phase check handles the case where:
+ * - CPU supports AVX2, but code was compiled without -mavx2 flag
+ * - In this case, bc_impl_avx2_omp has NULL pointers, so simd_omp_available()
+ *   returns false even though runtime detection reports AVX2 support.
+ *
+ * This design ensures safe operation: SIMD backend is only used when BOTH
+ * the CPU supports it AND the code was compiled with SIMD instructions.
  *
  * Error Handling:
  * If called when no SIMD backend is available (programming error), these
