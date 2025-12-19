@@ -12,6 +12,12 @@
  *
  * Without OS support verification, AVX instructions will cause illegal
  * instruction exceptions on systems where the OS hasn't enabled AVX.
+ *
+ * Thread Safety:
+ * The cache uses volatile + compiler barriers to ensure thread-safe access.
+ * The detection logic is idempotent (always produces the same result), so
+ * multiple threads racing to initialize the cache is safe - they will all
+ * write the same value.
  */
 
 #include "cfd/core/cpu_features.h"
@@ -42,7 +48,34 @@ static inline unsigned long long cfd_xgetbv(unsigned int xcr) {
 #endif
 
 /* ============================================================================
- * Cached Detection Result
+ * Thread-Safe Cache Access
+ *
+ * We use volatile + memory barriers to ensure thread-safe cache access.
+ * This is simpler than C11 atomics and works across all compilers.
+ *
+ * The key insight is that the detection is idempotent - all threads will
+ * compute the same result. So we only need to ensure:
+ * 1. Reads see a consistent value (not torn)
+ * 2. Writes are eventually visible to other threads
+ *
+ * For aligned int reads/writes on x86 and ARM, these are naturally atomic.
+ * The volatile keyword prevents compiler reordering.
+ * ============================================================================ */
+
+/* Memory barrier macros */
+#if defined(_MSC_VER)
+    #define CFD_MEMORY_BARRIER() _ReadWriteBarrier()
+    #define CFD_COMPILER_BARRIER() _ReadWriteBarrier()
+#elif defined(__GNUC__)
+    #define CFD_MEMORY_BARRIER() __sync_synchronize()
+    #define CFD_COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
+#else
+    #define CFD_MEMORY_BARRIER()
+    #define CFD_COMPILER_BARRIER()
+#endif
+
+/* ============================================================================
+ * Cached Detection Result (Thread-Safe)
  * ============================================================================ */
 
 /**
@@ -51,18 +84,29 @@ static inline unsigned long long cfd_xgetbv(unsigned int xcr) {
  *  0 = no SIMD available (CFD_SIMD_NONE)
  *  1 = AVX2 available (CFD_SIMD_AVX2)
  *  2 = NEON available (CFD_SIMD_NEON)
+ *
+ * volatile ensures the compiler doesn't optimize away reads/writes.
+ * Aligned int reads/writes are atomic on x86 and ARM architectures.
  */
-static int g_simd_arch_cache = -1;
+static volatile int g_simd_arch_cache = -1;
 
 /* ============================================================================
  * Runtime Detection Implementation
  * ============================================================================ */
 
 cfd_simd_arch_t cfd_detect_simd_arch(void) {
-    /* Return cached result if available */
-    if (g_simd_arch_cache >= 0) {
-        return (cfd_simd_arch_t)g_simd_arch_cache;
+    /* Read cached result with compiler barrier to ensure we see latest value */
+    CFD_COMPILER_BARRIER();
+    int cached = g_simd_arch_cache;
+    CFD_COMPILER_BARRIER();
+
+    if (cached >= 0) {
+        return (cfd_simd_arch_t)cached;
     }
+
+    /* Perform detection - result will be the same regardless of which thread
+     * computes it, so racing here is safe. */
+    int detected = CFD_SIMD_NONE;
 
 #if defined(CFD_RUNTIME_X86_MSVC)
     /* MSVC on x86/x64: Use __cpuid intrinsic */
@@ -87,13 +131,11 @@ cfd_simd_arch_t cfd_detect_simd_arch(void) {
                 __cpuidex(cpuInfo, 7, 0);
                 /* Check AVX2 bit (EBX bit 5) */
                 if (cpuInfo[1] & (1 << 5)) {
-                    g_simd_arch_cache = CFD_SIMD_AVX2;
-                    return CFD_SIMD_AVX2;
+                    detected = CFD_SIMD_AVX2;
                 }
             }
         }
     }
-    g_simd_arch_cache = CFD_SIMD_NONE;
 
 #elif defined(CFD_RUNTIME_X86_GCC)
     /* GCC/Clang on x86/x64: Use __get_cpuid_count */
@@ -115,30 +157,29 @@ cfd_simd_arch_t cfd_detect_simd_arch(void) {
                 if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
                     /* Check AVX2 bit (EBX bit 5) */
                     if (ebx & (1 << 5)) {
-                        g_simd_arch_cache = CFD_SIMD_AVX2;
-                        return CFD_SIMD_AVX2;
+                        detected = CFD_SIMD_AVX2;
                     }
                 }
             }
         }
     }
-    g_simd_arch_cache = CFD_SIMD_NONE;
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
     /* ARM64: NEON is always available on AArch64 */
-    g_simd_arch_cache = CFD_SIMD_NEON;
+    detected = CFD_SIMD_NEON;
 
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
     /* ARMv7 with NEON: Assume available if compiled with NEON support */
-    g_simd_arch_cache = CFD_SIMD_NEON;
-
-#else
-    /* Unknown architecture */
-    g_simd_arch_cache = CFD_SIMD_NONE;
+    detected = CFD_SIMD_NEON;
 
 #endif
 
-    return (cfd_simd_arch_t)g_simd_arch_cache;
+    /* Store result with memory barrier to ensure visibility to other threads */
+    CFD_COMPILER_BARRIER();
+    g_simd_arch_cache = detected;
+    CFD_MEMORY_BARRIER();
+
+    return (cfd_simd_arch_t)detected;
 }
 
 /* ============================================================================
