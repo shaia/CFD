@@ -114,6 +114,63 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity(double* u, double* v, size_t n
 #define bc_apply_periodic(field, nx, ny) bc_apply_scalar((field), (nx), (ny), BC_TYPE_PERIODIC)
 
 /* ============================================================================
+ * Error Handler API
+ *
+ * Allows users to customize error handling behavior for internal errors.
+ * By default, errors are logged to stderr. Users can provide a custom handler
+ * for integration with their own logging/error management systems.
+ * ============================================================================ */
+
+/**
+ * Error codes for boundary condition operations.
+ */
+typedef enum {
+    BC_ERROR_NONE = 0,
+    BC_ERROR_NO_SIMD_BACKEND,    /**< SIMD+OMP backend called but no SIMD available */
+    BC_ERROR_INTERNAL            /**< Internal library error */
+} bc_error_code_t;
+
+/**
+ * Error handler callback function type.
+ *
+ * @param error_code  The error code indicating the type of error
+ * @param function    Name of the function where the error occurred
+ * @param message     Human-readable error message
+ * @param user_data   User-provided context pointer (from bc_set_error_handler)
+ *
+ * The handler is called when an internal error occurs that cannot be reported
+ * through the normal return value mechanism (e.g., in dispatcher functions).
+ *
+ * After the handler returns, the library will fall back to scalar implementation
+ * if possible, or return without applying the boundary condition.
+ */
+typedef void (*bc_error_handler_t)(bc_error_code_t error_code,
+                                    const char* function,
+                                    const char* message,
+                                    void* user_data);
+
+/**
+ * Set a custom error handler for boundary condition operations.
+ *
+ * @param handler    The error handler callback, or NULL to restore default behavior
+ * @param user_data  User-provided context pointer passed to the handler
+ *
+ * The default handler prints errors to stderr.
+ * Setting handler to NULL restores this default behavior.
+ *
+ * Thread-safety: This function is NOT thread-safe. Set the handler once
+ * during initialization before any boundary condition operations.
+ */
+CFD_LIBRARY_EXPORT void bc_set_error_handler(bc_error_handler_t handler, void* user_data);
+
+/**
+ * Get the current error handler.
+ *
+ * @return The current error handler, or NULL if using default behavior
+ */
+CFD_LIBRARY_EXPORT bc_error_handler_t bc_get_error_handler(void);
+
+/* ============================================================================
  * Backend Selection API
  * ============================================================================ */
 

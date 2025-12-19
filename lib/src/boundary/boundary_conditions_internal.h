@@ -78,6 +78,22 @@ bool bc_simd_omp_backend_available(void);
 const char* bc_simd_omp_get_arch_name(void);
 
 /* ============================================================================
+ * Error Handling (Internal)
+ *
+ * Used by dispatcher to report errors through the user-configurable handler.
+ * ============================================================================ */
+
+/**
+ * Report an error through the configured error handler.
+ * Called by internal code when an error occurs that cannot be returned normally.
+ *
+ * @param error_code  The error code
+ * @param function    Name of the function where the error occurred
+ * @param message     Human-readable error message
+ */
+void bc_report_error(bc_error_code_t error_code, const char* function, const char* message);
+
+/* ============================================================================
  * Internal Scalar Implementations
  *
  * These are the actual baseline implementations.

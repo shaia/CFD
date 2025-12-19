@@ -12,17 +12,35 @@
  *
  * Runtime detection is provided by the cpu_features module.
  *
- * IMPORTANT: These dispatcher functions will abort if called when no SIMD
- * backend is available. Callers MUST check bc_simd_omp_backend_available()
- * before using this backend. This is a programming error, not a runtime error.
+ * Error Handling:
+ * If called when no SIMD backend is available (programming error), these
+ * dispatcher functions will:
+ * 1. Call the user-configurable error handler (or print to stderr if none set)
+ * 2. Assert in debug builds
+ * 3. Fall back to scalar implementation to avoid leaving fields in invalid state
+ *
+ * Callers SHOULD check bc_simd_omp_backend_available() before using this backend.
  */
 
 #include "../boundary_conditions_internal.h"
 #include "cfd/core/cpu_features.h"
 #include <stdbool.h>
 #include <assert.h>
-#include <stdlib.h>
 #include <stdio.h>
+
+/* ============================================================================
+ * Helper: Report error and fall back to scalar
+ * ============================================================================ */
+
+static void report_no_simd_error(const char* function) {
+    char message[128];
+    snprintf(message, sizeof(message),
+             "SIMD+OMP backend called but no SIMD available (detected: %s). "
+             "Falling back to scalar.",
+             cfd_get_simd_name());
+    bc_report_error(BC_ERROR_NO_SIMD_BACKEND, function, message);
+    assert(0 && "SIMD+OMP backend called without available implementation");
+}
 
 /* ============================================================================
  * Runtime Dispatching Functions
@@ -43,13 +61,9 @@ static void bc_simd_omp_neumann(double* field, size_t nx, size_t ny) {
         return;
     }
 
-    /* No SIMD backend available - this is a programming error.
-     * Caller should have checked bc_simd_omp_backend_available() first. */
-    fprintf(stderr, "FATAL: SIMD+OMP neumann called but no SIMD backend available "
-                    "(detected arch: %s). Check bc_simd_omp_backend_available() "
-                    "before using BC_BACKEND_SIMD_OMP.\n", cfd_get_simd_name());
-    assert(0 && "SIMD+OMP backend called without available implementation");
-    abort();
+    /* No SIMD backend available - report error and fall back to scalar */
+    report_no_simd_error("bc_simd_omp_neumann");
+    bc_apply_neumann_scalar_impl(field, nx, ny);
 }
 
 static void bc_simd_omp_periodic(double* field, size_t nx, size_t ny) {
@@ -64,12 +78,9 @@ static void bc_simd_omp_periodic(double* field, size_t nx, size_t ny) {
         return;
     }
 
-    /* No SIMD backend available - this is a programming error. */
-    fprintf(stderr, "FATAL: SIMD+OMP periodic called but no SIMD backend available "
-                    "(detected arch: %s). Check bc_simd_omp_backend_available() "
-                    "before using BC_BACKEND_SIMD_OMP.\n", cfd_get_simd_name());
-    assert(0 && "SIMD+OMP backend called without available implementation");
-    abort();
+    /* No SIMD backend available - report error and fall back to scalar */
+    report_no_simd_error("bc_simd_omp_periodic");
+    bc_apply_periodic_scalar_impl(field, nx, ny);
 }
 
 static void bc_simd_omp_dirichlet(double* field, size_t nx, size_t ny,
@@ -85,12 +96,9 @@ static void bc_simd_omp_dirichlet(double* field, size_t nx, size_t ny,
         return;
     }
 
-    /* No SIMD backend available - this is a programming error. */
-    fprintf(stderr, "FATAL: SIMD+OMP dirichlet called but no SIMD backend available "
-                    "(detected arch: %s). Check bc_simd_omp_backend_available() "
-                    "before using BC_BACKEND_SIMD_OMP.\n", cfd_get_simd_name());
-    assert(0 && "SIMD+OMP backend called without available implementation");
-    abort();
+    /* No SIMD backend available - report error and fall back to scalar */
+    report_no_simd_error("bc_simd_omp_dirichlet");
+    bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
 }
 
 /* ============================================================================

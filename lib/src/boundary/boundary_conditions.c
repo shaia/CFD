@@ -23,6 +23,41 @@
 #include <stdio.h>
 
 /* ============================================================================
+ * Error Handler State and Implementation
+ * ============================================================================ */
+
+static bc_error_handler_t g_error_handler = NULL;
+static void* g_error_handler_user_data = NULL;
+
+/**
+ * Default error handler - prints to stderr.
+ */
+static void default_error_handler(bc_error_code_t error_code,
+                                   const char* function,
+                                   const char* message,
+                                   void* user_data) {
+    (void)user_data;  /* Unused in default handler */
+    fprintf(stderr, "BC ERROR [%d] in %s: %s\n", (int)error_code, function, message);
+}
+
+void bc_set_error_handler(bc_error_handler_t handler, void* user_data) {
+    g_error_handler = handler;
+    g_error_handler_user_data = user_data;
+}
+
+bc_error_handler_t bc_get_error_handler(void) {
+    return g_error_handler;
+}
+
+void bc_report_error(bc_error_code_t error_code, const char* function, const char* message) {
+    if (g_error_handler != NULL) {
+        g_error_handler(error_code, function, message, g_error_handler_user_data);
+    } else {
+        default_error_handler(error_code, function, message, NULL);
+    }
+}
+
+/* ============================================================================
  * Backend State and Selection
  * ============================================================================ */
 
