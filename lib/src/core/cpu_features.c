@@ -126,11 +126,13 @@
  * exception. The detect_simd_arch_impl() function enforces this requirement
  * by only calling cfd_xgetbv() inside an if(osxsave) block.
  *
- * Register usage:
+ * Register usage (identical on 32-bit and 64-bit x86):
  * - Input: ECX = XCR number (0 for XCR0)
  * - Output: EDX:EAX = XCR value (64-bit)
- * - No XMM/YMM registers are modified by xgetbv itself
- * - No additional clobbers needed beyond the output registers
+ * - xgetbv does NOT modify XMM/YMM registers - no SIMD clobbers needed
+ *
+ * The "memory" clobber ensures the compiler doesn't reorder this with
+ * memory operations, though xgetbv itself doesn't access memory.
  */
 static inline unsigned long long cfd_xgetbv(unsigned int xcr) {
     unsigned int eax, edx;
@@ -138,6 +140,7 @@ static inline unsigned long long cfd_xgetbv(unsigned int xcr) {
         "xgetbv"
         : "=a"(eax), "=d"(edx)
         : "c"(xcr)
+        : "memory"
     );
     return ((unsigned long long)edx << 32) | eax;
 }
