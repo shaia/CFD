@@ -106,16 +106,29 @@ static void bc_simd_omp_dirichlet(double* field, size_t nx, size_t ny,
  * ============================================================================ */
 
 /**
+ * Check if a backend implementation table is fully populated.
+ * All three function pointers must be non-NULL for the backend to be usable.
+ */
+static bool backend_impl_complete(const bc_backend_impl_t* impl) {
+    return impl->apply_neumann != NULL &&
+           impl->apply_periodic != NULL &&
+           impl->apply_dirichlet != NULL;
+}
+
+/**
  * Check if any SIMD implementation is available.
  * Called during initialization to determine if bc_impl_simd_omp should be used.
+ *
+ * Verifies all three function pointers (neumann, periodic, dirichlet) are present.
+ * This ensures the backend is fully functional, not just partially implemented.
  */
 static bool simd_omp_available(void) {
     cfd_simd_arch_t arch = cfd_detect_simd_arch();
 
     if (arch == CFD_SIMD_AVX2) {
-        return bc_impl_avx2_omp.apply_neumann != NULL;
+        return backend_impl_complete(&bc_impl_avx2_omp);
     } else if (arch == CFD_SIMD_NEON) {
-        return bc_impl_neon_omp.apply_neumann != NULL;
+        return backend_impl_complete(&bc_impl_neon_omp);
     }
     return false;
 }
