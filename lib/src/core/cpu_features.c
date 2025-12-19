@@ -14,15 +14,95 @@
  * instruction exceptions on systems where the OS hasn't enabled AVX.
  *
  * Thread Safety:
- * The cache uses volatile + compiler barriers to ensure thread-safe access.
- * The detection logic is idempotent (always produces the same result), so
- * multiple threads racing to initialize the cache is safe - they will all
- * write the same value.
+ * The cache uses atomic operations with proper memory ordering to ensure
+ * thread-safe initialization. The detection logic is idempotent (always
+ * produces the same result), so multiple threads racing to initialize is
+ * safe - they will all compute and store the same value.
+ *
+ * We use:
+ * - C11 stdatomic.h when available (GCC 4.9+, Clang 3.1+, MSVC 2022+)
+ * - GCC __atomic builtins as fallback (GCC 4.7+)
+ * - MSVC Interlocked functions as final fallback
  */
 
 #include "cfd/core/cpu_features.h"
 
-/* Include platform-specific headers at file scope */
+/* ============================================================================
+ * Atomic Operations Abstraction
+ *
+ * Provides atomic load/store with proper memory ordering across platforms.
+ * Priority: C11 atomics > GCC atomics > MSVC Interlocked > volatile fallback
+ * ============================================================================ */
+
+/* Check for C11 atomics support */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)
+    /* C11 atomics available */
+    #include <stdatomic.h>
+    #define CFD_HAS_C11_ATOMICS 1
+#elif defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 7))
+    /* GCC 4.7+ atomic builtins */
+    #define CFD_HAS_GCC_ATOMICS 1
+#elif defined(_MSC_VER)
+    /* MSVC Interlocked functions */
+    #include <intrin.h>
+    #define CFD_HAS_MSVC_ATOMICS 1
+#endif
+
+/* Atomic cache type and operations */
+#if defined(CFD_HAS_C11_ATOMICS)
+    static _Atomic int g_simd_arch_cache = -1;
+
+    static inline int atomic_cache_load(void) {
+        return atomic_load_explicit(&g_simd_arch_cache, memory_order_acquire);
+    }
+
+    static inline void atomic_cache_store(int value) {
+        atomic_store_explicit(&g_simd_arch_cache, value, memory_order_release);
+    }
+
+#elif defined(CFD_HAS_GCC_ATOMICS)
+    static int g_simd_arch_cache = -1;
+
+    static inline int atomic_cache_load(void) {
+        return __atomic_load_n(&g_simd_arch_cache, __ATOMIC_ACQUIRE);
+    }
+
+    static inline void atomic_cache_store(int value) {
+        __atomic_store_n(&g_simd_arch_cache, value, __ATOMIC_RELEASE);
+    }
+
+#elif defined(CFD_HAS_MSVC_ATOMICS)
+    static volatile long g_simd_arch_cache = -1;
+
+    static inline int atomic_cache_load(void) {
+        /* _InterlockedCompareExchange provides full barrier on x86/x64
+         * This is the intrinsic form (note the underscore prefix) */
+        return (int)_InterlockedCompareExchange(&g_simd_arch_cache, -1, -1);
+    }
+
+    static inline void atomic_cache_store(int value) {
+        _InterlockedExchange(&g_simd_arch_cache, (long)value);
+    }
+
+#else
+    /* Fallback: volatile with no guarantees beyond single-threaded correctness.
+     * This should rarely be hit on modern compilers. */
+    #warning "No atomic primitives available - cache may not be thread-safe"
+    static volatile int g_simd_arch_cache = -1;
+
+    static inline int atomic_cache_load(void) {
+        return g_simd_arch_cache;
+    }
+
+    static inline void atomic_cache_store(int value) {
+        g_simd_arch_cache = value;
+    }
+#endif
+
+/* ============================================================================
+ * Platform-Specific CPU Detection Headers
+ * ============================================================================ */
+
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
 #include <intrin.h>
 #define CFD_RUNTIME_X86_MSVC 1
@@ -48,66 +128,14 @@ static inline unsigned long long cfd_xgetbv(unsigned int xcr) {
 #endif
 
 /* ============================================================================
- * Thread-Safe Cache Access
- *
- * We use volatile + memory barriers to ensure thread-safe cache access.
- * This is simpler than C11 atomics and works across all compilers.
- *
- * The key insight is that the detection is idempotent - all threads will
- * compute the same result. So we only need to ensure:
- * 1. Reads see a consistent value (not torn)
- * 2. Writes are eventually visible to other threads
- *
- * For aligned int reads/writes on x86 and ARM, these are naturally atomic.
- * The volatile keyword prevents compiler reordering.
- * ============================================================================ */
-
-/* Memory barrier macros */
-#if defined(_MSC_VER)
-    #define CFD_MEMORY_BARRIER() _ReadWriteBarrier()
-    #define CFD_COMPILER_BARRIER() _ReadWriteBarrier()
-#elif defined(__GNUC__)
-    #define CFD_MEMORY_BARRIER() __sync_synchronize()
-    #define CFD_COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
-#else
-    #define CFD_MEMORY_BARRIER()
-    #define CFD_COMPILER_BARRIER()
-#endif
-
-/* ============================================================================
- * Cached Detection Result (Thread-Safe)
- * ============================================================================ */
-
-/**
- * Cached architecture detection result.
- * -1 = not yet detected
- *  0 = no SIMD available (CFD_SIMD_NONE)
- *  1 = AVX2 available (CFD_SIMD_AVX2)
- *  2 = NEON available (CFD_SIMD_NEON)
- *
- * volatile ensures the compiler doesn't optimize away reads/writes.
- * Aligned int reads/writes are atomic on x86 and ARM architectures.
- */
-static volatile int g_simd_arch_cache = -1;
-
-/* ============================================================================
  * Runtime Detection Implementation
  * ============================================================================ */
 
-cfd_simd_arch_t cfd_detect_simd_arch(void) {
-    /* Read cached result with compiler barrier to ensure we see latest value */
-    CFD_COMPILER_BARRIER();
-    int cached = g_simd_arch_cache;
-    CFD_COMPILER_BARRIER();
-
-    if (cached >= 0) {
-        return (cfd_simd_arch_t)cached;
-    }
-
-    /* Perform detection - result will be the same regardless of which thread
-     * computes it, so racing here is safe. */
-    int detected = CFD_SIMD_NONE;
-
+/**
+ * Perform the actual SIMD detection.
+ * This is a pure function - always returns the same result for a given CPU.
+ */
+static cfd_simd_arch_t detect_simd_arch_impl(void) {
 #if defined(CFD_RUNTIME_X86_MSVC)
     /* MSVC on x86/x64: Use __cpuid intrinsic */
     int cpuInfo[4] = {0};
@@ -131,11 +159,12 @@ cfd_simd_arch_t cfd_detect_simd_arch(void) {
                 __cpuidex(cpuInfo, 7, 0);
                 /* Check AVX2 bit (EBX bit 5) */
                 if (cpuInfo[1] & (1 << 5)) {
-                    detected = CFD_SIMD_AVX2;
+                    return CFD_SIMD_AVX2;
                 }
             }
         }
     }
+    return CFD_SIMD_NONE;
 
 #elif defined(CFD_RUNTIME_X86_GCC)
     /* GCC/Clang on x86/x64: Use __get_cpuid_count */
@@ -157,29 +186,43 @@ cfd_simd_arch_t cfd_detect_simd_arch(void) {
                 if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
                     /* Check AVX2 bit (EBX bit 5) */
                     if (ebx & (1 << 5)) {
-                        detected = CFD_SIMD_AVX2;
+                        return CFD_SIMD_AVX2;
                     }
                 }
             }
         }
     }
+    return CFD_SIMD_NONE;
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
     /* ARM64: NEON is always available on AArch64 */
-    detected = CFD_SIMD_NEON;
+    return CFD_SIMD_NEON;
 
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
     /* ARMv7 with NEON: Assume available if compiled with NEON support */
-    detected = CFD_SIMD_NEON;
+    return CFD_SIMD_NEON;
 
+#else
+    return CFD_SIMD_NONE;
 #endif
+}
 
-    /* Store result with memory barrier to ensure visibility to other threads */
-    CFD_COMPILER_BARRIER();
-    g_simd_arch_cache = detected;
-    CFD_MEMORY_BARRIER();
+cfd_simd_arch_t cfd_detect_simd_arch(void) {
+    /* Read cached result with acquire semantics */
+    int cached = atomic_cache_load();
 
-    return (cfd_simd_arch_t)detected;
+    if (cached >= 0) {
+        return (cfd_simd_arch_t)cached;
+    }
+
+    /* Perform detection - result will be the same regardless of which thread
+     * computes it, so racing here is safe (just wastes some CPU cycles). */
+    cfd_simd_arch_t detected = detect_simd_arch_impl();
+
+    /* Store result with release semantics to ensure visibility to other threads */
+    atomic_cache_store((int)detected);
+
+    return detected;
 }
 
 /* ============================================================================
