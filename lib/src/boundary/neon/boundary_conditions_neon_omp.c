@@ -52,14 +52,13 @@
  */
 static void bc_apply_neumann_neon_omp_impl(double* field, size_t nx, size_t ny) {
     int j, i;
-    int inx = SIZE_TO_INT(nx);
-    int iny = SIZE_TO_INT(ny);
 
     /* Left and right boundaries - parallelize over rows */
     #pragma omp parallel for schedule(static)
-    for (j = 0; j < iny; j++) {
-        field[(j * inx) + 0] = field[(j * inx) + 1];
-        field[(j * inx) + inx - 1] = field[(j * inx) + inx - 2];
+    for (j = 0; j < SIZE_TO_INT(ny); j++) {
+        size_t row = (size_t)j * nx;
+        field[row] = field[row + 1];
+        field[row + nx - 1] = field[row + nx - 2];
     }
 
     /* Top and bottom boundaries - contiguous memory, use NEON */
@@ -69,29 +68,25 @@ static void bc_apply_neumann_neon_omp_impl(double* field, size_t nx, size_t ny) 
     double* top_src = field + ((ny - 2) * nx);
 
     /* NEON: Process 2 doubles per iteration (float64x2_t) */
-    int simd_end = inx & ~1;  /* Round down to multiple of 2 */
+    size_t simd_end = nx & ~(size_t)1;  /* Round down to multiple of 2 */
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (inx >= BC_NEON_OMP_THRESHOLD) {
+    if (nx >= BC_NEON_OMP_THRESHOLD) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < simd_end; i += 2) {
-            float64x2_t bottom_vals = vld1q_f64(bottom_src + i);
-            float64x2_t top_vals = vld1q_f64(top_src + i);
-            vst1q_f64(bottom_dst + i, bottom_vals);
-            vst1q_f64(top_dst + i, top_vals);
+        for (i = 0; i < SIZE_TO_INT(simd_end); i += 2) {
+            vst1q_f64(bottom_dst + i, vld1q_f64(bottom_src + i));
+            vst1q_f64(top_dst + i, vld1q_f64(top_src + i));
         }
     } else {
         /* Sequential SIMD for small grids */
-        for (i = 0; i < simd_end; i += 2) {
-            float64x2_t bottom_vals = vld1q_f64(bottom_src + i);
-            float64x2_t top_vals = vld1q_f64(top_src + i);
-            vst1q_f64(bottom_dst + i, bottom_vals);
-            vst1q_f64(top_dst + i, top_vals);
+        for (size_t i = 0; i < simd_end; i += 2) {
+            vst1q_f64(bottom_dst + i, vld1q_f64(bottom_src + i));
+            vst1q_f64(top_dst + i, vld1q_f64(top_src + i));
         }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
-    for (i = simd_end; i < inx; i++) {
+    for (size_t i = simd_end; i < nx; i++) {
         bottom_dst[i] = bottom_src[i];
         top_dst[i] = top_src[i];
     }
@@ -102,14 +97,13 @@ static void bc_apply_neumann_neon_omp_impl(double* field, size_t nx, size_t ny) 
  */
 static void bc_apply_periodic_neon_omp_impl(double* field, size_t nx, size_t ny) {
     int j, i;
-    int inx = SIZE_TO_INT(nx);
-    int iny = SIZE_TO_INT(ny);
 
     /* Left and right boundaries (periodic in x) - parallelize over rows */
     #pragma omp parallel for schedule(static)
-    for (j = 0; j < iny; j++) {
-        field[(j * inx) + 0] = field[(j * inx) + inx - 2];
-        field[(j * inx) + inx - 1] = field[(j * inx) + 1];
+    for (j = 0; j < SIZE_TO_INT(ny); j++) {
+        size_t row = (size_t)j * nx;
+        field[row] = field[row + nx - 2];
+        field[row + nx - 1] = field[row + 1];
     }
 
     /* Top and bottom boundaries (periodic in y) - contiguous memory, use NEON */
@@ -119,29 +113,25 @@ static void bc_apply_periodic_neon_omp_impl(double* field, size_t nx, size_t ny)
     double* top_src = field + nx;  /* Copy from bottom interior */
 
     /* NEON: Process 2 doubles per iteration */
-    int simd_end = inx & ~1;
+    size_t simd_end = nx & ~(size_t)1;
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (inx >= BC_NEON_OMP_THRESHOLD) {
+    if (nx >= BC_NEON_OMP_THRESHOLD) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < simd_end; i += 2) {
-            float64x2_t bottom_vals = vld1q_f64(bottom_src + i);
-            float64x2_t top_vals = vld1q_f64(top_src + i);
-            vst1q_f64(bottom_dst + i, bottom_vals);
-            vst1q_f64(top_dst + i, top_vals);
+        for (i = 0; i < SIZE_TO_INT(simd_end); i += 2) {
+            vst1q_f64(bottom_dst + i, vld1q_f64(bottom_src + i));
+            vst1q_f64(top_dst + i, vld1q_f64(top_src + i));
         }
     } else {
         /* Sequential SIMD for small grids */
-        for (i = 0; i < simd_end; i += 2) {
-            float64x2_t bottom_vals = vld1q_f64(bottom_src + i);
-            float64x2_t top_vals = vld1q_f64(top_src + i);
-            vst1q_f64(bottom_dst + i, bottom_vals);
-            vst1q_f64(top_dst + i, top_vals);
+        for (size_t i = 0; i < simd_end; i += 2) {
+            vst1q_f64(bottom_dst + i, vld1q_f64(bottom_src + i));
+            vst1q_f64(top_dst + i, vld1q_f64(top_src + i));
         }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
-    for (i = simd_end; i < inx; i++) {
+    for (size_t i = simd_end; i < nx; i++) {
         bottom_dst[i] = bottom_src[i];
         top_dst[i] = top_src[i];
     }
@@ -153,8 +143,6 @@ static void bc_apply_periodic_neon_omp_impl(double* field, size_t nx, size_t ny)
 static void bc_apply_dirichlet_neon_omp_impl(double* field, size_t nx, size_t ny,
                                               const bc_dirichlet_values_t* values) {
     int j, i;
-    int inx = SIZE_TO_INT(nx);
-    int iny = SIZE_TO_INT(ny);
 
     /* Store values in locals for OpenMP */
     double val_left = values->left;
@@ -164,9 +152,10 @@ static void bc_apply_dirichlet_neon_omp_impl(double* field, size_t nx, size_t ny
 
     /* Left and right boundaries - parallelize over rows */
     #pragma omp parallel for schedule(static)
-    for (j = 0; j < iny; j++) {
-        field[j * inx] = val_left;
-        field[j * inx + (inx - 1)] = val_right;
+    for (j = 0; j < SIZE_TO_INT(ny); j++) {
+        size_t row = (size_t)j * nx;
+        field[row] = val_left;
+        field[row + nx - 1] = val_right;
     }
 
     /* Top and bottom boundaries - contiguous memory, use NEON broadcast */
@@ -176,25 +165,25 @@ static void bc_apply_dirichlet_neon_omp_impl(double* field, size_t nx, size_t ny
     /* NEON: Duplicate value to 2 doubles and store */
     float64x2_t bottom_broadcast = vdupq_n_f64(val_bottom);
     float64x2_t top_broadcast = vdupq_n_f64(val_top);
-    int simd_end = inx & ~1;  /* Round down to multiple of 2 */
+    size_t simd_end = nx & ~(size_t)1;  /* Round down to multiple of 2 */
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (inx >= BC_NEON_OMP_THRESHOLD) {
+    if (nx >= BC_NEON_OMP_THRESHOLD) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < simd_end; i += 2) {
+        for (i = 0; i < SIZE_TO_INT(simd_end); i += 2) {
             vst1q_f64(bottom_row + i, bottom_broadcast);
             vst1q_f64(top_row + i, top_broadcast);
         }
     } else {
         /* Sequential SIMD for small grids */
-        for (i = 0; i < simd_end; i += 2) {
+        for (size_t i = 0; i < simd_end; i += 2) {
             vst1q_f64(bottom_row + i, bottom_broadcast);
             vst1q_f64(top_row + i, top_broadcast);
         }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
-    for (i = simd_end; i < inx; i++) {
+    for (size_t i = simd_end; i < nx; i++) {
         bottom_row[i] = val_bottom;
         top_row[i] = val_top;
     }

@@ -48,14 +48,13 @@
  */
 static void bc_apply_neumann_avx2_omp_impl(double* field, size_t nx, size_t ny) {
     int j, i;
-    int inx = SIZE_TO_INT(nx);
-    int iny = SIZE_TO_INT(ny);
 
     /* Left and right boundaries - parallelize over rows */
     #pragma omp parallel for schedule(static)
-    for (j = 0; j < iny; j++) {
-        field[(j * inx) + 0] = field[(j * inx) + 1];
-        field[(j * inx) + inx - 1] = field[(j * inx) + inx - 2];
+    for (j = 0; j < SIZE_TO_INT(ny); j++) {
+        size_t row = (size_t)j * nx;
+        field[row] = field[row + 1];
+        field[row + nx - 1] = field[row + nx - 2];
     }
 
     /* Top and bottom boundaries - contiguous memory, use AVX2 */
@@ -65,29 +64,25 @@ static void bc_apply_neumann_avx2_omp_impl(double* field, size_t nx, size_t ny) 
     double* top_src = field + ((ny - 2) * nx);
 
     /* AVX2: Process 4 doubles per iteration */
-    int simd_end = inx & ~3;  /* Round down to multiple of 4 */
+    size_t simd_end = nx & ~(size_t)3;  /* Round down to multiple of 4 */
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (inx >= BC_AVX2_OMP_THRESHOLD) {
+    if (nx >= BC_AVX2_OMP_THRESHOLD) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < simd_end; i += 4) {
-            __m256d bottom_vals = _mm256_loadu_pd(bottom_src + i);
-            __m256d top_vals = _mm256_loadu_pd(top_src + i);
-            _mm256_storeu_pd(bottom_dst + i, bottom_vals);
-            _mm256_storeu_pd(top_dst + i, top_vals);
+        for (i = 0; i < SIZE_TO_INT(simd_end); i += 4) {
+            _mm256_storeu_pd(bottom_dst + i, _mm256_loadu_pd(bottom_src + i));
+            _mm256_storeu_pd(top_dst + i, _mm256_loadu_pd(top_src + i));
         }
     } else {
         /* Sequential SIMD for small grids */
-        for (i = 0; i < simd_end; i += 4) {
-            __m256d bottom_vals = _mm256_loadu_pd(bottom_src + i);
-            __m256d top_vals = _mm256_loadu_pd(top_src + i);
-            _mm256_storeu_pd(bottom_dst + i, bottom_vals);
-            _mm256_storeu_pd(top_dst + i, top_vals);
+        for (size_t i = 0; i < simd_end; i += 4) {
+            _mm256_storeu_pd(bottom_dst + i, _mm256_loadu_pd(bottom_src + i));
+            _mm256_storeu_pd(top_dst + i, _mm256_loadu_pd(top_src + i));
         }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
-    for (i = simd_end; i < inx; i++) {
+    for (size_t i = simd_end; i < nx; i++) {
         bottom_dst[i] = bottom_src[i];
         top_dst[i] = top_src[i];
     }
@@ -98,14 +93,13 @@ static void bc_apply_neumann_avx2_omp_impl(double* field, size_t nx, size_t ny) 
  */
 static void bc_apply_periodic_avx2_omp_impl(double* field, size_t nx, size_t ny) {
     int j, i;
-    int inx = SIZE_TO_INT(nx);
-    int iny = SIZE_TO_INT(ny);
 
     /* Left and right boundaries (periodic in x) - parallelize over rows */
     #pragma omp parallel for schedule(static)
-    for (j = 0; j < iny; j++) {
-        field[(j * inx) + 0] = field[(j * inx) + inx - 2];
-        field[(j * inx) + inx - 1] = field[(j * inx) + 1];
+    for (j = 0; j < SIZE_TO_INT(ny); j++) {
+        size_t row = (size_t)j * nx;
+        field[row] = field[row + nx - 2];
+        field[row + nx - 1] = field[row + 1];
     }
 
     /* Top and bottom boundaries (periodic in y) - contiguous memory, use AVX2 */
@@ -115,29 +109,25 @@ static void bc_apply_periodic_avx2_omp_impl(double* field, size_t nx, size_t ny)
     double* top_src = field + nx;  /* Copy from bottom interior */
 
     /* AVX2: Process 4 doubles per iteration */
-    int simd_end = inx & ~3;
+    size_t simd_end = nx & ~(size_t)3;
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (inx >= BC_AVX2_OMP_THRESHOLD) {
+    if (nx >= BC_AVX2_OMP_THRESHOLD) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < simd_end; i += 4) {
-            __m256d bottom_vals = _mm256_loadu_pd(bottom_src + i);
-            __m256d top_vals = _mm256_loadu_pd(top_src + i);
-            _mm256_storeu_pd(bottom_dst + i, bottom_vals);
-            _mm256_storeu_pd(top_dst + i, top_vals);
+        for (i = 0; i < SIZE_TO_INT(simd_end); i += 4) {
+            _mm256_storeu_pd(bottom_dst + i, _mm256_loadu_pd(bottom_src + i));
+            _mm256_storeu_pd(top_dst + i, _mm256_loadu_pd(top_src + i));
         }
     } else {
         /* Sequential SIMD for small grids */
-        for (i = 0; i < simd_end; i += 4) {
-            __m256d bottom_vals = _mm256_loadu_pd(bottom_src + i);
-            __m256d top_vals = _mm256_loadu_pd(top_src + i);
-            _mm256_storeu_pd(bottom_dst + i, bottom_vals);
-            _mm256_storeu_pd(top_dst + i, top_vals);
+        for (size_t i = 0; i < simd_end; i += 4) {
+            _mm256_storeu_pd(bottom_dst + i, _mm256_loadu_pd(bottom_src + i));
+            _mm256_storeu_pd(top_dst + i, _mm256_loadu_pd(top_src + i));
         }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
-    for (i = simd_end; i < inx; i++) {
+    for (size_t i = simd_end; i < nx; i++) {
         bottom_dst[i] = bottom_src[i];
         top_dst[i] = top_src[i];
     }
@@ -149,8 +139,6 @@ static void bc_apply_periodic_avx2_omp_impl(double* field, size_t nx, size_t ny)
 static void bc_apply_dirichlet_avx2_omp_impl(double* field, size_t nx, size_t ny,
                                               const bc_dirichlet_values_t* values) {
     int j, i;
-    int inx = SIZE_TO_INT(nx);
-    int iny = SIZE_TO_INT(ny);
 
     /* Store values in locals for OpenMP */
     double val_left = values->left;
@@ -160,9 +148,10 @@ static void bc_apply_dirichlet_avx2_omp_impl(double* field, size_t nx, size_t ny
 
     /* Left and right boundaries - parallelize over rows */
     #pragma omp parallel for schedule(static)
-    for (j = 0; j < iny; j++) {
-        field[j * inx] = val_left;
-        field[j * inx + (inx - 1)] = val_right;
+    for (j = 0; j < SIZE_TO_INT(ny); j++) {
+        size_t row = (size_t)j * nx;
+        field[row] = val_left;
+        field[row + nx - 1] = val_right;
     }
 
     /* Top and bottom boundaries - contiguous memory, use AVX2 broadcast */
@@ -172,25 +161,25 @@ static void bc_apply_dirichlet_avx2_omp_impl(double* field, size_t nx, size_t ny
     /* AVX2: Broadcast value to 4 doubles and store */
     __m256d bottom_broadcast = _mm256_set1_pd(val_bottom);
     __m256d top_broadcast = _mm256_set1_pd(val_top);
-    int simd_end = inx & ~3;  /* Round down to multiple of 4 */
+    size_t simd_end = nx & ~(size_t)3;  /* Round down to multiple of 4 */
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (inx >= BC_AVX2_OMP_THRESHOLD) {
+    if (nx >= BC_AVX2_OMP_THRESHOLD) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < simd_end; i += 4) {
+        for (i = 0; i < SIZE_TO_INT(simd_end); i += 4) {
             _mm256_storeu_pd(bottom_row + i, bottom_broadcast);
             _mm256_storeu_pd(top_row + i, top_broadcast);
         }
     } else {
         /* Sequential SIMD for small grids */
-        for (i = 0; i < simd_end; i += 4) {
+        for (size_t i = 0; i < simd_end; i += 4) {
             _mm256_storeu_pd(bottom_row + i, bottom_broadcast);
             _mm256_storeu_pd(top_row + i, top_broadcast);
         }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
-    for (i = simd_end; i < inx; i++) {
+    for (size_t i = simd_end; i < nx; i++) {
         bottom_row[i] = val_bottom;
         top_row[i] = val_top;
     }
