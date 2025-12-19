@@ -10,16 +10,53 @@
  * It has NO knowledge of SIMD, OpenMP, or other technologies.
  *
  * Backend implementations are in separate folders:
- * - cpu/boundary_conditions_scalar.c (baseline)
- * - simd/boundary_conditions_simd.c (AVX2)
- * - omp/boundary_conditions_omp.c (OpenMP)
+ * - cpu/boundary_conditions_scalar.c (baseline, single-threaded)
+ * - omp/boundary_conditions_omp.c (OpenMP, multi-threaded scalar loops)
+ * - simd_omp/boundary_conditions_simd_omp.c (OpenMP + SIMD: AVX2 on x86, NEON on ARM)
  */
 
 #include "boundary_conditions_internal.h"
 #include "cfd/core/cfd_status.h"
+#include "cfd/core/cpu_features.h"
 #include "cfd/core/logging.h"
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
+
+/* ============================================================================
+ * Error Handler State and Implementation
+ * ============================================================================ */
+
+static bc_error_handler_t g_error_handler = NULL;
+static void* g_error_handler_user_data = NULL;
+
+/**
+ * Default error handler - prints to stderr.
+ */
+static void default_error_handler(bc_error_code_t error_code,
+                                   const char* function,
+                                   const char* message,
+                                   void* user_data) {
+    (void)user_data;  /* Unused in default handler */
+    fprintf(stderr, "BC ERROR [%d] in %s: %s\n", (int)error_code, function, message);
+}
+
+void bc_set_error_handler(bc_error_handler_t handler, void* user_data) {
+    g_error_handler = handler;
+    g_error_handler_user_data = user_data;
+}
+
+bc_error_handler_t bc_get_error_handler(void) {
+    return g_error_handler;
+}
+
+void bc_report_error(bc_error_code_t error_code, const char* function, const char* message) {
+    if (g_error_handler != NULL) {
+        g_error_handler(error_code, function, message, g_error_handler_user_data);
+    } else {
+        default_error_handler(error_code, function, message, NULL);
+    }
+}
 
 /* ============================================================================
  * Backend State and Selection
@@ -35,18 +72,23 @@ static const bc_backend_impl_t* get_backend_impl(bc_backend_t backend) {
     switch (backend) {
         case BC_BACKEND_SCALAR:
             return &bc_impl_scalar;
-        case BC_BACKEND_SIMD:
-            return (bc_impl_simd.apply_neumann != NULL) ? &bc_impl_simd : NULL;
         case BC_BACKEND_OMP:
             return (bc_impl_omp.apply_neumann != NULL) ? &bc_impl_omp : NULL;
+        case BC_BACKEND_SIMD_OMP:
+            /* Use runtime check - bc_impl_simd_omp has non-NULL dispatchers,
+             * but the underlying SIMD backend may not be available */
+            return bc_simd_omp_backend_available() ? &bc_impl_simd_omp : NULL;
+        case BC_BACKEND_CUDA:
+            /* CUDA not yet implemented for boundary conditions */
+            return NULL;
         case BC_BACKEND_AUTO:
         default:
-            /* Auto: priority OMP > SIMD > Scalar */
+            /* Auto: priority SIMD_OMP > OMP > Scalar (with runtime detection) */
+            if (bc_simd_omp_backend_available()) {
+                return &bc_impl_simd_omp;
+            }
             if (bc_impl_omp.apply_neumann != NULL) {
                 return &bc_impl_omp;
-            }
-            if (bc_impl_simd.apply_neumann != NULL) {
-                return &bc_impl_simd;
             }
             return &bc_impl_scalar;
     }
@@ -63,11 +105,36 @@ bc_backend_t bc_get_backend(void) {
 const char* bc_get_backend_name(void) {
     const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
 
+    if (impl == &bc_impl_simd_omp) {
+        /* Report which SIMD variant is active based on runtime detection.
+         * Use enum comparison for robustness instead of string comparison. */
+        cfd_simd_arch_t arch = cfd_detect_simd_arch();
+        if (g_current_backend == BC_BACKEND_AUTO) {
+            /* Auto mode selected SIMD+OMP */
+            switch (arch) {
+                case CFD_SIMD_AVX2:
+                    return "auto (simd_omp/avx2)";
+                case CFD_SIMD_NEON:
+                    return "auto (simd_omp/neon)";
+                default:
+                    /* Should not happen: impl == bc_impl_simd_omp implies SIMD available */
+                    return "auto (simd_omp)";
+            }
+        } else {
+            /* Explicit SIMD+OMP selection */
+            switch (arch) {
+                case CFD_SIMD_AVX2:
+                    return "simd_omp (avx2)";
+                case CFD_SIMD_NEON:
+                    return "simd_omp (neon)";
+                default:
+                    /* Should not happen: impl == bc_impl_simd_omp implies SIMD available */
+                    return "simd_omp";
+            }
+        }
+    }
     if (impl == &bc_impl_omp) {
         return (g_current_backend == BC_BACKEND_AUTO) ? "auto (omp)" : "omp";
-    }
-    if (impl == &bc_impl_simd) {
-        return (g_current_backend == BC_BACKEND_AUTO) ? "auto (simd)" : "simd";
     }
     return (g_current_backend == BC_BACKEND_AUTO) ? "auto (scalar)" : "scalar";
 }
@@ -178,8 +245,8 @@ cfd_status_t bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t 
     return apply_scalar_field_bc(field, nx, ny, type, &bc_impl_scalar);
 }
 
-cfd_status_t bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type) {
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+cfd_status_t bc_apply_scalar_simd_omp(double* field, size_t nx, size_t ny, bc_type_t type) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -205,8 +272,8 @@ cfd_status_t bc_apply_velocity_cpu(double* u, double* v, size_t nx, size_t ny, b
     return apply_scalar_field_bc(v, nx, ny, type, &bc_impl_scalar);
 }
 
-cfd_status_t bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+cfd_status_t bc_apply_velocity_simd_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -272,9 +339,9 @@ cfd_status_t bc_apply_dirichlet_scalar_cpu(double* field, size_t nx, size_t ny,
     return apply_dirichlet_with_backend(field, nx, ny, values, &bc_impl_scalar);
 }
 
-cfd_status_t bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
-                                             const bc_dirichlet_values_t* values) {
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+cfd_status_t bc_apply_dirichlet_scalar_simd_omp(double* field, size_t nx, size_t ny,
+                                                 const bc_dirichlet_values_t* values) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -309,10 +376,10 @@ cfd_status_t bc_apply_dirichlet_velocity_cpu(double* u, double* v, size_t nx, si
     return apply_dirichlet_with_backend(v, nx, ny, v_values, &bc_impl_scalar);
 }
 
-cfd_status_t bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
-                                               const bc_dirichlet_values_t* u_values,
-                                               const bc_dirichlet_values_t* v_values) {
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+cfd_status_t bc_apply_dirichlet_velocity_simd_omp(double* u, double* v, size_t nx, size_t ny,
+                                                   const bc_dirichlet_values_t* u_values,
+                                                   const bc_dirichlet_values_t* v_values) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -382,11 +449,11 @@ cfd_status_t bc_apply_noslip_cpu(double* u, double* v, size_t nx, size_t ny) {
     return apply_noslip_with_backend(u, v, nx, ny, &bc_impl_scalar);
 }
 
-cfd_status_t bc_apply_noslip_simd(double* u, double* v, size_t nx, size_t ny) {
+cfd_status_t bc_apply_noslip_simd_omp(double* u, double* v, size_t nx, size_t ny) {
     if (!u || !v || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }

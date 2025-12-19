@@ -222,8 +222,8 @@ static cfd_status_t redblack_simd_iterate(
         }
     }
 
-    /* Apply boundary conditions */
-    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+    /* Apply boundary conditions (use SIMD+OMP BC if available) */
+    bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
 
     /* Compute residual if requested */
     if (residual) {

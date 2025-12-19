@@ -55,14 +55,19 @@ set(CFD_CORE_SOURCES
     src/core/math_utils.c
     src/core/field_ops.c
     src/core/derived_fields.c
+    src/core/cpu_features.c
 )
 
 # Collect boundary condition source files (organized by backend)
+# AVX2 and NEON implementations are in separate files; the dispatcher
+# selects the correct one at runtime based on CPU feature detection.
 set(CFD_BOUNDARY_SOURCES
     src/boundary/boundary_conditions.c
     src/boundary/cpu/boundary_conditions_scalar.c
-    src/boundary/simd/boundary_conditions_simd.c
     src/boundary/omp/boundary_conditions_omp.c
+    src/boundary/avx2/boundary_conditions_avx2_omp.c
+    src/boundary/neon/boundary_conditions_neon_omp.c
+    src/boundary/simd_omp/boundary_conditions_simd_omp_dispatch.c
 )
 
 # Collect I/O source files
@@ -157,6 +162,7 @@ set(CFD_LIBRARY_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/field_ops.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/derived_fields.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/gpu_device.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/cpu_features.h
     # Solver headers
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/navier_stokes_solver.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/poisson_solver.h
@@ -280,10 +286,20 @@ else()
     set(CFD_IS_X86 FALSE CACHE INTERNAL "Is x86/x64 architecture")
 endif()
 
+# Detect ARM64 architecture
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64")
+    set(CFD_IS_ARM64 TRUE CACHE INTERNAL "Is ARM64 architecture")
+else()
+    set(CFD_IS_ARM64 FALSE CACHE INTERNAL "Is ARM64 architecture")
+endif()
+
+# Report SIMD optimization status
 if(CFD_ENABLE_AVX2 AND CFD_IS_X86)
     message(STATUS "AVX2 SIMD optimizations ENABLED (${CMAKE_SYSTEM_PROCESSOR})")
+elseif(CFD_IS_ARM64)
+    message(STATUS "ARM NEON SIMD optimizations available (${CMAKE_SYSTEM_PROCESSOR})")
 else()
-    message(STATUS "AVX2 SIMD optimizations DISABLED - using scalar fallback")
+    message(STATUS "SIMD optimizations DISABLED - using scalar fallback")
 endif()
 
 # Function to apply compiler options to a target

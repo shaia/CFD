@@ -47,11 +47,51 @@ typedef struct {
 /** Scalar (baseline) implementation - always available */
 extern const bc_backend_impl_t bc_impl_scalar;
 
-/** SIMD (AVX2) implementation - NULL if not compiled with AVX2 */
-extern const bc_backend_impl_t bc_impl_simd;
-
 /** OpenMP implementation - NULL if not compiled with OpenMP */
 extern const bc_backend_impl_t bc_impl_omp;
+
+/**
+ * Architecture-specific SIMD + OpenMP implementations.
+ * Each file provides its own table; only one will be non-NULL at compile time.
+ */
+extern const bc_backend_impl_t bc_impl_avx2_omp;  /* AVX2 + OMP (x86-64) */
+extern const bc_backend_impl_t bc_impl_neon_omp;  /* NEON + OMP (ARM64) */
+
+/**
+ * SIMD + OpenMP unified interface with runtime architecture detection.
+ * Dispatches to AVX2 or NEON based on detected CPU at runtime.
+ * Defined in simd_omp/boundary_conditions_simd_omp_dispatch.c
+ */
+extern const bc_backend_impl_t bc_impl_simd_omp;
+
+/**
+ * Runtime check for SIMD+OMP availability.
+ * Since bc_impl_simd_omp always has non-NULL function pointers (for dispatch),
+ * this function checks if the underlying SIMD backend is actually available.
+ */
+bool bc_simd_omp_backend_available(void);
+
+/**
+ * Get the name of the detected SIMD architecture at runtime.
+ * Returns "avx2", "neon", or "none".
+ */
+const char* bc_simd_omp_get_arch_name(void);
+
+/* ============================================================================
+ * Error Handling (Internal)
+ *
+ * Used by dispatcher to report errors through the user-configurable handler.
+ * ============================================================================ */
+
+/**
+ * Report an error through the configured error handler.
+ * Called by internal code when an error occurs that cannot be returned normally.
+ *
+ * @param error_code  The error code
+ * @param function    Name of the function where the error occurred
+ * @param message     Human-readable error message
+ */
+void bc_report_error(bc_error_code_t error_code, const char* function, const char* message);
 
 /* ============================================================================
  * Internal Scalar Implementations
