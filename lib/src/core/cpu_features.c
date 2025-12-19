@@ -112,9 +112,25 @@
 
 /**
  * Inline xgetbv for GCC/Clang.
+ *
  * We use inline assembly instead of _xgetbv() intrinsic because the intrinsic
  * requires -mxsave compiler flag, but we want this file to compile without
  * requiring any special CPU feature flags (since it's doing runtime detection).
+ *
+ * IMPORTANT: This function must ONLY be called after verifying OSXSAVE support
+ * via CPUID leaf 1, ECX bit 27. The OSXSAVE bit indicates that:
+ * 1. The CPU supports the XGETBV instruction
+ * 2. The OS has enabled XSAVE/XRSTOR for context switching
+ *
+ * Calling xgetbv without OSXSAVE support will cause an undefined opcode (#UD)
+ * exception. The detect_simd_arch_impl() function enforces this requirement
+ * by only calling cfd_xgetbv() inside an if(osxsave) block.
+ *
+ * Register usage:
+ * - Input: ECX = XCR number (0 for XCR0)
+ * - Output: EDX:EAX = XCR value (64-bit)
+ * - No XMM/YMM registers are modified by xgetbv itself
+ * - No additional clobbers needed beyond the output registers
  */
 static inline unsigned long long cfd_xgetbv(unsigned int xcr) {
     unsigned int eax, edx;
