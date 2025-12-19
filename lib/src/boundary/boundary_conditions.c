@@ -17,6 +17,7 @@
 
 #include "boundary_conditions_internal.h"
 #include "cfd/core/cfd_status.h"
+#include "cfd/core/cpu_features.h"
 #include "cfd/core/logging.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -106,24 +107,30 @@ const char* bc_get_backend_name(void) {
 
     if (impl == &bc_impl_simd_omp) {
         /* Report which SIMD variant is active based on runtime detection.
-         * Use predefined string literals for thread safety. */
-        const char* arch = bc_simd_omp_get_arch_name();
+         * Use enum comparison for robustness instead of string comparison. */
+        cfd_simd_arch_t arch = cfd_detect_simd_arch();
         if (g_current_backend == BC_BACKEND_AUTO) {
             /* Auto mode selected SIMD+OMP */
-            if (arch[0] == 'a') {  /* "avx2" */
-                return "auto (simd_omp/avx2)";
-            } else if (arch[0] == 'n') {  /* "neon" */
-                return "auto (simd_omp/neon)";
+            switch (arch) {
+                case CFD_SIMD_AVX2:
+                    return "auto (simd_omp/avx2)";
+                case CFD_SIMD_NEON:
+                    return "auto (simd_omp/neon)";
+                default:
+                    /* Should not happen: impl == bc_impl_simd_omp implies SIMD available */
+                    return "auto (simd_omp)";
             }
-            return "auto (simd_omp)";
         } else {
             /* Explicit SIMD+OMP selection */
-            if (arch[0] == 'a') {
-                return "simd_omp (avx2)";
-            } else if (arch[0] == 'n') {
-                return "simd_omp (neon)";
+            switch (arch) {
+                case CFD_SIMD_AVX2:
+                    return "simd_omp (avx2)";
+                case CFD_SIMD_NEON:
+                    return "simd_omp (neon)";
+                default:
+                    /* Should not happen: impl == bc_impl_simd_omp implies SIMD available */
+                    return "simd_omp";
             }
-            return "simd_omp";
         }
     }
     if (impl == &bc_impl_omp) {
