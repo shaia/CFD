@@ -82,12 +82,13 @@ poisson_solver_backend_t poisson_solver_get_backend(void) {
 
 const char* poisson_solver_get_backend_name(void) {
     switch (g_default_backend) {
-        case POISSON_BACKEND_SCALAR: return "scalar";
-        case POISSON_BACKEND_SIMD:   return "simd";
-        case POISSON_BACKEND_OMP:    return "omp";
-        case POISSON_BACKEND_GPU:    return "gpu";
+        case POISSON_BACKEND_SCALAR:   return "scalar";
+        case POISSON_BACKEND_SIMD:     return "simd";
+        case POISSON_BACKEND_OMP:      return "omp";
+        case POISSON_BACKEND_SIMD_OMP: return "simd_omp";
+        case POISSON_BACKEND_GPU:      return "gpu";
         case POISSON_BACKEND_AUTO:
-        default:                           return "auto";
+        default:                       return "auto";
     }
 }
 
@@ -119,6 +120,9 @@ bool poisson_solver_backend_available(poisson_solver_backend_t backend) {
             return false;
 #endif
 
+        case POISSON_BACKEND_SIMD_OMP:
+            return poisson_solver_simd_omp_backend_available();
+
         case POISSON_BACKEND_GPU:
 #ifdef CFD_HAS_CUDA
             return true;
@@ -137,8 +141,14 @@ bool poisson_solver_backend_available(poisson_solver_backend_t backend) {
 
 /**
  * Auto-select best available backend
+ *
+ * Priority: SIMD_OMP (runtime detection) > SIMD (compile-time) > Scalar
  */
 static poisson_solver_backend_t select_best_backend(void) {
+    /* Prefer SIMD_OMP with runtime detection */
+    if (poisson_solver_simd_omp_backend_available()) {
+        return POISSON_BACKEND_SIMD_OMP;
+    }
 #if POISSON_HAS_SIMD
     return POISSON_BACKEND_SIMD;
 #else
@@ -159,6 +169,8 @@ poisson_solver_t* poisson_solver_create(
     switch (method) {
         case POISSON_METHOD_JACOBI:
             switch (backend) {
+                case POISSON_BACKEND_SIMD_OMP:
+                    return create_jacobi_simd_omp_solver();
                 case POISSON_BACKEND_SIMD:
                     return create_jacobi_simd_solver();
                 case POISSON_BACKEND_SCALAR:
@@ -173,6 +185,8 @@ poisson_solver_t* poisson_solver_create(
 
         case POISSON_METHOD_REDBLACK_SOR:
             switch (backend) {
+                case POISSON_BACKEND_SIMD_OMP:
+                    return create_redblack_simd_omp_solver();
 #ifdef CFD_ENABLE_OPENMP
                 case POISSON_BACKEND_OMP:
                     return create_redblack_omp_solver();
@@ -441,6 +455,8 @@ cfd_status_t poisson_solver_iterate(
 static poisson_solver_t* g_legacy_jacobi = NULL;
 static poisson_solver_t* g_legacy_sor = NULL;
 static poisson_solver_t* g_legacy_redblack = NULL;
+static poisson_solver_t* g_legacy_jacobi_simd_omp = NULL;
+static poisson_solver_t* g_legacy_redblack_simd_omp = NULL;
 static size_t g_legacy_nx = 0;
 static size_t g_legacy_ny = 0;
 
@@ -459,6 +475,14 @@ static void cleanup_legacy_solvers(void) {
     if (g_legacy_redblack) {
         poisson_solver_destroy(g_legacy_redblack);
         g_legacy_redblack = NULL;
+    }
+    if (g_legacy_jacobi_simd_omp) {
+        poisson_solver_destroy(g_legacy_jacobi_simd_omp);
+        g_legacy_jacobi_simd_omp = NULL;
+    }
+    if (g_legacy_redblack_simd_omp) {
+        poisson_solver_destroy(g_legacy_redblack_simd_omp);
+        g_legacy_redblack_simd_omp = NULL;
     }
     g_legacy_nx = 0;
     g_legacy_ny = 0;
@@ -480,10 +504,22 @@ int poisson_solve(
             backend = POISSON_BACKEND_SIMD;
             break;
 
+        case POISSON_SOLVER_JACOBI_SIMD_OMP:
+            solver_ptr = &g_legacy_jacobi_simd_omp;
+            method = POISSON_METHOD_JACOBI;
+            backend = POISSON_BACKEND_SIMD_OMP;
+            break;
+
         case POISSON_SOLVER_REDBLACK_SIMD:
             solver_ptr = &g_legacy_redblack;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SIMD;
+            break;
+
+        case POISSON_SOLVER_REDBLACK_SIMD_OMP:
+            solver_ptr = &g_legacy_redblack_simd_omp;
+            method = POISSON_METHOD_REDBLACK_SOR;
+            backend = POISSON_BACKEND_SIMD_OMP;
             break;
 
         case POISSON_SOLVER_SOR_SCALAR:
@@ -558,4 +594,19 @@ int poisson_solve_sor_scalar(
 {
     /* SOR doesn't need temp buffer, pass NULL */
     return poisson_solve(p, NULL, rhs, nx, ny, dx, dy, POISSON_SOLVER_SOR_SCALAR);
+}
+
+/* SIMD+OMP functions with runtime CPU detection */
+int poisson_solve_jacobi_simd_omp(
+    double* p, double* p_temp, const double* rhs,
+    size_t nx, size_t ny, double dx, double dy)
+{
+    return poisson_solve(p, p_temp, rhs, nx, ny, dx, dy, POISSON_SOLVER_JACOBI_SIMD_OMP);
+}
+
+int poisson_solve_redblack_simd_omp(
+    double* p, double* p_temp, const double* rhs,
+    size_t nx, size_t ny, double dx, double dy)
+{
+    return poisson_solve(p, p_temp, rhs, nx, ny, dx, dy, POISSON_SOLVER_REDBLACK_SIMD_OMP);
 }

@@ -9,6 +9,7 @@
 #define CFD_LINEAR_SOLVER_INTERNAL_H
 
 #include "cfd/solvers/poisson_solver.h"
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,7 @@ extern "C" {
 /* Jacobi solvers */
 poisson_solver_t* create_jacobi_scalar_solver(void);
 poisson_solver_t* create_jacobi_simd_solver(void);
+poisson_solver_t* create_jacobi_simd_omp_solver(void);
 
 /* SOR solvers */
 poisson_solver_t* create_sor_scalar_solver(void);
@@ -28,10 +30,27 @@ poisson_solver_t* create_sor_scalar_solver(void);
 /* Red-Black SOR solvers */
 poisson_solver_t* create_redblack_scalar_solver(void);
 poisson_solver_t* create_redblack_simd_solver(void);
+poisson_solver_t* create_redblack_simd_omp_solver(void);
 
 #ifdef CFD_ENABLE_OPENMP
 poisson_solver_t* create_redblack_omp_solver(void);
 #endif
+
+/* ============================================================================
+ * SIMD+OMP BACKEND AVAILABILITY (Runtime detection)
+ * ============================================================================ */
+
+/**
+ * Check if SIMD+OMP backend is available at runtime.
+ * Uses cfd_detect_simd_arch() from cpu_features.h.
+ */
+bool poisson_solver_simd_omp_backend_available(void);
+
+/**
+ * Get the name of the detected SIMD architecture.
+ * Returns "avx2", "neon", or "none".
+ */
+const char* poisson_solver_simd_omp_get_arch_name(void);
 
 /* ============================================================================
  * INTERNAL HELPER FUNCTIONS

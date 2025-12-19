@@ -162,8 +162,9 @@ void test_create_with_auto_backend(void) {
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_AUTO);
 
     TEST_ASSERT_NOT_NULL(solver);
-    /* Backend should be SIMD if available, otherwise SCALAR */
+    /* Backend should be SIMD_OMP, SIMD, or SCALAR depending on availability */
     TEST_ASSERT_TRUE(
+        solver->backend == POISSON_BACKEND_SIMD_OMP ||
         solver->backend == POISSON_BACKEND_SIMD ||
         solver->backend == POISSON_BACKEND_SCALAR);
 

@@ -64,11 +64,12 @@ typedef enum {
  * Poisson solver backend types (execution strategy)
  */
 typedef enum {
-    POISSON_BACKEND_AUTO,   /**< Auto-select best available */
-    POISSON_BACKEND_SCALAR, /**< Scalar CPU implementation */
-    POISSON_BACKEND_SIMD,   /**< SIMD (AVX2) */
-    POISSON_BACKEND_OMP,    /**< OpenMP parallelized */
-    POISSON_BACKEND_GPU     /**< CUDA GPU (future) */
+    POISSON_BACKEND_AUTO,     /**< Auto-select best available */
+    POISSON_BACKEND_SCALAR,   /**< Scalar CPU implementation */
+    POISSON_BACKEND_SIMD,     /**< SIMD (AVX2) - compile-time detection (deprecated) */
+    POISSON_BACKEND_OMP,      /**< OpenMP parallelized */
+    POISSON_BACKEND_SIMD_OMP, /**< SIMD + OpenMP with runtime detection (AVX2/NEON) */
+    POISSON_BACKEND_GPU       /**< CUDA GPU (future) */
 } poisson_solver_backend_t;
 
 /**
@@ -365,12 +366,14 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
  * SOLVER TYPE NAMES
  * ============================================================================ */
 
-#define POISSON_SOLVER_TYPE_JACOBI_SCALAR   "jacobi_scalar"
-#define POISSON_SOLVER_TYPE_JACOBI_SIMD     "jacobi_simd"
-#define POISSON_SOLVER_TYPE_SOR_SCALAR      "sor_scalar"
-#define POISSON_SOLVER_TYPE_REDBLACK_SCALAR "redblack_scalar"
-#define POISSON_SOLVER_TYPE_REDBLACK_SIMD   "redblack_simd"
-#define POISSON_SOLVER_TYPE_REDBLACK_OMP    "redblack_omp"
+#define POISSON_SOLVER_TYPE_JACOBI_SCALAR     "jacobi_scalar"
+#define POISSON_SOLVER_TYPE_JACOBI_SIMD       "jacobi_simd"
+#define POISSON_SOLVER_TYPE_JACOBI_SIMD_OMP   "jacobi_simd_omp"
+#define POISSON_SOLVER_TYPE_SOR_SCALAR        "sor_scalar"
+#define POISSON_SOLVER_TYPE_REDBLACK_SCALAR   "redblack_scalar"
+#define POISSON_SOLVER_TYPE_REDBLACK_SIMD     "redblack_simd"
+#define POISSON_SOLVER_TYPE_REDBLACK_OMP      "redblack_omp"
+#define POISSON_SOLVER_TYPE_REDBLACK_SIMD_OMP "redblack_simd_omp"
 
 /* ============================================================================
  * CONVENIENCE API
@@ -382,13 +385,15 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
  * Convenience enum for common solver configurations.
  */
 typedef enum {
-    POISSON_SOLVER_SOR_SCALAR = 0,   /**< SOR method with scalar backend */
-    POISSON_SOLVER_JACOBI_SIMD = 1,  /**< Jacobi method with SIMD backend */
-    POISSON_SOLVER_REDBLACK_SIMD = 2 /**< Red-Black SOR with SIMD backend */
+    POISSON_SOLVER_SOR_SCALAR = 0,       /**< SOR method with scalar backend */
+    POISSON_SOLVER_JACOBI_SIMD = 1,      /**< Jacobi method with SIMD backend (compile-time) */
+    POISSON_SOLVER_REDBLACK_SIMD = 2,    /**< Red-Black SOR with SIMD backend (compile-time) */
+    POISSON_SOLVER_JACOBI_SIMD_OMP = 3,  /**< Jacobi method with SIMD+OMP backend (runtime detection) */
+    POISSON_SOLVER_REDBLACK_SIMD_OMP = 4 /**< Red-Black SOR with SIMD+OMP backend (runtime detection) */
 } poisson_solver_type;
 
-/** Default Poisson solver */
-#define DEFAULT_POISSON_SOLVER POISSON_SOLVER_REDBLACK_SIMD
+/** Default Poisson solver - uses runtime SIMD detection */
+#define DEFAULT_POISSON_SOLVER POISSON_SOLVER_REDBLACK_SIMD_OMP
 
 /**
  * Unified Poisson solver function
@@ -426,6 +431,34 @@ CFD_LIBRARY_EXPORT int poisson_solve_redblack_simd(
 CFD_LIBRARY_EXPORT int poisson_solve_sor_scalar(
     double* p, const double* rhs,
     size_t nx, size_t ny, double dx, double dy);
+
+/**
+ * SIMD+OMP solver functions with runtime CPU detection (AVX2/NEON)
+ *
+ * These functions automatically select the best SIMD implementation
+ * (AVX2 on x86-64, NEON on ARM64) at runtime.
+ */
+CFD_LIBRARY_EXPORT int poisson_solve_jacobi_simd_omp(
+    double* p, double* p_temp, const double* rhs,
+    size_t nx, size_t ny, double dx, double dy);
+
+CFD_LIBRARY_EXPORT int poisson_solve_redblack_simd_omp(
+    double* p, double* p_temp, const double* rhs,
+    size_t nx, size_t ny, double dx, double dy);
+
+/**
+ * Check if SIMD+OMP backend is available at runtime
+ *
+ * @return true if SIMD (AVX2 or NEON) with OpenMP is available
+ */
+CFD_LIBRARY_EXPORT bool poisson_solver_simd_omp_available(void);
+
+/**
+ * Get the name of the detected SIMD architecture for solvers
+ *
+ * @return "avx2", "neon", or "none"
+ */
+CFD_LIBRARY_EXPORT const char* poisson_solver_get_simd_arch_name(void);
 
 #ifdef __cplusplus
 }
