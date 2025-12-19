@@ -96,7 +96,8 @@ A computational fluid dynamics (CFD) framework implemented in C. This project pr
 │   ├── csv_data_export.c              # CSV output for data analysis
 │   ├── velocity_visualization.c       # Velocity field visualization
 │   ├── animated_flow_simulation.c     # Animated flow output
-│   └── simple_animated_flow.c         # Simple animation example
+│   ├── simple_animated_flow.c         # Simple animation example
+│   └── lid_driven_cavity.c            # Lid-driven cavity benchmark
 ├── tests/                      # Comprehensive test suite
 │   ├── test_runner.c                  # Unity test framework runner
 │   ├── test_simulation_basic.c        # Basic simulation tests
@@ -371,6 +372,20 @@ Demonstrates:
 cd build/Release && ./custom_boundary_conditions.exe
 ```
 **Output:** Creates `artifacts/output/cylinder_flow_*.vtk` files
+
+#### 7. **lid_driven_cavity.c** - Classic CFD benchmark
+
+Demonstrates:
+
+- Lid-driven cavity problem setup
+- Dirichlet boundary conditions (fixed velocity at lid)
+- No-slip walls
+- Reynolds number configuration via command line
+
+```bash
+cd build/Release && ./lid_driven_cavity.exe [Re]
+```
+**Output:** Creates `output/lid_cavity_*/cavity_*.vtk` files
 
 ### Output and Visualization
 
