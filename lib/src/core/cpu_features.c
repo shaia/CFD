@@ -2,9 +2,16 @@
  * CPU Feature Detection Implementation
  *
  * Runtime detection of CPU SIMD capabilities using platform-specific methods:
- * - x86/x64 (MSVC): __cpuid/__cpuidex intrinsics
- * - x86/x64 (GCC/Clang): __get_cpuid_count from cpuid.h
+ * - x86/x64 (MSVC): __cpuid/__cpuidex intrinsics + XGETBV for OS support
+ * - x86/x64 (GCC/Clang): __get_cpuid_count + xgetbv for OS support
  * - ARM64: NEON is always available
+ *
+ * IMPORTANT: For AVX2, we must verify both:
+ * 1. CPU support (CPUID leaf 7, EBX bit 5)
+ * 2. OS support (OSXSAVE enabled + XCR0 bits 1,2 set for AVX state saving)
+ *
+ * Without OS support verification, AVX instructions will cause illegal
+ * instruction exceptions on systems where the OS hasn't enabled AVX.
  */
 
 #include "cfd/core/cpu_features.h"
@@ -15,6 +22,8 @@
 #define CFD_RUNTIME_X86_MSVC 1
 #elif defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
 #include <cpuid.h>
+/* For xgetbv on GCC/Clang */
+#include <immintrin.h>
 #define CFD_RUNTIME_X86_GCC 1
 #endif
 
@@ -48,11 +57,26 @@ cfd_simd_arch_t cfd_detect_simd_arch(void) {
     int nIds = cpuInfo[0];
 
     if (nIds >= 7) {
-        __cpuidex(cpuInfo, 7, 0);
-        /* Check AVX2 bit (EBX bit 5) */
-        if (cpuInfo[1] & (1 << 5)) {
-            g_simd_arch_cache = CFD_SIMD_AVX2;
-            return CFD_SIMD_AVX2;
+        /* First check CPUID leaf 1 for OSXSAVE support (ECX bit 27) */
+        __cpuid(cpuInfo, 1);
+        int osxsave = (cpuInfo[2] & (1 << 27)) != 0;
+
+        if (osxsave) {
+            /* OSXSAVE is enabled, now check XCR0 for AVX state support */
+            /* XCR0 bits: bit 1 = SSE state, bit 2 = AVX state */
+            /* Both must be set for AVX to work */
+            unsigned long long xcr0 = _xgetbv(0);
+            int avx_os_support = ((xcr0 & 0x6) == 0x6);
+
+            if (avx_os_support) {
+                /* Now check CPU support for AVX2 */
+                __cpuidex(cpuInfo, 7, 0);
+                /* Check AVX2 bit (EBX bit 5) */
+                if (cpuInfo[1] & (1 << 5)) {
+                    g_simd_arch_cache = CFD_SIMD_AVX2;
+                    return CFD_SIMD_AVX2;
+                }
+            }
         }
     }
     g_simd_arch_cache = CFD_SIMD_NONE;
@@ -61,11 +85,27 @@ cfd_simd_arch_t cfd_detect_simd_arch(void) {
     /* GCC/Clang on x86/x64: Use __get_cpuid_count */
     unsigned int eax, ebx, ecx, edx;
 
-    if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
-        /* Check AVX2 bit (EBX bit 5) */
-        if (ebx & (1 << 5)) {
-            g_simd_arch_cache = CFD_SIMD_AVX2;
-            return CFD_SIMD_AVX2;
+    /* First check CPUID leaf 1 for OSXSAVE support (ECX bit 27) */
+    if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
+        int osxsave = (ecx & (1 << 27)) != 0;
+
+        if (osxsave) {
+            /* OSXSAVE is enabled, now check XCR0 for AVX state support */
+            /* XCR0 bits: bit 1 = SSE state, bit 2 = AVX state */
+            /* Both must be set for AVX to work */
+            unsigned long long xcr0 = _xgetbv(0);
+            int avx_os_support = ((xcr0 & 0x6) == 0x6);
+
+            if (avx_os_support) {
+                /* Now check CPU support for AVX2 */
+                if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+                    /* Check AVX2 bit (EBX bit 5) */
+                    if (ebx & (1 << 5)) {
+                        g_simd_arch_cache = CFD_SIMD_AVX2;
+                        return CFD_SIMD_AVX2;
+                    }
+                }
+            }
         }
     }
     g_simd_arch_cache = CFD_SIMD_NONE;
