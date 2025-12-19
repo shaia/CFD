@@ -24,6 +24,14 @@
 #if defined(BC_HAS_NEON_OMP)
 
 /**
+ * Minimum row width to use OpenMP for horizontal boundary loops.
+ * For smaller grids, the thread synchronization overhead exceeds the benefit.
+ * With NEON (2 doubles/iteration), 256 elements = 128 iterations.
+ * On a typical 8-thread system, this gives 16 iterations per thread.
+ */
+#define BC_NEON_OMP_THRESHOLD 256
+
+/**
  * Apply Neumann boundary conditions (zero gradient) with NEON + OpenMP.
  */
 static void bc_apply_neumann_neon_omp_impl(double* field, size_t nx, size_t ny) {
@@ -47,13 +55,23 @@ static void bc_apply_neumann_neon_omp_impl(double* field, size_t nx, size_t ny) 
     /* NEON: Process 2 doubles per iteration (float64x2_t) */
     int simd_end = inx & ~1;  /* Round down to multiple of 2 */
 
-    /* Parallelize the SIMD loop across columns */
-    #pragma omp parallel for schedule(static)
-    for (i = 0; i < simd_end; i += 2) {
-        float64x2_t bottom_vals = vld1q_f64(bottom_src + i);
-        float64x2_t top_vals = vld1q_f64(top_src + i);
-        vst1q_f64(bottom_dst + i, bottom_vals);
-        vst1q_f64(top_dst + i, top_vals);
+    /* Only parallelize if row is wide enough to justify overhead */
+    if (inx >= BC_NEON_OMP_THRESHOLD) {
+        #pragma omp parallel for schedule(static)
+        for (i = 0; i < simd_end; i += 2) {
+            float64x2_t bottom_vals = vld1q_f64(bottom_src + i);
+            float64x2_t top_vals = vld1q_f64(top_src + i);
+            vst1q_f64(bottom_dst + i, bottom_vals);
+            vst1q_f64(top_dst + i, top_vals);
+        }
+    } else {
+        /* Sequential SIMD for small grids */
+        for (i = 0; i < simd_end; i += 2) {
+            float64x2_t bottom_vals = vld1q_f64(bottom_src + i);
+            float64x2_t top_vals = vld1q_f64(top_src + i);
+            vst1q_f64(bottom_dst + i, bottom_vals);
+            vst1q_f64(top_dst + i, top_vals);
+        }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
@@ -87,13 +105,23 @@ static void bc_apply_periodic_neon_omp_impl(double* field, size_t nx, size_t ny)
     /* NEON: Process 2 doubles per iteration */
     int simd_end = inx & ~1;
 
-    /* Parallelize the SIMD loop across columns */
-    #pragma omp parallel for schedule(static)
-    for (i = 0; i < simd_end; i += 2) {
-        float64x2_t bottom_vals = vld1q_f64(bottom_src + i);
-        float64x2_t top_vals = vld1q_f64(top_src + i);
-        vst1q_f64(bottom_dst + i, bottom_vals);
-        vst1q_f64(top_dst + i, top_vals);
+    /* Only parallelize if row is wide enough to justify overhead */
+    if (inx >= BC_NEON_OMP_THRESHOLD) {
+        #pragma omp parallel for schedule(static)
+        for (i = 0; i < simd_end; i += 2) {
+            float64x2_t bottom_vals = vld1q_f64(bottom_src + i);
+            float64x2_t top_vals = vld1q_f64(top_src + i);
+            vst1q_f64(bottom_dst + i, bottom_vals);
+            vst1q_f64(top_dst + i, top_vals);
+        }
+    } else {
+        /* Sequential SIMD for small grids */
+        for (i = 0; i < simd_end; i += 2) {
+            float64x2_t bottom_vals = vld1q_f64(bottom_src + i);
+            float64x2_t top_vals = vld1q_f64(top_src + i);
+            vst1q_f64(bottom_dst + i, bottom_vals);
+            vst1q_f64(top_dst + i, top_vals);
+        }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
@@ -134,11 +162,19 @@ static void bc_apply_dirichlet_neon_omp_impl(double* field, size_t nx, size_t ny
     float64x2_t top_broadcast = vdupq_n_f64(val_top);
     int simd_end = inx & ~1;  /* Round down to multiple of 2 */
 
-    /* Parallelize the SIMD loop across columns */
-    #pragma omp parallel for schedule(static)
-    for (i = 0; i < simd_end; i += 2) {
-        vst1q_f64(bottom_row + i, bottom_broadcast);
-        vst1q_f64(top_row + i, top_broadcast);
+    /* Only parallelize if row is wide enough to justify overhead */
+    if (inx >= BC_NEON_OMP_THRESHOLD) {
+        #pragma omp parallel for schedule(static)
+        for (i = 0; i < simd_end; i += 2) {
+            vst1q_f64(bottom_row + i, bottom_broadcast);
+            vst1q_f64(top_row + i, top_broadcast);
+        }
+    } else {
+        /* Sequential SIMD for small grids */
+        for (i = 0; i < simd_end; i += 2) {
+            vst1q_f64(bottom_row + i, bottom_broadcast);
+            vst1q_f64(top_row + i, top_broadcast);
+        }
     }
 
     /* Handle remaining elements (sequential, minimal work) */

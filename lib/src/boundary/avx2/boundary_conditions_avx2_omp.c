@@ -24,6 +24,14 @@
 #if defined(BC_HAS_AVX2_OMP)
 
 /**
+ * Minimum row width to use OpenMP for horizontal boundary loops.
+ * For smaller grids, the thread synchronization overhead exceeds the benefit.
+ * With AVX2 (4 doubles/iteration), 256 elements = 64 iterations.
+ * On a typical 8-thread system, this gives 8 iterations per thread.
+ */
+#define BC_AVX2_OMP_THRESHOLD 256
+
+/**
  * Apply Neumann boundary conditions (zero gradient) with AVX2 + OpenMP.
  */
 static void bc_apply_neumann_avx2_omp_impl(double* field, size_t nx, size_t ny) {
@@ -47,13 +55,23 @@ static void bc_apply_neumann_avx2_omp_impl(double* field, size_t nx, size_t ny) 
     /* AVX2: Process 4 doubles per iteration */
     int simd_end = inx & ~3;  /* Round down to multiple of 4 */
 
-    /* Parallelize the SIMD loop across columns */
-    #pragma omp parallel for schedule(static)
-    for (i = 0; i < simd_end; i += 4) {
-        __m256d bottom_vals = _mm256_loadu_pd(bottom_src + i);
-        __m256d top_vals = _mm256_loadu_pd(top_src + i);
-        _mm256_storeu_pd(bottom_dst + i, bottom_vals);
-        _mm256_storeu_pd(top_dst + i, top_vals);
+    /* Only parallelize if row is wide enough to justify overhead */
+    if (inx >= BC_AVX2_OMP_THRESHOLD) {
+        #pragma omp parallel for schedule(static)
+        for (i = 0; i < simd_end; i += 4) {
+            __m256d bottom_vals = _mm256_loadu_pd(bottom_src + i);
+            __m256d top_vals = _mm256_loadu_pd(top_src + i);
+            _mm256_storeu_pd(bottom_dst + i, bottom_vals);
+            _mm256_storeu_pd(top_dst + i, top_vals);
+        }
+    } else {
+        /* Sequential SIMD for small grids */
+        for (i = 0; i < simd_end; i += 4) {
+            __m256d bottom_vals = _mm256_loadu_pd(bottom_src + i);
+            __m256d top_vals = _mm256_loadu_pd(top_src + i);
+            _mm256_storeu_pd(bottom_dst + i, bottom_vals);
+            _mm256_storeu_pd(top_dst + i, top_vals);
+        }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
@@ -87,13 +105,23 @@ static void bc_apply_periodic_avx2_omp_impl(double* field, size_t nx, size_t ny)
     /* AVX2: Process 4 doubles per iteration */
     int simd_end = inx & ~3;
 
-    /* Parallelize the SIMD loop across columns */
-    #pragma omp parallel for schedule(static)
-    for (i = 0; i < simd_end; i += 4) {
-        __m256d bottom_vals = _mm256_loadu_pd(bottom_src + i);
-        __m256d top_vals = _mm256_loadu_pd(top_src + i);
-        _mm256_storeu_pd(bottom_dst + i, bottom_vals);
-        _mm256_storeu_pd(top_dst + i, top_vals);
+    /* Only parallelize if row is wide enough to justify overhead */
+    if (inx >= BC_AVX2_OMP_THRESHOLD) {
+        #pragma omp parallel for schedule(static)
+        for (i = 0; i < simd_end; i += 4) {
+            __m256d bottom_vals = _mm256_loadu_pd(bottom_src + i);
+            __m256d top_vals = _mm256_loadu_pd(top_src + i);
+            _mm256_storeu_pd(bottom_dst + i, bottom_vals);
+            _mm256_storeu_pd(top_dst + i, top_vals);
+        }
+    } else {
+        /* Sequential SIMD for small grids */
+        for (i = 0; i < simd_end; i += 4) {
+            __m256d bottom_vals = _mm256_loadu_pd(bottom_src + i);
+            __m256d top_vals = _mm256_loadu_pd(top_src + i);
+            _mm256_storeu_pd(bottom_dst + i, bottom_vals);
+            _mm256_storeu_pd(top_dst + i, top_vals);
+        }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
@@ -134,11 +162,19 @@ static void bc_apply_dirichlet_avx2_omp_impl(double* field, size_t nx, size_t ny
     __m256d top_broadcast = _mm256_set1_pd(val_top);
     int simd_end = inx & ~3;  /* Round down to multiple of 4 */
 
-    /* Parallelize the SIMD loop across columns */
-    #pragma omp parallel for schedule(static)
-    for (i = 0; i < simd_end; i += 4) {
-        _mm256_storeu_pd(bottom_row + i, bottom_broadcast);
-        _mm256_storeu_pd(top_row + i, top_broadcast);
+    /* Only parallelize if row is wide enough to justify overhead */
+    if (inx >= BC_AVX2_OMP_THRESHOLD) {
+        #pragma omp parallel for schedule(static)
+        for (i = 0; i < simd_end; i += 4) {
+            _mm256_storeu_pd(bottom_row + i, bottom_broadcast);
+            _mm256_storeu_pd(top_row + i, top_broadcast);
+        }
+    } else {
+        /* Sequential SIMD for small grids */
+        for (i = 0; i < simd_end; i += 4) {
+            _mm256_storeu_pd(bottom_row + i, bottom_broadcast);
+            _mm256_storeu_pd(top_row + i, top_broadcast);
+        }
     }
 
     /* Handle remaining elements (sequential, minimal work) */
