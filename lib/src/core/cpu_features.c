@@ -22,9 +22,23 @@
 #define CFD_RUNTIME_X86_MSVC 1
 #elif defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
 #include <cpuid.h>
-/* For xgetbv on GCC/Clang */
-#include <immintrin.h>
 #define CFD_RUNTIME_X86_GCC 1
+
+/**
+ * Inline xgetbv for GCC/Clang.
+ * We use inline assembly instead of _xgetbv() intrinsic because the intrinsic
+ * requires -mxsave compiler flag, but we want this file to compile without
+ * requiring any special CPU feature flags (since it's doing runtime detection).
+ */
+static inline unsigned long long cfd_xgetbv(unsigned int xcr) {
+    unsigned int eax, edx;
+    __asm__ __volatile__(
+        "xgetbv"
+        : "=a"(eax), "=d"(edx)
+        : "c"(xcr)
+    );
+    return ((unsigned long long)edx << 32) | eax;
+}
 #endif
 
 /* ============================================================================
@@ -93,7 +107,7 @@ cfd_simd_arch_t cfd_detect_simd_arch(void) {
             /* OSXSAVE is enabled, now check XCR0 for AVX state support */
             /* XCR0 bits: bit 1 = SSE state, bit 2 = AVX state */
             /* Both must be set for AVX to work */
-            unsigned long long xcr0 = _xgetbv(0);
+            unsigned long long xcr0 = cfd_xgetbv(0);
             int avx_os_support = ((xcr0 & 0x6) == 0x6);
 
             if (avx_os_support) {
