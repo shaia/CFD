@@ -36,12 +36,14 @@
 /**
  * Safe conversion from size_t to int for OpenMP loop variables.
  *
- * OpenMP requires signed integer loop counters. This macro safely converts
- * size_t to int with an assertion to catch overflow in debug builds.
+ * OpenMP requires signed integer loop counters. This function safely converts
+ * size_t to int, clamping to INT_MAX if the value would overflow.
  * In practice, grids exceeding INT_MAX (~2 billion) would require ~16GB
  * per row of doubles, making this limit unlikely to be hit.
  */
-#define SIZE_TO_INT(sz) (assert((sz) <= (size_t)INT_MAX), (int)(sz))
+static inline int size_to_int(size_t sz) {
+    return (sz > (size_t)INT_MAX) ? INT_MAX : (int)sz;
+}
 
 /**
  * Apply Neumann boundary conditions (zero gradient) with AVX2 + OpenMP.
@@ -51,7 +53,7 @@ static void bc_apply_neumann_avx2_omp_impl(double* field, size_t nx, size_t ny) 
 
     /* Left and right boundaries - parallelize over rows */
     #pragma omp parallel for schedule(static)
-    for (j = 0; j < SIZE_TO_INT(ny); j++) {
+    for (j = 0; j < size_to_int(ny); j++) {
         size_t row = (size_t)j * nx;
         field[row] = field[row + 1];
         field[row + nx - 1] = field[row + nx - 2];
@@ -69,7 +71,7 @@ static void bc_apply_neumann_avx2_omp_impl(double* field, size_t nx, size_t ny) 
     /* Only parallelize if row is wide enough to justify overhead */
     if (nx >= BC_AVX2_OMP_THRESHOLD) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < SIZE_TO_INT(simd_end); i += 4) {
+        for (i = 0; i < size_to_int(simd_end); i += 4) {
             _mm256_storeu_pd(bottom_dst + i, _mm256_loadu_pd(bottom_src + i));
             _mm256_storeu_pd(top_dst + i, _mm256_loadu_pd(top_src + i));
         }
@@ -96,7 +98,7 @@ static void bc_apply_periodic_avx2_omp_impl(double* field, size_t nx, size_t ny)
 
     /* Left and right boundaries (periodic in x) - parallelize over rows */
     #pragma omp parallel for schedule(static)
-    for (j = 0; j < SIZE_TO_INT(ny); j++) {
+    for (j = 0; j < size_to_int(ny); j++) {
         size_t row = (size_t)j * nx;
         field[row] = field[row + nx - 2];
         field[row + nx - 1] = field[row + 1];
@@ -114,7 +116,7 @@ static void bc_apply_periodic_avx2_omp_impl(double* field, size_t nx, size_t ny)
     /* Only parallelize if row is wide enough to justify overhead */
     if (nx >= BC_AVX2_OMP_THRESHOLD) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < SIZE_TO_INT(simd_end); i += 4) {
+        for (i = 0; i < size_to_int(simd_end); i += 4) {
             _mm256_storeu_pd(bottom_dst + i, _mm256_loadu_pd(bottom_src + i));
             _mm256_storeu_pd(top_dst + i, _mm256_loadu_pd(top_src + i));
         }
@@ -148,7 +150,7 @@ static void bc_apply_dirichlet_avx2_omp_impl(double* field, size_t nx, size_t ny
 
     /* Left and right boundaries - parallelize over rows */
     #pragma omp parallel for schedule(static)
-    for (j = 0; j < SIZE_TO_INT(ny); j++) {
+    for (j = 0; j < size_to_int(ny); j++) {
         size_t row = (size_t)j * nx;
         field[row] = val_left;
         field[row + nx - 1] = val_right;
@@ -166,7 +168,7 @@ static void bc_apply_dirichlet_avx2_omp_impl(double* field, size_t nx, size_t ny
     /* Only parallelize if row is wide enough to justify overhead */
     if (nx >= BC_AVX2_OMP_THRESHOLD) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < SIZE_TO_INT(simd_end); i += 4) {
+        for (i = 0; i < size_to_int(simd_end); i += 4) {
             _mm256_storeu_pd(bottom_row + i, bottom_broadcast);
             _mm256_storeu_pd(top_row + i, top_broadcast);
         }
