@@ -2,9 +2,9 @@
  * Unit Tests for Dirichlet Boundary Conditions
  *
  * Tests the bc_apply_dirichlet_* functions across all backends:
- * - Scalar (CPU baseline)
- * - SIMD (AVX2)
- * - OpenMP
+ * - Scalar (CPU baseline, single-threaded)
+ * - SIMD + OpenMP (AVX2 on x86, NEON on ARM, multi-threaded + SIMD)
+ * - OpenMP (multi-threaded, scalar inner loops)
  */
 
 #include "cfd/boundary/boundary_conditions.h"
@@ -200,12 +200,12 @@ void test_dirichlet_scalar_large_grid(void) {
 }
 
 /* ============================================================================
- * SIMD Backend Tests
+ * SIMD + OpenMP Backend Tests (AVX2 on x86, NEON on ARM)
  * ============================================================================ */
 
-void test_dirichlet_simd_basic(void) {
-    if (!bc_backend_available(BC_BACKEND_SIMD)) {
-        TEST_IGNORE_MESSAGE("SIMD backend not available");
+void test_dirichlet_simd_omp_basic(void) {
+    if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
+        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
         return;
     }
 
@@ -220,27 +220,27 @@ void test_dirichlet_simd_basic(void) {
         .bottom = 4.0
     };
 
-    bc_apply_dirichlet_scalar_simd(field, nx, ny, &values);
+    bc_apply_dirichlet_scalar_simd_omp(field, nx, ny, &values);
 
     TEST_ASSERT_TRUE_MESSAGE(verify_dirichlet_bc(field, nx, ny, &values),
-                              "SIMD Dirichlet BC not correctly applied");
+                              "SIMD+OMP Dirichlet BC not correctly applied");
     TEST_ASSERT_TRUE_MESSAGE(verify_interior_unchanged(field, nx, ny),
-                              "Interior values were modified by SIMD");
+                              "Interior values were modified by SIMD+OMP");
 
     free(field);
 }
 
-void test_dirichlet_simd_consistency_with_scalar(void) {
-    if (!bc_backend_available(BC_BACKEND_SIMD)) {
-        TEST_IGNORE_MESSAGE("SIMD backend not available");
+void test_dirichlet_simd_omp_consistency_with_scalar(void) {
+    if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
+        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
         return;
     }
 
     size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
     double* field_scalar = create_test_field(nx, ny);
-    double* field_simd = create_test_field(nx, ny);
+    double* field_simd_omp = create_test_field(nx, ny);
     TEST_ASSERT_NOT_NULL(field_scalar);
-    TEST_ASSERT_NOT_NULL(field_simd);
+    TEST_ASSERT_NOT_NULL(field_simd_omp);
 
     bc_dirichlet_values_t values = {
         .left = 1.5,
@@ -250,7 +250,7 @@ void test_dirichlet_simd_consistency_with_scalar(void) {
     };
 
     bc_apply_dirichlet_scalar_cpu(field_scalar, nx, ny, &values);
-    bc_apply_dirichlet_scalar_simd(field_simd, nx, ny, &values);
+    bc_apply_dirichlet_scalar_simd_omp(field_simd_omp, nx, ny, &values);
 
     /* Compare all boundary values */
     for (size_t j = 0; j < ny; j++) {
@@ -258,13 +258,13 @@ void test_dirichlet_simd_consistency_with_scalar(void) {
             if (i == 0 || i == nx - 1 || j == 0 || j == ny - 1) {
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE,
                                           field_scalar[j * nx + i],
-                                          field_simd[j * nx + i]);
+                                          field_simd_omp[j * nx + i]);
             }
         }
     }
 
     free(field_scalar);
-    free(field_simd);
+    free(field_simd_omp);
 }
 
 /* ============================================================================
@@ -490,7 +490,7 @@ void test_dirichlet_null_field(void) {
     /* Should not crash with NULL field */
     bc_apply_dirichlet_scalar(NULL, 10, 10, &values);
     bc_apply_dirichlet_scalar_cpu(NULL, 10, 10, &values);
-    bc_apply_dirichlet_scalar_simd(NULL, 10, 10, &values);
+    bc_apply_dirichlet_scalar_simd_omp(NULL, 10, 10, &values);
     bc_apply_dirichlet_scalar_omp(NULL, 10, 10, &values);
 
     TEST_PASS();
@@ -539,9 +539,9 @@ int main(void) {
     RUN_TEST(test_dirichlet_scalar_negative_values);
     RUN_TEST(test_dirichlet_scalar_large_grid);
 
-    /* SIMD backend tests */
-    RUN_TEST(test_dirichlet_simd_basic);
-    RUN_TEST(test_dirichlet_simd_consistency_with_scalar);
+    /* SIMD + OpenMP backend tests (AVX2 on x86, NEON on ARM) */
+    RUN_TEST(test_dirichlet_simd_omp_basic);
+    RUN_TEST(test_dirichlet_simd_omp_consistency_with_scalar);
 
     /* OpenMP backend tests */
     RUN_TEST(test_dirichlet_omp_basic);

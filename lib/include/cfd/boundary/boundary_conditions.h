@@ -33,10 +33,11 @@ typedef enum {
  * based on the solver type being used.
  */
 typedef enum {
-    BC_BACKEND_AUTO,    // Auto-select best available (OMP > SIMD > Scalar)
-    BC_BACKEND_SCALAR,  // Force scalar implementation
-    BC_BACKEND_SIMD,    // Force SIMD implementation (AVX2)
-    BC_BACKEND_OMP      // Force OpenMP implementation
+    BC_BACKEND_AUTO,      // Auto-select best available (SIMD_OMP > OMP > Scalar)
+    BC_BACKEND_SCALAR,    // Force scalar implementation (single-threaded)
+    BC_BACKEND_OMP,       // Force OpenMP implementation (multi-threaded, scalar loops)
+    BC_BACKEND_SIMD_OMP,  // Force SIMD + OpenMP (runtime: AVX2 on x86, NEON on ARM)
+    BC_BACKEND_CUDA       // Force CUDA GPU implementation
 } bc_backend_t;
 
 /**
@@ -126,7 +127,8 @@ CFD_LIBRARY_EXPORT bc_backend_t bc_get_backend(void);
 /**
  * Get the name of the currently active BC backend as a string.
  *
- * @return Human-readable backend name (e.g., "scalar", "simd", "omp")
+ * @return Human-readable backend name (e.g., "scalar", "omp", "simd_omp", "cuda")
+ *         For simd_omp, may include architecture detail like "simd_omp (avx2)" or "simd_omp (neon)"
  */
 CFD_LIBRARY_EXPORT const char* bc_get_backend_name(void);
 
@@ -165,11 +167,12 @@ CFD_LIBRARY_EXPORT bool bc_backend_available(bc_backend_t backend);
 CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t type);
 
 /**
- * Apply boundary conditions using SIMD implementation (AVX2).
- * Returns CFD_ERROR_UNSUPPORTED if SIMD not available.
+ * Apply boundary conditions using SIMD + OpenMP implementation.
+ * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD or OpenMP not available.
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_simd_omp(double* field, size_t nx, size_t ny, bc_type_t type);
 
 /**
  * Apply boundary conditions using OpenMP implementation.
@@ -185,10 +188,11 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_omp(double* field, size_t nx, si
 CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_cpu(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
 
 /**
- * Apply velocity boundary conditions using SIMD implementation.
+ * Apply velocity boundary conditions using SIMD + OpenMP implementation.
+ * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_simd_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
 
 /**
  * Apply velocity boundary conditions using OpenMP implementation.
@@ -249,12 +253,13 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_cpu(double* field, siz
                                                                const bc_dirichlet_values_t* values);
 
 /**
- * Apply Dirichlet boundary conditions using SIMD implementation (AVX2).
- * Returns CFD_ERROR_UNSUPPORTED if SIMD not available.
+ * Apply Dirichlet boundary conditions using SIMD + OpenMP implementation.
+ * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD or OpenMP not available.
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
-                                                                const bc_dirichlet_values_t* values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_simd_omp(double* field, size_t nx, size_t ny,
+                                                                    const bc_dirichlet_values_t* values);
 
 /**
  * Apply Dirichlet boundary conditions using OpenMP implementation.
@@ -273,15 +278,17 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_cpu(double* u, doubl
                                                                  const bc_dirichlet_values_t* v_values);
 
 /**
- * Apply Dirichlet velocity boundary conditions using SIMD implementation.
+ * Apply Dirichlet velocity boundary conditions using SIMD + OpenMP implementation.
+ * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
-                                                                  const bc_dirichlet_values_t* u_values,
-                                                                  const bc_dirichlet_values_t* v_values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_simd_omp(double* u, double* v, size_t nx, size_t ny,
+                                                                      const bc_dirichlet_values_t* u_values,
+                                                                      const bc_dirichlet_values_t* v_values);
 
 /**
  * Apply Dirichlet velocity boundary conditions using OpenMP implementation.
+ * @return CFD_ERROR_UNSUPPORTED if OpenMP not available.
  * @return CFD_SUCCESS on success, error code on failure
  */
 CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
@@ -332,8 +339,9 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip(double* u, double* v, size_t nx,
 CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_cpu(double* u, double* v, size_t nx, size_t ny);
 
 /**
- * Apply no-slip wall boundary conditions using SIMD implementation (AVX2).
- * Returns CFD_ERROR_UNSUPPORTED if SIMD not available.
+ * Apply no-slip wall boundary conditions using SIMD + OpenMP implementation.
+ * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD or OpenMP not available.
  *
  * @param u  Pointer to x-velocity array (size nx*ny)
  * @param v  Pointer to y-velocity array (size nx*ny)
@@ -341,7 +349,7 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_cpu(double* u, double* v, size_t
  * @param ny Number of grid points in y-direction
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_simd(double* u, double* v, size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_simd_omp(double* u, double* v, size_t nx, size_t ny);
 
 /**
  * Apply no-slip wall boundary conditions using OpenMP implementation.
