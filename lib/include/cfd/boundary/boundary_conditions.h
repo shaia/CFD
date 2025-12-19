@@ -19,8 +19,8 @@ extern "C" {
 typedef enum {
     BC_TYPE_PERIODIC,   // Wrap-around: left boundary = right interior, etc.
     BC_TYPE_NEUMANN,    // Zero gradient: boundary = adjacent interior value
-    BC_TYPE_DIRICHLET,  // Fixed value (placeholder for future implementation)
-    BC_TYPE_NOSLIP,     // No-slip wall: velocity = 0 (placeholder for future)
+    BC_TYPE_DIRICHLET,  // Fixed value: boundary = specified constant value
+    BC_TYPE_NOSLIP,     // No-slip wall: velocity = 0 at all boundaries
     BC_TYPE_INLET,      // Inlet velocity specification (placeholder for future)
     BC_TYPE_OUTLET      // Outlet/convective (placeholder for future)
 } bc_type_t;
@@ -293,6 +293,72 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_omp(double* u, doubl
  */
 #define bc_apply_dirichlet(field, nx, ny, values) \
     bc_apply_dirichlet_scalar((field), (nx), (ny), (values))
+
+/* ============================================================================
+ * No-Slip Wall Boundary Conditions API
+ *
+ * No-slip BCs enforce zero velocity at solid walls.
+ * This is the standard wall boundary condition for viscous flows.
+ * Equivalent to Dirichlet BCs with all values set to 0.
+ * ============================================================================ */
+
+/**
+ * Apply no-slip wall boundary conditions to velocity components.
+ *
+ * Sets both u and v velocity components to zero at all boundaries:
+ *   - u = 0, v = 0 at left, right, top, and bottom walls
+ *
+ * This is the standard boundary condition for solid walls in viscous flow.
+ * Uses the currently selected backend (see bc_set_backend()).
+ *
+ * @param u  Pointer to x-velocity array (size nx*ny)
+ * @param v  Pointer to y-velocity array (size nx*ny)
+ * @param nx Number of grid points in x-direction
+ * @param ny Number of grid points in y-direction
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip(double* u, double* v, size_t nx, size_t ny);
+
+/**
+ * Apply no-slip wall boundary conditions using scalar implementation.
+ * Always available.
+ *
+ * @param u  Pointer to x-velocity array (size nx*ny)
+ * @param v  Pointer to y-velocity array (size nx*ny)
+ * @param nx Number of grid points in x-direction
+ * @param ny Number of grid points in y-direction
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_cpu(double* u, double* v, size_t nx, size_t ny);
+
+/**
+ * Apply no-slip wall boundary conditions using SIMD implementation (AVX2).
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD not available.
+ *
+ * @param u  Pointer to x-velocity array (size nx*ny)
+ * @param v  Pointer to y-velocity array (size nx*ny)
+ * @param nx Number of grid points in x-direction
+ * @param ny Number of grid points in y-direction
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_simd(double* u, double* v, size_t nx, size_t ny);
+
+/**
+ * Apply no-slip wall boundary conditions using OpenMP implementation.
+ * Returns CFD_ERROR_UNSUPPORTED if OpenMP not available.
+ *
+ * @param u  Pointer to x-velocity array (size nx*ny)
+ * @param v  Pointer to y-velocity array (size nx*ny)
+ * @param nx Number of grid points in x-direction
+ * @param ny Number of grid points in y-direction
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_omp(double* u, double* v, size_t nx, size_t ny);
+
+/**
+ * Convenience macro for applying no-slip BCs to velocity fields.
+ */
+#define bc_apply_noslip_velocity(u, v, nx, ny) bc_apply_noslip((u), (v), (nx), (ny))
 
 #ifdef __cplusplus
 }

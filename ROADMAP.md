@@ -77,7 +77,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] OpenMP-parallelized BC application
 - [x] CUDA GPU BC kernels
 - [x] Dirichlet (fixed value) boundary conditions
-- [ ] No-slip wall conditions
+- [x] No-slip wall conditions
 - [ ] Inlet velocity specification
 - [ ] Outlet (zero-gradient/convective)
 - [ ] Symmetry planes
@@ -88,7 +88,8 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 - `lib/include/cfd/boundary/boundary_conditions.h` - Public API with backend selection
 - `lib/include/cfd/boundary/boundary_conditions_gpu.cuh` - GPU API declarations
-- `lib/src/boundary/cpu/boundary_conditions.c` - Scalar + runtime dispatch
+- `lib/src/boundary/boundary_conditions.c` - Public API dispatcher
+- `lib/src/boundary/cpu/boundary_conditions_scalar.c` - Scalar implementation
 - `lib/src/boundary/simd/boundary_conditions_simd.c` - AVX2 optimizations
 - `lib/src/boundary/omp/boundary_conditions_omp.c` - OpenMP parallelization
 - `lib/src/boundary/gpu/boundary_conditions_gpu.cu` - CUDA kernels

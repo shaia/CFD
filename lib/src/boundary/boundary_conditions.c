@@ -131,8 +131,9 @@ static cfd_status_t apply_scalar_field_bc(double* field, size_t nx, size_t ny,
             return CFD_ERROR_INVALID;
 
         case BC_TYPE_NOSLIP:
-            cfd_warning("BC_TYPE_NOSLIP not implemented");
-            return CFD_ERROR_UNSUPPORTED;
+            /* No-slip is Dirichlet with all zeros - use dedicated bc_apply_noslip() */
+            cfd_warning("BC_TYPE_NOSLIP requires bc_apply_noslip() for velocity fields");
+            return CFD_ERROR_INVALID;
 
         case BC_TYPE_INLET:
             cfd_warning("BC_TYPE_INLET not implemented");
@@ -340,4 +341,65 @@ cfd_status_t bc_apply_dirichlet_velocity_omp(double* u, double* v, size_t nx, si
         return status;
     }
     return apply_dirichlet_with_backend(v, nx, ny, v_values, impl);
+}
+
+/* ============================================================================
+ * Public API - No-Slip Wall Boundary Conditions
+ *
+ * No-slip conditions set velocity to zero at all boundaries.
+ * Implemented using Dirichlet BCs with zero values for efficiency.
+ * ============================================================================ */
+
+/** Static zero-valued Dirichlet BC for no-slip walls */
+static const bc_dirichlet_values_t g_noslip_zero = {
+    .left = 0.0,
+    .right = 0.0,
+    .top = 0.0,
+    .bottom = 0.0
+};
+
+/** Helper: apply no-slip to both velocity components using specified backend */
+static cfd_status_t apply_noslip_with_backend(double* u, double* v, size_t nx, size_t ny,
+                                               const bc_backend_impl_t* impl) {
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, &g_noslip_zero, impl);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_dirichlet_with_backend(v, nx, ny, &g_noslip_zero, impl);
+}
+
+cfd_status_t bc_apply_noslip(double* u, double* v, size_t nx, size_t ny) {
+    if (!u || !v || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    return apply_noslip_with_backend(u, v, nx, ny, get_backend_impl(g_current_backend));
+}
+
+cfd_status_t bc_apply_noslip_cpu(double* u, double* v, size_t nx, size_t ny) {
+    if (!u || !v || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    return apply_noslip_with_backend(u, v, nx, ny, &bc_impl_scalar);
+}
+
+cfd_status_t bc_apply_noslip_simd(double* u, double* v, size_t nx, size_t ny) {
+    if (!u || !v || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return apply_noslip_with_backend(u, v, nx, ny, impl);
+}
+
+cfd_status_t bc_apply_noslip_omp(double* u, double* v, size_t nx, size_t ny) {
+    if (!u || !v || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return apply_noslip_with_backend(u, v, nx, ny, impl);
 }
