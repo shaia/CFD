@@ -19,6 +19,8 @@
 #define BC_HAS_AVX2_OMP 1
 #include <immintrin.h>
 #include <omp.h>
+#include <limits.h>
+#include <assert.h>
 #endif
 
 #if defined(BC_HAS_AVX2_OMP)
@@ -32,12 +34,22 @@
 #define BC_AVX2_OMP_THRESHOLD 256
 
 /**
+ * Safe conversion from size_t to int for OpenMP loop variables.
+ *
+ * OpenMP requires signed integer loop counters. This macro safely converts
+ * size_t to int with an assertion to catch overflow in debug builds.
+ * In practice, grids exceeding INT_MAX (~2 billion) would require ~16GB
+ * per row of doubles, making this limit unlikely to be hit.
+ */
+#define SIZE_TO_INT(sz) (assert((sz) <= (size_t)INT_MAX), (int)(sz))
+
+/**
  * Apply Neumann boundary conditions (zero gradient) with AVX2 + OpenMP.
  */
 static void bc_apply_neumann_avx2_omp_impl(double* field, size_t nx, size_t ny) {
     int j, i;
-    int inx = (int)nx;
-    int iny = (int)ny;
+    int inx = SIZE_TO_INT(nx);
+    int iny = SIZE_TO_INT(ny);
 
     /* Left and right boundaries - parallelize over rows */
     #pragma omp parallel for schedule(static)
@@ -86,8 +98,8 @@ static void bc_apply_neumann_avx2_omp_impl(double* field, size_t nx, size_t ny) 
  */
 static void bc_apply_periodic_avx2_omp_impl(double* field, size_t nx, size_t ny) {
     int j, i;
-    int inx = (int)nx;
-    int iny = (int)ny;
+    int inx = SIZE_TO_INT(nx);
+    int iny = SIZE_TO_INT(ny);
 
     /* Left and right boundaries (periodic in x) - parallelize over rows */
     #pragma omp parallel for schedule(static)
@@ -137,8 +149,8 @@ static void bc_apply_periodic_avx2_omp_impl(double* field, size_t nx, size_t ny)
 static void bc_apply_dirichlet_avx2_omp_impl(double* field, size_t nx, size_t ny,
                                               const bc_dirichlet_values_t* values) {
     int j, i;
-    int inx = (int)nx;
-    int iny = (int)ny;
+    int inx = SIZE_TO_INT(nx);
+    int iny = SIZE_TO_INT(ny);
 
     /* Store values in locals for OpenMP */
     double val_left = values->left;
