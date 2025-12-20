@@ -14,9 +14,14 @@
 
 #include "../boundary_conditions_internal.h"
 #include <math.h>
+#include <limits.h>
 
 #ifdef CFD_ENABLE_OPENMP
 #include <omp.h>
+
+static inline int size_to_int(size_t sz) {
+    return (sz > (size_t)INT_MAX) ? INT_MAX : (int)sz;
+}
 
 /* ============================================================================
  * Edge validation and index conversion
@@ -181,7 +186,7 @@ cfd_status_t bc_apply_inlet_omp_impl(double* u, double* v, size_t nx, size_t ny,
 
     int idx;
 #pragma omp parallel for schedule(static)
-    for (idx = 0; idx < (int)count; idx++) {
+    for (idx = 0; idx < size_to_int(count); idx++) {
         double position = (count > 1) ? (double)idx / pos_denom : 0.5;
         double u_val, v_val;
         inlet_compute_velocity_omp(config, position, &u_val, &v_val);
