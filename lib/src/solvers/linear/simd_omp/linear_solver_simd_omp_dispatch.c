@@ -120,18 +120,13 @@ const char* poisson_solver_get_simd_arch_name(void) {
 poisson_solver_t* create_jacobi_simd_omp_solver(void) {
     cfd_simd_arch_t arch = cfd_detect_simd_arch();
 
-    if (arch == CFD_SIMD_AVX2) {
-        poisson_solver_t* solver = create_jacobi_avx2_omp_solver();
-        if (solver) {
-            return solver;
-        }
+    /* Check compile-time AND runtime availability before calling factory */
+    if (HAS_AVX2_OMP_IMPL && arch == CFD_SIMD_AVX2) {
+        return create_jacobi_avx2_omp_solver();
     }
 
-    if (arch == CFD_SIMD_NEON) {
-        poisson_solver_t* solver = create_jacobi_neon_omp_solver();
-        if (solver) {
-            return solver;
-        }
+    if (HAS_NEON_OMP_IMPL && arch == CFD_SIMD_NEON) {
+        return create_jacobi_neon_omp_solver();
     }
 
     /* No SIMD backend available - report error and return NULL (no fallback) */
@@ -146,18 +141,13 @@ poisson_solver_t* create_jacobi_simd_omp_solver(void) {
 poisson_solver_t* create_redblack_simd_omp_solver(void) {
     cfd_simd_arch_t arch = cfd_detect_simd_arch();
 
-    if (arch == CFD_SIMD_AVX2) {
-        poisson_solver_t* solver = create_redblack_avx2_omp_solver();
-        if (solver) {
-            return solver;
-        }
+    /* Check compile-time AND runtime availability before calling factory */
+    if (HAS_AVX2_OMP_IMPL && arch == CFD_SIMD_AVX2) {
+        return create_redblack_avx2_omp_solver();
     }
 
-    if (arch == CFD_SIMD_NEON) {
-        poisson_solver_t* solver = create_redblack_neon_omp_solver();
-        if (solver) {
-            return solver;
-        }
+    if (HAS_NEON_OMP_IMPL && arch == CFD_SIMD_NEON) {
+        return create_redblack_neon_omp_solver();
     }
 
     /* No SIMD backend available - report error and return NULL (no fallback) */
