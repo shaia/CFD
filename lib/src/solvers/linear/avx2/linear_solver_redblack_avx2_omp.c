@@ -52,7 +52,6 @@ typedef struct {
     __m256d dy2_inv_vec;
     __m256d inv_factor_vec;
     __m256d omega_vec;
-    __m256d one_minus_omega_vec;
     int initialized;
 } redblack_avx2_omp_context_t;
 
@@ -173,7 +172,6 @@ static cfd_status_t redblack_avx2_omp_init(
     ctx->dy2_inv_vec = _mm256_set1_pd(1.0 / ctx->dy2);
     ctx->inv_factor_vec = _mm256_set1_pd(-ctx->inv_factor);
     ctx->omega_vec = _mm256_set1_pd(ctx->omega);
-    ctx->one_minus_omega_vec = _mm256_set1_pd(1.0 - ctx->omega);
 
     ctx->initialized = 1;
     solver->context = ctx;
