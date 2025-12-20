@@ -19,23 +19,26 @@
 #include "../linear_solver_internal.h"
 #include "cfd/core/cpu_features.h"
 
-#include <assert.h>
 #include <stdio.h>
 
 /* ============================================================================
- * ERROR REPORTING
+ * LOGGING
  * ============================================================================ */
 
 /**
- * Report error when SIMD backend is unavailable.
- * This is a programming error - callers should check availability first.
+ * Log when SIMD backend is unavailable.
+ * Callers should handle the NULL return and fall back to scalar if needed.
  */
-static void report_no_simd_error(const char* solver_type) {
+static void log_no_simd_available(const char* solver_type) {
+    /* Silent in release builds - caller handles fallback */
+#ifdef CFD_DEBUG
     fprintf(stderr,
-            "ERROR: SIMD+OMP %s solver requested but no SIMD backend available "
-            "(detected arch: %s). Check poisson_solver_simd_omp_available() first.\n",
+            "DEBUG: SIMD+OMP %s solver not available "
+            "(detected arch: %s). Returning NULL for fallback.\n",
             solver_type, cfd_get_simd_name());
-    assert(0 && "SIMD+OMP solver requested without available implementation");
+#else
+    (void)solver_type;  /* Suppress unused parameter warning */
+#endif
 }
 
 /* ============================================================================
@@ -129,7 +132,7 @@ poisson_solver_t* create_jacobi_simd_omp_solver(void) {
     }
 
     /* No SIMD backend available - report error and return NULL (no fallback) */
-    report_no_simd_error("Jacobi");
+    log_no_simd_available("Jacobi");
     return NULL;
 }
 
@@ -155,6 +158,6 @@ poisson_solver_t* create_redblack_simd_omp_solver(void) {
     }
 
     /* No SIMD backend available - report error and return NULL (no fallback) */
-    report_no_simd_error("Red-Black");
+    log_no_simd_available("Red-Black");
     return NULL;
 }
