@@ -496,6 +496,8 @@ int poisson_solve(
     poisson_solver_t** solver_ptr;
     poisson_solver_method_t method;
     poisson_solver_backend_t backend;
+    poisson_solver_backend_t fallback_backend = POISSON_BACKEND_SCALAR;
+    poisson_solver_t** fallback_ptr = NULL;
 
     switch (solver_type) {
         case POISSON_SOLVER_JACOBI_SIMD:
@@ -508,6 +510,9 @@ int poisson_solve(
             solver_ptr = &g_legacy_jacobi_simd_omp;
             method = POISSON_METHOD_JACOBI;
             backend = POISSON_BACKEND_SIMD_OMP;
+            /* Fallback to scalar Jacobi if SIMD+OMP not available */
+            fallback_backend = POISSON_BACKEND_SCALAR;
+            fallback_ptr = &g_legacy_jacobi;
             break;
 
         case POISSON_SOLVER_REDBLACK_SIMD:
@@ -520,6 +525,9 @@ int poisson_solve(
             solver_ptr = &g_legacy_redblack_simd_omp;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SIMD_OMP;
+            /* Fallback to scalar Red-Black if SIMD+OMP not available */
+            fallback_backend = POISSON_BACKEND_SCALAR;
+            fallback_ptr = &g_legacy_redblack;
             break;
 
         case POISSON_SOLVER_SOR_SCALAR:
@@ -547,6 +555,22 @@ int poisson_solve(
 
         /* Create new solver */
         *solver_ptr = poisson_solver_create(method, backend);
+
+        /* If SIMD_OMP solver creation failed, try fallback backend */
+        if (*solver_ptr == NULL && fallback_ptr != NULL) {
+            /* Use fallback solver pointer and backend */
+            solver_ptr = fallback_ptr;
+
+            /* Destroy any old fallback solver */
+            if (*solver_ptr) {
+                poisson_solver_destroy(*solver_ptr);
+                *solver_ptr = NULL;
+            }
+
+            /* Create fallback solver */
+            *solver_ptr = poisson_solver_create(method, fallback_backend);
+        }
+
         if (*solver_ptr) {
             poisson_solver_init(*solver_ptr, nx, ny, dx, dy, NULL);
             g_legacy_nx = nx;
