@@ -63,6 +63,87 @@ static inline int size_to_int(size_t sz) {
  * RED-BLACK NEON+OMP IMPLEMENTATION
  * ============================================================================ */
 
+/**
+ * Process a single row for one color (red or black) using NEON SIMD.
+ *
+ * @param j       Row index
+ * @param i_start Starting column index for this color
+ * @param x       Solution vector (in/out)
+ * @param rhs     Right-hand side vector
+ * @param nx      Grid width
+ * @param ctx     Solver context with precomputed SIMD vectors
+ */
+static inline void redblack_neon_process_row(
+    int j,
+    size_t i_start,
+    double* x,
+    const double* rhs,
+    size_t nx,
+    const redblack_neon_omp_context_t* ctx)
+{
+    double dx2 = ctx->dx2;
+    double dy2 = ctx->dy2;
+    double inv_factor = ctx->inv_factor;
+    double omega = ctx->omega;
+    size_t i = i_start;
+
+    /* NEON loop: gather 2 same-color cells (stride 2) */
+    for (; i + 4 <= nx - 1; i += 4) {
+        /* Gather 2 values with stride 2 */
+        double vals[2];
+        double p_xp[2], p_xm[2], p_yp[2], p_ym[2], rhs_vals[2];
+
+        for (int k = 0; k < 2; k++) {
+            size_t idx = (size_t)j * nx + i + (size_t)k * 2;
+            vals[k] = x[idx];
+            p_xp[k] = x[idx + 1];
+            p_xm[k] = x[idx - 1];
+            p_yp[k] = x[idx + nx];
+            p_ym[k] = x[idx - nx];
+            rhs_vals[k] = rhs[idx];
+        }
+
+        /* Load into SIMD registers */
+        float64x2_t v_vals = vld1q_f64(vals);
+        float64x2_t v_xp = vld1q_f64(p_xp);
+        float64x2_t v_xm = vld1q_f64(p_xm);
+        float64x2_t v_yp = vld1q_f64(p_yp);
+        float64x2_t v_ym = vld1q_f64(p_ym);
+        float64x2_t v_rhs = vld1q_f64(rhs_vals);
+
+        /* Compute: p_new = -(rhs - (xp+xm)/dx2 - (yp+ym)/dy2) * inv_factor */
+        float64x2_t sum_x = vaddq_f64(v_xp, v_xm);
+        float64x2_t sum_y = vaddq_f64(v_yp, v_ym);
+        float64x2_t term_x = vmulq_f64(sum_x, ctx->dx2_inv_vec);
+        float64x2_t term_y = vmulq_f64(sum_y, ctx->dy2_inv_vec);
+        float64x2_t sum_terms = vaddq_f64(term_x, term_y);
+        float64x2_t diff = vsubq_f64(v_rhs, sum_terms);
+        float64x2_t v_p_new = vmulq_f64(diff, ctx->neg_inv_factor_vec);
+
+        /* SOR update: x = x + omega * (p_new - x) */
+        float64x2_t v_diff = vsubq_f64(v_p_new, v_vals);
+        float64x2_t v_update = vmulq_f64(ctx->omega_vec, v_diff);
+        float64x2_t v_result = vaddq_f64(v_vals, v_update);
+
+        /* Scatter back */
+        double result[2];
+        vst1q_f64(result, v_result);
+        for (int k = 0; k < 2; k++) {
+            size_t idx = (size_t)j * nx + i + (size_t)k * 2;
+            x[idx] = result[k];
+        }
+    }
+
+    /* Scalar remainder */
+    for (; i < nx - 1; i += 2) {
+        size_t idx = (size_t)j * nx + i;
+        double p_new = -(rhs[idx]
+            - (x[idx + 1] + x[idx - 1]) / dx2
+            - (x[idx + nx] + x[idx - nx]) / dy2) * inv_factor;
+        x[idx] = x[idx] + omega * (p_new - x[idx]);
+    }
+}
+
 static cfd_status_t redblack_neon_omp_init(
     poisson_solver_t* solver,
     size_t nx, size_t ny,
@@ -112,132 +193,21 @@ static cfd_status_t redblack_neon_omp_iterate(
     redblack_neon_omp_context_t* ctx = (redblack_neon_omp_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
-    double dx2 = ctx->dx2;
-    double dy2 = ctx->dy2;
-    double inv_factor = ctx->inv_factor;
-    double omega = ctx->omega;
-
     int ny_int = size_to_int(ny);
+    int j;
 
     /* Red sweep with NEON + OpenMP */
     #pragma omp parallel for schedule(static)
-    for (int j = 1; j < ny_int - 1; j++) {
+    for (j = 1; j < ny_int - 1; j++) {
         size_t i_start = (j % 2 == 0) ? 1 : 2;
-        size_t i = i_start;
-
-        /* NEON loop: gather 2 same-color cells (stride 2) */
-        for (; i + 4 <= nx - 1; i += 4) {
-            /* Gather 2 values with stride 2 */
-            double vals[2];
-            double p_xp[2], p_xm[2], p_yp[2], p_ym[2], rhs_vals[2];
-
-            for (int k = 0; k < 2; k++) {
-                size_t idx = (size_t)j * nx + i + (size_t)k * 2;
-                vals[k] = x[idx];
-                p_xp[k] = x[idx + 1];
-                p_xm[k] = x[idx - 1];
-                p_yp[k] = x[idx + nx];
-                p_ym[k] = x[idx - nx];
-                rhs_vals[k] = rhs[idx];
-            }
-
-            /* Load into SIMD registers */
-            float64x2_t v_vals = vld1q_f64(vals);
-            float64x2_t v_xp = vld1q_f64(p_xp);
-            float64x2_t v_xm = vld1q_f64(p_xm);
-            float64x2_t v_yp = vld1q_f64(p_yp);
-            float64x2_t v_ym = vld1q_f64(p_ym);
-            float64x2_t v_rhs = vld1q_f64(rhs_vals);
-
-            /* Compute: p_new = -(rhs - (xp+xm)/dx2 - (yp+ym)/dy2) * inv_factor */
-            float64x2_t sum_x = vaddq_f64(v_xp, v_xm);
-            float64x2_t sum_y = vaddq_f64(v_yp, v_ym);
-            float64x2_t term_x = vmulq_f64(sum_x, ctx->dx2_inv_vec);
-            float64x2_t term_y = vmulq_f64(sum_y, ctx->dy2_inv_vec);
-            float64x2_t sum_terms = vaddq_f64(term_x, term_y);
-            float64x2_t diff = vsubq_f64(v_rhs, sum_terms);
-            float64x2_t v_p_new = vmulq_f64(diff, ctx->neg_inv_factor_vec);
-
-            /* SOR update: x = x + omega * (p_new - x) */
-            float64x2_t v_diff = vsubq_f64(v_p_new, v_vals);
-            float64x2_t v_update = vmulq_f64(ctx->omega_vec, v_diff);
-            float64x2_t v_result = vaddq_f64(v_vals, v_update);
-
-            /* Scatter back */
-            double result[2];
-            vst1q_f64(result, v_result);
-            for (int k = 0; k < 2; k++) {
-                size_t idx = (size_t)j * nx + i + (size_t)k * 2;
-                x[idx] = result[k];
-            }
-        }
-
-        /* Scalar remainder */
-        for (; i < nx - 1; i += 2) {
-            size_t idx = (size_t)j * nx + i;
-            double p_new = -(rhs[idx]
-                - (x[idx + 1] + x[idx - 1]) / dx2
-                - (x[idx + nx] + x[idx - nx]) / dy2) * inv_factor;
-            x[idx] = x[idx] + omega * (p_new - x[idx]);
-        }
+        redblack_neon_process_row(j, i_start, x, rhs, nx, ctx);
     }
 
     /* Black sweep with NEON + OpenMP */
     #pragma omp parallel for schedule(static)
-    for (int j = 1; j < ny_int - 1; j++) {
+    for (j = 1; j < ny_int - 1; j++) {
         size_t i_start = (j % 2 == 0) ? 2 : 1;
-        size_t i = i_start;
-
-        /* NEON loop */
-        for (; i + 4 <= nx - 1; i += 4) {
-            double vals[2];
-            double p_xp[2], p_xm[2], p_yp[2], p_ym[2], rhs_vals[2];
-
-            for (int k = 0; k < 2; k++) {
-                size_t idx = (size_t)j * nx + i + (size_t)k * 2;
-                vals[k] = x[idx];
-                p_xp[k] = x[idx + 1];
-                p_xm[k] = x[idx - 1];
-                p_yp[k] = x[idx + nx];
-                p_ym[k] = x[idx - nx];
-                rhs_vals[k] = rhs[idx];
-            }
-
-            float64x2_t v_vals = vld1q_f64(vals);
-            float64x2_t v_xp = vld1q_f64(p_xp);
-            float64x2_t v_xm = vld1q_f64(p_xm);
-            float64x2_t v_yp = vld1q_f64(p_yp);
-            float64x2_t v_ym = vld1q_f64(p_ym);
-            float64x2_t v_rhs = vld1q_f64(rhs_vals);
-
-            float64x2_t sum_x = vaddq_f64(v_xp, v_xm);
-            float64x2_t sum_y = vaddq_f64(v_yp, v_ym);
-            float64x2_t term_x = vmulq_f64(sum_x, ctx->dx2_inv_vec);
-            float64x2_t term_y = vmulq_f64(sum_y, ctx->dy2_inv_vec);
-            float64x2_t sum_terms = vaddq_f64(term_x, term_y);
-            float64x2_t diff = vsubq_f64(v_rhs, sum_terms);
-            float64x2_t v_p_new = vmulq_f64(diff, ctx->neg_inv_factor_vec);
-
-            float64x2_t v_diff = vsubq_f64(v_p_new, v_vals);
-            float64x2_t v_update = vmulq_f64(ctx->omega_vec, v_diff);
-            float64x2_t v_result = vaddq_f64(v_vals, v_update);
-
-            double result[2];
-            vst1q_f64(result, v_result);
-            for (int k = 0; k < 2; k++) {
-                size_t idx = (size_t)j * nx + i + (size_t)k * 2;
-                x[idx] = result[k];
-            }
-        }
-
-        /* Scalar remainder */
-        for (; i < nx - 1; i += 2) {
-            size_t idx = (size_t)j * nx + i;
-            double p_new = -(rhs[idx]
-                - (x[idx + 1] + x[idx - 1]) / dx2
-                - (x[idx + nx] + x[idx - nx]) / dy2) * inv_factor;
-            x[idx] = x[idx] + omega * (p_new - x[idx]);
-        }
+        redblack_neon_process_row(j, i_start, x, rhs, nx, ctx);
     }
 
     /* Apply boundary conditions (use SIMD+OMP BC if available) */

@@ -64,6 +64,87 @@ static inline int size_to_int(size_t sz) {
  * RED-BLACK AVX2+OMP IMPLEMENTATION
  * ============================================================================ */
 
+/**
+ * Process a single row for one color (red or black) using AVX2 SIMD.
+ *
+ * @param j       Row index
+ * @param i_start Starting column index for this color
+ * @param x       Solution vector (in/out)
+ * @param rhs     Right-hand side vector
+ * @param nx      Grid width
+ * @param ctx     Solver context with precomputed SIMD vectors
+ */
+static inline void redblack_avx2_process_row(
+    int j,
+    size_t i_start,
+    double* x,
+    const double* rhs,
+    size_t nx,
+    const redblack_avx2_omp_context_t* ctx)
+{
+    double dx2 = ctx->dx2;
+    double dy2 = ctx->dy2;
+    double inv_factor = ctx->inv_factor;
+    double omega = ctx->omega;
+    size_t i = i_start;
+
+    /* SIMD loop: gather 4 same-color cells (stride 2) */
+    for (; i + 8 <= nx - 1; i += 8) {
+        /* Gather 4 values with stride 2 */
+        double vals[4];
+        double p_xp[4], p_xm[4], p_yp[4], p_ym[4], rhs_vals[4];
+
+        for (int k = 0; k < 4; k++) {
+            size_t idx = (size_t)j * nx + i + (size_t)k * 2;
+            vals[k] = x[idx];
+            p_xp[k] = x[idx + 1];
+            p_xm[k] = x[idx - 1];
+            p_yp[k] = x[idx + nx];
+            p_ym[k] = x[idx - nx];
+            rhs_vals[k] = rhs[idx];
+        }
+
+        /* Load into SIMD registers */
+        __m256d v_vals = _mm256_loadu_pd(vals);
+        __m256d v_xp = _mm256_loadu_pd(p_xp);
+        __m256d v_xm = _mm256_loadu_pd(p_xm);
+        __m256d v_yp = _mm256_loadu_pd(p_yp);
+        __m256d v_ym = _mm256_loadu_pd(p_ym);
+        __m256d v_rhs = _mm256_loadu_pd(rhs_vals);
+
+        /* Compute: p_new = -(rhs - (xp+xm)/dx2 - (yp+ym)/dy2) * inv_factor */
+        __m256d sum_x = _mm256_add_pd(v_xp, v_xm);
+        __m256d sum_y = _mm256_add_pd(v_yp, v_ym);
+        __m256d term_x = _mm256_mul_pd(sum_x, ctx->dx2_inv_vec);
+        __m256d term_y = _mm256_mul_pd(sum_y, ctx->dy2_inv_vec);
+        __m256d sum_terms = _mm256_add_pd(term_x, term_y);
+        __m256d diff = _mm256_sub_pd(v_rhs, sum_terms);
+        __m256d v_p_new = _mm256_mul_pd(diff, ctx->inv_factor_vec);
+
+        /* SOR update: x = x + omega * (p_new - x) */
+        __m256d v_diff = _mm256_sub_pd(v_p_new, v_vals);
+        __m256d v_update = _mm256_mul_pd(ctx->omega_vec, v_diff);
+        __m256d v_result = _mm256_add_pd(v_vals, v_update);
+
+        /* Scatter back */
+        double result[4];
+        _mm256_storeu_pd(result, v_result);
+        for (int k = 0; k < 4; k++) {
+            size_t idx = (size_t)j * nx + i + (size_t)k * 2;
+            x[idx] = result[k];
+        }
+    }
+
+    /* Scalar remainder */
+    for (; i < nx - 1; i += 2) {
+        size_t idx = (size_t)j * nx + i;
+        double p_new = -(rhs[idx]
+            - (x[idx + 1] + x[idx - 1]) / dx2
+            - (x[idx + nx] + x[idx - nx]) / dy2) * inv_factor;
+        x[idx] = x[idx] + omega * (p_new - x[idx]);
+    }
+}
+
 static cfd_status_t redblack_avx2_omp_init(
     poisson_solver_t* solver,
     size_t nx, size_t ny,
@@ -115,11 +196,6 @@ static cfd_status_t redblack_avx2_omp_iterate(
     redblack_avx2_omp_context_t* ctx = (redblack_avx2_omp_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
-    double dx2 = ctx->dx2;
-    double dy2 = ctx->dy2;
-    double inv_factor = ctx->inv_factor;
-    double omega = ctx->omega;
-
     int ny_int = size_to_int(ny);
     int j;
 
@@ -127,121 +203,14 @@ static cfd_status_t redblack_avx2_omp_iterate(
     #pragma omp parallel for schedule(static)
     for (j = 1; j < ny_int - 1; j++) {
         size_t i_start = (j % 2 == 0) ? 1 : 2;
-        size_t i = i_start;
-
-        /* SIMD loop: gather 4 same-color cells (stride 2) */
-        for (; i + 8 <= nx - 1; i += 8) {
-            /* Gather 4 values with stride 2 */
-            double vals[4];
-            double p_xp[4], p_xm[4], p_yp[4], p_ym[4], rhs_vals[4];
-
-            for (int k = 0; k < 4; k++) {
-                size_t idx = (size_t)j * nx + i + (size_t)k * 2;
-                vals[k] = x[idx];
-                p_xp[k] = x[idx + 1];
-                p_xm[k] = x[idx - 1];
-                p_yp[k] = x[idx + nx];
-                p_ym[k] = x[idx - nx];
-                rhs_vals[k] = rhs[idx];
-            }
-
-            /* Load into SIMD registers */
-            __m256d v_vals = _mm256_loadu_pd(vals);
-            __m256d v_xp = _mm256_loadu_pd(p_xp);
-            __m256d v_xm = _mm256_loadu_pd(p_xm);
-            __m256d v_yp = _mm256_loadu_pd(p_yp);
-            __m256d v_ym = _mm256_loadu_pd(p_ym);
-            __m256d v_rhs = _mm256_loadu_pd(rhs_vals);
-
-            /* Compute: p_new = -(rhs - (xp+xm)/dx2 - (yp+ym)/dy2) * inv_factor */
-            __m256d sum_x = _mm256_add_pd(v_xp, v_xm);
-            __m256d sum_y = _mm256_add_pd(v_yp, v_ym);
-            __m256d term_x = _mm256_mul_pd(sum_x, ctx->dx2_inv_vec);
-            __m256d term_y = _mm256_mul_pd(sum_y, ctx->dy2_inv_vec);
-            __m256d sum_terms = _mm256_add_pd(term_x, term_y);
-            __m256d diff = _mm256_sub_pd(v_rhs, sum_terms);
-            __m256d v_p_new = _mm256_mul_pd(diff, ctx->inv_factor_vec);
-
-            /* SOR update: x = x + omega * (p_new - x) */
-            __m256d v_diff = _mm256_sub_pd(v_p_new, v_vals);
-            __m256d v_update = _mm256_mul_pd(ctx->omega_vec, v_diff);
-            __m256d v_result = _mm256_add_pd(v_vals, v_update);
-
-            /* Scatter back */
-            double result[4];
-            _mm256_storeu_pd(result, v_result);
-            for (int k = 0; k < 4; k++) {
-                size_t idx = (size_t)j * nx + i + (size_t)k * 2;
-                x[idx] = result[k];
-            }
-        }
-
-        /* Scalar remainder */
-        for (; i < nx - 1; i += 2) {
-            size_t idx = (size_t)j * nx + i;
-            double p_new = -(rhs[idx]
-                - (x[idx + 1] + x[idx - 1]) / dx2
-                - (x[idx + nx] + x[idx - nx]) / dy2) * inv_factor;
-            x[idx] = x[idx] + omega * (p_new - x[idx]);
-        }
+        redblack_avx2_process_row(j, i_start, x, rhs, nx, ctx);
     }
 
     /* Black sweep with SIMD + OpenMP */
     #pragma omp parallel for schedule(static)
     for (j = 1; j < ny_int - 1; j++) {
         size_t i_start = (j % 2 == 0) ? 2 : 1;
-        size_t i = i_start;
-
-        /* SIMD loop */
-        for (; i + 8 <= nx - 1; i += 8) {
-            double vals[4];
-            double p_xp[4], p_xm[4], p_yp[4], p_ym[4], rhs_vals[4];
-
-            for (int k = 0; k < 4; k++) {
-                size_t idx = (size_t)j * nx + i + (size_t)k * 2;
-                vals[k] = x[idx];
-                p_xp[k] = x[idx + 1];
-                p_xm[k] = x[idx - 1];
-                p_yp[k] = x[idx + nx];
-                p_ym[k] = x[idx - nx];
-                rhs_vals[k] = rhs[idx];
-            }
-
-            __m256d v_vals = _mm256_loadu_pd(vals);
-            __m256d v_xp = _mm256_loadu_pd(p_xp);
-            __m256d v_xm = _mm256_loadu_pd(p_xm);
-            __m256d v_yp = _mm256_loadu_pd(p_yp);
-            __m256d v_ym = _mm256_loadu_pd(p_ym);
-            __m256d v_rhs = _mm256_loadu_pd(rhs_vals);
-
-            __m256d sum_x = _mm256_add_pd(v_xp, v_xm);
-            __m256d sum_y = _mm256_add_pd(v_yp, v_ym);
-            __m256d term_x = _mm256_mul_pd(sum_x, ctx->dx2_inv_vec);
-            __m256d term_y = _mm256_mul_pd(sum_y, ctx->dy2_inv_vec);
-            __m256d sum_terms = _mm256_add_pd(term_x, term_y);
-            __m256d diff = _mm256_sub_pd(v_rhs, sum_terms);
-            __m256d v_p_new = _mm256_mul_pd(diff, ctx->inv_factor_vec);
-
-            __m256d v_diff = _mm256_sub_pd(v_p_new, v_vals);
-            __m256d v_update = _mm256_mul_pd(ctx->omega_vec, v_diff);
-            __m256d v_result = _mm256_add_pd(v_vals, v_update);
-
-            double result[4];
-            _mm256_storeu_pd(result, v_result);
-            for (int k = 0; k < 4; k++) {
-                size_t idx = (size_t)j * nx + i + (size_t)k * 2;
-                x[idx] = result[k];
-            }
-        }
-
-        /* Scalar remainder */
-        for (; i < nx - 1; i += 2) {
-            size_t idx = (size_t)j * nx + i;
-            double p_new = -(rhs[idx]
-                - (x[idx + 1] + x[idx - 1]) / dx2
-                - (x[idx + nx] + x[idx - nx]) / dy2) * inv_factor;
-            x[idx] = x[idx] + omega * (p_new - x[idx]);
-        }
+        redblack_avx2_process_row(j, i_start, x, rhs, nx, ctx);
     }
 
     /* Apply boundary conditions (use SIMD+OMP BC if available) */
