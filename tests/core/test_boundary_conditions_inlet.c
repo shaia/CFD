@@ -297,7 +297,7 @@ void test_inlet_parabolic_left_boundary(void) {
 
 void test_inlet_parabolic_symmetry(void) {
     /* Test that parabolic profile is symmetric about center */
-    size_t nx = 10, ny = 11;  /* Odd ny ensures center point */
+    size_t nx = 10, ny = 11;  /* Odd ny ensures center point at j=5 */
     double* u = create_test_field(nx, ny);
     double* v = create_test_field(nx, ny);
     TEST_ASSERT_NOT_NULL(u);
@@ -314,6 +314,10 @@ void test_inlet_parabolic_symmetry(void) {
                                    u[j * nx],
                                    u[(ny - 1 - j) * nx]);
     }
+
+    /* Verify center point (j=5) has maximum value (profile_factor=1.0 at position=0.5) */
+    size_t center_j = ny / 2;
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[center_j * nx]);
 
     free(u);
     free(v);
