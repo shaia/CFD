@@ -17,11 +17,13 @@ extern "C" {
 
 /* ============================================================================
  * FACTORY FUNCTIONS
+ *
+ * All SIMD backends use runtime CPU detection (AVX2/NEON) via the SIMD+OMP
+ * dispatcher. See simd_omp/linear_solver_simd_omp_dispatch.c for details.
  * ============================================================================ */
 
 /* Jacobi solvers */
 poisson_solver_t* create_jacobi_scalar_solver(void);
-poisson_solver_t* create_jacobi_simd_solver(void);
 poisson_solver_t* create_jacobi_simd_omp_solver(void);
 
 /* SOR solvers */
@@ -29,7 +31,6 @@ poisson_solver_t* create_sor_scalar_solver(void);
 
 /* Red-Black SOR solvers */
 poisson_solver_t* create_redblack_scalar_solver(void);
-poisson_solver_t* create_redblack_simd_solver(void);
 poisson_solver_t* create_redblack_simd_omp_solver(void);
 
 #ifdef CFD_ENABLE_OPENMP
@@ -79,22 +80,6 @@ cfd_status_t poisson_solver_solve_common(
  * Get current time in milliseconds (platform-independent)
  */
 double poisson_solver_get_time_ms(void);
-
-/* ============================================================================
- * SIMD DETECTION (Compile-time)
- *
- * SIMD implementations require AVX2 (available on x86-64 CPUs from 2013+).
- * Falls back to scalar implementation when AVX2 is not available.
- * ============================================================================ */
-
-#if defined(__AVX2__)
-    #define POISSON_HAS_AVX2 1
-#else
-    #define POISSON_HAS_AVX2 0
-#endif
-
-/* SIMD requires AVX2 */
-#define POISSON_HAS_SIMD POISSON_HAS_AVX2
 
 #ifdef __cplusplus
 }

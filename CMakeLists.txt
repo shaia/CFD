@@ -183,20 +183,6 @@ if(BUILD_TESTS)
     add_executable(test_solver_explicit_euler_simd tests/solvers/simd/test_solver_explicit_euler_simd.c)
     add_executable(test_solver_projection_simd tests/solvers/simd/test_solver_projection_simd.c)
 
-    # SIMD Poisson solver tests
-    # These now use the poisson_solver interface which is linked via CFD::Library
-    # Only build on x86/x64 architectures where AVX2 intrinsics are available
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|x86)")
-        add_executable(test_poisson_jacobi_simd tests/solvers/simd/test_poisson_jacobi_simd.c)
-        add_executable(test_poisson_redblack_simd tests/solvers/simd/test_poisson_redblack_simd.c)
-        target_link_libraries(test_poisson_jacobi_simd PRIVATE CFD::Library unity)
-        target_link_libraries(test_poisson_redblack_simd PRIVATE CFD::Library unity)
-        add_test(NAME PoissonJacobiSimdTest COMMAND test_poisson_jacobi_simd)
-        add_test(NAME PoissonRedBlackSimdTest COMMAND test_poisson_redblack_simd)
-    else()
-        message(STATUS "Skipping SIMD Poisson tests (not on x86/x64 architecture)")
-    endif()
-
     # OpenMP solver tests
     add_executable(test_solver_explicit_euler_omp tests/solvers/omp/test_solver_explicit_euler_omp.c)
     add_executable(test_solver_projection_omp tests/solvers/omp/test_solver_projection_omp.c)

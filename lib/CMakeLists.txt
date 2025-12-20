@@ -96,13 +96,12 @@ set(CFD_SIMD_SOLVER_SOURCES
 )
 
 # Collect Poisson solver sources (abstraction layer)
+# Uses runtime SIMD detection via SIMD+OMP dispatcher (AVX2 on x86-64, NEON on ARM64)
 set(CFD_POISSON_SOLVER_SOURCES
     src/solvers/linear/linear_solver.c
     src/solvers/linear/cpu/linear_solver_jacobi.c
     src/solvers/linear/cpu/linear_solver_sor.c
     src/solvers/linear/cpu/linear_solver_redblack.c
-    src/solvers/linear/simd/linear_solver_jacobi_simd.c
-    src/solvers/linear/simd/linear_solver_redblack_simd.c
     # SIMD+OMP dispatcher (runtime architecture detection)
     src/solvers/linear/simd_omp/linear_solver_simd_omp_dispatch.c
     # AVX2+OMP implementations (x86-64)
