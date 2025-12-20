@@ -90,6 +90,24 @@ void bc_apply_dirichlet_velocity_gpu(double* d_u, double* d_v, size_t nx, size_t
                                       const bc_dirichlet_values_t* v_values,
                                       cudaStream_t stream);
 
+/**
+ * Apply inlet velocity boundary conditions on GPU
+ *
+ * Supports uniform and parabolic velocity profiles.
+ * Note: Custom profile callbacks are not supported on GPU.
+ *
+ * @param d_u      Device pointer to x-velocity array (size nx*ny)
+ * @param d_v      Device pointer to y-velocity array (size nx*ny)
+ * @param nx       Number of grid points in x-direction
+ * @param ny       Number of grid points in y-direction
+ * @param config   Pointer to inlet configuration struct (host memory)
+ * @param stream   CUDA stream for async execution (0 for default)
+ * @return         CFD_SUCCESS, CFD_ERROR_INVALID, or CFD_ERROR_UNSUPPORTED
+ */
+cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, size_t ny,
+                                 const bc_inlet_config_t* config,
+                                 cudaStream_t stream);
+
 #ifdef __cplusplus
 }
 #endif

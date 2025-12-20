@@ -470,3 +470,131 @@ cfd_status_t bc_apply_noslip_omp(double* u, double* v, size_t nx, size_t ny) {
     }
     return apply_noslip_with_backend(u, v, nx, ny, impl);
 }
+
+/* ============================================================================
+ * Public API - Inlet Velocity Boundary Conditions
+ *
+ * Inlet conditions specify velocity at inflow boundaries.
+ * ============================================================================ */
+
+/** Helper: apply inlet BC with specified backend */
+static cfd_status_t apply_inlet_with_backend(double* u, double* v, size_t nx, size_t ny,
+                                              const bc_inlet_config_t* config,
+                                              const bc_backend_impl_t* impl) {
+    if (impl == NULL || impl->apply_inlet == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return impl->apply_inlet(u, v, nx, ny, config);
+}
+
+/* Inlet configuration factory functions */
+
+bc_inlet_config_t bc_inlet_config_uniform(double u_velocity, double v_velocity) {
+    bc_inlet_config_t config = {0};
+    config.edge = BC_EDGE_LEFT;  /* Default to left boundary */
+    config.profile = BC_INLET_PROFILE_UNIFORM;
+    config.spec_type = BC_INLET_SPEC_VELOCITY;
+    config.spec.velocity.u = u_velocity;
+    config.spec.velocity.v = v_velocity;
+    config.custom_profile = NULL;
+    config.custom_profile_user_data = NULL;
+    return config;
+}
+
+bc_inlet_config_t bc_inlet_config_parabolic(double max_velocity) {
+    bc_inlet_config_t config = {0};
+    config.edge = BC_EDGE_LEFT;  /* Default to left boundary */
+    config.profile = BC_INLET_PROFILE_PARABOLIC;
+    config.spec_type = BC_INLET_SPEC_VELOCITY;
+    /* For left boundary, parabolic flow is in +x direction */
+    config.spec.velocity.u = max_velocity;
+    config.spec.velocity.v = 0.0;
+    config.custom_profile = NULL;
+    config.custom_profile_user_data = NULL;
+    return config;
+}
+
+bc_inlet_config_t bc_inlet_config_magnitude_dir(double magnitude, double direction) {
+    bc_inlet_config_t config = {0};
+    config.edge = BC_EDGE_LEFT;  /* Default to left boundary */
+    config.profile = BC_INLET_PROFILE_UNIFORM;
+    config.spec_type = BC_INLET_SPEC_MAGNITUDE_DIR;
+    config.spec.magnitude_dir.magnitude = magnitude;
+    config.spec.magnitude_dir.direction = direction;
+    config.custom_profile = NULL;
+    config.custom_profile_user_data = NULL;
+    return config;
+}
+
+bc_inlet_config_t bc_inlet_config_mass_flow(double mass_flow_rate, double density, double inlet_length) {
+    bc_inlet_config_t config = {0};
+    config.edge = BC_EDGE_LEFT;  /* Default to left boundary */
+    config.profile = BC_INLET_PROFILE_UNIFORM;
+    config.spec_type = BC_INLET_SPEC_MASS_FLOW;
+    config.spec.mass_flow.mass_flow_rate = mass_flow_rate;
+    config.spec.mass_flow.density = density;
+    config.spec.mass_flow.inlet_length = inlet_length;
+    config.custom_profile = NULL;
+    config.custom_profile_user_data = NULL;
+    return config;
+}
+
+bc_inlet_config_t bc_inlet_config_custom(bc_inlet_profile_fn callback, void* user_data) {
+    bc_inlet_config_t config = {0};
+    config.edge = BC_EDGE_LEFT;  /* Default to left boundary */
+    config.profile = BC_INLET_PROFILE_CUSTOM;
+    config.spec_type = BC_INLET_SPEC_VELOCITY;
+    config.spec.velocity.u = 0.0;
+    config.spec.velocity.v = 0.0;
+    config.custom_profile = callback;
+    config.custom_profile_user_data = user_data;
+    return config;
+}
+
+void bc_inlet_set_edge(bc_inlet_config_t* config, bc_edge_t edge) {
+    if (config != NULL) {
+        config->edge = edge;
+    }
+}
+
+/* Inlet BC application functions */
+
+cfd_status_t bc_apply_inlet(double* u, double* v, size_t nx, size_t ny,
+                             const bc_inlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    return apply_inlet_with_backend(u, v, nx, ny, config, get_backend_impl(g_current_backend));
+}
+
+cfd_status_t bc_apply_inlet_cpu(double* u, double* v, size_t nx, size_t ny,
+                                 const bc_inlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    return apply_inlet_with_backend(u, v, nx, ny, config, &bc_impl_scalar);
+}
+
+cfd_status_t bc_apply_inlet_simd_omp(double* u, double* v, size_t nx, size_t ny,
+                                      const bc_inlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return apply_inlet_with_backend(u, v, nx, ny, config, impl);
+}
+
+cfd_status_t bc_apply_inlet_omp(double* u, double* v, size_t nx, size_t ny,
+                                 const bc_inlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return apply_inlet_with_backend(u, v, nx, ny, config, impl);
+}

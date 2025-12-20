@@ -26,6 +26,10 @@ typedef void (*bc_apply_scalar_fn)(double* field, size_t nx, size_t ny);
 typedef void (*bc_apply_dirichlet_fn)(double* field, size_t nx, size_t ny,
                                        const bc_dirichlet_values_t* values);
 
+/** Function type for applying inlet BCs to velocity fields */
+typedef cfd_status_t (*bc_apply_inlet_fn)(double* u, double* v, size_t nx, size_t ny,
+                                           const bc_inlet_config_t* config);
+
 /**
  * Backend implementation table.
  * Each backend fills in its function pointers.
@@ -35,6 +39,7 @@ typedef struct {
     bc_apply_scalar_fn apply_neumann;
     bc_apply_scalar_fn apply_periodic;
     bc_apply_dirichlet_fn apply_dirichlet;
+    bc_apply_inlet_fn apply_inlet;
 } bc_backend_impl_t;
 
 /* ============================================================================
@@ -103,5 +108,19 @@ void bc_apply_neumann_scalar_impl(double* field, size_t nx, size_t ny);
 void bc_apply_periodic_scalar_impl(double* field, size_t nx, size_t ny);
 void bc_apply_dirichlet_scalar_impl(double* field, size_t nx, size_t ny,
                                      const bc_dirichlet_values_t* values);
+cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, size_t nx, size_t ny,
+                                         const bc_inlet_config_t* config);
+
+/* OpenMP inlet implementation - defined in omp/boundary_conditions_inlet_omp.c */
+cfd_status_t bc_apply_inlet_omp_impl(double* u, double* v, size_t nx, size_t ny,
+                                      const bc_inlet_config_t* config);
+
+/* AVX2+OMP inlet implementation - defined in avx2/boundary_conditions_inlet_avx2_omp.c */
+cfd_status_t bc_apply_inlet_avx2_omp_impl(double* u, double* v, size_t nx, size_t ny,
+                                           const bc_inlet_config_t* config);
+
+/* NEON+OMP inlet implementation - defined in neon/boundary_conditions_inlet_neon_omp.c */
+cfd_status_t bc_apply_inlet_neon_omp_impl(double* u, double* v, size_t nx, size_t ny,
+                                           const bc_inlet_config_t* config);
 
 #endif /* CFD_BOUNDARY_CONDITIONS_INTERNAL_H */

@@ -27,7 +27,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 ### Critical Gaps
 
 - [ ] Only 2D (no 3D support)
-- [ ] Limited boundary conditions (no no-slip walls, inlets, outlets)
+- [ ] Limited boundary conditions (no outlets, symmetry planes)
 - [ ] Only structured grids
 - [ ] No turbulence models
 - [ ] Limited linear solvers (SOR/Jacobi only, no CG/BiCGSTAB/multigrid)
@@ -78,7 +78,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] CUDA GPU BC kernels
 - [x] Dirichlet (fixed value) boundary conditions
 - [x] No-slip wall conditions
-- [ ] Inlet velocity specification
+- [x] Inlet velocity specification (uniform, parabolic, custom profiles)
 - [ ] Outlet (zero-gradient/convective)
 - [ ] Symmetry planes
 - [ ] Moving wall boundaries
@@ -538,7 +538,9 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 **Remaining for v0.1.0:**
 
-- [ ] Proper boundary conditions (walls, inlet/outlet)
+- [x] No-slip wall boundary conditions
+- [x] Inlet velocity boundary conditions
+- [ ] Outlet boundary conditions
 - [ ] At least one Krylov solver (CG or BiCGSTAB)
 - [ ] Lid-driven cavity validation
 - [ ] Basic documentation
