@@ -438,6 +438,161 @@ void test_inlet_mass_flow_right(void) {
     free(v);
 }
 
+void test_inlet_mass_flow_zero_density(void) {
+    /* Division by zero protection: density = 0 should result in zero velocity */
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    /* Initialize with non-zero values to verify they are set to zero */
+    for (size_t i = 0; i < nx * ny; i++) {
+        u[i] = 999.0;
+        v[i] = 999.0;
+    }
+
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(10.0, 0.0, 0.5);  /* density = 0 */
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* With zero density, velocity should be zero (protected division) */
+    for (size_t j = 0; j < ny; j++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_mass_flow_zero_length(void) {
+    /* Division by zero protection: inlet_length = 0 should result in zero velocity */
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    /* Initialize with non-zero values */
+    for (size_t i = 0; i < nx * ny; i++) {
+        u[i] = 999.0;
+        v[i] = 999.0;
+    }
+
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(10.0, 1000.0, 0.0);  /* length = 0 */
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* With zero length, velocity should be zero (protected division) */
+    for (size_t j = 0; j < ny; j++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_mass_flow_negative_density(void) {
+    /* Negative density is physically invalid - should result in zero velocity */
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    /* Initialize with non-zero values */
+    for (size_t i = 0; i < nx * ny; i++) {
+        u[i] = 999.0;
+        v[i] = 999.0;
+    }
+
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(10.0, -1000.0, 0.5);  /* negative density */
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Negative density should result in zero velocity */
+    for (size_t j = 0; j < ny; j++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_mass_flow_negative_length(void) {
+    /* Negative length is physically invalid - should result in zero velocity */
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    /* Initialize with non-zero values */
+    for (size_t i = 0; i < nx * ny; i++) {
+        u[i] = 999.0;
+        v[i] = 999.0;
+    }
+
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(10.0, 1000.0, -0.5);  /* negative length */
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Negative length should result in zero velocity */
+    for (size_t j = 0; j < ny; j++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_mass_flow_all_backends_zero_area(void) {
+    /* Test that all backends handle zero area correctly */
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(10.0, 0.0, 0.5);  /* zero density */
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    /* Test CPU backend */
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Test OMP backend (if available) */
+    status = bc_apply_inlet_omp(u, v, nx, ny, &config);
+    if (status != CFD_ERROR_UNSUPPORTED) {
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+    }
+
+    /* Test SIMD+OMP backend (if available) */
+    status = bc_apply_inlet_simd_omp(u, v, nx, ny, &config);
+    if (status != CFD_ERROR_UNSUPPORTED) {
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+    }
+
+    /* Test main dispatch */
+    status = bc_apply_inlet(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    free(u);
+    free(v);
+}
+
 /* ============================================================================
  * Custom Profile Tests
  * ============================================================================ */
@@ -784,6 +939,13 @@ int main(void) {
     /* Mass flow rate tests */
     RUN_TEST(test_inlet_mass_flow_left);
     RUN_TEST(test_inlet_mass_flow_right);
+
+    /* Mass flow division by zero tests */
+    RUN_TEST(test_inlet_mass_flow_zero_density);
+    RUN_TEST(test_inlet_mass_flow_zero_length);
+    RUN_TEST(test_inlet_mass_flow_negative_density);
+    RUN_TEST(test_inlet_mass_flow_negative_length);
+    RUN_TEST(test_inlet_mass_flow_all_backends_zero_area);
 
     /* Custom profile tests */
     RUN_TEST(test_inlet_custom_profile);
