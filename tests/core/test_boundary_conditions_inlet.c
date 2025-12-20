@@ -881,6 +881,498 @@ void test_inlet_invalid_edge_all_backends(void) {
 }
 
 /* ============================================================================
+ * Parabolic Profile - All Edges Tests
+ * ============================================================================ */
+
+void test_inlet_parabolic_right_boundary(void) {
+    /* Parabolic profile on right boundary with explicit velocity direction */
+    size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    double max_velocity = 2.0;
+    /* Create config with u pointing into domain (negative x for right edge) */
+    bc_inlet_config_t config = bc_inlet_config_uniform(-max_velocity, 0.0);
+    config.profile = BC_INLET_PROFILE_PARABOLIC;
+    bc_inlet_set_edge(&config, BC_EDGE_RIGHT);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Right boundary: explicitly set to -u direction */
+    for (size_t j = 0; j < ny; j++) {
+        double position = (ny > 1) ? (double)j / (double)(ny - 1) : 0.5;
+        double profile_factor = 4.0 * position * (1.0 - position);
+        double expected_u = -max_velocity * profile_factor;
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[j * nx + (nx - 1)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx + (nx - 1)]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_parabolic_bottom_boundary(void) {
+    /* Parabolic profile on bottom boundary with v component */
+    size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    double max_velocity = 2.0;
+    /* Create config with v pointing into domain (+y for bottom edge) */
+    bc_inlet_config_t config = bc_inlet_config_uniform(0.0, max_velocity);
+    config.profile = BC_INLET_PROFILE_PARABOLIC;
+    bc_inlet_set_edge(&config, BC_EDGE_BOTTOM);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Bottom boundary: flow into domain is +y direction */
+    for (size_t i = 0; i < nx; i++) {
+        double position = (nx > 1) ? (double)i / (double)(nx - 1) : 0.5;
+        double profile_factor = 4.0 * position * (1.0 - position);
+        double expected_v = max_velocity * profile_factor;
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[i]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_parabolic_top_boundary(void) {
+    /* Parabolic profile on top boundary with v component */
+    size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    double max_velocity = 2.0;
+    /* Create config with v pointing into domain (-y for top edge) */
+    bc_inlet_config_t config = bc_inlet_config_uniform(0.0, -max_velocity);
+    config.profile = BC_INLET_PROFILE_PARABOLIC;
+    bc_inlet_set_edge(&config, BC_EDGE_TOP);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Top boundary: flow into domain is -y direction */
+    for (size_t i = 0; i < nx; i++) {
+        double position = (nx > 1) ? (double)i / (double)(nx - 1) : 0.5;
+        double profile_factor = 4.0 * position * (1.0 - position);
+        double expected_v = -max_velocity * profile_factor;
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[(ny - 1) * nx + i]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_parabolic_endpoints_zero(void) {
+    /* Parabolic profile should be zero at endpoints (position 0 and 1) */
+    size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_parabolic(5.0);
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* First point (j=0, position=0): profile_factor = 4*0*(1-0) = 0 */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[0]);
+
+    /* Last point (j=ny-1, position=1): profile_factor = 4*1*(1-1) = 0 */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx]);
+
+    free(u);
+    free(v);
+}
+
+/* ============================================================================
+ * Mass Flow Rate - Bottom/Top Edges Tests
+ * ============================================================================ */
+
+void test_inlet_mass_flow_bottom(void) {
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    double mass_flow = 10.0;
+    double density = 1000.0;
+    double length = 0.5;
+    double expected_velocity = mass_flow / (density * length);
+
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(mass_flow, density, length);
+    bc_inlet_set_edge(&config, BC_EDGE_BOTTOM);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Bottom boundary should have positive v (into domain, +y) */
+    for (size_t i = 0; i < nx; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_velocity, v[i]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_mass_flow_top(void) {
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    double mass_flow = 10.0;
+    double density = 1000.0;
+    double length = 0.5;
+    double expected_velocity = -mass_flow / (density * length);  /* Negative for top */
+
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(mass_flow, density, length);
+    bc_inlet_set_edge(&config, BC_EDGE_TOP);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Top boundary should have negative v (into domain, -y) */
+    for (size_t i = 0; i < nx; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_velocity, v[(ny - 1) * nx + i]);
+    }
+
+    free(u);
+    free(v);
+}
+
+/* ============================================================================
+ * Interior Values Unchanged Tests
+ * ============================================================================ */
+
+void test_inlet_interior_unchanged(void) {
+    /* Verify that inlet BC only modifies boundary, not interior */
+    size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.5);
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Interior points (not on left boundary) should still be 999.0 */
+    for (size_t j = 0; j < ny; j++) {
+        for (size_t i = 1; i < nx; i++) {  /* i > 0 means not left boundary */
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[j * nx + i]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[j * nx + i]);
+        }
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_only_specified_edge_modified(void) {
+    /* Apply inlet to left edge, verify other edges unchanged */
+    size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.0);
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    bc_apply_inlet_cpu(u, v, nx, ny, &config);
+
+    /* Right boundary should be unchanged */
+    for (size_t j = 0; j < ny; j++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[j * nx + (nx - 1)]);
+    }
+
+    /* Bottom boundary (except first column) should be unchanged */
+    for (size_t i = 1; i < nx; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[i]);
+    }
+
+    /* Top boundary (except first column) should be unchanged */
+    for (size_t i = 1; i < nx; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[(ny - 1) * nx + i]);
+    }
+
+    free(u);
+    free(v);
+}
+
+/* ============================================================================
+ * Large Grid Tests (for size_to_int overflow protection)
+ * ============================================================================ */
+
+void test_inlet_large_grid(void) {
+    /* Test with larger grid to exercise size_to_int paths */
+    size_t nx = TEST_NX_LARGE, ny = TEST_NY_LARGE;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_parabolic(3.0);
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Verify all boundary points are set */
+    for (size_t j = 0; j < ny; j++) {
+        double position = (double)j / (double)(ny - 1);
+        double profile_factor = 4.0 * position * (1.0 - position);
+        double expected = 3.0 * profile_factor;
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, u[j * nx]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_large_grid_all_backends(void) {
+    /* Test large grid with all backends for consistency */
+    size_t nx = TEST_NX_LARGE, ny = TEST_NY_LARGE;
+    double* u_cpu = create_test_field(nx, ny);
+    double* v_cpu = create_test_field(nx, ny);
+    double* u_omp = create_test_field(nx, ny);
+    double* v_omp = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u_cpu);
+    TEST_ASSERT_NOT_NULL(v_cpu);
+    TEST_ASSERT_NOT_NULL(u_omp);
+    TEST_ASSERT_NOT_NULL(v_omp);
+
+    bc_inlet_config_t config = bc_inlet_config_parabolic(2.5);
+    bc_inlet_set_edge(&config, BC_EDGE_BOTTOM);
+
+    bc_apply_inlet_cpu(u_cpu, v_cpu, nx, ny, &config);
+
+    cfd_status_t status = bc_apply_inlet_omp(u_omp, v_omp, nx, ny, &config);
+    if (status != CFD_ERROR_UNSUPPORTED) {
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+        /* Compare bottom boundary */
+        for (size_t i = 0; i < nx; i++) {
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_cpu[i], u_omp[i]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_cpu[i], v_omp[i]);
+        }
+    }
+
+    free(u_cpu);
+    free(v_cpu);
+    free(u_omp);
+    free(v_omp);
+}
+
+/* ============================================================================
+ * Backend Consistency - All Profile Types
+ * ============================================================================ */
+
+void test_inlet_backend_consistency_mass_flow(void) {
+    if (!bc_backend_available(BC_BACKEND_OMP)) {
+        TEST_IGNORE_MESSAGE("OpenMP backend not available");
+        return;
+    }
+
+    size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
+    double* u_cpu = create_test_field(nx, ny);
+    double* v_cpu = create_test_field(nx, ny);
+    double* u_omp = create_test_field(nx, ny);
+    double* v_omp = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u_cpu);
+    TEST_ASSERT_NOT_NULL(v_cpu);
+    TEST_ASSERT_NOT_NULL(u_omp);
+    TEST_ASSERT_NOT_NULL(v_omp);
+
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(10.0, 1000.0, 0.5);
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    bc_apply_inlet_cpu(u_cpu, v_cpu, nx, ny, &config);
+    bc_apply_inlet_omp(u_omp, v_omp, nx, ny, &config);
+
+    for (size_t j = 0; j < ny; j++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_cpu[j * nx], u_omp[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_cpu[j * nx], v_omp[j * nx]);
+    }
+
+    free(u_cpu);
+    free(v_cpu);
+    free(u_omp);
+    free(v_omp);
+}
+
+void test_inlet_backend_consistency_magnitude_dir(void) {
+    if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
+        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        return;
+    }
+
+    size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
+    double* u_cpu = create_test_field(nx, ny);
+    double* v_cpu = create_test_field(nx, ny);
+    double* u_simd = create_test_field(nx, ny);
+    double* v_simd = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u_cpu);
+    TEST_ASSERT_NOT_NULL(v_cpu);
+    TEST_ASSERT_NOT_NULL(u_simd);
+    TEST_ASSERT_NOT_NULL(v_simd);
+
+    bc_inlet_config_t config = bc_inlet_config_magnitude_dir(2.0, M_PI / 4);  /* 45 degrees */
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    bc_apply_inlet_cpu(u_cpu, v_cpu, nx, ny, &config);
+    bc_apply_inlet_simd_omp(u_simd, v_simd, nx, ny, &config);
+
+    for (size_t j = 0; j < ny; j++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_cpu[j * nx], u_simd[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_cpu[j * nx], v_simd[j * nx]);
+    }
+
+    free(u_cpu);
+    free(v_cpu);
+    free(u_simd);
+    free(v_simd);
+}
+
+/* ============================================================================
+ * Correct Array Index Tests
+ * ============================================================================ */
+
+void test_inlet_correct_indices_left(void) {
+    /* Verify left boundary uses correct indices: j*nx for j in 0..ny-1 */
+    size_t nx = 5, ny = 4;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.0);
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    bc_apply_inlet_cpu(u, v, nx, ny, &config);
+
+    /* Check expected indices: 0, 5, 10, 15 (j*nx for j=0,1,2,3) */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[0]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[5]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[10]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[15]);
+
+    /* Adjacent cells should be unchanged */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[1]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[6]);
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_correct_indices_right(void) {
+    /* Verify right boundary uses correct indices: j*nx + (nx-1) */
+    size_t nx = 5, ny = 4;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    /* Use uniform config - velocity is applied as specified, no automatic direction flip */
+    bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.0);
+    bc_inlet_set_edge(&config, BC_EDGE_RIGHT);
+
+    bc_apply_inlet_cpu(u, v, nx, ny, &config);
+
+    /* Check expected indices: 4, 9, 14, 19 (j*nx + 4 for j=0,1,2,3) */
+    /* Velocity is applied as specified (u=1.0) without automatic sign flip */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[4]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[9]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[14]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[19]);
+
+    /* Adjacent cells should be unchanged */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[3]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[8]);
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_correct_indices_bottom(void) {
+    /* Verify bottom boundary uses correct indices: i for i in 0..nx-1 */
+    size_t nx = 5, ny = 4;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(0.0, 1.0);
+    bc_inlet_set_edge(&config, BC_EDGE_BOTTOM);
+
+    bc_apply_inlet_cpu(u, v, nx, ny, &config);
+
+    /* Check expected indices: 0, 1, 2, 3, 4 */
+    for (size_t i = 0; i < nx; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, v[i]);
+    }
+
+    /* Second row should be unchanged */
+    for (size_t i = 0; i < nx; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[nx + i]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_correct_indices_top(void) {
+    /* Verify top boundary uses correct indices: (ny-1)*nx + i */
+    size_t nx = 5, ny = 4;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    /* Velocity is applied as specified, no automatic direction flip */
+    bc_inlet_config_t config = bc_inlet_config_uniform(0.0, 1.0);
+    bc_inlet_set_edge(&config, BC_EDGE_TOP);
+
+    bc_apply_inlet_cpu(u, v, nx, ny, &config);
+
+    /* Check expected indices: 15, 16, 17, 18, 19 ((ny-1)*nx + i) */
+    for (size_t i = 0; i < nx; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, v[(ny - 1) * nx + i]);  /* v=1.0 as specified */
+    }
+
+    /* Second-to-last row should be unchanged */
+    for (size_t i = 0; i < nx; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[(ny - 2) * nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[(ny - 2) * nx + i]);
+    }
+
+    free(u);
+    free(v);
+}
+
+/* ============================================================================
  * Main Dispatch Tests
  * ============================================================================ */
 
@@ -931,6 +1423,10 @@ int main(void) {
     /* Parabolic inlet tests */
     RUN_TEST(test_inlet_parabolic_left_boundary);
     RUN_TEST(test_inlet_parabolic_symmetry);
+    RUN_TEST(test_inlet_parabolic_right_boundary);
+    RUN_TEST(test_inlet_parabolic_bottom_boundary);
+    RUN_TEST(test_inlet_parabolic_top_boundary);
+    RUN_TEST(test_inlet_parabolic_endpoints_zero);
 
     /* Magnitude + direction tests */
     RUN_TEST(test_inlet_magnitude_direction);
@@ -939,6 +1435,8 @@ int main(void) {
     /* Mass flow rate tests */
     RUN_TEST(test_inlet_mass_flow_left);
     RUN_TEST(test_inlet_mass_flow_right);
+    RUN_TEST(test_inlet_mass_flow_bottom);
+    RUN_TEST(test_inlet_mass_flow_top);
 
     /* Mass flow division by zero tests */
     RUN_TEST(test_inlet_mass_flow_zero_density);
@@ -953,6 +1451,22 @@ int main(void) {
     /* Backend consistency tests */
     RUN_TEST(test_inlet_omp_consistency);
     RUN_TEST(test_inlet_simd_omp_consistency);
+    RUN_TEST(test_inlet_backend_consistency_mass_flow);
+    RUN_TEST(test_inlet_backend_consistency_magnitude_dir);
+
+    /* Interior unchanged tests */
+    RUN_TEST(test_inlet_interior_unchanged);
+    RUN_TEST(test_inlet_only_specified_edge_modified);
+
+    /* Large grid tests */
+    RUN_TEST(test_inlet_large_grid);
+    RUN_TEST(test_inlet_large_grid_all_backends);
+
+    /* Correct array index tests */
+    RUN_TEST(test_inlet_correct_indices_left);
+    RUN_TEST(test_inlet_correct_indices_right);
+    RUN_TEST(test_inlet_correct_indices_bottom);
+    RUN_TEST(test_inlet_correct_indices_top);
 
     /* Edge case tests */
     RUN_TEST(test_inlet_null_fields);
