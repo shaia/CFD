@@ -50,7 +50,7 @@ typedef struct {
     double omega;      /* SOR relaxation parameter */
     __m256d dx2_inv_vec;
     __m256d dy2_inv_vec;
-    __m256d inv_factor_vec;
+    __m256d neg_inv_factor_vec;
     __m256d omega_vec;
     int initialized;
 } redblack_avx2_omp_context_t;
@@ -121,7 +121,7 @@ static inline void redblack_avx2_process_row(
         __m256d term_y = _mm256_mul_pd(sum_y, ctx->dy2_inv_vec);
         __m256d sum_terms = _mm256_add_pd(term_x, term_y);
         __m256d diff = _mm256_sub_pd(v_rhs, sum_terms);
-        __m256d v_p_new = _mm256_mul_pd(diff, ctx->inv_factor_vec);
+        __m256d v_p_new = _mm256_mul_pd(diff, ctx->neg_inv_factor_vec);
 
         /* SOR update: x = x + omega * (p_new - x) */
         __m256d v_diff = _mm256_sub_pd(v_p_new, v_vals);
@@ -170,7 +170,7 @@ static cfd_status_t redblack_avx2_omp_init(
     /* Pre-compute SIMD vectors */
     ctx->dx2_inv_vec = _mm256_set1_pd(1.0 / ctx->dx2);
     ctx->dy2_inv_vec = _mm256_set1_pd(1.0 / ctx->dy2);
-    ctx->inv_factor_vec = _mm256_set1_pd(-ctx->inv_factor);
+    ctx->neg_inv_factor_vec = _mm256_set1_pd(-ctx->inv_factor);
     ctx->omega_vec = _mm256_set1_pd(ctx->omega);
 
     ctx->initialized = 1;
