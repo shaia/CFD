@@ -33,8 +33,8 @@ if(OpenMP_C_FOUND)
     message(STATUS "OpenMP found. Multithreading support enabled.")
     add_compile_definitions(CFD_ENABLE_OPENMP)
     set(CFD_OMP_SOLVER_SOURCES
-        src/solvers/omp/solver_explicit_euler_omp.c
-        src/solvers/omp/solver_projection_omp.c
+        src/solvers/navier_stokes/omp/solver_explicit_euler_omp.c
+        src/solvers/navier_stokes/omp/solver_projection_omp.c
     )
 else()
     message(WARNING "OpenMP not found. Multithreaded solvers will run in serial.")
@@ -83,17 +83,14 @@ set(CFD_API_SOURCES
     src/api/output_registry.c
 )
 
-# Collect CPU solver source files
-set(CFD_CPU_SOLVER_SOURCES
-    src/solvers/cpu/solver_explicit_euler.c
-    src/solvers/cpu/solver_projection.c
-)
-
-# Collect SIMD+OMP optimized solver source files
-# Uses OpenMP for outer loop parallelization + SIMD for inner vectorization
-set(CFD_SIMD_OMP_SOLVER_SOURCES
-    src/solvers/simd_omp/solver_explicit_euler_simd_omp.c
-    src/solvers/simd_omp/solver_projection_simd_omp.c
+# Collect Navier-Stokes solver source files (organized by backend)
+set(CFD_NAVIER_STOKES_SOURCES
+    # Scalar CPU implementations
+    src/solvers/navier_stokes/cpu/solver_explicit_euler.c
+    src/solvers/navier_stokes/cpu/solver_projection.c
+    # AVX2+OMP implementations (x86-64)
+    src/solvers/navier_stokes/avx2_omp/solver_explicit_euler_avx2_omp.c
+    src/solvers/navier_stokes/avx2_omp/solver_projection_avx2_omp.c
 )
 
 # Collect Poisson solver sources (abstraction layer)
@@ -126,8 +123,7 @@ set(CFD_LIBRARY_SOURCES
     ${CFD_BOUNDARY_SOURCES}
     ${CFD_IO_SOURCES}
     ${CFD_API_SOURCES}
-    ${CFD_CPU_SOLVER_SOURCES}
-    ${CFD_SIMD_OMP_SOLVER_SOURCES}
+    ${CFD_NAVIER_STOKES_SOURCES}
     ${CFD_OMP_SOLVER_SOURCES}
     ${CFD_POISSON_SOLVER_SOURCES}
 )

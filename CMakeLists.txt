@@ -175,20 +175,20 @@ if(BUILD_TESTS)
     add_executable(test_boundary_conditions_dirichlet tests/core/test_boundary_conditions_dirichlet.c)
     add_executable(test_boundary_conditions_noslip tests/core/test_boundary_conditions_noslip.c)
 
-    # CPU solver tests
-    add_executable(test_solver_explicit_euler tests/solvers/cpu/test_solver_explicit_euler.c)
-    add_executable(test_solver_projection tests/solvers/cpu/test_solver_projection.c)
+    # Navier-Stokes solver tests (CPU)
+    add_executable(test_solver_explicit_euler tests/solvers/navier_stokes/cpu/test_solver_explicit_euler.c)
+    add_executable(test_solver_projection tests/solvers/navier_stokes/cpu/test_solver_projection.c)
 
-    # SIMD+OMP solver tests
-    add_executable(test_solver_explicit_euler_simd_omp tests/solvers/simd_omp/test_solver_explicit_euler_simd_omp.c)
-    add_executable(test_solver_projection_simd_omp tests/solvers/simd_omp/test_solver_projection_simd_omp.c)
+    # Navier-Stokes solver tests (AVX2+OMP)
+    add_executable(test_solver_explicit_euler_avx2_omp tests/solvers/navier_stokes/avx2_omp/test_solver_explicit_euler_avx2_omp.c)
+    add_executable(test_solver_projection_avx2_omp tests/solvers/navier_stokes/avx2_omp/test_solver_projection_avx2_omp.c)
 
-    # OpenMP solver tests
-    add_executable(test_solver_explicit_euler_omp tests/solvers/omp/test_solver_explicit_euler_omp.c)
-    add_executable(test_solver_projection_omp tests/solvers/omp/test_solver_projection_omp.c)
+    # Navier-Stokes solver tests (OpenMP)
+    add_executable(test_solver_explicit_euler_omp tests/solvers/navier_stokes/omp/test_solver_explicit_euler_omp.c)
+    add_executable(test_solver_projection_omp tests/solvers/navier_stokes/omp/test_solver_projection_omp.c)
 
-    # GPU projection Jacobi solver tests
-    add_executable(test_solver_projection_jacobi_gpu tests/solvers/gpu/test_solver_projection_jacobi_gpu.c)
+    # Navier-Stokes solver tests (GPU)
+    add_executable(test_solver_projection_jacobi_gpu tests/solvers/navier_stokes/gpu/test_solver_projection_jacobi_gpu.c)
 
     # Linear solver abstraction tests
     add_executable(test_linear_solver tests/solvers/test_linear_solver.c)
@@ -215,8 +215,8 @@ if(BUILD_TESTS)
     target_link_libraries(test_boundary_conditions_noslip PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_explicit_euler PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_projection PRIVATE CFD::Library unity)
-    target_link_libraries(test_solver_explicit_euler_simd_omp PRIVATE CFD::Library unity)
-    target_link_libraries(test_solver_projection_simd_omp PRIVATE CFD::Library unity)
+    target_link_libraries(test_solver_explicit_euler_avx2_omp PRIVATE CFD::Library unity)
+    target_link_libraries(test_solver_projection_avx2_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_explicit_euler_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_projection_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_projection_jacobi_gpu PRIVATE CFD::Library unity)
@@ -245,8 +245,8 @@ if(BUILD_TESTS)
     add_test(NAME BoundaryConditionsNoslipTest COMMAND test_boundary_conditions_noslip)
     add_test(NAME SolverExplicitEulerTest COMMAND test_solver_explicit_euler)
     add_test(NAME SolverProjectionTest COMMAND test_solver_projection)
-    add_test(NAME SolverExplicitEulerSimdOmpTest COMMAND test_solver_explicit_euler_simd_omp)
-    add_test(NAME SolverProjectionSimdOmpTest COMMAND test_solver_projection_simd_omp)
+    add_test(NAME SolverExplicitEulerAvx2OmpTest COMMAND test_solver_explicit_euler_avx2_omp)
+    add_test(NAME SolverProjectionAvx2OmpTest COMMAND test_solver_projection_avx2_omp)
     add_test(NAME SolverExplicitEulerOmpTest COMMAND test_solver_explicit_euler_omp)
     add_test(NAME SolverProjectionOmpTest COMMAND test_solver_projection_omp)
     add_test(NAME SolverProjectionJacobiGpuTest COMMAND test_solver_projection_jacobi_gpu)
