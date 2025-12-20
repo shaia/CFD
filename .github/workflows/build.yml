@@ -323,15 +323,15 @@ jobs:
           # Run the linear solver test and check that SIMD is reported as available
           OUTPUT=$(./test_linear_solver 2>&1 || true)
           echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -q "SIMD backend available: YES"; then
-            echo "✅ AVX2 SIMD backend is correctly enabled"
+          if echo "$OUTPUT" | grep -q "SIMD+OMP backend available: YES"; then
+            echo "✅ AVX2 SIMD+OMP backend is correctly enabled"
           else
-            echo "❌ ERROR: AVX2 was expected but SIMD backend reports NO"
+            echo "❌ ERROR: AVX2 was expected but SIMD+OMP backend reports NO"
             echo "This means the code was not compiled with AVX2 support"
             exit 1
           fi
           # Verify we see the AVX2 description
-          if echo "$OUTPUT" | grep -q "AVX2 SIMD"; then
+          if echo "$OUTPUT" | grep -q "AVX2"; then
             echo "✅ AVX2 SIMD solver descriptions found"
           else
             echo "❌ ERROR: AVX2 SIMD solver not found in output"
@@ -400,15 +400,15 @@ jobs:
           # Run the linear solver test and check that SIMD is reported as available
           OUTPUT=$(./Release/test_linear_solver.exe 2>&1 || true)
           echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -q "SIMD backend available: YES"; then
-            echo "✅ AVX2 SIMD backend is correctly enabled"
+          if echo "$OUTPUT" | grep -q "SIMD+OMP backend available: YES"; then
+            echo "✅ AVX2 SIMD+OMP backend is correctly enabled"
           else
-            echo "❌ ERROR: AVX2 was expected but SIMD backend reports NO"
+            echo "❌ ERROR: AVX2 was expected but SIMD+OMP backend reports NO"
             echo "This means the code was not compiled with AVX2 support"
             exit 1
           fi
           # Verify we see the AVX2 description
-          if echo "$OUTPUT" | grep -q "AVX2 SIMD"; then
+          if echo "$OUTPUT" | grep -q "AVX2"; then
             echo "✅ AVX2 SIMD solver descriptions found"
           else
             echo "❌ ERROR: AVX2 SIMD solver not found in output"

@@ -33,8 +33,8 @@ if(OpenMP_C_FOUND)
     message(STATUS "OpenMP found. Multithreading support enabled.")
     add_compile_definitions(CFD_ENABLE_OPENMP)
     set(CFD_OMP_SOLVER_SOURCES
-        src/solvers/omp/solver_explicit_euler_omp.c
-        src/solvers/omp/solver_projection_omp.c
+        src/solvers/navier_stokes/omp/solver_explicit_euler_omp.c
+        src/solvers/navier_stokes/omp/solver_projection_omp.c
     )
 else()
     message(WARNING "OpenMP not found. Multithreaded solvers will run in serial.")
@@ -83,26 +83,31 @@ set(CFD_API_SOURCES
     src/api/output_registry.c
 )
 
-# Collect CPU solver source files
-set(CFD_CPU_SOLVER_SOURCES
-    src/solvers/cpu/solver_explicit_euler.c
-    src/solvers/cpu/solver_projection.c
-)
-
-# Collect SIMD-optimized solver source files
-set(CFD_SIMD_SOLVER_SOURCES
-    src/solvers/simd/solver_explicit_euler_simd.c
-    src/solvers/simd/solver_projection_simd.c
+# Collect Navier-Stokes solver source files (organized by backend)
+set(CFD_NAVIER_STOKES_SOURCES
+    # Scalar CPU implementations
+    src/solvers/navier_stokes/cpu/solver_explicit_euler.c
+    src/solvers/navier_stokes/cpu/solver_projection.c
+    # AVX2+OMP implementations (x86-64)
+    src/solvers/navier_stokes/avx2_omp/solver_explicit_euler_avx2_omp.c
+    src/solvers/navier_stokes/avx2_omp/solver_projection_avx2_omp.c
 )
 
 # Collect Poisson solver sources (abstraction layer)
+# Uses runtime SIMD detection via SIMD+OMP dispatcher (AVX2 on x86-64, NEON on ARM64)
 set(CFD_POISSON_SOLVER_SOURCES
     src/solvers/linear/linear_solver.c
     src/solvers/linear/cpu/linear_solver_jacobi.c
     src/solvers/linear/cpu/linear_solver_sor.c
     src/solvers/linear/cpu/linear_solver_redblack.c
-    src/solvers/linear/simd/linear_solver_jacobi_simd.c
-    src/solvers/linear/simd/linear_solver_redblack_simd.c
+    # SIMD+OMP dispatcher (runtime architecture detection)
+    src/solvers/linear/simd_omp/linear_solver_simd_omp_dispatch.c
+    # AVX2+OMP implementations (x86-64)
+    src/solvers/linear/avx2/linear_solver_jacobi_avx2_omp.c
+    src/solvers/linear/avx2/linear_solver_redblack_avx2_omp.c
+    # NEON+OMP implementations (ARM64)
+    src/solvers/linear/neon/linear_solver_jacobi_neon_omp.c
+    src/solvers/linear/neon/linear_solver_redblack_neon_omp.c
 )
 
 # OMP Poisson solver (if OpenMP is available)
@@ -118,8 +123,7 @@ set(CFD_LIBRARY_SOURCES
     ${CFD_BOUNDARY_SOURCES}
     ${CFD_IO_SOURCES}
     ${CFD_API_SOURCES}
-    ${CFD_CPU_SOLVER_SOURCES}
-    ${CFD_SIMD_SOLVER_SOURCES}
+    ${CFD_NAVIER_STOKES_SOURCES}
     ${CFD_OMP_SOLVER_SOURCES}
     ${CFD_POISSON_SOLVER_SOURCES}
 )
@@ -296,6 +300,9 @@ endif()
 # Report SIMD optimization status
 if(CFD_ENABLE_AVX2 AND CFD_IS_X86)
     message(STATUS "AVX2 SIMD optimizations ENABLED (${CMAKE_SYSTEM_PROCESSOR})")
+    # Define CFD_HAS_AVX2 for source code - MSVC doesn't define __AVX2__ automatically
+    # even when compiling with /arch:AVX2, so we need this explicit define
+    add_compile_definitions(CFD_HAS_AVX2)
 elseif(CFD_IS_ARM64)
     message(STATUS "ARM NEON SIMD optimizations available (${CMAKE_SYSTEM_PROCESSOR})")
 else()

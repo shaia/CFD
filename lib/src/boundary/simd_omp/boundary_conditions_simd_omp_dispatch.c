@@ -37,26 +37,86 @@
 #include "../boundary_conditions_internal.h"
 #include "cfd/core/cpu_features.h"
 #include <stdbool.h>
+#include <stdint.h>
 #include <assert.h>
 #include <stdio.h>
+
+/* Platform-specific atomic operations for thread-safe caching */
+#ifdef _MSC_VER
+#include <intrin.h>
+#define ATOMIC_LOAD(ptr) _InterlockedCompareExchange64((volatile long long*)(ptr), 0, 0)
+#define ATOMIC_CAS(ptr, expected, desired) \
+    (_InterlockedCompareExchange64((volatile long long*)(ptr), (long long)(desired), (long long)(*(expected))) == (long long)(*(expected)))
+#define COMPILER_BARRIER() _ReadWriteBarrier()
+#else
+/* GCC/Clang built-in atomics */
+#define ATOMIC_LOAD(ptr) __atomic_load_n((ptr), __ATOMIC_ACQUIRE)
+#define ATOMIC_CAS(ptr, expected, desired) \
+    __atomic_compare_exchange_n((ptr), (expected), (desired), 0, __ATOMIC_RELEASE, __ATOMIC_ACQUIRE)
+#define COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
+#endif
 
 /* ============================================================================
  * Helper: Get SIMD backend based on runtime detection
  *
  * Returns the appropriate backend implementation table (AVX2 or NEON) based
  * on runtime CPU detection. Returns NULL if no SIMD backend is available.
+ *
+ * The result is cached after first call since SIMD architecture doesn't change
+ * at runtime. This avoids redundant calls to cfd_detect_simd_arch() on every
+ * boundary condition operation.
+ *
+ * Thread Safety:
+ * Uses atomic compare-and-swap to ensure proper synchronization. Only one
+ * thread will successfully initialize the cache; others will use the
+ * already-cached result. Memory barriers ensure visibility across threads.
  * ============================================================================ */
 
+/* Cache for the SIMD backend pointer.
+ * Values: 0 = not initialized, 1 = no backend, 2+ = valid backend pointer + 1
+ * Using intptr_t allows atomic operations and encodes state in a single variable. */
+static volatile intptr_t g_simd_backend_cache = 0;
+
+/* Sentinel values for cache state */
+#define CACHE_UNINITIALIZED 0
+#define CACHE_NO_BACKEND    1
+
 static const bc_backend_impl_t* get_simd_backend(void) {
+    /* Fast path: check if already initialized */
+    intptr_t cached = (intptr_t)ATOMIC_LOAD(&g_simd_backend_cache);
+
+    if (cached != CACHE_UNINITIALIZED) {
+        if (cached == CACHE_NO_BACKEND) {
+            return NULL;
+        }
+        /* Decode pointer: subtract 1 and cast back */
+        return (const bc_backend_impl_t*)(cached - 1);
+    }
+
+    /* Slow path: detect SIMD backend */
     cfd_simd_arch_t arch = cfd_detect_simd_arch();
+    const bc_backend_impl_t* result = NULL;
 
     if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_neumann != NULL) {
-        return &bc_impl_avx2_omp;
+        result = &bc_impl_avx2_omp;
+    } else if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_neumann != NULL) {
+        result = &bc_impl_neon_omp;
     }
-    if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_neumann != NULL) {
-        return &bc_impl_neon_omp;
+
+    /* Encode result: NULL becomes CACHE_NO_BACKEND, valid pointer becomes ptr+1 */
+    intptr_t new_value = result ? ((intptr_t)result + 1) : CACHE_NO_BACKEND;
+
+    /* Try to set cache atomically. If another thread beat us, use their result. */
+    intptr_t expected = CACHE_UNINITIALIZED;
+    if (!ATOMIC_CAS(&g_simd_backend_cache, &expected, new_value)) {
+        /* Another thread initialized first - use their cached value */
+        if (expected == CACHE_NO_BACKEND) {
+            return NULL;
+        }
+        return (const bc_backend_impl_t*)(expected - 1);
     }
-    return NULL;
+
+    return result;
 }
 
 /**

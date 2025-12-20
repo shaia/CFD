@@ -175,34 +175,20 @@ if(BUILD_TESTS)
     add_executable(test_boundary_conditions_dirichlet tests/core/test_boundary_conditions_dirichlet.c)
     add_executable(test_boundary_conditions_noslip tests/core/test_boundary_conditions_noslip.c)
 
-    # CPU solver tests
-    add_executable(test_solver_explicit_euler tests/solvers/cpu/test_solver_explicit_euler.c)
-    add_executable(test_solver_projection tests/solvers/cpu/test_solver_projection.c)
+    # Navier-Stokes solver tests (CPU)
+    add_executable(test_solver_explicit_euler tests/solvers/navier_stokes/cpu/test_solver_explicit_euler.c)
+    add_executable(test_solver_projection tests/solvers/navier_stokes/cpu/test_solver_projection.c)
 
-    # SIMD solver tests
-    add_executable(test_solver_explicit_euler_simd tests/solvers/simd/test_solver_explicit_euler_simd.c)
-    add_executable(test_solver_projection_simd tests/solvers/simd/test_solver_projection_simd.c)
+    # Navier-Stokes solver tests (AVX2+OMP)
+    add_executable(test_solver_explicit_euler_avx2_omp tests/solvers/navier_stokes/avx2_omp/test_solver_explicit_euler_avx2_omp.c)
+    add_executable(test_solver_projection_avx2_omp tests/solvers/navier_stokes/avx2_omp/test_solver_projection_avx2_omp.c)
 
-    # SIMD Poisson solver tests
-    # These now use the poisson_solver interface which is linked via CFD::Library
-    # Only build on x86/x64 architectures where AVX2 intrinsics are available
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|x86)")
-        add_executable(test_poisson_jacobi_simd tests/solvers/simd/test_poisson_jacobi_simd.c)
-        add_executable(test_poisson_redblack_simd tests/solvers/simd/test_poisson_redblack_simd.c)
-        target_link_libraries(test_poisson_jacobi_simd PRIVATE CFD::Library unity)
-        target_link_libraries(test_poisson_redblack_simd PRIVATE CFD::Library unity)
-        add_test(NAME PoissonJacobiSimdTest COMMAND test_poisson_jacobi_simd)
-        add_test(NAME PoissonRedBlackSimdTest COMMAND test_poisson_redblack_simd)
-    else()
-        message(STATUS "Skipping SIMD Poisson tests (not on x86/x64 architecture)")
-    endif()
+    # Navier-Stokes solver tests (OpenMP)
+    add_executable(test_solver_explicit_euler_omp tests/solvers/navier_stokes/omp/test_solver_explicit_euler_omp.c)
+    add_executable(test_solver_projection_omp tests/solvers/navier_stokes/omp/test_solver_projection_omp.c)
 
-    # OpenMP solver tests
-    add_executable(test_solver_explicit_euler_omp tests/solvers/omp/test_solver_explicit_euler_omp.c)
-    add_executable(test_solver_projection_omp tests/solvers/omp/test_solver_projection_omp.c)
-
-    # GPU projection Jacobi solver tests
-    add_executable(test_solver_projection_jacobi_gpu tests/solvers/gpu/test_solver_projection_jacobi_gpu.c)
+    # Navier-Stokes solver tests (GPU)
+    add_executable(test_solver_projection_jacobi_gpu tests/solvers/navier_stokes/gpu/test_solver_projection_jacobi_gpu.c)
 
     # Linear solver abstraction tests
     add_executable(test_linear_solver tests/solvers/test_linear_solver.c)
@@ -229,8 +215,8 @@ if(BUILD_TESTS)
     target_link_libraries(test_boundary_conditions_noslip PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_explicit_euler PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_projection PRIVATE CFD::Library unity)
-    target_link_libraries(test_solver_explicit_euler_simd PRIVATE CFD::Library unity)
-    target_link_libraries(test_solver_projection_simd PRIVATE CFD::Library unity)
+    target_link_libraries(test_solver_explicit_euler_avx2_omp PRIVATE CFD::Library unity)
+    target_link_libraries(test_solver_projection_avx2_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_explicit_euler_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_projection_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_projection_jacobi_gpu PRIVATE CFD::Library unity)
@@ -259,8 +245,8 @@ if(BUILD_TESTS)
     add_test(NAME BoundaryConditionsNoslipTest COMMAND test_boundary_conditions_noslip)
     add_test(NAME SolverExplicitEulerTest COMMAND test_solver_explicit_euler)
     add_test(NAME SolverProjectionTest COMMAND test_solver_projection)
-    add_test(NAME SolverExplicitEulerSimdTest COMMAND test_solver_explicit_euler_simd)
-    add_test(NAME SolverProjectionSimdTest COMMAND test_solver_projection_simd)
+    add_test(NAME SolverExplicitEulerAvx2OmpTest COMMAND test_solver_explicit_euler_avx2_omp)
+    add_test(NAME SolverProjectionAvx2OmpTest COMMAND test_solver_projection_avx2_omp)
     add_test(NAME SolverExplicitEulerOmpTest COMMAND test_solver_explicit_euler_omp)
     add_test(NAME SolverProjectionOmpTest COMMAND test_solver_projection_omp)
     add_test(NAME SolverProjectionJacobiGpuTest COMMAND test_solver_projection_jacobi_gpu)
