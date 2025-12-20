@@ -45,7 +45,7 @@ static void log_no_simd_available(const char* solver_type) {
  * FORWARD DECLARATIONS FOR ARCHITECTURE-SPECIFIC IMPLEMENTATIONS
  *
  * These are defined in avx2/ and neon/ subdirectories.
- * If a backend is not compiled (e.g., NEON on x86), the pointers will be NULL.
+ * If a backend is not compiled (e.g., NEON on x86), these functions return NULL.
  * ============================================================================ */
 
 /* AVX2 + OMP implementations (x86-64) */
