@@ -232,11 +232,8 @@ static cfd_status_t redblack_avx2_omp_iterate(
 
 poisson_solver_t* create_redblack_avx2_omp_solver(void) {
 #if defined(REDBLACK_HAS_AVX2_OMP)
-    /* Runtime check - ensure AVX2 is actually available */
-    if (cfd_detect_simd_arch() != CFD_SIMD_AVX2) {
-        return NULL;
-    }
-
+    /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_omp_dispatch.c)
+     * before calling this function. No need to check again here. */
     poisson_solver_t* solver = (poisson_solver_t*)cfd_calloc(1, sizeof(poisson_solver_t));
     if (!solver) {
         return NULL;
