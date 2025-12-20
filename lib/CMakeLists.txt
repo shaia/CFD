@@ -89,10 +89,11 @@ set(CFD_CPU_SOLVER_SOURCES
     src/solvers/cpu/solver_projection.c
 )
 
-# Collect SIMD-optimized solver source files
-set(CFD_SIMD_SOLVER_SOURCES
-    src/solvers/simd/solver_explicit_euler_simd.c
-    src/solvers/simd/solver_projection_simd.c
+# Collect SIMD+OMP optimized solver source files
+# Uses OpenMP for outer loop parallelization + SIMD for inner vectorization
+set(CFD_SIMD_OMP_SOLVER_SOURCES
+    src/solvers/simd_omp/solver_explicit_euler_simd_omp.c
+    src/solvers/simd_omp/solver_projection_simd_omp.c
 )
 
 # Collect Poisson solver sources (abstraction layer)
@@ -126,7 +127,7 @@ set(CFD_LIBRARY_SOURCES
     ${CFD_IO_SOURCES}
     ${CFD_API_SOURCES}
     ${CFD_CPU_SOLVER_SOURCES}
-    ${CFD_SIMD_SOLVER_SOURCES}
+    ${CFD_SIMD_OMP_SOLVER_SOURCES}
     ${CFD_OMP_SOLVER_SOURCES}
     ${CFD_POISSON_SOLVER_SOURCES}
 )

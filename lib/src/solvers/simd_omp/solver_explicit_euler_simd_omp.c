@@ -1,3 +1,14 @@
+/**
+ * Optimized Explicit Euler NSSolver with SIMD + OpenMP
+ *
+ * This implementation combines SIMD vectorization (AVX2) with OpenMP
+ * parallelization for maximum performance on multi-core CPUs.
+ *
+ * - Outer loops are parallelized with OpenMP
+ * - Inner loops use AVX2 SIMD intrinsics for vectorization
+ * - Falls back to scalar code when AVX2 is not available
+ */
+
 // Enable C11 features for aligned_alloc
 #define _POSIX_C_SOURCE 200809L
 #define _ISOC11_SOURCE
@@ -8,7 +19,6 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
-
 #include <math.h>
 
 #ifndef M_PI
@@ -18,6 +28,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #ifdef __AVX2__
 #include <immintrin.h>
@@ -108,9 +121,17 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
     solver->context = ctx;
 
 #if USE_AVX
-    printf("Explicit Euler SIMD: AVX2 optimizations ENABLED (Profiling Mode)\n");
+    #ifdef _OPENMP
+    printf("Explicit Euler SIMD+OMP: AVX2 + OpenMP enabled (%d threads)\n", omp_get_max_threads());
+    #else
+    printf("Explicit Euler SIMD: AVX2 enabled (OpenMP disabled)\n");
+    #endif
 #else
-    printf("Explicit Euler SIMD: AVX2 optimizations DISABLED (Profiling Mode)\n");
+    #ifdef _OPENMP
+    printf("Explicit Euler OMP: Scalar + OpenMP enabled (%d threads)\n", omp_get_max_threads());
+    #else
+    printf("Explicit Euler: Scalar fallback (no SIMD or OpenMP)\n");
+    #endif
 #endif
 
     return CFD_SUCCESS;
@@ -362,12 +383,22 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     simd_constants sc;
     init_simd_constants(&sc, params, conservative_dt);
 
-    for (size_t j = 1; j < ctx->ny - 1; j++) {
-        process_simd_row(ctx, field, grid, j, &sc);
+    int ny_int = (int)(ctx->ny);
+    int j;
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
+    for (j = 1; j < ny_int - 1; j++) {
+        process_simd_row(ctx, field, grid, (size_t)j, &sc);
     }
 #else
-    for (size_t j = 1; j < ctx->ny - 1; j++) {
-        process_scalar_row(ctx, field, grid, params, j, conservative_dt);
+    int ny_int = (int)(ctx->ny);
+    int j;
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
+    for (j = 1; j < ny_int - 1; j++) {
+        process_scalar_row(ctx, field, grid, params, (size_t)j, conservative_dt);
     }
 #endif
 

@@ -1,10 +1,12 @@
 /**
- * Optimized Projection Method NSSolver (Chorin's Method) with SIMD
+ * Optimized Projection Method NSSolver (Chorin's Method) with SIMD + OpenMP
  *
- * This implementation uses SIMD acceleration for the corrector step and
- * calls the optimized SIMD Poisson solver for pressure computation.
+ * This implementation combines SIMD vectorization (AVX2) with OpenMP
+ * parallelization for maximum performance on multi-core CPUs.
  *
- * The predictor step remains scalar due to its complex stencil access pattern.
+ * - Predictor step: OpenMP parallelized (scalar inner loops)
+ * - Corrector step: OpenMP parallelized with AVX2 SIMD inner loops
+ * - Poisson solver: Uses SIMD+OMP Poisson solver for pressure computation
  */
 
 #include "cfd/boundary/boundary_conditions.h"
@@ -20,6 +22,10 @@
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
+#endif
+
+#ifdef _OPENMP
+#include <omp.h>
 #endif
 
 #ifdef __AVX2__
@@ -157,9 +163,17 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
 
     // ============================================================
     // STEP 1: Predictor - Compute intermediate velocity u*
-    // (Scalar implementation - complex stencil with non-contiguous access)
+    // (OpenMP parallelized outer loop, scalar inner loop)
     // ============================================================
-    for (size_t j = 1; j < ny - 1; j++) {
+    int ny_int = (int)ny;
+    int nx_int = (int)nx;
+    int jj;
+    (void)nx_int;  /* suppress unused variable warning */
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
+    for (jj = 1; jj < ny_int - 1; jj++) {
+        size_t j = (size_t)jj;
         for (size_t i = 1; i < nx - 1; i++) {
             size_t idx = (j * nx) + i;
 
@@ -218,7 +232,11 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     }
 
     // Compute RHS: divergence of intermediate velocity
-    for (size_t j = 1; j < ny - 1; j++) {
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
+    for (jj = 1; jj < ny_int - 1; jj++) {
+        size_t j = (size_t)jj;
         for (size_t i = 1; i < nx - 1; i++) {
             size_t idx = (j * nx) + i;
 
@@ -245,6 +263,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     // ============================================================
     // STEP 3: Corrector - Project velocity to be divergence-free
     // u^(n+1) = u* - (dt/ρ) * ∇p
+    // (OpenMP parallelized with SIMD inner loop)
     // ============================================================
 
     double dt_over_rho = dt / rho;
@@ -259,7 +278,11 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     __m256d neg_max_vel_vec = _mm256_set1_pd(-MAX_VELOCITY);
 #endif
 
-    for (size_t j = 1; j < ny - 1; j++) {
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
+    for (jj = 1; jj < ny_int - 1; jj++) {
+        size_t j = (size_t)jj;
         size_t i = 1;
 
 #if USE_AVX
