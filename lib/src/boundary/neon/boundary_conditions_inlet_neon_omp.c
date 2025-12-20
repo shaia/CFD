@@ -27,7 +27,26 @@ static inline int size_to_int(size_t sz) {
 }
 
 /* ============================================================================
- * Table-driven edge configuration
+ * Edge validation and index conversion
+ * ============================================================================ */
+
+static inline bool is_valid_edge(bc_edge_t edge) {
+    return edge == BC_EDGE_LEFT || edge == BC_EDGE_RIGHT ||
+           edge == BC_EDGE_BOTTOM || edge == BC_EDGE_TOP;
+}
+
+static inline int edge_to_index(bc_edge_t edge) {
+    int idx = 0;
+    unsigned int e = (unsigned int)edge;
+    while ((e & 1) == 0 && idx < 4) {
+        e >>= 1;
+        idx++;
+    }
+    return idx;
+}
+
+/* ============================================================================
+ * Table-driven edge configuration (indexed 0-3)
  * ============================================================================ */
 
 typedef struct {
@@ -35,11 +54,11 @@ typedef struct {
     int v_sign;
 } edge_mass_flow_t;
 
-static const edge_mass_flow_t mass_flow_dir[] = {
-    [BC_EDGE_LEFT]   = { .u_sign = +1, .v_sign =  0 },
-    [BC_EDGE_RIGHT]  = { .u_sign = -1, .v_sign =  0 },
-    [BC_EDGE_BOTTOM] = { .u_sign =  0, .v_sign = +1 },
-    [BC_EDGE_TOP]    = { .u_sign =  0, .v_sign = -1 },
+static const edge_mass_flow_t mass_flow_dir[4] = {
+    { .u_sign = +1, .v_sign =  0 },  /* LEFT */
+    { .u_sign = -1, .v_sign =  0 },  /* RIGHT */
+    { .u_sign =  0, .v_sign = +1 },  /* BOTTOM */
+    { .u_sign =  0, .v_sign = -1 },  /* TOP */
 };
 
 /* ============================================================================
@@ -62,9 +81,9 @@ static inline void inlet_get_base_velocity_neon(const bc_inlet_config_t* config,
         case BC_INLET_SPEC_MASS_FLOW: {
             double avg_velocity = config->spec.mass_flow.mass_flow_rate /
                                    (config->spec.mass_flow.density * config->spec.mass_flow.inlet_length);
-            const edge_mass_flow_t* dir = &mass_flow_dir[config->edge];
-            *u_base = avg_velocity * dir->u_sign;
-            *v_base = avg_velocity * dir->v_sign;
+            int idx = edge_to_index(config->edge);
+            *u_base = avg_velocity * mass_flow_dir[idx].u_sign;
+            *v_base = avg_velocity * mass_flow_dir[idx].v_sign;
             break;
         }
 
@@ -145,11 +164,11 @@ typedef struct {
     int use_ny_for_count;
 } edge_loop_config_t;
 
-static const edge_loop_config_t edge_loops[] = {
-    [BC_EDGE_LEFT]   = { .idx_fn = idx_left,   .use_ny_for_count = 1 },
-    [BC_EDGE_RIGHT]  = { .idx_fn = idx_right,  .use_ny_for_count = 1 },
-    [BC_EDGE_BOTTOM] = { .idx_fn = idx_bottom, .use_ny_for_count = 0 },
-    [BC_EDGE_TOP]    = { .idx_fn = idx_top,    .use_ny_for_count = 0 },
+static const edge_loop_config_t edge_loops[4] = {
+    { .idx_fn = idx_left,   .use_ny_for_count = 1 },  /* LEFT */
+    { .idx_fn = idx_right,  .use_ny_for_count = 1 },  /* RIGHT */
+    { .idx_fn = idx_bottom, .use_ny_for_count = 0 },  /* BOTTOM */
+    { .idx_fn = idx_top,    .use_ny_for_count = 0 },  /* TOP */
 };
 
 cfd_status_t bc_apply_inlet_neon_omp_impl(double* u, double* v, size_t nx, size_t ny,
@@ -158,11 +177,12 @@ cfd_status_t bc_apply_inlet_neon_omp_impl(double* u, double* v, size_t nx, size_
         return CFD_ERROR_INVALID;
     }
 
-    if (config->edge < 0 || config->edge > BC_EDGE_TOP) {
+    if (!is_valid_edge(config->edge)) {
         return CFD_ERROR_INVALID;
     }
 
-    const edge_loop_config_t* loop = &edge_loops[config->edge];
+    int edge_idx = edge_to_index(config->edge);
+    const edge_loop_config_t* loop = &edge_loops[edge_idx];
     size_t count = loop->use_ny_for_count ? ny : nx;
     double pos_denom = (count > 1) ? (double)(count - 1) : 1.0;
     idx_func_t idx_fn = loop->idx_fn;

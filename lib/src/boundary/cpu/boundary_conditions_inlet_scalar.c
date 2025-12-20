@@ -15,33 +15,60 @@
 #include <math.h>
 
 /* ============================================================================
- * Table-driven edge configuration
+ * Edge validation and index conversion
+ *
+ * bc_edge_t uses bit flags (0x01, 0x02, 0x04, 0x08) for potential combining.
+ * We convert these to sequential indices (0, 1, 2, 3) for array lookup.
  * ============================================================================ */
 
 /**
- * Edge configuration for boundary loop iteration.
- * Describes how to iterate over boundary points and compute indices.
+ * Check if edge value is valid (exactly one of the four valid edges).
  */
+static inline bool is_valid_edge(bc_edge_t edge) {
+    return edge == BC_EDGE_LEFT || edge == BC_EDGE_RIGHT ||
+           edge == BC_EDGE_BOTTOM || edge == BC_EDGE_TOP;
+}
+
+/**
+ * Convert bc_edge_t bit flag to sequential array index (0-3).
+ * BC_EDGE_LEFT (0x01) -> 0, BC_EDGE_RIGHT (0x02) -> 1,
+ * BC_EDGE_BOTTOM (0x04) -> 2, BC_EDGE_TOP (0x08) -> 3
+ *
+ * Uses bit manipulation: counts trailing zeros in the bit flag.
+ * Assumes edge is valid (power of 2 between 1 and 8).
+ */
+static inline int edge_to_index(bc_edge_t edge) {
+    /* Count trailing zeros: 0x01->0, 0x02->1, 0x04->2, 0x08->3 */
+    int idx = 0;
+    unsigned int e = (unsigned int)edge;
+    while ((e & 1) == 0 && idx < 4) {
+        e >>= 1;
+        idx++;
+    }
+    return idx;
+}
+
+/* ============================================================================
+ * Table-driven edge configuration (indexed 0-3)
+ * ============================================================================ */
+
 typedef struct {
     int u_sign;     /* Sign of u velocity for mass flow (+1 or -1, 0 if v-direction) */
     int v_sign;     /* Sign of v velocity for mass flow (+1 or -1, 0 if u-direction) */
 } edge_mass_flow_t;
 
-/* Mass flow velocity direction by edge (indexed by bc_edge_t) */
-static const edge_mass_flow_t mass_flow_dir[] = {
-    [BC_EDGE_LEFT]   = { .u_sign = +1, .v_sign =  0 },  /* Flow into domain (+x) */
-    [BC_EDGE_RIGHT]  = { .u_sign = -1, .v_sign =  0 },  /* Flow into domain (-x) */
-    [BC_EDGE_BOTTOM] = { .u_sign =  0, .v_sign = +1 },  /* Flow into domain (+y) */
-    [BC_EDGE_TOP]    = { .u_sign =  0, .v_sign = -1 },  /* Flow into domain (-y) */
+/* Mass flow velocity direction by edge index (0=left, 1=right, 2=bottom, 3=top) */
+static const edge_mass_flow_t mass_flow_dir[4] = {
+    { .u_sign = +1, .v_sign =  0 },  /* LEFT: Flow into domain (+x) */
+    { .u_sign = -1, .v_sign =  0 },  /* RIGHT: Flow into domain (-x) */
+    { .u_sign =  0, .v_sign = +1 },  /* BOTTOM: Flow into domain (+y) */
+    { .u_sign =  0, .v_sign = -1 },  /* TOP: Flow into domain (-y) */
 };
 
 /* ============================================================================
  * Velocity computation
  * ============================================================================ */
 
-/**
- * Get base velocity components from inlet specification.
- */
 static inline void inlet_get_base_velocity(const bc_inlet_config_t* config,
                                             double* u_base, double* v_base) {
     switch (config->spec_type) {
@@ -58,9 +85,9 @@ static inline void inlet_get_base_velocity(const bc_inlet_config_t* config,
         case BC_INLET_SPEC_MASS_FLOW: {
             double avg_velocity = config->spec.mass_flow.mass_flow_rate /
                                    (config->spec.mass_flow.density * config->spec.mass_flow.inlet_length);
-            const edge_mass_flow_t* dir = &mass_flow_dir[config->edge];
-            *u_base = avg_velocity * dir->u_sign;
-            *v_base = avg_velocity * dir->v_sign;
+            int idx = edge_to_index(config->edge);
+            *u_base = avg_velocity * mass_flow_dir[idx].u_sign;
+            *v_base = avg_velocity * mass_flow_dir[idx].v_sign;
             break;
         }
 
@@ -71,9 +98,6 @@ static inline void inlet_get_base_velocity(const bc_inlet_config_t* config,
     }
 }
 
-/**
- * Apply velocity profile to base velocity.
- */
 static inline void inlet_apply_profile(const bc_inlet_config_t* config,
                                         double u_base, double v_base,
                                         double position,
@@ -107,9 +131,6 @@ static inline void inlet_apply_profile(const bc_inlet_config_t* config,
     }
 }
 
-/**
- * Compute velocity from inlet configuration at given normalized position.
- */
 static inline void inlet_compute_velocity(const bc_inlet_config_t* config, double position,
                                            double* u_out, double* v_out) {
     double u_base, v_base;
@@ -121,16 +142,6 @@ static inline void inlet_compute_velocity(const bc_inlet_config_t* config, doubl
  * Boundary application with table-driven loop
  * ============================================================================ */
 
-/**
- * Apply inlet BC along a boundary edge.
- *
- * @param u, v       Velocity field arrays
- * @param config     Inlet configuration
- * @param count      Number of boundary points
- * @param pos_denom  Denominator for position calculation (count - 1, or 1 if count == 1)
- * @param idx_fn     Function to compute array index from loop variable
- * @param nx         Grid x dimension (passed to idx_fn)
- */
 typedef size_t (*idx_func_t)(size_t i, size_t nx, size_t ny);
 
 static inline size_t idx_left(size_t j, size_t nx, size_t ny) {
@@ -152,19 +163,17 @@ static inline size_t idx_top(size_t i, size_t nx, size_t ny) {
     return (ny - 1) * nx + i;
 }
 
-/**
- * Edge loop configuration.
- */
 typedef struct {
     idx_func_t idx_fn;      /* Index computation function */
     int use_ny_for_count;   /* 1 if loop count is ny, 0 if nx */
 } edge_loop_config_t;
 
-static const edge_loop_config_t edge_loops[] = {
-    [BC_EDGE_LEFT]   = { .idx_fn = idx_left,   .use_ny_for_count = 1 },
-    [BC_EDGE_RIGHT]  = { .idx_fn = idx_right,  .use_ny_for_count = 1 },
-    [BC_EDGE_BOTTOM] = { .idx_fn = idx_bottom, .use_ny_for_count = 0 },
-    [BC_EDGE_TOP]    = { .idx_fn = idx_top,    .use_ny_for_count = 0 },
+/* Edge loop configuration indexed 0-3 (left, right, bottom, top) */
+static const edge_loop_config_t edge_loops[4] = {
+    { .idx_fn = idx_left,   .use_ny_for_count = 1 },  /* LEFT */
+    { .idx_fn = idx_right,  .use_ny_for_count = 1 },  /* RIGHT */
+    { .idx_fn = idx_bottom, .use_ny_for_count = 0 },  /* BOTTOM */
+    { .idx_fn = idx_top,    .use_ny_for_count = 0 },  /* TOP */
 };
 
 cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, size_t nx, size_t ny,
@@ -173,11 +182,12 @@ cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, size_t nx, size_t 
         return CFD_ERROR_INVALID;
     }
 
-    if (config->edge < 0 || config->edge > BC_EDGE_TOP) {
+    if (!is_valid_edge(config->edge)) {
         return CFD_ERROR_INVALID;
     }
 
-    const edge_loop_config_t* loop = &edge_loops[config->edge];
+    int edge_idx = edge_to_index(config->edge);
+    const edge_loop_config_t* loop = &edge_loops[edge_idx];
     size_t count = loop->use_ny_for_count ? ny : nx;
     double pos_denom = (count > 1) ? (double)(count - 1) : 1.0;
 
