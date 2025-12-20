@@ -37,6 +37,7 @@
 #include "../boundary_conditions_internal.h"
 #include "cfd/core/cpu_features.h"
 #include <stdbool.h>
+#include <stdint.h>
 #include <assert.h>
 #include <stdio.h>
 
@@ -45,18 +46,43 @@
  *
  * Returns the appropriate backend implementation table (AVX2 or NEON) based
  * on runtime CPU detection. Returns NULL if no SIMD backend is available.
+ *
+ * The result is cached after first call since SIMD architecture doesn't change
+ * at runtime. This avoids redundant calls to cfd_detect_simd_arch() on every
+ * boundary condition operation.
  * ============================================================================ */
 
+/* Cache for the SIMD backend pointer. NULL means not yet initialized,
+ * a valid pointer means the backend is available, and a special sentinel
+ * (void*)-1 means no SIMD backend is available. */
+static const bc_backend_impl_t* g_simd_backend_cache = NULL;
+static int g_simd_backend_initialized = 0;
+
 static const bc_backend_impl_t* get_simd_backend(void) {
+    /* Fast path: return cached result */
+    if (g_simd_backend_initialized) {
+        /* Check for "no backend" sentinel */
+        if (g_simd_backend_cache == (const bc_backend_impl_t*)(intptr_t)-1) {
+            return NULL;
+        }
+        return g_simd_backend_cache;
+    }
+
+    /* Slow path: detect and cache */
     cfd_simd_arch_t arch = cfd_detect_simd_arch();
+    const bc_backend_impl_t* result = NULL;
 
     if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_neumann != NULL) {
-        return &bc_impl_avx2_omp;
+        result = &bc_impl_avx2_omp;
+    } else if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_neumann != NULL) {
+        result = &bc_impl_neon_omp;
     }
-    if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_neumann != NULL) {
-        return &bc_impl_neon_omp;
-    }
-    return NULL;
+
+    /* Cache result (use sentinel for NULL to distinguish from uninitialized) */
+    g_simd_backend_cache = result ? result : (const bc_backend_impl_t*)(intptr_t)-1;
+    g_simd_backend_initialized = 1;
+
+    return result;
 }
 
 /**
