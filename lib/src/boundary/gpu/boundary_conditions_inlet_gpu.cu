@@ -16,8 +16,14 @@
 
 #include "cfd/boundary/boundary_conditions_gpu.cuh"
 #include <math.h>
+#include <limits.h>
 
 #define BC_BLOCK_SIZE 256
+
+/* Safe size_t to int conversion with overflow protection */
+static inline int size_to_int(size_t sz) {
+    return (sz > (size_t)INT_MAX) ? INT_MAX : (int)sz;
+}
 
 // ============================================================================
 // CUDA Device Functions - Inlet Velocity Computation
@@ -249,7 +255,7 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
 
     switch (config->edge) {
         case BC_EDGE_LEFT:
-            num_threads = (int)ny;
+            num_threads = size_to_int(ny);
             num_blocks = (num_threads + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE;
             kernel_bc_inlet_left<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(
                 d_u, d_v, nx, ny, config->profile, config->spec_type,
@@ -257,7 +263,7 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
             break;
 
         case BC_EDGE_RIGHT:
-            num_threads = (int)ny;
+            num_threads = size_to_int(ny);
             num_blocks = (num_threads + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE;
             kernel_bc_inlet_right<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(
                 d_u, d_v, nx, ny, config->profile, config->spec_type,
@@ -265,7 +271,7 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
             break;
 
         case BC_EDGE_BOTTOM:
-            num_threads = (int)nx;
+            num_threads = size_to_int(nx);
             num_blocks = (num_threads + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE;
             kernel_bc_inlet_bottom<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(
                 d_u, d_v, nx, ny, config->profile, config->spec_type,
@@ -273,7 +279,7 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
             break;
 
         case BC_EDGE_TOP:
-            num_threads = (int)nx;
+            num_threads = size_to_int(nx);
             num_blocks = (num_threads + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE;
             kernel_bc_inlet_top<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(
                 d_u, d_v, nx, ny, config->profile, config->spec_type,
