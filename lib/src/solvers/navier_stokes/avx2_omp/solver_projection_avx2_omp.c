@@ -28,7 +28,11 @@
 #include <omp.h>
 #endif
 
-#ifdef __AVX2__
+/* AVX2 detection
+ * CFD_HAS_AVX2 is set by CMake when -DCFD_ENABLE_AVX2=ON.
+ * This works consistently across all compilers (GCC, Clang, MSVC).
+ */
+#if defined(CFD_HAS_AVX2)
 #include <immintrin.h>
 #define USE_AVX 1
 #else

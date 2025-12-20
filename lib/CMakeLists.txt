@@ -300,6 +300,9 @@ endif()
 # Report SIMD optimization status
 if(CFD_ENABLE_AVX2 AND CFD_IS_X86)
     message(STATUS "AVX2 SIMD optimizations ENABLED (${CMAKE_SYSTEM_PROCESSOR})")
+    # Define CFD_HAS_AVX2 for source code - MSVC doesn't define __AVX2__ automatically
+    # even when compiling with /arch:AVX2, so we need this explicit define
+    add_compile_definitions(CFD_HAS_AVX2)
 elseif(CFD_IS_ARM64)
     message(STATUS "ARM NEON SIMD optimizations available (${CMAKE_SYSTEM_PROCESSOR})")
 else()

@@ -67,8 +67,11 @@ extern poisson_solver_t* create_redblack_neon_omp_solver(void);
  * All must be true for SIMD+OMP to be available.
  * ============================================================================ */
 
-/* Check if AVX2+OMP implementation was compiled */
-#if defined(__AVX2__) && defined(CFD_ENABLE_OPENMP)
+/* Check if AVX2+OMP implementation was compiled
+ * CFD_HAS_AVX2 is set by CMake when -DCFD_ENABLE_AVX2=ON.
+ * This works consistently across all compilers (GCC, Clang, MSVC).
+ */
+#if defined(CFD_HAS_AVX2) && defined(CFD_ENABLE_OPENMP)
 #define HAS_AVX2_OMP_IMPL 1
 #else
 #define HAS_AVX2_OMP_IMPL 0

@@ -26,8 +26,11 @@
 #include <math.h>
 #include <stdio.h>
 
-/* AVX2 + OpenMP detection */
-#if defined(__AVX2__) && defined(CFD_ENABLE_OPENMP)
+/* AVX2 + OpenMP detection
+ * CFD_HAS_AVX2 is set by CMake when -DCFD_ENABLE_AVX2=ON.
+ * This works consistently across all compilers (GCC, Clang, MSVC).
+ */
+#if defined(CFD_HAS_AVX2) && defined(CFD_ENABLE_OPENMP)
 #define REDBLACK_HAS_AVX2_OMP 1
 #include <immintrin.h>
 #include <omp.h>
