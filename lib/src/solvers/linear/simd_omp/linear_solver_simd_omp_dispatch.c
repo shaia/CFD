@@ -57,20 +57,41 @@ extern poisson_solver_t* create_redblack_neon_omp_solver(void);
  * SIMD+OMP BACKEND AVAILABILITY (Runtime + Compile-time detection)
  *
  * This checks BOTH:
- * 1. Runtime CPU detection: Does CPU support AVX2/NEON?
- * 2. Compile-time availability: Was OpenMP enabled at build time?
+ * 1. Compile-time: Was code compiled with SIMD support (-mavx2 or ARM64)?
+ * 2. Compile-time: Was OpenMP enabled at build time?
+ * 3. Runtime: Does CPU support the SIMD instructions?
  *
- * Both must be true for SIMD+OMP to be available.
+ * All must be true for SIMD+OMP to be available.
  * ============================================================================ */
 
-bool poisson_solver_simd_omp_backend_available(void) {
-#ifndef CFD_ENABLE_OPENMP
-    /* OpenMP not enabled at compile time - SIMD+OMP not available */
-    return false;
+/* Check if AVX2+OMP implementation was compiled */
+#if defined(__AVX2__) && defined(CFD_ENABLE_OPENMP)
+#define HAS_AVX2_OMP_IMPL 1
 #else
-    cfd_simd_arch_t arch = cfd_detect_simd_arch();
-    return (arch == CFD_SIMD_AVX2 || arch == CFD_SIMD_NEON);
+#define HAS_AVX2_OMP_IMPL 0
 #endif
+
+/* Check if NEON+OMP implementation was compiled */
+#if (defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
+#define HAS_NEON_OMP_IMPL 1
+#else
+#define HAS_NEON_OMP_IMPL 0
+#endif
+
+bool poisson_solver_simd_omp_backend_available(void) {
+    cfd_simd_arch_t arch = cfd_detect_simd_arch();
+
+    /* Check AVX2: compiled with AVX2 + OMP AND runtime CPU supports AVX2 */
+    if (HAS_AVX2_OMP_IMPL && arch == CFD_SIMD_AVX2) {
+        return true;
+    }
+
+    /* Check NEON: compiled with NEON + OMP AND runtime CPU supports NEON */
+    if (HAS_NEON_OMP_IMPL && arch == CFD_SIMD_NEON) {
+        return true;
+    }
+
+    return false;
 }
 
 const char* poisson_solver_simd_omp_get_arch_name(void) {
