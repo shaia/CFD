@@ -607,6 +607,120 @@ void test_inlet_minimum_grid(void) {
     free(v);
 }
 
+void test_inlet_invalid_edge_zero(void) {
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.0);
+    config.edge = (bc_edge_t)0;  /* Invalid: 0 is not a valid edge */
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
+
+    /* Field should be unchanged */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[0]);
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_invalid_edge_combined_flags(void) {
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.0);
+
+    /* Test combined flags that are not valid single edges */
+    bc_edge_t invalid_edges[] = {
+        (bc_edge_t)3,   /* LEFT | RIGHT */
+        (bc_edge_t)5,   /* LEFT | BOTTOM */
+        (bc_edge_t)6,   /* RIGHT | BOTTOM */
+        (bc_edge_t)7,   /* LEFT | RIGHT | BOTTOM */
+        (bc_edge_t)9,   /* LEFT | TOP */
+        (bc_edge_t)10,  /* RIGHT | TOP */
+        (bc_edge_t)12,  /* BOTTOM | TOP */
+        (bc_edge_t)15,  /* All edges */
+    };
+
+    for (size_t i = 0; i < sizeof(invalid_edges) / sizeof(invalid_edges[0]); i++) {
+        config.edge = invalid_edges[i];
+        cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+        TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_INVALID, status,
+            "Should reject combined bit flags as invalid edge");
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_invalid_edge_out_of_range(void) {
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.0);
+
+    /* Test values outside the valid bit flag range */
+    bc_edge_t invalid_edges[] = {
+        (bc_edge_t)16,   /* Beyond BC_EDGE_TOP (0x08) */
+        (bc_edge_t)32,
+        (bc_edge_t)255,
+        (bc_edge_t)-1,   /* Negative/large unsigned */
+    };
+
+    for (size_t i = 0; i < sizeof(invalid_edges) / sizeof(invalid_edges[0]); i++) {
+        config.edge = invalid_edges[i];
+        cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+        TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_INVALID, status,
+            "Should reject out-of-range edge values");
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_invalid_edge_all_backends(void) {
+    size_t nx = TEST_NX_SMALL, ny = TEST_NY_SMALL;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.0);
+    config.edge = (bc_edge_t)3;  /* Invalid: combined flags */
+
+    /* Test CPU backend */
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
+
+    /* Test OMP backend (if available) */
+    status = bc_apply_inlet_omp(u, v, nx, ny, &config);
+    if (status != CFD_ERROR_UNSUPPORTED) {
+        TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
+    }
+
+    /* Test SIMD+OMP backend (if available) */
+    status = bc_apply_inlet_simd_omp(u, v, nx, ny, &config);
+    if (status != CFD_ERROR_UNSUPPORTED) {
+        TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
+    }
+
+    /* Test main dispatch */
+    status = bc_apply_inlet(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
+
+    free(u);
+    free(v);
+}
+
 /* ============================================================================
  * Main Dispatch Tests
  * ============================================================================ */
@@ -679,6 +793,12 @@ int main(void) {
     RUN_TEST(test_inlet_null_config);
     RUN_TEST(test_inlet_too_small_grid);
     RUN_TEST(test_inlet_minimum_grid);
+
+    /* Invalid edge validation tests */
+    RUN_TEST(test_inlet_invalid_edge_zero);
+    RUN_TEST(test_inlet_invalid_edge_combined_flags);
+    RUN_TEST(test_inlet_invalid_edge_out_of_range);
+    RUN_TEST(test_inlet_invalid_edge_all_backends);
 
     /* Main dispatch tests */
     RUN_TEST(test_inlet_main_dispatch);
