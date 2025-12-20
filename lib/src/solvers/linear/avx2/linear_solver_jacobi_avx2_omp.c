@@ -47,7 +47,6 @@ typedef struct {
     double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2)) */
     __m256d dx2_inv_vec;
     __m256d dy2_inv_vec;
-    __m256d inv_factor_vec;
     __m256d neg_inv_factor_vec;
     int initialized;
 } jacobi_avx2_omp_context_t;
@@ -85,7 +84,6 @@ static cfd_status_t jacobi_avx2_omp_init(
     /* Pre-compute SIMD vectors */
     ctx->dx2_inv_vec = _mm256_set1_pd(1.0 / ctx->dx2);
     ctx->dy2_inv_vec = _mm256_set1_pd(1.0 / ctx->dy2);
-    ctx->inv_factor_vec = _mm256_set1_pd(ctx->inv_factor);
     ctx->neg_inv_factor_vec = _mm256_set1_pd(-ctx->inv_factor);
 
     ctx->initialized = 1;
