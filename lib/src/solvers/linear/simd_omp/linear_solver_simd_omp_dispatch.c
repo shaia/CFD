@@ -54,12 +54,23 @@ extern poisson_solver_t* create_jacobi_neon_omp_solver(void);
 extern poisson_solver_t* create_redblack_neon_omp_solver(void);
 
 /* ============================================================================
- * SIMD+OMP BACKEND AVAILABILITY (Runtime detection)
+ * SIMD+OMP BACKEND AVAILABILITY (Runtime + Compile-time detection)
+ *
+ * This checks BOTH:
+ * 1. Runtime CPU detection: Does CPU support AVX2/NEON?
+ * 2. Compile-time availability: Was OpenMP enabled at build time?
+ *
+ * Both must be true for SIMD+OMP to be available.
  * ============================================================================ */
 
 bool poisson_solver_simd_omp_backend_available(void) {
+#ifndef CFD_ENABLE_OPENMP
+    /* OpenMP not enabled at compile time - SIMD+OMP not available */
+    return false;
+#else
     cfd_simd_arch_t arch = cfd_detect_simd_arch();
     return (arch == CFD_SIMD_AVX2 || arch == CFD_SIMD_NEON);
+#endif
 }
 
 const char* poisson_solver_simd_omp_get_arch_name(void) {
