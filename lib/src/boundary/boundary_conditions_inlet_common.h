@@ -133,8 +133,14 @@ static inline void bc_inlet_get_base_velocity(const bc_inlet_config_t* config,
             break;
 
         case BC_INLET_SPEC_MASS_FLOW: {
-            double avg_velocity = config->spec.mass_flow.mass_flow_rate /
-                                   (config->spec.mass_flow.density * config->spec.mass_flow.inlet_length);
+            double area = config->spec.mass_flow.density * config->spec.mass_flow.inlet_length;
+            if (area <= 0.0) {
+                /* Invalid density or inlet_length - return zero velocity */
+                *u_base = 0.0;
+                *v_base = 0.0;
+                return;
+            }
+            double avg_velocity = config->spec.mass_flow.mass_flow_rate / area;
             int idx = bc_inlet_edge_to_index(config->edge);
             *u_base = avg_velocity * bc_inlet_mass_flow_dir[idx].u_sign;
             *v_base = avg_velocity * bc_inlet_mass_flow_dir[idx].v_sign;
