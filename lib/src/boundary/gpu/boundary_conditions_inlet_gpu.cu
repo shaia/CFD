@@ -284,5 +284,11 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
             return CFD_ERROR_INVALID;
     }
 
+    /* Check for kernel launch errors */
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        return CFD_ERROR;
+    }
+
     return CFD_SUCCESS;
 }
