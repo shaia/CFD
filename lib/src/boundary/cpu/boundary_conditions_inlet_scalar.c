@@ -38,10 +38,11 @@ static inline bool is_valid_edge(bc_edge_t edge) {
  * Assumes edge is valid (power of 2 between 1 and 8).
  */
 static inline int edge_to_index(bc_edge_t edge) {
-    /* Count trailing zeros: 0x01->0, 0x02->1, 0x04->2, 0x08->3 */
+    /* Count trailing zeros: 0x01->0, 0x02->1, 0x04->2, 0x08->3
+     * Returns 0 for invalid edges (caller must validate with is_valid_edge first) */
     int idx = 0;
     unsigned int e = (unsigned int)edge;
-    while ((e & 1) == 0 && idx < 4) {
+    while ((e & 1) == 0 && idx < 3) {
         e >>= 1;
         idx++;
     }
