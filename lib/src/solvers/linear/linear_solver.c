@@ -501,12 +501,14 @@ int poisson_solve(
 
     switch (solver_type) {
         case POISSON_SOLVER_JACOBI_SIMD:
+            /* SIMD backend uses compile-time detection only (__AVX2__ macro) */
             solver_ptr = &g_legacy_jacobi;
             method = POISSON_METHOD_JACOBI;
             backend = POISSON_BACKEND_SIMD;
             break;
 
         case POISSON_SOLVER_JACOBI_SIMD_OMP:
+            /* SIMD+OMP backend uses runtime CPU detection + compile-time check */
             solver_ptr = &g_legacy_jacobi_simd_omp;
             method = POISSON_METHOD_JACOBI;
             backend = POISSON_BACKEND_SIMD_OMP;
@@ -516,12 +518,14 @@ int poisson_solve(
             break;
 
         case POISSON_SOLVER_REDBLACK_SIMD:
+            /* SIMD backend uses compile-time detection only (__AVX2__ macro) */
             solver_ptr = &g_legacy_redblack;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SIMD;
             break;
 
         case POISSON_SOLVER_REDBLACK_SIMD_OMP:
+            /* SIMD+OMP backend uses runtime CPU detection + compile-time check */
             solver_ptr = &g_legacy_redblack_simd_omp;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SIMD_OMP;
