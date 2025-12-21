@@ -133,6 +133,12 @@ static inline void bc_inlet_get_base_velocity(const bc_inlet_config_t* config,
             break;
 
         case BC_INLET_SPEC_MASS_FLOW: {
+            /* Validate edge before computing direction-dependent velocity */
+            if (!bc_inlet_is_valid_edge(config->edge)) {
+                *u_base = 0.0;
+                *v_base = 0.0;
+                return;
+            }
             /* For 2D per unit depth: velocity = mass_flow / (density * inlet_length)
              * where mass_flow is kg/(s·m) and density*length gives kg/m² */
             double rho_L = config->spec.mass_flow.density * config->spec.mass_flow.inlet_length;
