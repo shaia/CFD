@@ -452,6 +452,17 @@ static cfd_status_t cg_neon_omp_solve(
             }
         }
 
+        /* Check for breakdown in r_dot_r before computing beta */
+        if (fabs(r_dot_r) < CG_BREAKDOWN_THRESHOLD) {
+            if (stats) {
+                stats->status = POISSON_STAGNATED;
+                stats->iterations = iter + 1;
+                stats->final_residual = res_norm;
+                stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
+            }
+            return CFD_ERROR_MAX_ITER;
+        }
+
         /* beta = (r_{k+1}, r_{k+1}) / (r_k, r_k) */
         double beta = r_dot_r_new / r_dot_r;
 
