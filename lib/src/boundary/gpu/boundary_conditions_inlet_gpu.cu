@@ -217,12 +217,13 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
             break;
 
         case BC_INLET_SPEC_MASS_FLOW: {
-            /* Pre-compute velocity from mass flow rate */
-            double area = config->spec.mass_flow.density * config->spec.mass_flow.inlet_length;
-            if (area <= 0.0) {
+            /* For 2D per unit depth: velocity = mass_flow / (density * inlet_length)
+             * where mass_flow is kg/(s·m) and density*length gives kg/m² */
+            double rho_L = config->spec.mass_flow.density * config->spec.mass_flow.inlet_length;
+            if (rho_L <= 0.0) {
                 return CFD_ERROR_INVALID;
             }
-            double avg_velocity = config->spec.mass_flow.mass_flow_rate / area;
+            double avg_velocity = config->spec.mass_flow.mass_flow_rate / rho_L;
             switch (config->edge) {
                 case BC_EDGE_LEFT:
                     u_spec = avg_velocity;
