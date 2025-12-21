@@ -308,7 +308,7 @@ static cfd_status_t cg_neon_omp_init(
 {
     (void)params;
 
-    cg_neon_omp_context_t* ctx = (cg_neon_omp_context_t*)cfd_calloc(
+    cg_neon_omp_context_t* ctx = (cg_neon_omp_context_t*)cfd_aligned_calloc(
         1, sizeof(cg_neon_omp_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
@@ -322,17 +322,17 @@ static cfd_status_t cg_neon_omp_init(
     ctx->dy2_inv_vec = vdupq_n_f64(1.0 / ctx->dy2);
     ctx->two_vec = vdupq_n_f64(2.0);
 
-    /* Allocate working vectors */
+    /* Allocate working vectors (aligned for NEON SIMD access) */
     size_t n = nx * ny;
-    ctx->r = (double*)cfd_calloc(n, sizeof(double));
-    ctx->p = (double*)cfd_calloc(n, sizeof(double));
-    ctx->Ap = (double*)cfd_calloc(n, sizeof(double));
+    ctx->r = (double*)cfd_aligned_calloc(n, sizeof(double));
+    ctx->p = (double*)cfd_aligned_calloc(n, sizeof(double));
+    ctx->Ap = (double*)cfd_aligned_calloc(n, sizeof(double));
 
     if (!ctx->r || !ctx->p || !ctx->Ap) {
-        cfd_free(ctx->r);
-        cfd_free(ctx->p);
-        cfd_free(ctx->Ap);
-        cfd_free(ctx);
+        cfd_aligned_free(ctx->r);
+        cfd_aligned_free(ctx->p);
+        cfd_aligned_free(ctx->Ap);
+        cfd_aligned_free(ctx);
         return CFD_ERROR_NOMEM;
     }
 
@@ -344,10 +344,10 @@ static cfd_status_t cg_neon_omp_init(
 static void cg_neon_omp_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
         cg_neon_omp_context_t* ctx = (cg_neon_omp_context_t*)solver->context;
-        cfd_free(ctx->r);
-        cfd_free(ctx->p);
-        cfd_free(ctx->Ap);
-        cfd_free(ctx);
+        cfd_aligned_free(ctx->r);
+        cfd_aligned_free(ctx->p);
+        cfd_aligned_free(ctx->Ap);
+        cfd_aligned_free(ctx);
         solver->context = NULL;
     }
 }
