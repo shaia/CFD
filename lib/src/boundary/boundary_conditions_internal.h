@@ -30,6 +30,10 @@ typedef void (*bc_apply_dirichlet_fn)(double* field, size_t nx, size_t ny,
 typedef cfd_status_t (*bc_apply_inlet_fn)(double* u, double* v, size_t nx, size_t ny,
                                            const bc_inlet_config_t* config);
 
+/** Function type for applying outlet BCs to a scalar field */
+typedef cfd_status_t (*bc_apply_outlet_fn)(double* field, size_t nx, size_t ny,
+                                            const bc_outlet_config_t* config);
+
 /**
  * Backend implementation table.
  * Each backend fills in its function pointers.
@@ -40,6 +44,7 @@ typedef struct {
     bc_apply_scalar_fn apply_periodic;
     bc_apply_dirichlet_fn apply_dirichlet;
     bc_apply_inlet_fn apply_inlet;
+    bc_apply_outlet_fn apply_outlet;
 } bc_backend_impl_t;
 
 /* ============================================================================
@@ -122,5 +127,21 @@ cfd_status_t bc_apply_inlet_avx2_omp_impl(double* u, double* v, size_t nx, size_
 /* NEON+OMP inlet implementation - defined in neon/boundary_conditions_inlet_neon_omp.c */
 cfd_status_t bc_apply_inlet_neon_omp_impl(double* u, double* v, size_t nx, size_t ny,
                                            const bc_inlet_config_t* config);
+
+/* Outlet implementations */
+cfd_status_t bc_apply_outlet_scalar_impl(double* field, size_t nx, size_t ny,
+                                          const bc_outlet_config_t* config);
+
+/* OpenMP outlet implementation - defined in omp/boundary_conditions_outlet_omp.c */
+cfd_status_t bc_apply_outlet_omp_impl(double* field, size_t nx, size_t ny,
+                                       const bc_outlet_config_t* config);
+
+/* AVX2+OMP outlet implementation - defined in avx2/boundary_conditions_outlet_avx2_omp.c */
+cfd_status_t bc_apply_outlet_avx2_omp_impl(double* field, size_t nx, size_t ny,
+                                            const bc_outlet_config_t* config);
+
+/* NEON+OMP outlet implementation - defined in neon/boundary_conditions_outlet_neon_omp.c */
+cfd_status_t bc_apply_outlet_neon_omp_impl(double* field, size_t nx, size_t ny,
+                                            const bc_outlet_config_t* config);
 
 #endif /* CFD_BOUNDARY_CONDITIONS_INTERNAL_H */

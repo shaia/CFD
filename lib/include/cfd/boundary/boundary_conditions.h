@@ -65,6 +65,16 @@ typedef enum {
 } bc_inlet_profile_t;
 
 /**
+ * Outlet Boundary Condition Types
+ *
+ * Defines the type of outlet boundary condition.
+ */
+typedef enum {
+    BC_OUTLET_ZERO_GRADIENT,   // Neumann: boundary = adjacent interior value
+    BC_OUTLET_CONVECTIVE       // Advective: du/dt + U*du/dn = 0
+} bc_outlet_type_t;
+
+/**
  * Inlet Velocity Specification Type
  *
  * Defines how the inlet velocity is specified.
@@ -134,6 +144,21 @@ typedef struct {
     bc_inlet_profile_fn custom_profile;
     void* custom_profile_user_data;
 } bc_inlet_config_t;
+
+/**
+ * Outlet Boundary Condition Configuration
+ *
+ * Configuration structure for specifying outlet boundary conditions.
+ * Supports zero-gradient (Neumann) and convective outlet types.
+ */
+typedef struct {
+    bc_edge_t edge;              // Which boundary edge this outlet applies to
+    bc_outlet_type_t type;       // Type of outlet BC
+
+    // Convective outlet parameters (only used when type == BC_OUTLET_CONVECTIVE)
+    double advection_velocity;   // Advection velocity for convective outlet (m/s)
+                                 // Typically the mean outflow velocity
+} bc_outlet_config_t;
 
 /**
  * Apply boundary conditions to a scalar field (raw array)
@@ -632,6 +657,171 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_simd_omp(double* u, double* v, si
  */
 CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_omp(double* u, double* v, size_t nx, size_t ny,
                                                     const bc_inlet_config_t* config);
+
+/* ============================================================================
+ * Outlet Boundary Conditions API
+ *
+ * Outlet BCs specify conditions at outflow boundaries.
+ * Supports zero-gradient (Neumann) and convective outlet types.
+ *
+ * Zero-gradient: Sets boundary value equal to adjacent interior value.
+ *   This is the simplest outlet BC, appropriate when flow is well-developed.
+ *
+ * Convective: Advects the field out of the domain using du/dt + U*du/dn = 0.
+ *   This prevents wave reflections at the outlet, useful for unsteady flows.
+ * ============================================================================ */
+
+/**
+ * Create a zero-gradient outlet configuration.
+ *
+ * Creates an outlet BC that copies the adjacent interior value to the boundary.
+ * The outlet is configured for the right boundary by default.
+ *
+ * @return Configured outlet structure
+ */
+CFD_LIBRARY_EXPORT bc_outlet_config_t bc_outlet_config_zero_gradient(void);
+
+/**
+ * Create a convective outlet configuration.
+ *
+ * Creates an outlet BC that advects the field out of the domain.
+ * Uses the equation: du/dt + U_adv * du/dn = 0
+ * The outlet is configured for the right boundary by default.
+ *
+ * @param advection_velocity  Advection velocity (m/s), typically mean outflow velocity
+ * @return Configured outlet structure
+ */
+CFD_LIBRARY_EXPORT bc_outlet_config_t bc_outlet_config_convective(double advection_velocity);
+
+/**
+ * Set the boundary edge for an outlet configuration.
+ *
+ * @param config  Pointer to outlet configuration to modify
+ * @param edge    Which boundary edge to apply outlet to
+ */
+CFD_LIBRARY_EXPORT void bc_outlet_set_edge(bc_outlet_config_t* config, bc_edge_t edge);
+
+/**
+ * Apply outlet boundary condition to a scalar field.
+ *
+ * Applies the configured outlet BC to the specified boundary edge.
+ * Uses the currently selected backend (see bc_set_backend()).
+ *
+ * @param field   Pointer to scalar field array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to outlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar(double* field, size_t nx, size_t ny,
+                                                        const bc_outlet_config_t* config);
+
+/**
+ * Apply outlet boundary condition to velocity fields.
+ *
+ * Applies the configured outlet BC to both u and v velocity components.
+ * Uses the currently selected backend (see bc_set_backend()).
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to outlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity(double* u, double* v, size_t nx, size_t ny,
+                                                          const bc_outlet_config_t* config);
+
+/**
+ * Apply outlet boundary condition to a scalar field using scalar implementation.
+ * Always available.
+ *
+ * @param field   Pointer to scalar field array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to outlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar_cpu(double* field, size_t nx, size_t ny,
+                                                            const bc_outlet_config_t* config);
+
+/**
+ * Apply outlet boundary condition using SIMD + OpenMP implementation.
+ * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD or OpenMP not available.
+ *
+ * @param field   Pointer to scalar field array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to outlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar_simd_omp(double* field, size_t nx, size_t ny,
+                                                                 const bc_outlet_config_t* config);
+
+/**
+ * Apply outlet boundary condition using OpenMP implementation.
+ * Returns CFD_ERROR_UNSUPPORTED if OpenMP not available.
+ *
+ * @param field   Pointer to scalar field array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to outlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar_omp(double* field, size_t nx, size_t ny,
+                                                            const bc_outlet_config_t* config);
+
+/**
+ * Apply outlet velocity boundary condition using scalar implementation.
+ * Always available.
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to outlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_cpu(double* u, double* v, size_t nx, size_t ny,
+                                                              const bc_outlet_config_t* config);
+
+/**
+ * Apply outlet velocity boundary condition using SIMD + OpenMP implementation.
+ * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD or OpenMP not available.
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to outlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_simd_omp(double* u, double* v, size_t nx, size_t ny,
+                                                                   const bc_outlet_config_t* config);
+
+/**
+ * Apply outlet velocity boundary condition using OpenMP implementation.
+ * Returns CFD_ERROR_UNSUPPORTED if OpenMP not available.
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to outlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
+                                                              const bc_outlet_config_t* config);
+
+/**
+ * Convenience macro for applying zero-gradient outlet BC to a scalar field.
+ * Uses the right boundary by default.
+ */
+#define bc_apply_outlet(field, nx, ny) \
+    bc_apply_outlet_scalar((field), (nx), (ny), \
+        &(bc_outlet_config_t){.edge = BC_EDGE_RIGHT, .type = BC_OUTLET_ZERO_GRADIENT})
 
 #ifdef __cplusplus
 }

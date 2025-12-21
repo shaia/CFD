@@ -34,8 +34,10 @@ static inline bool bc_inlet_is_valid_edge(bc_edge_t edge) {
  * BC_EDGE_LEFT (0x01) -> 0, BC_EDGE_RIGHT (0x02) -> 1,
  * BC_EDGE_BOTTOM (0x04) -> 2, BC_EDGE_TOP (0x08) -> 3
  *
- * Uses bit manipulation: counts trailing zeros in the bit flag.
- * Returns 0 for invalid edges (caller must validate with bc_inlet_is_valid_edge first).
+ * Uses bit manipulation to find the position of the least significant set bit
+ * by counting trailing zeros in the bit flag (clamped to the range 0-3).
+ * The behavior is only defined for valid, single-bit edges; callers must
+ * ensure validity via bc_inlet_is_valid_edge() before calling.
  */
 static inline int bc_inlet_edge_to_index(bc_edge_t edge) {
     int idx = 0;
