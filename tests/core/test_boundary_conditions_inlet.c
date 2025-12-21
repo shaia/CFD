@@ -625,6 +625,34 @@ void test_inlet_custom_profile(void) {
     free(v);
 }
 
+void test_inlet_custom_profile_null_callback(void) {
+    /* NULL custom_profile callback should fall back to uniform velocity */
+    size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    /* Create a custom profile config but with NULL callback */
+    bc_inlet_config_t config = bc_inlet_config_uniform(2.5, 0.5);
+    config.profile = BC_INLET_PROFILE_CUSTOM;
+    config.custom_profile = NULL;
+    config.custom_profile_user_data = NULL;
+    bc_inlet_set_edge(&config, BC_EDGE_LEFT);
+
+    cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* With NULL callback, should fall back to base velocity (uniform) */
+    for (size_t j = 0; j < ny; j++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.5, u[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.5, v[j * nx]);
+    }
+
+    free(u);
+    free(v);
+}
+
 /* ============================================================================
  * Backend Consistency Tests
  * ============================================================================ */
@@ -1451,6 +1479,7 @@ int main(void) {
 
     /* Custom profile tests */
     RUN_TEST(test_inlet_custom_profile);
+    RUN_TEST(test_inlet_custom_profile_null_callback);
 
     /* Backend consistency tests */
     RUN_TEST(test_inlet_omp_consistency);
