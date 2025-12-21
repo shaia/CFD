@@ -418,7 +418,7 @@ static cfd_status_t cg_neon_omp_solve(
         /* alpha = (r, r) / (p, Ap) */
         double p_dot_Ap = dot_product_neon_omp(p, Ap, nx, ny);
 
-        if (fabs(p_dot_Ap) < 1e-30) {
+        if (fabs(p_dot_Ap) < CG_BREAKDOWN_THRESHOLD) {
             if (stats) {
                 stats->status = POISSON_STAGNATED;
                 stats->iterations = iter + 1;

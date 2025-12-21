@@ -272,7 +272,7 @@ static cfd_status_t cg_scalar_solve(
         double p_dot_Ap = dot_product(p, Ap, nx, ny);
 
         /* Check for breakdown (p_dot_Ap should be positive for SPD) */
-        if (fabs(p_dot_Ap) < 1e-30) {
+        if (fabs(p_dot_Ap) < CG_BREAKDOWN_THRESHOLD) {
             /* Stagnation or breakdown */
             if (stats) {
                 stats->status = POISSON_STAGNATED;

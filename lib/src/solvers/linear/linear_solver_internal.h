@@ -42,6 +42,17 @@ poisson_solver_t* create_cg_scalar_solver(void);
 poisson_solver_t* create_cg_simd_omp_solver(void);
 
 /* ============================================================================
+ * CG ALGORITHM CONSTANTS
+ * ============================================================================ */
+
+/**
+ * Threshold for detecting CG breakdown (division by near-zero).
+ * If (p, Ap) falls below this, the algorithm has stagnated or encountered
+ * a singular/near-singular system.
+ */
+#define CG_BREAKDOWN_THRESHOLD 1e-30
+
+/* ============================================================================
  * SIMD+OMP BACKEND AVAILABILITY (Runtime detection)
  * ============================================================================ */
 
