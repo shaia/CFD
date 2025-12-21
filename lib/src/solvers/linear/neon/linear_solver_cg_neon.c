@@ -1,5 +1,5 @@
 /**
- * @file linear_solver_cg_neon_omp.c
+ * @file linear_solver_cg_neon.c
  * @brief Conjugate Gradient solver - ARM NEON + OpenMP implementation
  *
  * Conjugate Gradient method optimized with:
@@ -26,13 +26,13 @@
 
 /* ARM NEON + OpenMP detection */
 #if (defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
-#define CG_HAS_NEON_OMP 1
+#define CG_HAS_NEON 1
 #include <arm_neon.h>
 #include <omp.h>
 #include <limits.h>
 #endif
 
-#if defined(CG_HAS_NEON_OMP)
+#if defined(CG_HAS_NEON)
 
 /* ============================================================================
  * CG NEON+OMP CONTEXT
@@ -53,7 +53,7 @@ typedef struct {
     double* Ap;        /* A * p (Laplacian applied to p) */
 
     int initialized;
-} cg_neon_omp_context_t;
+} cg_neon_context_t;
 
 /**
  * Safe conversion from size_t to int for OpenMP loop variables.
@@ -69,7 +69,7 @@ static inline int size_to_int(size_t sz) {
 /**
  * Compute dot product using NEON with OpenMP reduction
  */
-static double dot_product_neon_omp(const double* a, const double* b,
+static double dot_product_neon(const double* a, const double* b,
                                     size_t nx, size_t ny) {
     double sum = 0.0;
     int ny_int = size_to_int(ny);
@@ -108,7 +108,7 @@ static double dot_product_neon_omp(const double* a, const double* b,
 /**
  * Compute y = y + alpha * x using NEON with OpenMP
  */
-static void axpy_neon_omp(double alpha, const double* x, double* y,
+static void axpy_neon(double alpha, const double* x, double* y,
                           size_t nx, size_t ny) {
     float64x2_t alpha_vec = vdupq_n_f64(alpha);
     int ny_int = size_to_int(ny);
@@ -139,7 +139,7 @@ static void axpy_neon_omp(double alpha, const double* x, double* y,
 /**
  * Apply negative Laplacian using NEON with OpenMP
  */
-static void apply_laplacian_neon_omp(const double* p, double* Ap,
+static void apply_laplacian_neon(const double* p, double* Ap,
                                       size_t nx, size_t ny,
                                       float64x2_t dx2_inv_vec, float64x2_t dy2_inv_vec,
                                       float64x2_t two_vec) {
@@ -195,7 +195,7 @@ static void apply_laplacian_neon_omp(const double* p, double* Ap,
 /**
  * Compute initial residual using NEON with OpenMP
  */
-static void compute_residual_neon_omp(const double* x, const double* rhs, double* r,
+static void compute_residual_neon(const double* x, const double* rhs, double* r,
                                        size_t nx, size_t ny,
                                        float64x2_t dx2_inv_vec, float64x2_t dy2_inv_vec,
                                        float64x2_t two_vec) {
@@ -267,7 +267,7 @@ static void copy_vector_omp(const double* src, double* dst,
 /**
  * Update p = r + beta * p using NEON with OpenMP
  */
-static void update_search_direction_neon_omp(const double* r, double* p,
+static void update_search_direction_neon(const double* r, double* p,
                                               double beta, size_t nx, size_t ny) {
     float64x2_t beta_vec = vdupq_n_f64(beta);
     int ny_int = size_to_int(ny);
@@ -300,7 +300,7 @@ static void update_search_direction_neon_omp(const double* r, double* p,
  * CG NEON+OMP IMPLEMENTATION
  * ============================================================================ */
 
-static cfd_status_t cg_neon_omp_init(
+static cfd_status_t cg_neon_init(
     poisson_solver_t* solver,
     size_t nx, size_t ny,
     double dx, double dy,
@@ -308,8 +308,8 @@ static cfd_status_t cg_neon_omp_init(
 {
     (void)params;
 
-    cg_neon_omp_context_t* ctx = (cg_neon_omp_context_t*)cfd_aligned_calloc(
-        1, sizeof(cg_neon_omp_context_t));
+    cg_neon_context_t* ctx = (cg_neon_context_t*)cfd_aligned_calloc(
+        1, sizeof(cg_neon_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
@@ -341,9 +341,9 @@ static cfd_status_t cg_neon_omp_init(
     return CFD_SUCCESS;
 }
 
-static void cg_neon_omp_destroy(poisson_solver_t* solver) {
+static void cg_neon_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
-        cg_neon_omp_context_t* ctx = (cg_neon_omp_context_t*)solver->context;
+        cg_neon_context_t* ctx = (cg_neon_context_t*)solver->context;
         cfd_aligned_free(ctx->r);
         cfd_aligned_free(ctx->p);
         cfd_aligned_free(ctx->Ap);
@@ -352,7 +352,7 @@ static void cg_neon_omp_destroy(poisson_solver_t* solver) {
     }
 }
 
-static cfd_status_t cg_neon_omp_solve(
+static cfd_status_t cg_neon_solve(
     poisson_solver_t* solver,
     double* x,
     double* x_temp,
@@ -361,7 +361,7 @@ static cfd_status_t cg_neon_omp_solve(
 {
     (void)x_temp;
 
-    cg_neon_omp_context_t* ctx = (cg_neon_omp_context_t*)solver->context;
+    cg_neon_context_t* ctx = (cg_neon_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
 
@@ -376,14 +376,14 @@ static cfd_status_t cg_neon_omp_solve(
     bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
 
     /* Compute initial residual */
-    compute_residual_neon_omp(x, rhs, r, nx, ny,
+    compute_residual_neon(x, rhs, r, nx, ny,
                               ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->two_vec);
 
     /* Initial search direction: p_0 = r_0 */
     copy_vector_omp(r, p, nx, ny);
 
     /* Compute initial r_dot_r */
-    double r_dot_r = dot_product_neon_omp(r, r, nx, ny);
+    double r_dot_r = dot_product_neon(r, r, nx, ny);
     double initial_res = sqrt(r_dot_r);
 
     if (stats) {
@@ -412,11 +412,11 @@ static cfd_status_t cg_neon_omp_solve(
 
     for (iter = 0; iter < params->max_iterations; iter++) {
         /* Compute Ap = A * p */
-        apply_laplacian_neon_omp(p, Ap, nx, ny,
+        apply_laplacian_neon(p, Ap, nx, ny,
                                   ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->two_vec);
 
         /* alpha = (r, r) / (p, Ap) */
-        double p_dot_Ap = dot_product_neon_omp(p, Ap, nx, ny);
+        double p_dot_Ap = dot_product_neon(p, Ap, nx, ny);
 
         /* Check for breakdown (p_dot_Ap should be positive for SPD) */
         CG_CHECK_BREAKDOWN(p_dot_Ap, stats, iter, res_norm, start_time);
@@ -424,13 +424,13 @@ static cfd_status_t cg_neon_omp_solve(
         double alpha = r_dot_r / p_dot_Ap;
 
         /* x_{k+1} = x_k + alpha * p */
-        axpy_neon_omp(alpha, p, x, nx, ny);
+        axpy_neon(alpha, p, x, nx, ny);
 
         /* r_{k+1} = r_k - alpha * Ap */
-        axpy_neon_omp(-alpha, Ap, r, nx, ny);
+        axpy_neon(-alpha, Ap, r, nx, ny);
 
         /* Compute new r_dot_r */
-        double r_dot_r_new = dot_product_neon_omp(r, r, nx, ny);
+        double r_dot_r_new = dot_product_neon(r, r, nx, ny);
         res_norm = sqrt(r_dot_r_new);
 
         /* Check convergence at intervals */
@@ -452,7 +452,7 @@ static cfd_status_t cg_neon_omp_solve(
         double beta = r_dot_r_new / r_dot_r;
 
         /* p_{k+1} = r_{k+1} + beta * p_k */
-        update_search_direction_neon_omp(r, p, beta, nx, ny);
+        update_search_direction_neon(r, p, beta, nx, ny);
 
         r_dot_r = r_dot_r_new;
     }
@@ -479,7 +479,7 @@ static cfd_status_t cg_neon_omp_solve(
     return converged ? CFD_SUCCESS : CFD_ERROR_MAX_ITER;
 }
 
-static cfd_status_t cg_neon_omp_iterate(
+static cfd_status_t cg_neon_iterate(
     poisson_solver_t* solver,
     double* x,
     double* x_temp,
@@ -494,14 +494,14 @@ static cfd_status_t cg_neon_omp_iterate(
     return CFD_SUCCESS;
 }
 
-#endif /* CG_HAS_NEON_OMP */
+#endif /* CG_HAS_NEON */
 
 /* ============================================================================
  * FACTORY FUNCTION
  * ============================================================================ */
 
-poisson_solver_t* create_cg_neon_omp_solver(void) {
-#if defined(CG_HAS_NEON_OMP)
+poisson_solver_t* create_cg_neon_solver(void) {
+#if defined(CG_HAS_NEON)
     poisson_solver_t* solver = (poisson_solver_t*)cfd_calloc(1, sizeof(poisson_solver_t));
     if (!solver) {
         return NULL;
@@ -513,10 +513,10 @@ poisson_solver_t* create_cg_neon_omp_solver(void) {
     solver->backend = POISSON_BACKEND_SIMD_OMP;
     solver->params = poisson_solver_params_default();
 
-    solver->init = cg_neon_omp_init;
-    solver->destroy = cg_neon_omp_destroy;
-    solver->solve = cg_neon_omp_solve;
-    solver->iterate = cg_neon_omp_iterate;
+    solver->init = cg_neon_init;
+    solver->destroy = cg_neon_destroy;
+    solver->solve = cg_neon_solve;
+    solver->iterate = cg_neon_iterate;
     solver->apply_bc = NULL;
 
     return solver;

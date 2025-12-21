@@ -113,7 +113,7 @@ bool poisson_solver_backend_available(poisson_solver_backend_t backend) {
 #endif
 
         case POISSON_BACKEND_SIMD_OMP:
-            return poisson_solver_simd_omp_backend_available();
+            return poisson_solver_simd_backend_available();
 
         case POISSON_BACKEND_GPU:
 #ifdef CFD_HAS_CUDA
@@ -137,8 +137,8 @@ bool poisson_solver_backend_available(poisson_solver_backend_t backend) {
  * Priority: SIMD_OMP (runtime detection) > Scalar
  */
 static poisson_solver_backend_t select_best_backend(void) {
-    /* Prefer SIMD_OMP with runtime detection */
-    if (poisson_solver_simd_omp_backend_available()) {
+    /* Prefer SIMD with runtime detection */
+    if (poisson_solver_simd_backend_available()) {
         return POISSON_BACKEND_SIMD_OMP;
     }
     return POISSON_BACKEND_SCALAR;
@@ -158,7 +158,7 @@ poisson_solver_t* poisson_solver_create(
         case POISSON_METHOD_JACOBI:
             switch (backend) {
                 case POISSON_BACKEND_SIMD_OMP:
-                    return create_jacobi_simd_omp_solver();
+                    return create_jacobi_simd_solver();
                 case POISSON_BACKEND_SCALAR:
                 default:
                     return create_jacobi_scalar_solver();
@@ -172,7 +172,7 @@ poisson_solver_t* poisson_solver_create(
         case POISSON_METHOD_REDBLACK_SOR:
             switch (backend) {
                 case POISSON_BACKEND_SIMD_OMP:
-                    return create_redblack_simd_omp_solver();
+                    return create_redblack_simd_solver();
 #ifdef CFD_ENABLE_OPENMP
                 case POISSON_BACKEND_OMP:
                     return create_redblack_omp_solver();
@@ -185,7 +185,7 @@ poisson_solver_t* poisson_solver_create(
         case POISSON_METHOD_CG:
             switch (backend) {
                 case POISSON_BACKEND_SIMD_OMP:
-                    return create_cg_simd_omp_solver();
+                    return create_cg_simd_solver();
                 case POISSON_BACKEND_SCALAR:
                 default:
                     return create_cg_scalar_solver();

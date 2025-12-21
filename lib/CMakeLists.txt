@@ -72,10 +72,10 @@ set(CFD_BOUNDARY_SOURCES
     src/boundary/avx2/boundary_conditions_avx2.c
     src/boundary/avx2/boundary_conditions_inlet_avx2.c
     src/boundary/avx2/boundary_conditions_outlet_avx2.c
-    src/boundary/neon/boundary_conditions_neon_omp.c
-    src/boundary/neon/boundary_conditions_inlet_neon_omp.c
-    src/boundary/neon/boundary_conditions_outlet_neon_omp.c
-    src/boundary/simd_omp/boundary_conditions_simd_omp_dispatch.c
+    src/boundary/neon/boundary_conditions_neon.c
+    src/boundary/neon/boundary_conditions_inlet_neon.c
+    src/boundary/neon/boundary_conditions_outlet_neon.c
+    src/boundary/simd/boundary_conditions_simd_dispatch.c
 )
 
 # Collect I/O source files
@@ -102,23 +102,23 @@ set(CFD_NAVIER_STOKES_SOURCES
 )
 
 # Collect Poisson solver sources (abstraction layer)
-# Uses runtime SIMD detection via SIMD+OMP dispatcher (AVX2 on x86-64, NEON on ARM64)
+# Uses runtime SIMD detection via SIMD dispatcher (AVX2 on x86-64, NEON on ARM64)
 set(CFD_POISSON_SOLVER_SOURCES
     src/solvers/linear/linear_solver.c
     src/solvers/linear/cpu/linear_solver_jacobi.c
     src/solvers/linear/cpu/linear_solver_sor.c
     src/solvers/linear/cpu/linear_solver_redblack.c
     src/solvers/linear/cpu/linear_solver_cg.c
-    # SIMD+OMP dispatcher (runtime architecture detection)
-    src/solvers/linear/simd_omp/linear_solver_simd_omp_dispatch.c
-    # AVX2+OMP implementations (x86-64)
+    # SIMD dispatcher (runtime architecture detection)
+    src/solvers/linear/simd/linear_solver_simd_dispatch.c
+    # AVX2 implementations (x86-64)
     src/solvers/linear/avx2/linear_solver_jacobi_avx2.c
     src/solvers/linear/avx2/linear_solver_redblack_avx2.c
     src/solvers/linear/avx2/linear_solver_cg_avx2.c
-    # NEON+OMP implementations (ARM64)
-    src/solvers/linear/neon/linear_solver_jacobi_neon_omp.c
-    src/solvers/linear/neon/linear_solver_redblack_neon_omp.c
-    src/solvers/linear/neon/linear_solver_cg_neon_omp.c
+    # NEON implementations (ARM64)
+    src/solvers/linear/neon/linear_solver_jacobi_neon.c
+    src/solvers/linear/neon/linear_solver_redblack_neon.c
+    src/solvers/linear/neon/linear_solver_cg_neon.c
 )
 
 # OMP Poisson solver (if OpenMP is available)

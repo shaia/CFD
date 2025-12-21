@@ -1,7 +1,7 @@
 /**
- * Boundary Conditions - ARM NEON + OpenMP Implementation
+ * Boundary Conditions - ARM NEON Implementation
  *
- * Combined ARM NEON SIMD and OpenMP parallelized boundary condition implementations.
+ * ARM NEON SIMD boundary condition implementations with OpenMP parallelization.
  * Uses OpenMP for thread-level parallelism across rows.
  * Uses NEON SIMD for instruction-level parallelism on contiguous memory.
  *
@@ -20,14 +20,14 @@
  * For ARMv7 (32-bit ARM), we require the __ARM_NEON macro.
  */
 #if (defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
-#define BC_HAS_NEON_OMP 1
+#define BC_HAS_NEON 1
 #include <arm_neon.h>
 #include <omp.h>
 #include <limits.h>
 #include <assert.h>
 #endif
 
-#if defined(BC_HAS_NEON_OMP)
+#if defined(BC_HAS_NEON)
 
 /**
  * Minimum row width to use OpenMP for horizontal boundary loops.
@@ -35,7 +35,7 @@
  * With NEON (2 doubles/iteration), 256 elements = 128 iterations.
  * On a typical 8-thread system, this gives 16 iterations per thread.
  */
-#define BC_NEON_OMP_THRESHOLD 256
+#define BC_NEON_THRESHOLD 256
 
 /**
  * Safe conversion from size_t to int for OpenMP loop variables.
@@ -52,7 +52,7 @@ static inline int size_to_int(size_t sz) {
 /**
  * Apply Neumann boundary conditions (zero gradient) with NEON + OpenMP.
  */
-static void bc_apply_neumann_neon_omp_impl(double* field, size_t nx, size_t ny) {
+static void bc_apply_neumann_neon_impl(double* field, size_t nx, size_t ny) {
     int j, i;
 
     /* Left and right boundaries - parallelize over rows */
@@ -73,7 +73,7 @@ static void bc_apply_neumann_neon_omp_impl(double* field, size_t nx, size_t ny) 
     size_t simd_end = nx & ~(size_t)1;  /* Round down to multiple of 2 */
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (nx >= BC_NEON_OMP_THRESHOLD) {
+    if (nx >= BC_NEON_THRESHOLD) {
         #pragma omp parallel for schedule(static)
         for (i = 0; i < size_to_int(simd_end); i += 2) {
             vst1q_f64(bottom_dst + i, vld1q_f64(bottom_src + i));
@@ -97,7 +97,7 @@ static void bc_apply_neumann_neon_omp_impl(double* field, size_t nx, size_t ny) 
 /**
  * Apply periodic boundary conditions with NEON + OpenMP.
  */
-static void bc_apply_periodic_neon_omp_impl(double* field, size_t nx, size_t ny) {
+static void bc_apply_periodic_neon_impl(double* field, size_t nx, size_t ny) {
     int j, i;
 
     /* Left and right boundaries (periodic in x) - parallelize over rows */
@@ -118,7 +118,7 @@ static void bc_apply_periodic_neon_omp_impl(double* field, size_t nx, size_t ny)
     size_t simd_end = nx & ~(size_t)1;
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (nx >= BC_NEON_OMP_THRESHOLD) {
+    if (nx >= BC_NEON_THRESHOLD) {
         #pragma omp parallel for schedule(static)
         for (i = 0; i < size_to_int(simd_end); i += 2) {
             vst1q_f64(bottom_dst + i, vld1q_f64(bottom_src + i));
@@ -142,8 +142,8 @@ static void bc_apply_periodic_neon_omp_impl(double* field, size_t nx, size_t ny)
 /**
  * Apply Dirichlet (fixed value) boundary conditions with NEON + OpenMP.
  */
-static void bc_apply_dirichlet_neon_omp_impl(double* field, size_t nx, size_t ny,
-                                              const bc_dirichlet_values_t* values) {
+static void bc_apply_dirichlet_neon_impl(double* field, size_t nx, size_t ny,
+                                          const bc_dirichlet_values_t* values) {
     int j, i;
 
     /* Store values in locals for OpenMP */
@@ -170,7 +170,7 @@ static void bc_apply_dirichlet_neon_omp_impl(double* field, size_t nx, size_t ny
     size_t simd_end = nx & ~(size_t)1;  /* Round down to multiple of 2 */
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (nx >= BC_NEON_OMP_THRESHOLD) {
+    if (nx >= BC_NEON_THRESHOLD) {
         #pragma omp parallel for schedule(static)
         for (i = 0; i < size_to_int(simd_end); i += 2) {
             vst1q_f64(bottom_row + i, bottom_broadcast);
@@ -191,21 +191,21 @@ static void bc_apply_dirichlet_neon_omp_impl(double* field, size_t nx, size_t ny
     }
 }
 
-/* NEON + OpenMP backend implementation table
- * Note: bc_apply_inlet_neon_omp_impl is defined in boundary_conditions_inlet_neon_omp.c
- * Note: bc_apply_outlet_neon_omp_impl is defined in boundary_conditions_outlet_neon_omp.c */
-const bc_backend_impl_t bc_impl_neon_omp = {
-    .apply_neumann = bc_apply_neumann_neon_omp_impl,
-    .apply_periodic = bc_apply_periodic_neon_omp_impl,
-    .apply_dirichlet = bc_apply_dirichlet_neon_omp_impl,
-    .apply_inlet = bc_apply_inlet_neon_omp_impl,
-    .apply_outlet = bc_apply_outlet_neon_omp_impl
+/* NEON backend implementation table
+ * Note: bc_apply_inlet_neon_impl is defined in boundary_conditions_inlet_neon.c
+ * Note: bc_apply_outlet_neon_impl is defined in boundary_conditions_outlet_neon.c */
+const bc_backend_impl_t bc_impl_neon = {
+    .apply_neumann = bc_apply_neumann_neon_impl,
+    .apply_periodic = bc_apply_periodic_neon_impl,
+    .apply_dirichlet = bc_apply_dirichlet_neon_impl,
+    .apply_inlet = bc_apply_inlet_neon_impl,
+    .apply_outlet = bc_apply_outlet_neon_impl
 };
 
-#else /* !BC_HAS_NEON_OMP */
+#else /* !BC_HAS_NEON */
 
-/* NEON + OpenMP not available - provide empty table */
-const bc_backend_impl_t bc_impl_neon_omp = {
+/* NEON not available - provide empty table */
+const bc_backend_impl_t bc_impl_neon = {
     .apply_neumann = NULL,
     .apply_periodic = NULL,
     .apply_dirichlet = NULL,
@@ -213,4 +213,4 @@ const bc_backend_impl_t bc_impl_neon_omp = {
     .apply_outlet = NULL
 };
 
-#endif /* BC_HAS_NEON_OMP */
+#endif /* BC_HAS_NEON */

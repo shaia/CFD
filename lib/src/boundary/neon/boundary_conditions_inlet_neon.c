@@ -1,5 +1,5 @@
 /**
- * Inlet Boundary Conditions - ARM NEON + OpenMP Implementation
+ * Inlet Boundary Conditions - ARM NEON Implementation
  *
  * OpenMP parallelized inlet velocity boundary condition implementation for ARM.
  * Uses OpenMP for thread-level parallelism over boundary points.
@@ -14,19 +14,19 @@
 #include "../boundary_conditions_inlet_common.h"
 
 #if (defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
-#define BC_HAS_NEON_OMP 1
+#define BC_HAS_NEON 1
 #include <omp.h>
 #include <limits.h>
 #endif
 
-#if defined(BC_HAS_NEON_OMP)
+#if defined(BC_HAS_NEON)
 
 static inline int size_to_int(size_t sz) {
     return (sz > (size_t)INT_MAX) ? INT_MAX : (int)sz;
 }
 
-cfd_status_t bc_apply_inlet_neon_omp_impl(double* u, double* v, size_t nx, size_t ny,
-                                           const bc_inlet_config_t* config) {
+cfd_status_t bc_apply_inlet_neon_impl(double* u, double* v, size_t nx, size_t ny,
+                                       const bc_inlet_config_t* config) {
     if (!u || !v || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
@@ -56,4 +56,4 @@ cfd_status_t bc_apply_inlet_neon_omp_impl(double* u, double* v, size_t nx, size_
     return CFD_SUCCESS;
 }
 
-#endif /* BC_HAS_NEON_OMP */
+#endif /* BC_HAS_NEON */

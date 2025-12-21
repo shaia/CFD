@@ -1,6 +1,6 @@
 /**
- * @file linear_solver_jacobi_neon_omp.c
- * @brief Jacobi iteration solver - ARM NEON + OpenMP implementation
+ * @file linear_solver_jacobi_neon.c
+ * @brief Jacobi iteration solver - ARM NEON implementation
  *
  * Jacobi method characteristics:
  * - Fully parallelizable (reads from old array, writes to new array)
@@ -24,18 +24,18 @@
 #include <stdio.h>
 #include <string.h>
 
-/* ARM NEON + OpenMP detection */
+/* ARM NEON detection */
 #if (defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
-#define JACOBI_HAS_NEON_OMP 1
+#define JACOBI_HAS_NEON 1
 #include <arm_neon.h>
 #include <omp.h>
 #include <limits.h>
 #endif
 
-#if defined(JACOBI_HAS_NEON_OMP)
+#if defined(JACOBI_HAS_NEON)
 
 /* ============================================================================
- * JACOBI NEON+OMP CONTEXT
+ * JACOBI NEON CONTEXT
  * ============================================================================ */
 
 typedef struct {
@@ -46,7 +46,7 @@ typedef struct {
     float64x2_t dy2_inv_vec;
     float64x2_t neg_inv_factor_vec;
     int initialized;
-} jacobi_neon_omp_context_t;
+} jacobi_neon_context_t;
 
 /**
  * Safe conversion from size_t to int for OpenMP loop variables.
@@ -56,10 +56,10 @@ static inline int size_to_int(size_t sz) {
 }
 
 /* ============================================================================
- * JACOBI NEON+OMP IMPLEMENTATION
+ * JACOBI NEON IMPLEMENTATION
  * ============================================================================ */
 
-static cfd_status_t jacobi_neon_omp_init(
+static cfd_status_t jacobi_neon_init(
     poisson_solver_t* solver,
     size_t nx, size_t ny,
     double dx, double dy,
@@ -67,7 +67,7 @@ static cfd_status_t jacobi_neon_omp_init(
 {
     (void)nx; (void)ny; (void)params;
 
-    jacobi_neon_omp_context_t* ctx = (jacobi_neon_omp_context_t*)cfd_calloc(1, sizeof(jacobi_neon_omp_context_t));
+    jacobi_neon_context_t* ctx = (jacobi_neon_context_t*)cfd_calloc(1, sizeof(jacobi_neon_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
@@ -87,14 +87,14 @@ static cfd_status_t jacobi_neon_omp_init(
     return CFD_SUCCESS;
 }
 
-static void jacobi_neon_omp_destroy(poisson_solver_t* solver) {
+static void jacobi_neon_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
         cfd_free(solver->context);
         solver->context = NULL;
     }
 }
 
-static cfd_status_t jacobi_neon_omp_iterate(
+static cfd_status_t jacobi_neon_iterate(
     poisson_solver_t* solver,
     double* x,
     double* x_temp,
@@ -105,7 +105,7 @@ static cfd_status_t jacobi_neon_omp_iterate(
         return CFD_ERROR_INVALID;
     }
 
-    jacobi_neon_omp_context_t* ctx = (jacobi_neon_omp_context_t*)solver->context;
+    jacobi_neon_context_t* ctx = (jacobi_neon_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
     double dx2 = ctx->dx2;
@@ -177,15 +177,15 @@ static cfd_status_t jacobi_neon_omp_iterate(
     return CFD_SUCCESS;
 }
 
-#endif /* JACOBI_HAS_NEON_OMP */
+#endif /* JACOBI_HAS_NEON */
 
 /* ============================================================================
  * FACTORY FUNCTION
  * ============================================================================ */
 
-poisson_solver_t* create_jacobi_neon_omp_solver(void) {
-#if defined(JACOBI_HAS_NEON_OMP)
-    /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_omp_dispatch.c)
+poisson_solver_t* create_jacobi_neon_solver(void) {
+#if defined(JACOBI_HAS_NEON)
+    /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_dispatch.c)
      * before calling this function. No need to check again here. */
     poisson_solver_t* solver = (poisson_solver_t*)cfd_calloc(1, sizeof(poisson_solver_t));
     if (!solver) {
@@ -193,17 +193,17 @@ poisson_solver_t* create_jacobi_neon_omp_solver(void) {
     }
 
     solver->name = POISSON_SOLVER_TYPE_JACOBI_SIMD_OMP;
-    solver->description = "Jacobi iteration (NEON + OpenMP)";
+    solver->description = "Jacobi iteration (NEON)";
     solver->method = POISSON_METHOD_JACOBI;
     solver->backend = POISSON_BACKEND_SIMD_OMP;
     solver->params = poisson_solver_params_default();
     solver->params.max_iterations = 2000;
     solver->params.check_interval = 10;
 
-    solver->init = jacobi_neon_omp_init;
-    solver->destroy = jacobi_neon_omp_destroy;
+    solver->init = jacobi_neon_init;
+    solver->destroy = jacobi_neon_destroy;
     solver->solve = NULL;
-    solver->iterate = jacobi_neon_omp_iterate;
+    solver->iterate = jacobi_neon_iterate;
     solver->apply_bc = NULL;
 
     return solver;

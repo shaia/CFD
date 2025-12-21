@@ -64,28 +64,28 @@ extern const bc_backend_impl_t bc_impl_omp;
  * Architecture-specific SIMD + OpenMP implementations.
  * Each file provides its own table; only one will be non-NULL at compile time.
  */
-extern const bc_backend_impl_t bc_impl_avx2;  /* AVX2 + OMP (x86-64) */
-extern const bc_backend_impl_t bc_impl_neon_omp;  /* NEON + OMP (ARM64) */
+extern const bc_backend_impl_t bc_impl_avx2;  /* AVX2 (x86-64) */
+extern const bc_backend_impl_t bc_impl_neon;  /* NEON (ARM64) */
 
 /**
- * SIMD + OpenMP unified interface with runtime architecture detection.
+ * SIMD unified interface with runtime architecture detection.
  * Dispatches to AVX2 or NEON based on detected CPU at runtime.
- * Defined in simd_omp/boundary_conditions_simd_omp_dispatch.c
+ * Defined in simd/boundary_conditions_simd_dispatch.c
  */
-extern const bc_backend_impl_t bc_impl_simd_omp;
+extern const bc_backend_impl_t bc_impl_simd;
 
 /**
- * Runtime check for SIMD+OMP availability.
- * Since bc_impl_simd_omp always has non-NULL function pointers (for dispatch),
+ * Runtime check for SIMD availability.
+ * Since bc_impl_simd always has non-NULL function pointers (for dispatch),
  * this function checks if the underlying SIMD backend is actually available.
  */
-bool bc_simd_omp_backend_available(void);
+bool bc_simd_backend_available(void);
 
 /**
  * Get the name of the detected SIMD architecture at runtime.
  * Returns "avx2", "neon", or "none".
  */
-const char* bc_simd_omp_get_arch_name(void);
+const char* bc_simd_get_arch_name(void);
 
 /* ============================================================================
  * Error Handling (Internal)
@@ -124,9 +124,9 @@ cfd_status_t bc_apply_inlet_omp_impl(double* u, double* v, size_t nx, size_t ny,
 cfd_status_t bc_apply_inlet_avx2_impl(double* u, double* v, size_t nx, size_t ny,
                                        const bc_inlet_config_t* config);
 
-/* NEON+OMP inlet implementation - defined in neon/boundary_conditions_inlet_neon_omp.c */
-cfd_status_t bc_apply_inlet_neon_omp_impl(double* u, double* v, size_t nx, size_t ny,
-                                           const bc_inlet_config_t* config);
+/* NEON inlet implementation - defined in neon/boundary_conditions_inlet_neon.c */
+cfd_status_t bc_apply_inlet_neon_impl(double* u, double* v, size_t nx, size_t ny,
+                                       const bc_inlet_config_t* config);
 
 /* Outlet implementations */
 cfd_status_t bc_apply_outlet_scalar_impl(double* field, size_t nx, size_t ny,
@@ -140,8 +140,8 @@ cfd_status_t bc_apply_outlet_omp_impl(double* field, size_t nx, size_t ny,
 cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
                                         const bc_outlet_config_t* config);
 
-/* NEON+OMP outlet implementation - defined in neon/boundary_conditions_outlet_neon_omp.c */
-cfd_status_t bc_apply_outlet_neon_omp_impl(double* field, size_t nx, size_t ny,
-                                            const bc_outlet_config_t* config);
+/* NEON outlet implementation - defined in neon/boundary_conditions_outlet_neon.c */
+cfd_status_t bc_apply_outlet_neon_impl(double* field, size_t nx, size_t ny,
+                                        const bc_outlet_config_t* config);
 
 #endif /* CFD_BOUNDARY_CONDITIONS_INTERNAL_H */
