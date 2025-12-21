@@ -82,10 +82,12 @@ void bc_apply_dirichlet_scalar_impl(double* field, size_t nx, size_t ny,
 }
 
 /* Scalar backend implementation table
- * Note: bc_apply_inlet_scalar_impl is defined in boundary_conditions_inlet_scalar.c */
+ * Note: bc_apply_inlet_scalar_impl is defined in boundary_conditions_inlet_scalar.c
+ * Note: bc_apply_outlet_scalar_impl is defined in boundary_conditions_outlet_scalar.c */
 const bc_backend_impl_t bc_impl_scalar = {
     .apply_neumann = bc_apply_neumann_scalar_impl,
     .apply_periodic = bc_apply_periodic_scalar_impl,
     .apply_dirichlet = bc_apply_dirichlet_scalar_impl,
-    .apply_inlet = bc_apply_inlet_scalar_impl
+    .apply_inlet = bc_apply_inlet_scalar_impl,
+    .apply_outlet = bc_apply_outlet_scalar_impl
 };
