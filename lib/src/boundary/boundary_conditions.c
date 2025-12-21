@@ -598,3 +598,142 @@ cfd_status_t bc_apply_inlet_omp(double* u, double* v, size_t nx, size_t ny,
     }
     return apply_inlet_with_backend(u, v, nx, ny, config, impl);
 }
+
+/* ============================================================================
+ * Public API - Outlet Boundary Conditions
+ *
+ * Outlet conditions specify conditions at outflow boundaries.
+ * Supports zero-gradient (Neumann) and convective outlet types.
+ * ============================================================================ */
+
+/** Helper: apply outlet BC with specified backend */
+static cfd_status_t apply_outlet_with_backend(double* field, size_t nx, size_t ny,
+                                               const bc_outlet_config_t* config,
+                                               const bc_backend_impl_t* impl) {
+    if (impl == NULL || impl->apply_outlet == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return impl->apply_outlet(field, nx, ny, config);
+}
+
+/* Outlet configuration factory functions */
+
+bc_outlet_config_t bc_outlet_config_zero_gradient(void) {
+    bc_outlet_config_t config = {0};
+    config.edge = BC_EDGE_RIGHT;  /* Default to right boundary */
+    config.type = BC_OUTLET_ZERO_GRADIENT;
+    config.advection_velocity = 0.0;
+    return config;
+}
+
+bc_outlet_config_t bc_outlet_config_convective(double advection_velocity) {
+    bc_outlet_config_t config = {0};
+    config.edge = BC_EDGE_RIGHT;  /* Default to right boundary */
+    config.type = BC_OUTLET_CONVECTIVE;
+    config.advection_velocity = advection_velocity;
+    return config;
+}
+
+void bc_outlet_set_edge(bc_outlet_config_t* config, bc_edge_t edge) {
+    if (config != NULL) {
+        config->edge = edge;
+    }
+}
+
+/* Outlet BC application functions */
+
+cfd_status_t bc_apply_outlet_scalar(double* field, size_t nx, size_t ny,
+                                     const bc_outlet_config_t* config) {
+    if (!field || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    return apply_outlet_with_backend(field, nx, ny, config, get_backend_impl(g_current_backend));
+}
+
+cfd_status_t bc_apply_outlet_velocity(double* u, double* v, size_t nx, size_t ny,
+                                       const bc_outlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, config, get_backend_impl(g_current_backend));
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_outlet_with_backend(v, nx, ny, config, get_backend_impl(g_current_backend));
+}
+
+cfd_status_t bc_apply_outlet_scalar_cpu(double* field, size_t nx, size_t ny,
+                                         const bc_outlet_config_t* config) {
+    if (!field || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    return apply_outlet_with_backend(field, nx, ny, config, &bc_impl_scalar);
+}
+
+cfd_status_t bc_apply_outlet_scalar_simd_omp(double* field, size_t nx, size_t ny,
+                                              const bc_outlet_config_t* config) {
+    if (!field || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return apply_outlet_with_backend(field, nx, ny, config, impl);
+}
+
+cfd_status_t bc_apply_outlet_scalar_omp(double* field, size_t nx, size_t ny,
+                                         const bc_outlet_config_t* config) {
+    if (!field || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return apply_outlet_with_backend(field, nx, ny, config, impl);
+}
+
+cfd_status_t bc_apply_outlet_velocity_cpu(double* u, double* v, size_t nx, size_t ny,
+                                           const bc_outlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, config, &bc_impl_scalar);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_outlet_with_backend(v, nx, ny, config, &bc_impl_scalar);
+}
+
+cfd_status_t bc_apply_outlet_velocity_simd_omp(double* u, double* v, size_t nx, size_t ny,
+                                                const bc_outlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, config, impl);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_outlet_with_backend(v, nx, ny, config, impl);
+}
+
+cfd_status_t bc_apply_outlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
+                                           const bc_outlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, config, impl);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    return apply_outlet_with_backend(v, nx, ny, config, impl);
+}

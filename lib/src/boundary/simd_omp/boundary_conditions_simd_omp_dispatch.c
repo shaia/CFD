@@ -183,6 +183,20 @@ static cfd_status_t bc_simd_omp_inlet(double* u, double* v, size_t nx, size_t ny
     return bc_apply_inlet_scalar_impl(u, v, nx, ny, config);
 }
 
+static cfd_status_t bc_simd_omp_outlet(double* field, size_t nx, size_t ny,
+                                        const bc_outlet_config_t* config) {
+    /* Outlet BCs operate on 1D boundaries - SIMD provides limited benefit
+     * except for top/bottom edges where memory is contiguous.
+     * Delegate to the architecture-specific backend if available, otherwise
+     * fall back to scalar implementation. */
+    const bc_backend_impl_t* impl = get_simd_backend();
+    if (impl != NULL && impl->apply_outlet != NULL) {
+        return impl->apply_outlet(field, nx, ny, config);
+    }
+    /* Fall back to scalar implementation for outlet */
+    return bc_apply_outlet_scalar_impl(field, nx, ny, config);
+}
+
 /* ============================================================================
  * Check if SIMD+OMP backend is available at runtime
  * ============================================================================ */
@@ -226,7 +240,8 @@ const bc_backend_impl_t bc_impl_simd_omp = {
     .apply_neumann = bc_simd_omp_neumann,
     .apply_periodic = bc_simd_omp_periodic,
     .apply_dirichlet = bc_simd_omp_dirichlet,
-    .apply_inlet = bc_simd_omp_inlet
+    .apply_inlet = bc_simd_omp_inlet,
+    .apply_outlet = bc_simd_omp_outlet
 };
 
 /**

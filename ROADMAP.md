@@ -79,7 +79,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] Dirichlet (fixed value) boundary conditions
 - [x] No-slip wall conditions
 - [x] Inlet velocity specification (uniform, parabolic, custom profiles)
-- [ ] Outlet (zero-gradient/convective)
+- [x] Outlet (zero-gradient/convective)
 - [ ] Symmetry planes
 - [ ] Moving wall boundaries
 - [ ] Time-varying boundary conditions
@@ -90,10 +90,18 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - `lib/include/cfd/boundary/boundary_conditions_gpu.cuh` - GPU API declarations
 - `lib/src/boundary/boundary_conditions.c` - Public API dispatcher
 - `lib/src/boundary/cpu/boundary_conditions_scalar.c` - Scalar implementation
-- `lib/src/boundary/simd/boundary_conditions_simd.c` - AVX2 optimizations
+- `lib/src/boundary/cpu/boundary_conditions_outlet_scalar.c` - Scalar outlet BC
 - `lib/src/boundary/omp/boundary_conditions_omp.c` - OpenMP parallelization
+- `lib/src/boundary/omp/boundary_conditions_outlet_omp.c` - OpenMP outlet BC
+- `lib/src/boundary/avx2/boundary_conditions_avx2_omp.c` - AVX2+OpenMP optimizations
+- `lib/src/boundary/avx2/boundary_conditions_outlet_avx2_omp.c` - AVX2+OpenMP outlet BC
+- `lib/src/boundary/neon/boundary_conditions_neon_omp.c` - NEON+OpenMP optimizations
+- `lib/src/boundary/neon/boundary_conditions_outlet_neon_omp.c` - NEON+OpenMP outlet BC
+- `lib/src/boundary/simd_omp/boundary_conditions_simd_omp_dispatch.c` - SIMD runtime dispatch
 - `lib/src/boundary/gpu/boundary_conditions_gpu.cu` - CUDA kernels
 - `lib/src/boundary/boundary_conditions_internal.h` - Internal declarations
+- `lib/src/boundary/boundary_conditions_inlet_common.h` - Shared inlet BC helpers
+- `lib/src/boundary/boundary_conditions_outlet_common.h` - Shared outlet BC helpers
 
 ### 1.2 Linear Solvers (P0 - Critical)
 
@@ -540,7 +548,7 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 - [x] No-slip wall boundary conditions
 - [x] Inlet velocity boundary conditions
-- [ ] Outlet boundary conditions
+- [x] Outlet boundary conditions
 - [ ] At least one Krylov solver (CG or BiCGSTAB)
 - [ ] Lid-driven cavity validation
 - [ ] Basic documentation

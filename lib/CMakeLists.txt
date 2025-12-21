@@ -65,12 +65,16 @@ set(CFD_BOUNDARY_SOURCES
     src/boundary/boundary_conditions.c
     src/boundary/cpu/boundary_conditions_scalar.c
     src/boundary/cpu/boundary_conditions_inlet_scalar.c
+    src/boundary/cpu/boundary_conditions_outlet_scalar.c
     src/boundary/omp/boundary_conditions_omp.c
     src/boundary/omp/boundary_conditions_inlet_omp.c
+    src/boundary/omp/boundary_conditions_outlet_omp.c
     src/boundary/avx2/boundary_conditions_avx2_omp.c
     src/boundary/avx2/boundary_conditions_inlet_avx2_omp.c
+    src/boundary/avx2/boundary_conditions_outlet_avx2_omp.c
     src/boundary/neon/boundary_conditions_neon_omp.c
     src/boundary/neon/boundary_conditions_inlet_neon_omp.c
+    src/boundary/neon/boundary_conditions_outlet_neon_omp.c
     src/boundary/simd_omp/boundary_conditions_simd_omp_dispatch.c
 )
 

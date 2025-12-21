@@ -93,12 +93,14 @@ static void bc_apply_dirichlet_omp_impl(double* field, size_t nx, size_t ny,
 }
 
 /* OpenMP backend implementation table
- * Note: bc_apply_inlet_omp_impl is defined in boundary_conditions_inlet_omp.c */
+ * Note: bc_apply_inlet_omp_impl is defined in boundary_conditions_inlet_omp.c
+ * Note: bc_apply_outlet_omp_impl is defined in boundary_conditions_outlet_omp.c */
 const bc_backend_impl_t bc_impl_omp = {
     .apply_neumann = bc_apply_neumann_omp_impl,
     .apply_periodic = bc_apply_periodic_omp_impl,
     .apply_dirichlet = bc_apply_dirichlet_omp_impl,
-    .apply_inlet = bc_apply_inlet_omp_impl
+    .apply_inlet = bc_apply_inlet_omp_impl,
+    .apply_outlet = bc_apply_outlet_omp_impl
 };
 
 #else /* !CFD_ENABLE_OPENMP */
@@ -108,7 +110,8 @@ const bc_backend_impl_t bc_impl_omp = {
     .apply_neumann = NULL,
     .apply_periodic = NULL,
     .apply_dirichlet = NULL,
-    .apply_inlet = NULL
+    .apply_inlet = NULL,
+    .apply_outlet = NULL
 };
 
 #endif /* CFD_ENABLE_OPENMP */
