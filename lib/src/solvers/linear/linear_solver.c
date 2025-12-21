@@ -183,6 +183,14 @@ poisson_solver_t* poisson_solver_create(
             }
 
         case POISSON_METHOD_CG:
+            switch (backend) {
+                case POISSON_BACKEND_SIMD_OMP:
+                    return create_cg_simd_omp_solver();
+                case POISSON_BACKEND_SCALAR:
+                default:
+                    return create_cg_scalar_solver();
+            }
+
         case POISSON_METHOD_BICGSTAB:
         case POISSON_METHOD_MULTIGRID:
             /* Not yet implemented */

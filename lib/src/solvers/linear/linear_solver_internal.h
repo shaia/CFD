@@ -37,6 +37,10 @@ poisson_solver_t* create_redblack_simd_omp_solver(void);
 poisson_solver_t* create_redblack_omp_solver(void);
 #endif
 
+/* Conjugate Gradient solvers */
+poisson_solver_t* create_cg_scalar_solver(void);
+poisson_solver_t* create_cg_simd_omp_solver(void);
+
 /* ============================================================================
  * SIMD+OMP BACKEND AVAILABILITY (Runtime detection)
  * ============================================================================ */
