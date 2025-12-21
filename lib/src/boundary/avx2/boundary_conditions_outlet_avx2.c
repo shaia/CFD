@@ -13,15 +13,15 @@
 #include "../boundary_conditions_outlet_common.h"
 
 #if defined(CFD_HAS_AVX2) && defined(CFD_ENABLE_OPENMP)
-#define BC_HAS_AVX2_OMP 1
+#define BC_HAS_AVX2 1
 #include <immintrin.h>
 #include <omp.h>
 #include <limits.h>
 #endif
 
-#if defined(BC_HAS_AVX2_OMP)
+#if defined(BC_HAS_AVX2)
 
-#define BC_AVX2_OMP_THRESHOLD 256
+#define BC_AVX2_THRESHOLD 256
 
 static inline int size_to_int(size_t sz) {
     return (sz > (size_t)INT_MAX) ? INT_MAX : (int)sz;
@@ -72,7 +72,7 @@ cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
                     double* src = field + nx;
                     size_t simd_end = nx & ~(size_t)3;
 
-                    if (nx >= BC_AVX2_OMP_THRESHOLD) {
+                    if (nx >= BC_AVX2_THRESHOLD) {
                         #pragma omp parallel for schedule(static)
                         for (i = 0; i < size_to_int(simd_end); i += 4) {
                             _mm256_storeu_pd(dst + i, _mm256_loadu_pd(src + i));
@@ -95,7 +95,7 @@ cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
                     double* src = field + ((ny - 2) * nx);
                     size_t simd_end = nx & ~(size_t)3;
 
-                    if (nx >= BC_AVX2_OMP_THRESHOLD) {
+                    if (nx >= BC_AVX2_THRESHOLD) {
                         #pragma omp parallel for schedule(static)
                         for (i = 0; i < size_to_int(simd_end); i += 4) {
                             _mm256_storeu_pd(dst + i, _mm256_loadu_pd(src + i));
@@ -124,7 +124,7 @@ cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
     return CFD_SUCCESS;
 }
 
-#else /* !BC_HAS_AVX2_OMP */
+#else /* !BC_HAS_AVX2 */
 
 cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
                                             const bc_outlet_config_t* config) {
@@ -132,4 +132,4 @@ cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
     return CFD_ERROR_UNSUPPORTED;
 }
 
-#endif /* BC_HAS_AVX2_OMP */
+#endif /* BC_HAS_AVX2 */

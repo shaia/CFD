@@ -14,12 +14,12 @@
 #include "../boundary_conditions_inlet_common.h"
 
 #if (defined(__AVX2__) || defined(CFD_HAS_AVX2)) && defined(CFD_ENABLE_OPENMP)
-#define BC_HAS_AVX2_OMP 1
+#define BC_HAS_AVX2 1
 #include <omp.h>
 #include <limits.h>
 #endif
 
-#if defined(BC_HAS_AVX2_OMP)
+#if defined(BC_HAS_AVX2)
 
 static inline int size_to_int(size_t sz) {
     return (sz > (size_t)INT_MAX) ? INT_MAX : (int)sz;
@@ -56,4 +56,4 @@ cfd_status_t bc_apply_inlet_avx2_impl(double* u, double* v, size_t nx, size_t ny
     return CFD_SUCCESS;
 }
 
-#endif /* BC_HAS_AVX2_OMP */
+#endif /* BC_HAS_AVX2 */

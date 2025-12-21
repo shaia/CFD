@@ -19,14 +19,14 @@
  * This works consistently across all compilers (GCC, Clang, MSVC).
  */
 #if defined(CFD_HAS_AVX2) && defined(CFD_ENABLE_OPENMP)
-#define BC_HAS_AVX2_OMP 1
+#define BC_HAS_AVX2 1
 #include <immintrin.h>
 #include <omp.h>
 #include <limits.h>
 #include <assert.h>
 #endif
 
-#if defined(BC_HAS_AVX2_OMP)
+#if defined(BC_HAS_AVX2)
 
 /**
  * Minimum row width to use OpenMP for horizontal boundary loops.
@@ -34,7 +34,7 @@
  * With AVX2 (4 doubles/iteration), 256 elements = 64 iterations.
  * On a typical 8-thread system, this gives 8 iterations per thread.
  */
-#define BC_AVX2_OMP_THRESHOLD 256
+#define BC_AVX2_THRESHOLD 256
 
 /**
  * Safe conversion from size_t to int for OpenMP loop variables.
@@ -72,7 +72,7 @@ static void bc_apply_neumann_avx2_impl(double* field, size_t nx, size_t ny) {
     size_t simd_end = nx & ~(size_t)3;  /* Round down to multiple of 4 */
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (nx >= BC_AVX2_OMP_THRESHOLD) {
+    if (nx >= BC_AVX2_THRESHOLD) {
         #pragma omp parallel for schedule(static)
         for (i = 0; i < size_to_int(simd_end); i += 4) {
             _mm256_storeu_pd(bottom_dst + i, _mm256_loadu_pd(bottom_src + i));
@@ -117,7 +117,7 @@ static void bc_apply_periodic_avx2_impl(double* field, size_t nx, size_t ny) {
     size_t simd_end = nx & ~(size_t)3;
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (nx >= BC_AVX2_OMP_THRESHOLD) {
+    if (nx >= BC_AVX2_THRESHOLD) {
         #pragma omp parallel for schedule(static)
         for (i = 0; i < size_to_int(simd_end); i += 4) {
             _mm256_storeu_pd(bottom_dst + i, _mm256_loadu_pd(bottom_src + i));
@@ -169,7 +169,7 @@ static void bc_apply_dirichlet_avx2_impl(double* field, size_t nx, size_t ny,
     size_t simd_end = nx & ~(size_t)3;  /* Round down to multiple of 4 */
 
     /* Only parallelize if row is wide enough to justify overhead */
-    if (nx >= BC_AVX2_OMP_THRESHOLD) {
+    if (nx >= BC_AVX2_THRESHOLD) {
         #pragma omp parallel for schedule(static)
         for (i = 0; i < size_to_int(simd_end); i += 4) {
             _mm256_storeu_pd(bottom_row + i, bottom_broadcast);
@@ -201,7 +201,7 @@ const bc_backend_impl_t bc_impl_avx2 = {
     .apply_outlet = bc_apply_outlet_avx2_impl
 };
 
-#else /* !BC_HAS_AVX2_OMP */
+#else /* !BC_HAS_AVX2 */
 
 /* AVX2 + OpenMP not available - provide empty table */
 const bc_backend_impl_t bc_impl_avx2 = {
@@ -212,4 +212,4 @@ const bc_backend_impl_t bc_impl_avx2 = {
     .apply_outlet = NULL
 };
 
-#endif /* BC_HAS_AVX2_OMP */
+#endif /* BC_HAS_AVX2 */
