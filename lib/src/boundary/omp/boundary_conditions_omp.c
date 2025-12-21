@@ -4,6 +4,8 @@
  * OpenMP parallelized boundary condition implementations.
  * Parallelizes over rows for left/right boundaries and
  * over columns for top/bottom boundaries.
+ *
+ * Inlet boundary conditions are implemented in boundary_conditions_inlet_omp.c
  */
 
 #include "../boundary_conditions_internal.h"
@@ -90,11 +92,13 @@ static void bc_apply_dirichlet_omp_impl(double* field, size_t nx, size_t ny,
     }
 }
 
-/* OpenMP backend implementation table */
+/* OpenMP backend implementation table
+ * Note: bc_apply_inlet_omp_impl is defined in boundary_conditions_inlet_omp.c */
 const bc_backend_impl_t bc_impl_omp = {
     .apply_neumann = bc_apply_neumann_omp_impl,
     .apply_periodic = bc_apply_periodic_omp_impl,
-    .apply_dirichlet = bc_apply_dirichlet_omp_impl
+    .apply_dirichlet = bc_apply_dirichlet_omp_impl,
+    .apply_inlet = bc_apply_inlet_omp_impl
 };
 
 #else /* !CFD_ENABLE_OPENMP */
@@ -103,7 +107,8 @@ const bc_backend_impl_t bc_impl_omp = {
 const bc_backend_impl_t bc_impl_omp = {
     .apply_neumann = NULL,
     .apply_periodic = NULL,
-    .apply_dirichlet = NULL
+    .apply_dirichlet = NULL,
+    .apply_inlet = NULL
 };
 
 #endif /* CFD_ENABLE_OPENMP */

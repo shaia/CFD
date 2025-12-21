@@ -64,9 +64,13 @@ set(CFD_CORE_SOURCES
 set(CFD_BOUNDARY_SOURCES
     src/boundary/boundary_conditions.c
     src/boundary/cpu/boundary_conditions_scalar.c
+    src/boundary/cpu/boundary_conditions_inlet_scalar.c
     src/boundary/omp/boundary_conditions_omp.c
+    src/boundary/omp/boundary_conditions_inlet_omp.c
     src/boundary/avx2/boundary_conditions_avx2_omp.c
+    src/boundary/avx2/boundary_conditions_inlet_avx2_omp.c
     src/boundary/neon/boundary_conditions_neon_omp.c
+    src/boundary/neon/boundary_conditions_inlet_neon_omp.c
     src/boundary/simd_omp/boundary_conditions_simd_omp_dispatch.c
 )
 
@@ -137,6 +141,7 @@ if(CFD_ENABLE_CUDA)
     if(CMAKE_CUDA_COMPILER)
         list(APPEND CFD_LIBRARY_SOURCES
             src/boundary/gpu/boundary_conditions_gpu.cu
+            src/boundary/gpu/boundary_conditions_inlet_gpu.cu
             src/solvers/gpu/solver_projection_jacobi_gpu.cu
         )
         set(CFD_HAS_CUDA TRUE)

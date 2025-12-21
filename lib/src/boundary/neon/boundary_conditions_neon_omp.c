@@ -191,11 +191,13 @@ static void bc_apply_dirichlet_neon_omp_impl(double* field, size_t nx, size_t ny
     }
 }
 
-/* NEON + OpenMP backend implementation table */
+/* NEON + OpenMP backend implementation table
+ * Note: bc_apply_inlet_neon_omp_impl is defined in boundary_conditions_inlet_neon_omp.c */
 const bc_backend_impl_t bc_impl_neon_omp = {
     .apply_neumann = bc_apply_neumann_neon_omp_impl,
     .apply_periodic = bc_apply_periodic_neon_omp_impl,
-    .apply_dirichlet = bc_apply_dirichlet_neon_omp_impl
+    .apply_dirichlet = bc_apply_dirichlet_neon_omp_impl,
+    .apply_inlet = bc_apply_inlet_neon_omp_impl
 };
 
 #else /* !BC_HAS_NEON_OMP */
@@ -204,7 +206,8 @@ const bc_backend_impl_t bc_impl_neon_omp = {
 const bc_backend_impl_t bc_impl_neon_omp = {
     .apply_neumann = NULL,
     .apply_periodic = NULL,
-    .apply_dirichlet = NULL
+    .apply_dirichlet = NULL,
+    .apply_inlet = NULL
 };
 
 #endif /* BC_HAS_NEON_OMP */

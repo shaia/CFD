@@ -54,6 +54,88 @@ typedef struct {
 } bc_dirichlet_values_t;
 
 /**
+ * Inlet Velocity Profile Types
+ *
+ * Defines the velocity profile shape for inlet boundary conditions.
+ */
+typedef enum {
+    BC_INLET_PROFILE_UNIFORM,     // Constant velocity across inlet
+    BC_INLET_PROFILE_PARABOLIC,   // Parabolic profile (fully-developed flow)
+    BC_INLET_PROFILE_CUSTOM       // User-defined profile via callback
+} bc_inlet_profile_t;
+
+/**
+ * Inlet Velocity Specification Type
+ *
+ * Defines how the inlet velocity is specified.
+ */
+typedef enum {
+    BC_INLET_SPEC_VELOCITY,       // Fixed velocity components (u, v)
+    BC_INLET_SPEC_MAGNITUDE_DIR,  // Velocity magnitude + direction angle
+    BC_INLET_SPEC_MASS_FLOW       // Mass flow rate (requires density)
+} bc_inlet_spec_type_t;
+
+/**
+ * Boundary Edge Identifier
+ *
+ * Specifies which boundary edge an inlet applies to.
+ */
+typedef enum {
+    BC_EDGE_LEFT   = 0x01,   // x=0 boundary (column 0)
+    BC_EDGE_RIGHT  = 0x02,   // x=Lx boundary (column nx-1)
+    BC_EDGE_BOTTOM = 0x04,   // y=0 boundary (row 0)
+    BC_EDGE_TOP    = 0x08    // y=Ly boundary (row ny-1)
+} bc_edge_t;
+
+/**
+ * Custom inlet profile callback function type.
+ *
+ * @param position   Normalized position along the inlet (0.0 to 1.0)
+ * @param u_out      Output: x-velocity component at this position
+ * @param v_out      Output: y-velocity component at this position
+ * @param user_data  User-provided context pointer
+ *
+ * The callback is called for each grid point along the inlet boundary.
+ * Position 0.0 is at the start of the boundary, 1.0 is at the end.
+ */
+typedef void (*bc_inlet_profile_fn)(double position, double* u_out, double* v_out, void* user_data);
+
+/**
+ * Inlet Boundary Condition Configuration
+ *
+ * Comprehensive structure for specifying inlet velocity boundary conditions.
+ * Supports uniform, parabolic, and custom velocity profiles.
+ */
+typedef struct {
+    bc_edge_t edge;                    // Which boundary edge this inlet applies to
+    bc_inlet_profile_t profile;        // Velocity profile type
+    bc_inlet_spec_type_t spec_type;    // How velocity is specified
+
+    // Velocity specification (interpretation depends on spec_type)
+    union {
+        struct {
+            double u;                  // x-velocity component
+            double v;                  // y-velocity component
+        } velocity;                    // For BC_INLET_SPEC_VELOCITY
+
+        struct {
+            double magnitude;          // Velocity magnitude
+            double direction;          // Direction angle in radians (0 = +x, pi/2 = +y)
+        } magnitude_dir;               // For BC_INLET_SPEC_MAGNITUDE_DIR
+
+        struct {
+            double mass_flow_rate;     // Mass flow rate (kg/s per unit depth for 2D)
+            double density;            // Fluid density (kg/m^3)
+            double inlet_length;       // Physical length of inlet (m)
+        } mass_flow;                   // For BC_INLET_SPEC_MASS_FLOW
+    } spec;
+
+    // Custom profile callback (only used when profile == BC_INLET_PROFILE_CUSTOM)
+    bc_inlet_profile_fn custom_profile;
+    void* custom_profile_user_data;
+} bc_inlet_config_t;
+
+/**
  * Apply boundary conditions to a scalar field (raw array)
  *
  * @param field Pointer to the scalar field array (size nx*ny)
@@ -424,6 +506,132 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_omp(double* u, double* v, size_t
  * Convenience macro for applying no-slip BCs to velocity fields.
  */
 #define bc_apply_noslip_velocity(u, v, nx, ny) bc_apply_noslip((u), (v), (nx), (ny))
+
+/* ============================================================================
+ * Inlet Velocity Boundary Conditions API
+ *
+ * Inlet BCs specify velocity at inflow boundaries.
+ * Supports uniform, parabolic, and custom velocity profiles.
+ * ============================================================================ */
+
+/**
+ * Create a default inlet configuration for uniform velocity.
+ *
+ * Creates a uniform velocity inlet with the specified velocity components.
+ * The inlet is configured for the left boundary by default.
+ *
+ * @param u_velocity  x-velocity component at inlet
+ * @param v_velocity  y-velocity component at inlet
+ * @return Configured inlet structure
+ */
+CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_uniform(double u_velocity, double v_velocity);
+
+/**
+ * Create a default inlet configuration for parabolic velocity profile.
+ *
+ * Creates a parabolic velocity inlet (fully-developed laminar flow).
+ * For left/right inlets: u is parabolic, v is zero.
+ * For top/bottom inlets: v is parabolic, u is zero.
+ *
+ * @param max_velocity  Maximum velocity at center of inlet
+ * @return Configured inlet structure
+ */
+CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_parabolic(double max_velocity);
+
+/**
+ * Create an inlet configuration from velocity magnitude and direction.
+ *
+ * @param magnitude  Velocity magnitude
+ * @param direction  Direction angle in radians (0 = +x, pi/2 = +y)
+ * @return Configured inlet structure
+ */
+CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_magnitude_dir(double magnitude, double direction);
+
+/**
+ * Create an inlet configuration from mass flow rate.
+ *
+ * @param mass_flow_rate  Mass flow rate (kg/s per unit depth for 2D)
+ * @param density         Fluid density (kg/m^3)
+ * @param inlet_length    Physical length of inlet (m)
+ * @return Configured inlet structure
+ */
+CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_mass_flow(double mass_flow_rate, double density, double inlet_length);
+
+/**
+ * Create an inlet configuration with custom profile callback.
+ *
+ * @param callback   Function called for each grid point to get velocity
+ * @param user_data  User-provided context pointer passed to callback
+ * @return Configured inlet structure
+ */
+CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_custom(bc_inlet_profile_fn callback, void* user_data);
+
+/**
+ * Set the boundary edge for an inlet configuration.
+ *
+ * @param config  Pointer to inlet configuration to modify
+ * @param edge    Which boundary edge to apply inlet to
+ */
+CFD_LIBRARY_EXPORT void bc_inlet_set_edge(bc_inlet_config_t* config, bc_edge_t edge);
+
+/**
+ * Apply inlet velocity boundary condition to velocity fields.
+ *
+ * Applies the configured inlet velocity to the specified boundary edge.
+ * Uses the currently selected backend (see bc_set_backend()).
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to inlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet(double* u, double* v, size_t nx, size_t ny,
+                                                const bc_inlet_config_t* config);
+
+/**
+ * Apply inlet velocity boundary condition using scalar implementation.
+ * Always available.
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to inlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_cpu(double* u, double* v, size_t nx, size_t ny,
+                                                    const bc_inlet_config_t* config);
+
+/**
+ * Apply inlet velocity boundary condition using SIMD + OpenMP implementation.
+ * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD or OpenMP not available.
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to inlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_simd_omp(double* u, double* v, size_t nx, size_t ny,
+                                                         const bc_inlet_config_t* config);
+
+/**
+ * Apply inlet velocity boundary condition using OpenMP implementation.
+ * Returns CFD_ERROR_UNSUPPORTED if OpenMP not available.
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to inlet configuration
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_omp(double* u, double* v, size_t nx, size_t ny,
+                                                    const bc_inlet_config_t* config);
 
 #ifdef __cplusplus
 }

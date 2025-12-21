@@ -190,11 +190,13 @@ static void bc_apply_dirichlet_avx2_omp_impl(double* field, size_t nx, size_t ny
     }
 }
 
-/* AVX2 + OpenMP backend implementation table */
+/* AVX2 + OpenMP backend implementation table
+ * Note: bc_apply_inlet_avx2_omp_impl is defined in boundary_conditions_inlet_avx2_omp.c */
 const bc_backend_impl_t bc_impl_avx2_omp = {
     .apply_neumann = bc_apply_neumann_avx2_omp_impl,
     .apply_periodic = bc_apply_periodic_avx2_omp_impl,
-    .apply_dirichlet = bc_apply_dirichlet_avx2_omp_impl
+    .apply_dirichlet = bc_apply_dirichlet_avx2_omp_impl,
+    .apply_inlet = bc_apply_inlet_avx2_omp_impl
 };
 
 #else /* !BC_HAS_AVX2_OMP */
@@ -203,7 +205,8 @@ const bc_backend_impl_t bc_impl_avx2_omp = {
 const bc_backend_impl_t bc_impl_avx2_omp = {
     .apply_neumann = NULL,
     .apply_periodic = NULL,
-    .apply_dirichlet = NULL
+    .apply_dirichlet = NULL,
+    .apply_inlet = NULL
 };
 
 #endif /* BC_HAS_AVX2_OMP */
