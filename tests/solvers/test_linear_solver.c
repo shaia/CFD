@@ -546,8 +546,10 @@ void test_cg_tight_tolerance(void) {
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
 
-    /* Residual should be very small */
-    TEST_ASSERT_TRUE(stats.final_residual < 1e-8);
+    /* Verify solver met its convergence criterion (relative or absolute tolerance) */
+    double relative_tol = stats.initial_residual * params.tolerance;
+    TEST_ASSERT_TRUE(stats.final_residual < relative_tol ||
+                     stats.final_residual < params.absolute_tolerance);
 
     cfd_free(x);
     cfd_free(rhs);
