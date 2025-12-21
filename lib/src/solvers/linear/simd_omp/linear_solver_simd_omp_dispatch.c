@@ -51,10 +51,12 @@ static void log_no_simd_available(const char* solver_type) {
 /* AVX2 + OMP implementations (x86-64) */
 extern poisson_solver_t* create_jacobi_avx2_omp_solver(void);
 extern poisson_solver_t* create_redblack_avx2_omp_solver(void);
+extern poisson_solver_t* create_cg_avx2_omp_solver(void);
 
 /* NEON + OMP implementations (ARM64) */
 extern poisson_solver_t* create_jacobi_neon_omp_solver(void);
 extern poisson_solver_t* create_redblack_neon_omp_solver(void);
+extern poisson_solver_t* create_cg_neon_omp_solver(void);
 
 /* ============================================================================
  * SIMD+OMP BACKEND AVAILABILITY (Runtime + Compile-time detection)
@@ -152,5 +154,26 @@ poisson_solver_t* create_redblack_simd_omp_solver(void) {
 
     /* No SIMD backend available - report error and return NULL (no fallback) */
     log_no_simd_available("Red-Black");
+    return NULL;
+}
+
+/* ============================================================================
+ * CONJUGATE GRADIENT SIMD+OMP DISPATCHER
+ * ============================================================================ */
+
+poisson_solver_t* create_cg_simd_omp_solver(void) {
+    cfd_simd_arch_t arch = cfd_detect_simd_arch();
+
+    /* Check compile-time AND runtime availability before calling factory */
+    if (HAS_AVX2_OMP_IMPL && arch == CFD_SIMD_AVX2) {
+        return create_cg_avx2_omp_solver();
+    }
+
+    if (HAS_NEON_OMP_IMPL && arch == CFD_SIMD_NEON) {
+        return create_cg_neon_omp_solver();
+    }
+
+    /* No SIMD backend available - report error and return NULL (no fallback) */
+    log_no_simd_available("CG");
     return NULL;
 }

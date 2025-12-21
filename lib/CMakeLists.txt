@@ -108,14 +108,17 @@ set(CFD_POISSON_SOLVER_SOURCES
     src/solvers/linear/cpu/linear_solver_jacobi.c
     src/solvers/linear/cpu/linear_solver_sor.c
     src/solvers/linear/cpu/linear_solver_redblack.c
+    src/solvers/linear/cpu/linear_solver_cg.c
     # SIMD+OMP dispatcher (runtime architecture detection)
     src/solvers/linear/simd_omp/linear_solver_simd_omp_dispatch.c
     # AVX2+OMP implementations (x86-64)
     src/solvers/linear/avx2/linear_solver_jacobi_avx2_omp.c
     src/solvers/linear/avx2/linear_solver_redblack_avx2_omp.c
+    src/solvers/linear/avx2/linear_solver_cg_avx2_omp.c
     # NEON+OMP implementations (ARM64)
     src/solvers/linear/neon/linear_solver_jacobi_neon_omp.c
     src/solvers/linear/neon/linear_solver_redblack_neon_omp.c
+    src/solvers/linear/neon/linear_solver_cg_neon_omp.c
 )
 
 # OMP Poisson solver (if OpenMP is available)

@@ -159,6 +159,18 @@ void test_create_redblack_scalar(void) {
     poisson_solver_destroy(solver);
 }
 
+void test_create_cg_scalar(void) {
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+
+    TEST_ASSERT_NOT_NULL(solver);
+    TEST_ASSERT_EQUAL_STRING(POISSON_SOLVER_TYPE_CG_SCALAR, solver->name);
+    TEST_ASSERT_EQUAL_INT(POISSON_METHOD_CG, solver->method);
+    TEST_ASSERT_EQUAL_INT(POISSON_BACKEND_SCALAR, solver->backend);
+
+    poisson_solver_destroy(solver);
+}
+
 void test_create_with_auto_backend(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_AUTO);
@@ -279,6 +291,357 @@ void test_redblack_converges_zero_rhs(void) {
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+void test_cg_converges_zero_rhs(void) {
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 100;
+    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+
+    double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
+    TEST_ASSERT_TRUE(stats.final_residual < 1e-6);
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+void test_cg_converges_uniform_rhs(void) {
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 500;
+    params.tolerance = 1e-6;
+    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+
+    double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    /* CG should converge for this problem */
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+/**
+ * Test that CG scalar and SIMD+OMP produce consistent results
+ */
+void test_cg_scalar_simd_consistency(void) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        return;
+    }
+
+    /* Create scalar solver */
+    poisson_solver_t* scalar_solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(scalar_solver);
+
+    /* Create SIMD+OMP solver */
+    poisson_solver_t* simd_solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SIMD_OMP);
+    TEST_ASSERT_NOT_NULL(simd_solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 200;
+    params.tolerance = 1e-8;
+
+    poisson_solver_init(scalar_solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(simd_solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+
+    /* Allocate fields */
+    double* x_scalar = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* x_simd = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
+
+    poisson_solver_stats_t stats_scalar = poisson_solver_stats_default();
+    poisson_solver_stats_t stats_simd = poisson_solver_stats_default();
+
+    poisson_solver_solve(scalar_solver, x_scalar, NULL, rhs, &stats_scalar);
+    poisson_solver_solve(simd_solver, x_simd, NULL, rhs, &stats_simd);
+
+    /* Both should converge */
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats_scalar.status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats_simd.status);
+
+    /* Compare solutions - should be very close */
+    double max_diff = 0.0;
+    for (size_t j = 1; j < TEST_NY - 1; j++) {
+        for (size_t i = 1; i < TEST_NX - 1; i++) {
+            size_t idx = j * TEST_NX + i;
+            double diff = fabs(x_scalar[idx] - x_simd[idx]);
+            if (diff > max_diff) max_diff = diff;
+        }
+    }
+
+    /* Solutions should match within reasonable tolerance */
+    TEST_ASSERT_TRUE(max_diff < 1e-6);
+
+    cfd_free(x_scalar);
+    cfd_free(x_simd);
+    cfd_free(rhs);
+    poisson_solver_destroy(scalar_solver);
+    poisson_solver_destroy(simd_solver);
+}
+
+/**
+ * Test CG with larger grid size
+ */
+void test_cg_larger_grid(void) {
+    const size_t NX = 64;
+    const size_t NY = 64;
+
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 2000;
+    params.tolerance = 1e-6;
+    poisson_solver_init(solver, NX, NY, TEST_DX, TEST_DY, &params);
+
+    double* x = create_test_field(NX, NY, 0.0);
+    double* rhs = create_uniform_rhs(NX, NY, 1.0);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
+
+    /* Verify solver met its convergence criterion (relative or absolute tolerance) */
+    double relative_tol = stats.initial_residual * params.tolerance;
+    TEST_ASSERT_TRUE(stats.final_residual < relative_tol ||
+                     stats.final_residual < params.absolute_tolerance);
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+/**
+ * Test CG with non-zero initial guess
+ */
+void test_cg_nonzero_initial_guess(void) {
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 500;
+    params.tolerance = 1e-6;
+    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+
+    /* Start with non-zero initial guess */
+    double* x = create_test_field(TEST_NX, TEST_NY, 0.5);
+    double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+/**
+ * Test that CG uses no more iterations than Jacobi on a simple problem.
+ * Uses zero RHS where both solvers converge quickly.
+ */
+void test_cg_no_more_iterations_than_jacobi(void) {
+    /* Use zero RHS where both solvers converge very quickly */
+    poisson_solver_t* cg_solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    poisson_solver_t* jacobi_solver = poisson_solver_create(
+        POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
+
+    TEST_ASSERT_NOT_NULL(cg_solver);
+    TEST_ASSERT_NOT_NULL(jacobi_solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 100;
+    params.tolerance = 1e-6;
+
+    poisson_solver_init(cg_solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(jacobi_solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+
+    double* x_cg = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* x_jacobi = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* x_temp = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
+
+    poisson_solver_stats_t stats_cg = poisson_solver_stats_default();
+    poisson_solver_stats_t stats_jacobi = poisson_solver_stats_default();
+
+    poisson_solver_solve(cg_solver, x_cg, NULL, rhs, &stats_cg);
+    poisson_solver_solve(jacobi_solver, x_jacobi, x_temp, rhs, &stats_jacobi);
+
+    /* Both should converge on this simple problem */
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats_cg.status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats_jacobi.status);
+
+    /* CG should use no more iterations than Jacobi */
+    TEST_ASSERT_TRUE(stats_cg.iterations <= stats_jacobi.iterations);
+
+    cfd_free(x_cg);
+    cfd_free(x_jacobi);
+    cfd_free(x_temp);
+    cfd_free(rhs);
+    poisson_solver_destroy(cg_solver);
+    poisson_solver_destroy(jacobi_solver);
+}
+
+/**
+ * Test CG with stricter tolerance
+ */
+void test_cg_tight_tolerance(void) {
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 1000;
+    params.tolerance = 1e-10;
+    params.absolute_tolerance = 1e-12;
+    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+
+    double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
+
+    /* Verify solver met its convergence criterion (relative or absolute tolerance) */
+    double relative_tol = stats.initial_residual * params.tolerance;
+    TEST_ASSERT_TRUE(stats.final_residual < relative_tol ||
+                     stats.final_residual < params.absolute_tolerance);
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+/**
+ * Test CG auto backend selection
+ */
+void test_cg_auto_backend(void) {
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_AUTO);
+
+    TEST_ASSERT_NOT_NULL(solver);
+
+    /* Should select SIMD_OMP if available, otherwise SCALAR */
+    TEST_ASSERT_TRUE(
+        solver->backend == POISSON_BACKEND_SIMD_OMP ||
+        solver->backend == POISSON_BACKEND_SCALAR);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 100;
+    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+
+    double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+/**
+ * Test CG reports correct statistics
+ */
+void test_cg_statistics(void) {
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 500;
+    params.tolerance = 1e-6;
+    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+
+    double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    /* Check statistics are reasonable */
+    TEST_ASSERT_TRUE(stats.iterations > 0);
+    TEST_ASSERT_TRUE(stats.initial_residual > 0.0);
+    TEST_ASSERT_TRUE(stats.final_residual >= 0.0);
+    TEST_ASSERT_TRUE(stats.final_residual < stats.initial_residual);
+    TEST_ASSERT_TRUE(stats.elapsed_time_ms >= 0.0);
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+/**
+ * Test CG SIMD+OMP with larger grid
+ */
+void test_cg_simd_omp_larger_grid(void) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        return;
+    }
+
+    const size_t NX = 64;
+    const size_t NY = 64;
+
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SIMD_OMP);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 1000;
+    params.tolerance = 1e-6;
+    poisson_solver_init(solver, NX, NY, TEST_DX, TEST_DY, &params);
+
+    double* x = create_test_field(NX, NY, 0.0);
+    double* rhs = create_uniform_rhs(NX, NY, 1.0);
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
     cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
@@ -426,6 +789,64 @@ void test_redblack_simd_omp_if_available(void) {
     poisson_solver_destroy(solver);
 }
 
+void test_cg_simd_omp_if_available(void) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        return;
+    }
+
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SIMD_OMP);
+    TEST_ASSERT_NOT_NULL(solver);
+    TEST_ASSERT_EQUAL_INT(POISSON_BACKEND_SIMD_OMP, solver->backend);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 100;
+    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+
+    double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+void test_cg_simd_omp_converges_uniform_rhs(void) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        return;
+    }
+
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SIMD_OMP);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 500;
+    params.tolerance = 1e-6;
+    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+
+    double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
 /* ============================================================================
  * STATISTICS TESTS
  * ============================================================================ */
@@ -531,6 +952,7 @@ int main(void) {
     RUN_TEST(test_create_jacobi_scalar);
     RUN_TEST(test_create_sor_scalar);
     RUN_TEST(test_create_redblack_scalar);
+    RUN_TEST(test_create_cg_scalar);
     RUN_TEST(test_create_with_auto_backend);
     RUN_TEST(test_init_solver);
     RUN_TEST(test_init_with_custom_params);
@@ -540,6 +962,18 @@ int main(void) {
     RUN_TEST(test_jacobi_converges_zero_rhs);
     RUN_TEST(test_sor_converges_zero_rhs);
     RUN_TEST(test_redblack_converges_zero_rhs);
+    RUN_TEST(test_cg_converges_zero_rhs);
+    RUN_TEST(test_cg_converges_uniform_rhs);
+
+    /* CG advanced tests */
+    RUN_TEST(test_cg_scalar_simd_consistency);
+    RUN_TEST(test_cg_larger_grid);
+    RUN_TEST(test_cg_nonzero_initial_guess);
+    RUN_TEST(test_cg_no_more_iterations_than_jacobi);
+    RUN_TEST(test_cg_tight_tolerance);
+    RUN_TEST(test_cg_auto_backend);
+    RUN_TEST(test_cg_statistics);
+    RUN_TEST(test_cg_simd_omp_larger_grid);
 
     /* Residual tests */
     RUN_TEST(test_compute_residual_zero_rhs);
@@ -552,6 +986,8 @@ int main(void) {
     /* SIMD+OMP tests */
     RUN_TEST(test_jacobi_simd_omp_if_available);
     RUN_TEST(test_redblack_simd_omp_if_available);
+    RUN_TEST(test_cg_simd_omp_if_available);
+    RUN_TEST(test_cg_simd_omp_converges_uniform_rhs);
 
     /* Statistics tests */
     RUN_TEST(test_stats_timing);

@@ -55,7 +55,7 @@ typedef enum {
     POISSON_METHOD_GAUSS_SEIDEL,  /**< Gauss-Seidel iteration */
     POISSON_METHOD_SOR,           /**< Successive Over-Relaxation */
     POISSON_METHOD_REDBLACK_SOR,  /**< Red-Black SOR (parallelizable) */
-    POISSON_METHOD_CG,            /**< Conjugate Gradient (future) */
+    POISSON_METHOD_CG,            /**< Conjugate Gradient (for SPD systems) */
     POISSON_METHOD_BICGSTAB,      /**< BiCGSTAB (future) */
     POISSON_METHOD_MULTIGRID      /**< Multigrid (future) */
 } poisson_solver_method_t;
@@ -371,6 +371,8 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
 #define POISSON_SOLVER_TYPE_REDBLACK_SCALAR   "redblack_scalar"
 #define POISSON_SOLVER_TYPE_REDBLACK_OMP      "redblack_omp"
 #define POISSON_SOLVER_TYPE_REDBLACK_SIMD_OMP "redblack_simd_omp"
+#define POISSON_SOLVER_TYPE_CG_SCALAR         "cg_scalar"
+#define POISSON_SOLVER_TYPE_CG_SIMD_OMP       "cg_simd_omp"
 
 /* ============================================================================
  * CONVENIENCE API
