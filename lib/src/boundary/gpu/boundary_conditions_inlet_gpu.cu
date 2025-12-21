@@ -241,9 +241,7 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
                     v_spec = -avg_velocity;
                     break;
                 default:
-                    u_spec = avg_velocity;
-                    v_spec = 0.0;
-                    break;
+                    return CFD_ERROR_INVALID;
             }
             break;
         }
