@@ -555,7 +555,7 @@ void test_outlet_large_grid_all_backends(void) {
         verify_fields_equal(field_scalar, field_omp, nx, ny);
     }
 
-    cfd_status_t status3 = bc_apply_outlet_scalar_simd_omp(field_simd, nx, ny, &config);
+    cfd_status_t status3 = bc_apply_outlet_scalar_simd(field_simd, nx, ny, &config);
     if (status3 == CFD_SUCCESS) {
         verify_fields_equal(field_scalar, field_simd, nx, ny);
     }
@@ -661,7 +661,7 @@ void test_outlet_omp_backend_bottom(void) {
  * SIMD Backend Consistency Tests
  * ============================================================================ */
 
-void test_outlet_simd_omp_backend_right(void) {
+void test_outlet_simd_backend_right(void) {
     size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
     double* field_scalar = create_test_field_ramp(nx, ny);
     double* field_simd = create_test_field_ramp(nx, ny);
@@ -674,7 +674,7 @@ void test_outlet_simd_omp_backend_right(void) {
     cfd_status_t status1 = bc_apply_outlet_scalar_cpu(field_scalar, nx, ny, &config);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status1);
 
-    cfd_status_t status2 = bc_apply_outlet_scalar_simd_omp(field_simd, nx, ny, &config);
+    cfd_status_t status2 = bc_apply_outlet_scalar_simd(field_simd, nx, ny, &config);
     if (status2 == CFD_SUCCESS) {
         verify_fields_equal(field_scalar, field_simd, nx, ny);
     }
@@ -683,7 +683,7 @@ void test_outlet_simd_omp_backend_right(void) {
     free(field_simd);
 }
 
-void test_outlet_simd_omp_backend_left(void) {
+void test_outlet_simd_backend_left(void) {
     size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
     double* field_scalar = create_test_field_ramp(nx, ny);
     double* field_simd = create_test_field_ramp(nx, ny);
@@ -696,7 +696,7 @@ void test_outlet_simd_omp_backend_left(void) {
     cfd_status_t status1 = bc_apply_outlet_scalar_cpu(field_scalar, nx, ny, &config);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status1);
 
-    cfd_status_t status2 = bc_apply_outlet_scalar_simd_omp(field_simd, nx, ny, &config);
+    cfd_status_t status2 = bc_apply_outlet_scalar_simd(field_simd, nx, ny, &config);
     if (status2 == CFD_SUCCESS) {
         verify_fields_equal(field_scalar, field_simd, nx, ny);
     }
@@ -705,7 +705,7 @@ void test_outlet_simd_omp_backend_left(void) {
     free(field_simd);
 }
 
-void test_outlet_simd_omp_backend_top(void) {
+void test_outlet_simd_backend_top(void) {
     size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
     double* field_scalar = create_test_field_ramp(nx, ny);
     double* field_simd = create_test_field_ramp(nx, ny);
@@ -718,7 +718,7 @@ void test_outlet_simd_omp_backend_top(void) {
     cfd_status_t status1 = bc_apply_outlet_scalar_cpu(field_scalar, nx, ny, &config);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status1);
 
-    cfd_status_t status2 = bc_apply_outlet_scalar_simd_omp(field_simd, nx, ny, &config);
+    cfd_status_t status2 = bc_apply_outlet_scalar_simd(field_simd, nx, ny, &config);
     if (status2 == CFD_SUCCESS) {
         verify_fields_equal(field_scalar, field_simd, nx, ny);
     }
@@ -727,7 +727,7 @@ void test_outlet_simd_omp_backend_top(void) {
     free(field_simd);
 }
 
-void test_outlet_simd_omp_backend_bottom(void) {
+void test_outlet_simd_backend_bottom(void) {
     size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
     double* field_scalar = create_test_field_ramp(nx, ny);
     double* field_simd = create_test_field_ramp(nx, ny);
@@ -740,7 +740,7 @@ void test_outlet_simd_omp_backend_bottom(void) {
     cfd_status_t status1 = bc_apply_outlet_scalar_cpu(field_scalar, nx, ny, &config);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status1);
 
-    cfd_status_t status2 = bc_apply_outlet_scalar_simd_omp(field_simd, nx, ny, &config);
+    cfd_status_t status2 = bc_apply_outlet_scalar_simd(field_simd, nx, ny, &config);
     if (status2 == CFD_SUCCESS) {
         verify_fields_equal(field_scalar, field_simd, nx, ny);
     }
@@ -998,7 +998,7 @@ void test_outlet_all_backends_invalid_edge(void) {
         TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status2);
     }
 
-    cfd_status_t status3 = bc_apply_outlet_scalar_simd_omp(field, nx, ny, &config);
+    cfd_status_t status3 = bc_apply_outlet_scalar_simd(field, nx, ny, &config);
     if (status3 != CFD_ERROR_UNSUPPORTED) {
         TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status3);
     }
@@ -1176,10 +1176,10 @@ int main(void) {
     RUN_TEST(test_outlet_omp_backend_bottom);
 
     /* SIMD backend consistency tests */
-    RUN_TEST(test_outlet_simd_omp_backend_right);
-    RUN_TEST(test_outlet_simd_omp_backend_left);
-    RUN_TEST(test_outlet_simd_omp_backend_top);
-    RUN_TEST(test_outlet_simd_omp_backend_bottom);
+    RUN_TEST(test_outlet_simd_backend_right);
+    RUN_TEST(test_outlet_simd_backend_left);
+    RUN_TEST(test_outlet_simd_backend_top);
+    RUN_TEST(test_outlet_simd_backend_bottom);
 
     /* Only specified edge modified tests */
     RUN_TEST(test_outlet_only_left_edge_modified);

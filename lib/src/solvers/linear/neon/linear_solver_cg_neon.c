@@ -373,7 +373,7 @@ static cfd_status_t cg_neon_solve(
     double start_time = poisson_solver_get_time_ms();
 
     /* Apply initial boundary conditions (use SIMD BC) */
-    bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
+    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
 
     /* Compute initial residual */
     compute_residual_neon(x, rhs, r, nx, ny,
@@ -463,7 +463,7 @@ static cfd_status_t cg_neon_solve(
     }
 
     /* Apply final boundary conditions */
-    bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
+    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
 
     double end_time = poisson_solver_get_time_ms();
 
@@ -507,10 +507,10 @@ poisson_solver_t* create_cg_neon_solver(void) {
         return NULL;
     }
 
-    solver->name = POISSON_SOLVER_TYPE_CG_SIMD_OMP;
+    solver->name = POISSON_SOLVER_TYPE_CG_SIMD;
     solver->description = "Conjugate Gradient (NEON + OpenMP)";
     solver->method = POISSON_METHOD_CG;
-    solver->backend = POISSON_BACKEND_SIMD_OMP;
+    solver->backend = POISSON_BACKEND_SIMD;
     solver->params = poisson_solver_params_default();
 
     solver->init = cg_neon_init;

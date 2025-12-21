@@ -159,8 +159,8 @@ void test_noslip_scalar_large_grid(void) {
  * SIMD + OpenMP Backend Tests (AVX2 on x86, NEON on ARM)
  * ============================================================================ */
 
-void test_noslip_simd_omp_basic(void) {
-    if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
+void test_noslip_simd_basic(void) {
+    if (!bc_backend_available(BC_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
@@ -171,7 +171,7 @@ void test_noslip_simd_omp_basic(void) {
     TEST_ASSERT_NOT_NULL(u);
     TEST_ASSERT_NOT_NULL(v);
 
-    bc_apply_noslip_simd_omp(u, v, nx, ny);
+    bc_apply_noslip_simd(u, v, nx, ny);
 
     TEST_ASSERT_TRUE_MESSAGE(verify_noslip_bc(u, nx, ny),
                               "SIMD u no-slip BC not correctly applied");
@@ -184,8 +184,8 @@ void test_noslip_simd_omp_basic(void) {
     free(v);
 }
 
-void test_noslip_simd_omp_consistency_with_scalar(void) {
-    if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
+void test_noslip_simd_consistency_with_scalar(void) {
+    if (!bc_backend_available(BC_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
@@ -193,15 +193,15 @@ void test_noslip_simd_omp_consistency_with_scalar(void) {
     size_t nx = TEST_NX_MEDIUM, ny = TEST_NY_MEDIUM;
     double* u_scalar = create_test_field(nx, ny);
     double* v_scalar = create_test_field(nx, ny);
-    double* u_simd_omp = create_test_field(nx, ny);
-    double* v_simd_omp = create_test_field(nx, ny);
+    double* u_simd = create_test_field(nx, ny);
+    double* v_simd = create_test_field(nx, ny);
     TEST_ASSERT_NOT_NULL(u_scalar);
     TEST_ASSERT_NOT_NULL(v_scalar);
-    TEST_ASSERT_NOT_NULL(u_simd_omp);
-    TEST_ASSERT_NOT_NULL(v_simd_omp);
+    TEST_ASSERT_NOT_NULL(u_simd);
+    TEST_ASSERT_NOT_NULL(v_simd);
 
     bc_apply_noslip_cpu(u_scalar, v_scalar, nx, ny);
-    bc_apply_noslip_simd_omp(u_simd_omp, v_simd_omp, nx, ny);
+    bc_apply_noslip_simd(u_simd, v_simd, nx, ny);
 
     /* Compare all boundary values */
     for (size_t j = 0; j < ny; j++) {
@@ -209,18 +209,18 @@ void test_noslip_simd_omp_consistency_with_scalar(void) {
             if (i == 0 || i == nx - 1 || j == 0 || j == ny - 1) {
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE,
                                           u_scalar[j * nx + i],
-                                          u_simd_omp[j * nx + i]);
+                                          u_simd[j * nx + i]);
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE,
                                           v_scalar[j * nx + i],
-                                          v_simd_omp[j * nx + i]);
+                                          v_simd[j * nx + i]);
             }
         }
     }
 
     free(u_scalar);
     free(v_scalar);
-    free(u_simd_omp);
-    free(v_simd_omp);
+    free(u_simd);
+    free(v_simd);
 }
 
 /* ============================================================================
@@ -426,8 +426,8 @@ int main(void) {
     RUN_TEST(test_noslip_scalar_large_grid);
 
     /* SIMD + OpenMP backend tests (AVX2 on x86, NEON on ARM) */
-    RUN_TEST(test_noslip_simd_omp_basic);
-    RUN_TEST(test_noslip_simd_omp_consistency_with_scalar);
+    RUN_TEST(test_noslip_simd_basic);
+    RUN_TEST(test_noslip_simd_consistency_with_scalar);
 
     /* OpenMP backend tests */
     RUN_TEST(test_noslip_omp_basic);
