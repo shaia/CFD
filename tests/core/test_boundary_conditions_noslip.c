@@ -161,7 +161,7 @@ void test_noslip_scalar_large_grid(void) {
 
 void test_noslip_simd_omp_basic(void) {
     if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
-        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 
@@ -174,11 +174,11 @@ void test_noslip_simd_omp_basic(void) {
     bc_apply_noslip_simd_omp(u, v, nx, ny);
 
     TEST_ASSERT_TRUE_MESSAGE(verify_noslip_bc(u, nx, ny),
-                              "SIMD+OMP u no-slip BC not correctly applied");
+                              "SIMD u no-slip BC not correctly applied");
     TEST_ASSERT_TRUE_MESSAGE(verify_noslip_bc(v, nx, ny),
-                              "SIMD+OMP v no-slip BC not correctly applied");
+                              "SIMD v no-slip BC not correctly applied");
     TEST_ASSERT_TRUE_MESSAGE(verify_interior_unchanged(u, nx, ny),
-                              "Interior values were modified by SIMD+OMP");
+                              "Interior values were modified by SIMD");
 
     free(u);
     free(v);
@@ -186,7 +186,7 @@ void test_noslip_simd_omp_basic(void) {
 
 void test_noslip_simd_omp_consistency_with_scalar(void) {
     if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
-        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 

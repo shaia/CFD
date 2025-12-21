@@ -126,7 +126,7 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
 
 #if USE_AVX
     #ifdef _OPENMP
-    printf("Explicit Euler SIMD+OMP: AVX2 + OpenMP enabled (%d threads)\n", omp_get_max_threads());
+    printf("Explicit Euler SIMD: AVX2 + OpenMP enabled (%d threads)\n", omp_get_max_threads());
     #else
     printf("Explicit Euler SIMD: AVX2 enabled (OpenMP disabled)\n");
     #endif

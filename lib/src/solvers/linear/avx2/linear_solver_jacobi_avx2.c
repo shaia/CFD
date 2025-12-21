@@ -1,5 +1,5 @@
 /**
- * @file linear_solver_jacobi_avx2_omp.c
+ * @file linear_solver_jacobi_avx2.c
  * @brief Jacobi iteration solver - AVX2 + OpenMP implementation
  *
  * Jacobi method characteristics:
@@ -29,13 +29,13 @@
  * This works consistently across all compilers (GCC, Clang, MSVC).
  */
 #if defined(CFD_HAS_AVX2) && defined(CFD_ENABLE_OPENMP)
-#define JACOBI_HAS_AVX2_OMP 1
+#define JACOBI_HAS_AVX2 1
 #include <immintrin.h>
 #include <omp.h>
 #include <limits.h>
 #endif
 
-#if defined(JACOBI_HAS_AVX2_OMP)
+#if defined(JACOBI_HAS_AVX2)
 
 /* ============================================================================
  * JACOBI AVX2 CONTEXT
@@ -49,7 +49,7 @@ typedef struct {
     __m256d dy2_inv_vec;
     __m256d neg_inv_factor_vec;
     int initialized;
-} jacobi_avx2_omp_context_t;
+} jacobi_avx2_context_t;
 
 /**
  * Safe conversion from size_t to int for OpenMP loop variables.
@@ -62,7 +62,7 @@ static inline int size_to_int(size_t sz) {
  * JACOBI AVX2 IMPLEMENTATION
  * ============================================================================ */
 
-static cfd_status_t jacobi_avx2_omp_init(
+static cfd_status_t jacobi_avx2_init(
     poisson_solver_t* solver,
     size_t nx, size_t ny,
     double dx, double dy,
@@ -71,7 +71,7 @@ static cfd_status_t jacobi_avx2_omp_init(
     (void)nx; (void)ny; (void)params;
 
     /* Use aligned allocation for struct containing __m256d members */
-    jacobi_avx2_omp_context_t* ctx = (jacobi_avx2_omp_context_t*)cfd_aligned_calloc(1, sizeof(jacobi_avx2_omp_context_t));
+    jacobi_avx2_context_t* ctx = (jacobi_avx2_context_t*)cfd_aligned_calloc(1, sizeof(jacobi_avx2_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
@@ -91,14 +91,14 @@ static cfd_status_t jacobi_avx2_omp_init(
     return CFD_SUCCESS;
 }
 
-static void jacobi_avx2_omp_destroy(poisson_solver_t* solver) {
+static void jacobi_avx2_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
         cfd_aligned_free(solver->context);
         solver->context = NULL;
     }
 }
 
-static cfd_status_t jacobi_avx2_omp_iterate(
+static cfd_status_t jacobi_avx2_iterate(
     poisson_solver_t* solver,
     double* x,
     double* x_temp,
@@ -109,7 +109,7 @@ static cfd_status_t jacobi_avx2_omp_iterate(
         return CFD_ERROR_INVALID;
     }
 
-    jacobi_avx2_omp_context_t* ctx = (jacobi_avx2_omp_context_t*)solver->context;
+    jacobi_avx2_context_t* ctx = (jacobi_avx2_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
     double dx2 = ctx->dx2;
@@ -173,7 +173,7 @@ static cfd_status_t jacobi_avx2_omp_iterate(
         memcpy(&x[(size_t)j * nx], &x_temp[(size_t)j * nx], nx * sizeof(double));
     }
 
-    /* Apply boundary conditions (use SIMD+OMP BC if available) */
+    /* Apply boundary conditions (use SIMD BC if available) */
     bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
 
     /* Compute residual if requested */
@@ -184,15 +184,15 @@ static cfd_status_t jacobi_avx2_omp_iterate(
     return CFD_SUCCESS;
 }
 
-#endif /* JACOBI_HAS_AVX2_OMP */
+#endif /* JACOBI_HAS_AVX2 */
 
 /* ============================================================================
  * FACTORY FUNCTION
  * ============================================================================ */
 
 poisson_solver_t* create_jacobi_avx2_solver(void) {
-#if defined(JACOBI_HAS_AVX2_OMP)
-    /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_omp_dispatch.c)
+#if defined(JACOBI_HAS_AVX2)
+    /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_dispatch.c)
      * before calling this function. No need to check again here. */
     poisson_solver_t* solver = (poisson_solver_t*)cfd_calloc(1, sizeof(poisson_solver_t));
     if (!solver) {
@@ -207,10 +207,10 @@ poisson_solver_t* create_jacobi_avx2_solver(void) {
     solver->params.max_iterations = 2000;
     solver->params.check_interval = 10;
 
-    solver->init = jacobi_avx2_omp_init;
-    solver->destroy = jacobi_avx2_omp_destroy;
+    solver->init = jacobi_avx2_init;
+    solver->destroy = jacobi_avx2_destroy;
     solver->solve = NULL;
-    solver->iterate = jacobi_avx2_omp_iterate;
+    solver->iterate = jacobi_avx2_iterate;
     solver->apply_bc = NULL;
 
     return solver;

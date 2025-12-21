@@ -166,7 +166,7 @@ static cfd_status_t jacobi_neon_iterate(
         memcpy(&x[(size_t)j * nx], &x_temp[(size_t)j * nx], nx * sizeof(double));
     }
 
-    /* Apply boundary conditions (use SIMD+OMP BC if available) */
+    /* Apply boundary conditions (use SIMD BC if available) */
     bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
 
     /* Compute residual if requested */

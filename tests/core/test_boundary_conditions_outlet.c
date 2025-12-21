@@ -658,7 +658,7 @@ void test_outlet_omp_backend_bottom(void) {
 }
 
 /* ============================================================================
- * SIMD+OMP Backend Consistency Tests
+ * SIMD Backend Consistency Tests
  * ============================================================================ */
 
 void test_outlet_simd_omp_backend_right(void) {
@@ -1175,7 +1175,7 @@ int main(void) {
     RUN_TEST(test_outlet_omp_backend_top);
     RUN_TEST(test_outlet_omp_backend_bottom);
 
-    /* SIMD+OMP backend consistency tests */
+    /* SIMD backend consistency tests */
     RUN_TEST(test_outlet_simd_omp_backend_right);
     RUN_TEST(test_outlet_simd_omp_backend_left);
     RUN_TEST(test_outlet_simd_omp_backend_top);

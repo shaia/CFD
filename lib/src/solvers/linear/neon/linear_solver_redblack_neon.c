@@ -210,7 +210,7 @@ static cfd_status_t redblack_neon_iterate(
         redblack_neon_process_row(j, i_start, x, rhs, nx, ctx);
     }
 
-    /* Apply boundary conditions (use SIMD+OMP BC if available) */
+    /* Apply boundary conditions (use SIMD BC if available) */
     bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
 
     /* Compute residual if requested */
@@ -229,7 +229,7 @@ static cfd_status_t redblack_neon_iterate(
 
 poisson_solver_t* create_redblack_neon_solver(void) {
 #if defined(REDBLACK_HAS_NEON)
-    /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_omp_dispatch.c)
+    /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_dispatch.c)
      * before calling this function. No need to check again here. */
     poisson_solver_t* solver = (poisson_solver_t*)cfd_calloc(1, sizeof(poisson_solver_t));
     if (!solver) {

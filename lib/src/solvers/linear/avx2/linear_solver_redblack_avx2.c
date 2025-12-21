@@ -1,5 +1,5 @@
 /**
- * @file linear_solver_redblack_avx2_omp.c
+ * @file linear_solver_redblack_avx2.c
  * @brief Red-Black SOR solver - AVX2 + OpenMP implementation
  *
  * Red-Black SOR characteristics:
@@ -31,13 +31,13 @@
  * This works consistently across all compilers (GCC, Clang, MSVC).
  */
 #if defined(CFD_HAS_AVX2) && defined(CFD_ENABLE_OPENMP)
-#define REDBLACK_HAS_AVX2_OMP 1
+#define REDBLACK_HAS_AVX2 1
 #include <immintrin.h>
 #include <omp.h>
 #include <limits.h>
 #endif
 
-#if defined(REDBLACK_HAS_AVX2_OMP)
+#if defined(REDBLACK_HAS_AVX2)
 
 /* ============================================================================
  * RED-BLACK AVX2 CONTEXT
@@ -53,7 +53,7 @@ typedef struct {
     __m256d neg_inv_factor_vec;
     __m256d omega_vec;
     int initialized;
-} redblack_avx2_omp_context_t;
+} redblack_avx2_context_t;
 
 /**
  * Safe conversion from size_t to int for OpenMP loop variables.
@@ -82,7 +82,7 @@ static inline void redblack_avx2_process_row(
     double* x,
     const double* rhs,
     size_t nx,
-    const redblack_avx2_omp_context_t* ctx)
+    const redblack_avx2_context_t* ctx)
 {
     double dx2 = ctx->dx2;
     double dy2 = ctx->dy2;
@@ -147,7 +147,7 @@ static inline void redblack_avx2_process_row(
     }
 }
 
-static cfd_status_t redblack_avx2_omp_init(
+static cfd_status_t redblack_avx2_init(
     poisson_solver_t* solver,
     size_t nx, size_t ny,
     double dx, double dy,
@@ -156,7 +156,7 @@ static cfd_status_t redblack_avx2_omp_init(
     (void)nx; (void)ny;
 
     /* Use aligned allocation for struct containing __m256d members */
-    redblack_avx2_omp_context_t* ctx = (redblack_avx2_omp_context_t*)cfd_aligned_calloc(1, sizeof(redblack_avx2_omp_context_t));
+    redblack_avx2_context_t* ctx = (redblack_avx2_context_t*)cfd_aligned_calloc(1, sizeof(redblack_avx2_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
@@ -178,14 +178,14 @@ static cfd_status_t redblack_avx2_omp_init(
     return CFD_SUCCESS;
 }
 
-static void redblack_avx2_omp_destroy(poisson_solver_t* solver) {
+static void redblack_avx2_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
         cfd_aligned_free(solver->context);
         solver->context = NULL;
     }
 }
 
-static cfd_status_t redblack_avx2_omp_iterate(
+static cfd_status_t redblack_avx2_iterate(
     poisson_solver_t* solver,
     double* x,
     double* x_temp,
@@ -194,7 +194,7 @@ static cfd_status_t redblack_avx2_omp_iterate(
 {
     (void)x_temp;
 
-    redblack_avx2_omp_context_t* ctx = (redblack_avx2_omp_context_t*)solver->context;
+    redblack_avx2_context_t* ctx = (redblack_avx2_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
     int ny_int = size_to_int(ny);
@@ -214,7 +214,7 @@ static cfd_status_t redblack_avx2_omp_iterate(
         redblack_avx2_process_row(j, i_start, x, rhs, nx, ctx);
     }
 
-    /* Apply boundary conditions (use SIMD+OMP BC if available) */
+    /* Apply boundary conditions (use SIMD BC if available) */
     bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
 
     /* Compute residual if requested */
@@ -225,15 +225,15 @@ static cfd_status_t redblack_avx2_omp_iterate(
     return CFD_SUCCESS;
 }
 
-#endif /* REDBLACK_HAS_AVX2_OMP */
+#endif /* REDBLACK_HAS_AVX2 */
 
 /* ============================================================================
  * FACTORY FUNCTION
  * ============================================================================ */
 
 poisson_solver_t* create_redblack_avx2_solver(void) {
-#if defined(REDBLACK_HAS_AVX2_OMP)
-    /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_omp_dispatch.c)
+#if defined(REDBLACK_HAS_AVX2)
+    /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_dispatch.c)
      * before calling this function. No need to check again here. */
     poisson_solver_t* solver = (poisson_solver_t*)cfd_calloc(1, sizeof(poisson_solver_t));
     if (!solver) {
@@ -246,10 +246,10 @@ poisson_solver_t* create_redblack_avx2_solver(void) {
     solver->backend = POISSON_BACKEND_SIMD_OMP;
     solver->params = poisson_solver_params_default();
 
-    solver->init = redblack_avx2_omp_init;
-    solver->destroy = redblack_avx2_omp_destroy;
+    solver->init = redblack_avx2_init;
+    solver->destroy = redblack_avx2_destroy;
     solver->solve = NULL;
-    solver->iterate = redblack_avx2_omp_iterate;
+    solver->iterate = redblack_avx2_iterate;
     solver->apply_bc = NULL;
 
     return solver;

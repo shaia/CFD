@@ -493,21 +493,21 @@ int poisson_solve(
 
     switch (solver_type) {
         case POISSON_SOLVER_JACOBI_SIMD_OMP:
-            /* SIMD+OMP backend uses runtime CPU detection (AVX2/NEON) */
+            /* SIMD backend uses runtime CPU detection (AVX2/NEON) */
             solver_ptr = &g_legacy_jacobi_simd_omp;
             method = POISSON_METHOD_JACOBI;
             backend = POISSON_BACKEND_SIMD_OMP;
-            /* Fallback to scalar Jacobi if SIMD+OMP not available */
+            /* Fallback to scalar Jacobi if SIMD not available */
             fallback_backend = POISSON_BACKEND_SCALAR;
             fallback_ptr = &g_legacy_jacobi_scalar;
             break;
 
         case POISSON_SOLVER_REDBLACK_SIMD_OMP:
-            /* SIMD+OMP backend uses runtime CPU detection (AVX2/NEON) */
+            /* SIMD backend uses runtime CPU detection (AVX2/NEON) */
             solver_ptr = &g_legacy_redblack_simd_omp;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SIMD_OMP;
-            /* Fallback to scalar Red-Black if SIMD+OMP not available */
+            /* Fallback to scalar Red-Black if SIMD not available */
             fallback_backend = POISSON_BACKEND_SCALAR;
             fallback_ptr = &g_legacy_redblack_scalar;
             break;
@@ -588,7 +588,7 @@ int poisson_solve_sor_scalar(
     return poisson_solve(p, NULL, rhs, nx, ny, dx, dy, POISSON_SOLVER_SOR_SCALAR);
 }
 
-/* SIMD+OMP functions with runtime CPU detection */
+/* SIMD functions with runtime CPU detection */
 int poisson_solve_jacobi_simd_omp(
     double* p, double* p_temp, const double* rhs,
     size_t nx, size_t ny, double dx, double dy)
