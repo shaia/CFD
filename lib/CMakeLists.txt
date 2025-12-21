@@ -96,7 +96,7 @@ set(CFD_NAVIER_STOKES_SOURCES
     # Scalar CPU implementations
     src/solvers/navier_stokes/cpu/solver_explicit_euler.c
     src/solvers/navier_stokes/cpu/solver_projection.c
-    # AVX2+OMP implementations (x86-64)
+    # AVX2 implementations (x86-64)
     src/solvers/navier_stokes/avx2_omp/solver_explicit_euler_avx2_omp.c
     src/solvers/navier_stokes/avx2_omp/solver_projection_avx2_omp.c
 )

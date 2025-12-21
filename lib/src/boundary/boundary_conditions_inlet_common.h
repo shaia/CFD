@@ -2,7 +2,7 @@
  * Inlet Boundary Conditions - Common Definitions
  *
  * Shared helper functions and data structures used by all inlet BC
- * backend implementations (scalar, OMP, AVX2+OMP, NEON+OMP).
+ * backend implementations (scalar, OMP, AVX2, NEON).
  *
  * This header is internal and should only be included by inlet BC
  * implementation files.

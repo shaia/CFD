@@ -35,7 +35,7 @@
 #if defined(CG_HAS_NEON)
 
 /* ============================================================================
- * CG NEON+OMP CONTEXT
+ * CG NEON CONTEXT
  * ============================================================================ */
 
 typedef struct {
@@ -297,7 +297,7 @@ static void update_search_direction_neon(const double* r, double* p,
 }
 
 /* ============================================================================
- * CG NEON+OMP IMPLEMENTATION
+ * CG NEON IMPLEMENTATION
  * ============================================================================ */
 
 static cfd_status_t cg_neon_init(
@@ -436,7 +436,7 @@ static cfd_status_t cg_neon_solve(
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {
             if (params->verbose) {
-                printf("  CG NEON+OMP Iter %d: residual = %.6e\n", iter, res_norm);
+                printf("  CG NEON Iter %d: residual = %.6e\n", iter, res_norm);
             }
 
             if (res_norm < tolerance || res_norm < params->absolute_tolerance) {
