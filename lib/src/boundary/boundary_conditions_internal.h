@@ -61,7 +61,7 @@ extern const bc_backend_impl_t bc_impl_scalar;
 extern const bc_backend_impl_t bc_impl_omp;
 
 /**
- * Architecture-specific SIMD + OpenMP implementations.
+ * Architecture-specific SIMD implementations.
  * Each file provides its own table; only one will be non-NULL at compile time.
  */
 extern const bc_backend_impl_t bc_impl_avx2;  /* AVX2 (x86-64) */
@@ -120,7 +120,7 @@ cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, size_t nx, size_t 
 cfd_status_t bc_apply_inlet_omp_impl(double* u, double* v, size_t nx, size_t ny,
                                       const bc_inlet_config_t* config);
 
-/* AVX2+OMP inlet implementation - defined in avx2/boundary_conditions_inlet_avx2.c */
+/* AVX2 inlet implementation - defined in avx2/boundary_conditions_inlet_avx2.c */
 cfd_status_t bc_apply_inlet_avx2_impl(double* u, double* v, size_t nx, size_t ny,
                                        const bc_inlet_config_t* config);
 
@@ -136,7 +136,7 @@ cfd_status_t bc_apply_outlet_scalar_impl(double* field, size_t nx, size_t ny,
 cfd_status_t bc_apply_outlet_omp_impl(double* field, size_t nx, size_t ny,
                                        const bc_outlet_config_t* config);
 
-/* AVX2+OMP outlet implementation - defined in avx2/boundary_conditions_outlet_avx2.c */
+/* AVX2 outlet implementation - defined in avx2/boundary_conditions_outlet_avx2.c */
 cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
                                         const bc_outlet_config_t* config);
 

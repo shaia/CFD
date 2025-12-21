@@ -35,7 +35,7 @@
 #if defined(CG_HAS_AVX2_OMP)
 
 /* ============================================================================
- * CG AVX2+OMP CONTEXT
+ * CG AVX2 CONTEXT
  * ============================================================================ */
 
 typedef struct {
@@ -301,7 +301,7 @@ static void update_search_direction_avx2_omp(const double* r, double* p,
 }
 
 /* ============================================================================
- * CG AVX2+OMP IMPLEMENTATION
+ * CG AVX2 IMPLEMENTATION
  * ============================================================================ */
 
 static cfd_status_t cg_avx2_omp_init(
@@ -441,7 +441,7 @@ static cfd_status_t cg_avx2_omp_solve(
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {
             if (params->verbose) {
-                printf("  CG AVX2+OMP Iter %d: residual = %.6e\n", iter, res_norm);
+                printf("  CG AVX2 Iter %d: residual = %.6e\n", iter, res_norm);
             }
 
             if (res_norm < tolerance || res_norm < params->absolute_tolerance) {

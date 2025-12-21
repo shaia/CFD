@@ -37,7 +37,7 @@
 #if defined(REDBLACK_HAS_NEON)
 
 /* ============================================================================
- * RED-BLACK NEON+OMP CONTEXT
+ * RED-BLACK NEON CONTEXT
  * ============================================================================ */
 
 typedef struct {
@@ -60,7 +60,7 @@ static inline int size_to_int(size_t sz) {
 }
 
 /* ============================================================================
- * RED-BLACK NEON+OMP IMPLEMENTATION
+ * RED-BLACK NEON IMPLEMENTATION
  * ============================================================================ */
 
 /**

@@ -38,7 +38,7 @@
 #if defined(JACOBI_HAS_AVX2_OMP)
 
 /* ============================================================================
- * JACOBI AVX2+OMP CONTEXT
+ * JACOBI AVX2 CONTEXT
  * ============================================================================ */
 
 typedef struct {
@@ -59,7 +59,7 @@ static inline int size_to_int(size_t sz) {
 }
 
 /* ============================================================================
- * JACOBI AVX2+OMP IMPLEMENTATION
+ * JACOBI AVX2 IMPLEMENTATION
  * ============================================================================ */
 
 static cfd_status_t jacobi_avx2_omp_init(
