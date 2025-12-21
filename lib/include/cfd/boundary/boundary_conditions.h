@@ -33,11 +33,11 @@ typedef enum {
  * based on the solver type being used.
  */
 typedef enum {
-    BC_BACKEND_AUTO,      // Auto-select best available (SIMD_OMP > OMP > Scalar)
-    BC_BACKEND_SCALAR,    // Force scalar implementation (single-threaded)
-    BC_BACKEND_OMP,       // Force OpenMP implementation (multi-threaded, scalar loops)
-    BC_BACKEND_SIMD_OMP,  // Force SIMD + OpenMP (runtime: AVX2 on x86, NEON on ARM)
-    BC_BACKEND_CUDA       // Force CUDA GPU implementation
+    BC_BACKEND_AUTO,    // Auto-select best available (SIMD > OMP > Scalar)
+    BC_BACKEND_SCALAR,  // Force scalar implementation (single-threaded)
+    BC_BACKEND_OMP,     // Force OpenMP implementation (multi-threaded, scalar loops)
+    BC_BACKEND_SIMD,    // Force SIMD + OpenMP (runtime: AVX2 on x86, NEON on ARM)
+    BC_BACKEND_CUDA     // Force CUDA GPU implementation
 } bc_backend_t;
 
 /**
@@ -291,8 +291,8 @@ CFD_LIBRARY_EXPORT bc_backend_t bc_get_backend(void);
 /**
  * Get the name of the currently active BC backend as a string.
  *
- * @return Human-readable backend name (e.g., "scalar", "omp", "simd_omp", "cuda")
- *         For simd_omp, may include architecture detail like "simd_omp (avx2)" or "simd_omp (neon)"
+ * @return Human-readable backend name (e.g., "scalar", "omp", "simd", "cuda")
+ *         For simd, may include architecture detail like "simd (avx2)" or "simd (neon)"
  */
 CFD_LIBRARY_EXPORT const char* bc_get_backend_name(void);
 

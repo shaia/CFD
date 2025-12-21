@@ -74,7 +74,7 @@ static const bc_backend_impl_t* get_backend_impl(bc_backend_t backend) {
             return &bc_impl_scalar;
         case BC_BACKEND_OMP:
             return (bc_impl_omp.apply_neumann != NULL) ? &bc_impl_omp : NULL;
-        case BC_BACKEND_SIMD_OMP:
+        case BC_BACKEND_SIMD:
             /* Use runtime check - bc_impl_simd has non-NULL dispatchers,
              * but the underlying SIMD backend may not be available */
             return bc_simd_backend_available() ? &bc_impl_simd : NULL;
@@ -246,7 +246,7 @@ cfd_status_t bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t 
 }
 
 cfd_status_t bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type) {
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -273,7 +273,7 @@ cfd_status_t bc_apply_velocity_cpu(double* u, double* v, size_t nx, size_t ny, b
 }
 
 cfd_status_t bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -341,7 +341,7 @@ cfd_status_t bc_apply_dirichlet_scalar_cpu(double* field, size_t nx, size_t ny,
 
 cfd_status_t bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
                                                  const bc_dirichlet_values_t* values) {
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -379,7 +379,7 @@ cfd_status_t bc_apply_dirichlet_velocity_cpu(double* u, double* v, size_t nx, si
 cfd_status_t bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
                                                    const bc_dirichlet_values_t* u_values,
                                                    const bc_dirichlet_values_t* v_values) {
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -453,7 +453,7 @@ cfd_status_t bc_apply_noslip_simd(double* u, double* v, size_t nx, size_t ny) {
     if (!u || !v || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -580,7 +580,7 @@ cfd_status_t bc_apply_inlet_simd(double* u, double* v, size_t nx, size_t ny,
     if (!u || !v || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -675,7 +675,7 @@ cfd_status_t bc_apply_outlet_scalar_simd(double* field, size_t nx, size_t ny,
     if (!field || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -711,7 +711,7 @@ cfd_status_t bc_apply_outlet_velocity_simd(double* u, double* v, size_t nx, size
     if (!u || !v || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD_OMP);
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }

@@ -176,9 +176,9 @@ void test_create_with_auto_backend(void) {
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_AUTO);
 
     TEST_ASSERT_NOT_NULL(solver);
-    /* Backend should be SIMD_OMP or SCALAR depending on availability */
+    /* Backend should be SIMD or SCALAR depending on availability */
     TEST_ASSERT_TRUE(
-        solver->backend == POISSON_BACKEND_SIMD_OMP ||
+        solver->backend == POISSON_BACKEND_SIMD ||
         solver->backend == POISSON_BACKEND_SCALAR);
 
     poisson_solver_destroy(solver);
@@ -356,7 +356,7 @@ void test_cg_converges_uniform_rhs(void) {
  * Test that CG scalar and SIMD produce consistent results
  */
 void test_cg_scalar_simd_consistency(void) {
-    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
@@ -368,7 +368,7 @@ void test_cg_scalar_simd_consistency(void) {
 
     /* Create SIMD solver */
     poisson_solver_t* simd_solver = poisson_solver_create(
-        POISSON_METHOD_CG, POISSON_BACKEND_SIMD_OMP);
+        POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(simd_solver);
 
     poisson_solver_params_t params = poisson_solver_params_default();
@@ -565,9 +565,9 @@ void test_cg_auto_backend(void) {
 
     TEST_ASSERT_NOT_NULL(solver);
 
-    /* Should select SIMD_OMP if available, otherwise SCALAR */
+    /* Should select SIMD if available, otherwise SCALAR */
     TEST_ASSERT_TRUE(
-        solver->backend == POISSON_BACKEND_SIMD_OMP ||
+        solver->backend == POISSON_BACKEND_SIMD ||
         solver->backend == POISSON_BACKEND_SCALAR);
 
     poisson_solver_params_t params = poisson_solver_params_default();
@@ -623,7 +623,7 @@ void test_cg_statistics(void) {
  * Test CG SIMD with larger grid
  */
 void test_cg_simd_larger_grid(void) {
-    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
@@ -632,7 +632,7 @@ void test_cg_simd_larger_grid(void) {
     const size_t NY = 64;
 
     poisson_solver_t* solver = poisson_solver_create(
-        POISSON_METHOD_CG, POISSON_BACKEND_SIMD_OMP);
+        POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(solver);
 
     poisson_solver_params_t params = poisson_solver_params_default();
@@ -701,7 +701,7 @@ void test_legacy_poisson_solve_jacobi(void) {
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
 
     int iterations = poisson_solve(p, p_temp, rhs, TEST_NX, TEST_NY, TEST_DX, TEST_DY,
-                                   POISSON_SOLVER_JACOBI_SIMD_OMP);
+                                   POISSON_SOLVER_JACOBI_SIMD);
 
     TEST_ASSERT_TRUE(iterations >= 0 || iterations == -1);
 
@@ -716,7 +716,7 @@ void test_legacy_poisson_solve_redblack(void) {
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
 
     int iterations = poisson_solve(p, p_temp, rhs, TEST_NX, TEST_NY, TEST_DX, TEST_DY,
-                                   POISSON_SOLVER_REDBLACK_SIMD_OMP);
+                                   POISSON_SOLVER_REDBLACK_SIMD);
 
     TEST_ASSERT_TRUE(iterations >= 0 || iterations == -1);
 
@@ -730,15 +730,15 @@ void test_legacy_poisson_solve_redblack(void) {
  * ============================================================================ */
 
 void test_jacobi_simd_if_available(void) {
-    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 
     poisson_solver_t* solver = poisson_solver_create(
-        POISSON_METHOD_JACOBI, POISSON_BACKEND_SIMD_OMP);
+        POISSON_METHOD_JACOBI, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(solver);
-    TEST_ASSERT_EQUAL_INT(POISSON_BACKEND_SIMD_OMP, solver->backend);
+    TEST_ASSERT_EQUAL_INT(POISSON_BACKEND_SIMD, solver->backend);
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
@@ -761,15 +761,15 @@ void test_jacobi_simd_if_available(void) {
 }
 
 void test_redblack_simd_if_available(void) {
-    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 
     poisson_solver_t* solver = poisson_solver_create(
-        POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD_OMP);
+        POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(solver);
-    TEST_ASSERT_EQUAL_INT(POISSON_BACKEND_SIMD_OMP, solver->backend);
+    TEST_ASSERT_EQUAL_INT(POISSON_BACKEND_SIMD, solver->backend);
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
@@ -790,15 +790,15 @@ void test_redblack_simd_if_available(void) {
 }
 
 void test_cg_simd_if_available(void) {
-    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 
     poisson_solver_t* solver = poisson_solver_create(
-        POISSON_METHOD_CG, POISSON_BACKEND_SIMD_OMP);
+        POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(solver);
-    TEST_ASSERT_EQUAL_INT(POISSON_BACKEND_SIMD_OMP, solver->backend);
+    TEST_ASSERT_EQUAL_INT(POISSON_BACKEND_SIMD, solver->backend);
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
@@ -819,13 +819,13 @@ void test_cg_simd_if_available(void) {
 }
 
 void test_cg_simd_converges_uniform_rhs(void) {
-    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 
     poisson_solver_t* solver = poisson_solver_create(
-        POISSON_METHOD_CG, POISSON_BACKEND_SIMD_OMP);
+        POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(solver);
 
     poisson_solver_params_t params = poisson_solver_params_default();
@@ -884,13 +884,13 @@ void test_simd_backend_diagnostic(void) {
     printf("\n");
     printf("=== SIMD Backend Diagnostic ===\n");
     printf("SIMD backend available: %s\n",
-           poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP) ? "YES" : "NO");
+           poisson_solver_backend_available(POISSON_BACKEND_SIMD) ? "YES" : "NO");
     printf("SIMD architecture: %s\n", poisson_solver_get_simd_arch_name());
     printf("Current backend: %s\n", poisson_solver_get_backend_name());
 
-    if (poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
+    if (poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
         poisson_solver_t* solver = poisson_solver_create(
-            POISSON_METHOD_JACOBI, POISSON_BACKEND_SIMD_OMP);
+            POISSON_METHOD_JACOBI, POISSON_BACKEND_SIMD);
         if (solver) {
             printf("SIMD Jacobi solver name: %s\n", solver->name);
             printf("SIMD Jacobi solver description: %s\n", solver->description);
@@ -898,7 +898,7 @@ void test_simd_backend_diagnostic(void) {
         }
 
         solver = poisson_solver_create(
-            POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD_OMP);
+            POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD);
         if (solver) {
             printf("SIMD Red-Black solver name: %s\n", solver->name);
             printf("SIMD Red-Black solver description: %s\n", solver->description);

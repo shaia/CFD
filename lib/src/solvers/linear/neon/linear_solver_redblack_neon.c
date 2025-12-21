@@ -236,10 +236,10 @@ poisson_solver_t* create_redblack_neon_solver(void) {
         return NULL;
     }
 
-    solver->name = POISSON_SOLVER_TYPE_REDBLACK_SIMD_OMP;
+    solver->name = POISSON_SOLVER_TYPE_REDBLACK_SIMD;
     solver->description = "Red-Black SOR iteration (NEON + OpenMP)";
     solver->method = POISSON_METHOD_REDBLACK_SOR;
-    solver->backend = POISSON_BACKEND_SIMD_OMP;
+    solver->backend = POISSON_BACKEND_SIMD;
     solver->params = poisson_solver_params_default();
 
     solver->init = redblack_neon_init;

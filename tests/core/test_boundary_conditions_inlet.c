@@ -692,7 +692,7 @@ void test_inlet_omp_consistency(void) {
 }
 
 void test_inlet_simd_consistency(void) {
-    if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
+    if (!bc_backend_available(BC_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
@@ -1253,7 +1253,7 @@ void test_inlet_backend_consistency_mass_flow(void) {
 }
 
 void test_inlet_backend_consistency_magnitude_dir(void) {
-    if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
+    if (!bc_backend_available(BC_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }

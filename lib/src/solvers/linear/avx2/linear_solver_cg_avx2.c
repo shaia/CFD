@@ -512,10 +512,10 @@ poisson_solver_t* create_cg_avx2_solver(void) {
         return NULL;
     }
 
-    solver->name = POISSON_SOLVER_TYPE_CG_SIMD_OMP;
+    solver->name = POISSON_SOLVER_TYPE_CG_SIMD;
     solver->description = "Conjugate Gradient (AVX2 + OpenMP)";
     solver->method = POISSON_METHOD_CG;
-    solver->backend = POISSON_BACKEND_SIMD_OMP;
+    solver->backend = POISSON_BACKEND_SIMD;
     solver->params = poisson_solver_params_default();
 
     solver->init = cg_avx2_init;

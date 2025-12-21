@@ -240,10 +240,10 @@ poisson_solver_t* create_redblack_avx2_solver(void) {
         return NULL;
     }
 
-    solver->name = POISSON_SOLVER_TYPE_REDBLACK_SIMD_OMP;
+    solver->name = POISSON_SOLVER_TYPE_REDBLACK_SIMD;
     solver->description = "Red-Black SOR iteration (AVX2 + OpenMP)";
     solver->method = POISSON_METHOD_REDBLACK_SOR;
-    solver->backend = POISSON_BACKEND_SIMD_OMP;
+    solver->backend = POISSON_BACKEND_SIMD;
     solver->params = poisson_solver_params_default();
 
     solver->init = redblack_avx2_init;

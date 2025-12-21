@@ -199,10 +199,10 @@ poisson_solver_t* create_jacobi_avx2_solver(void) {
         return NULL;
     }
 
-    solver->name = POISSON_SOLVER_TYPE_JACOBI_SIMD_OMP;
+    solver->name = POISSON_SOLVER_TYPE_JACOBI_SIMD;
     solver->description = "Jacobi iteration (AVX2 + OpenMP)";
     solver->method = POISSON_METHOD_JACOBI;
-    solver->backend = POISSON_BACKEND_SIMD_OMP;
+    solver->backend = POISSON_BACKEND_SIMD;
     solver->params = poisson_solver_params_default();
     solver->params.max_iterations = 2000;
     solver->params.check_interval = 10;

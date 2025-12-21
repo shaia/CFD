@@ -204,7 +204,7 @@ void test_dirichlet_scalar_large_grid(void) {
  * ============================================================================ */
 
 void test_dirichlet_simd_basic(void) {
-    if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
+    if (!bc_backend_available(BC_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
@@ -231,7 +231,7 @@ void test_dirichlet_simd_basic(void) {
 }
 
 void test_dirichlet_simd_consistency_with_scalar(void) {
-    if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
+    if (!bc_backend_available(BC_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
