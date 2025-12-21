@@ -532,9 +532,7 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 ## Version Milestones
 
-### v0.1.0 - Foundation (Current)
-
-**Completed:**
+### v0.1.0 - Foundation (Released)
 
 - [x] Boundary condition abstraction layer with runtime backend selection
 - [x] Neumann and Periodic boundary conditions (all backends)
@@ -544,11 +542,17 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 - [x] 11 example programs
 - [x] VTK and CSV output
 
-**Remaining for v0.1.0:**
+### v0.1.x - Boundary Condition Improvements (Current)
 
+**Completed:**
+
+- [x] Dirichlet (fixed value) boundary conditions
 - [x] No-slip wall boundary conditions
-- [x] Inlet velocity boundary conditions
-- [x] Outlet boundary conditions
+- [x] Inlet velocity boundary conditions (uniform, parabolic, custom profiles)
+- [x] Outlet boundary conditions (zero-gradient, convective)
+
+**Remaining:**
+
 - [ ] At least one Krylov solver (CG or BiCGSTAB)
 - [ ] Lid-driven cavity validation
 - [ ] Basic documentation
