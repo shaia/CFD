@@ -505,7 +505,7 @@ static cfd_status_t cg_avx2_omp_iterate(
  * FACTORY FUNCTION
  * ============================================================================ */
 
-poisson_solver_t* create_cg_avx2_omp_solver(void) {
+poisson_solver_t* create_cg_avx2_solver(void) {
 #if defined(CG_HAS_AVX2_OMP)
     poisson_solver_t* solver = (poisson_solver_t*)cfd_calloc(1, sizeof(poisson_solver_t));
     if (!solver) {

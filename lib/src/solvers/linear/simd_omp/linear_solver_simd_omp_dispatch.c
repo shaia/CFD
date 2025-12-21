@@ -8,10 +8,12 @@
  * - NEON + OpenMP on ARM64 (always available on ARM64)
  *
  * The actual implementations remain in separate files:
- * - avx2/linear_solver_jacobi_avx2_omp.c
- * - avx2/linear_solver_redblack_avx2_omp.c
+ * - avx2/linear_solver_jacobi_avx2.c
+ * - avx2/linear_solver_redblack_avx2.c
+ * - avx2/linear_solver_cg_avx2.c
  * - neon/linear_solver_jacobi_neon_omp.c
  * - neon/linear_solver_redblack_neon_omp.c
+ * - neon/linear_solver_cg_neon_omp.c
  *
  * This design is identical to the boundary conditions SIMD_OMP dispatcher.
  */
@@ -49,9 +51,9 @@ static void log_no_simd_available(const char* solver_type) {
  * ============================================================================ */
 
 /* AVX2 + OMP implementations (x86-64) */
-extern poisson_solver_t* create_jacobi_avx2_omp_solver(void);
-extern poisson_solver_t* create_redblack_avx2_omp_solver(void);
-extern poisson_solver_t* create_cg_avx2_omp_solver(void);
+extern poisson_solver_t* create_jacobi_avx2_solver(void);
+extern poisson_solver_t* create_redblack_avx2_solver(void);
+extern poisson_solver_t* create_cg_avx2_solver(void);
 
 /* NEON + OMP implementations (ARM64) */
 extern poisson_solver_t* create_jacobi_neon_omp_solver(void);
@@ -124,7 +126,7 @@ poisson_solver_t* create_jacobi_simd_omp_solver(void) {
 
     /* Check compile-time AND runtime availability before calling factory */
     if (HAS_AVX2_OMP_IMPL && arch == CFD_SIMD_AVX2) {
-        return create_jacobi_avx2_omp_solver();
+        return create_jacobi_avx2_solver();
     }
 
     if (HAS_NEON_OMP_IMPL && arch == CFD_SIMD_NEON) {
@@ -145,7 +147,7 @@ poisson_solver_t* create_redblack_simd_omp_solver(void) {
 
     /* Check compile-time AND runtime availability before calling factory */
     if (HAS_AVX2_OMP_IMPL && arch == CFD_SIMD_AVX2) {
-        return create_redblack_avx2_omp_solver();
+        return create_redblack_avx2_solver();
     }
 
     if (HAS_NEON_OMP_IMPL && arch == CFD_SIMD_NEON) {
@@ -166,7 +168,7 @@ poisson_solver_t* create_cg_simd_omp_solver(void) {
 
     /* Check compile-time AND runtime availability before calling factory */
     if (HAS_AVX2_OMP_IMPL && arch == CFD_SIMD_AVX2) {
-        return create_cg_avx2_omp_solver();
+        return create_cg_avx2_solver();
     }
 
     if (HAS_NEON_OMP_IMPL && arch == CFD_SIMD_NEON) {

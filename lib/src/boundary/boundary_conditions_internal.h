@@ -64,7 +64,7 @@ extern const bc_backend_impl_t bc_impl_omp;
  * Architecture-specific SIMD + OpenMP implementations.
  * Each file provides its own table; only one will be non-NULL at compile time.
  */
-extern const bc_backend_impl_t bc_impl_avx2_omp;  /* AVX2 + OMP (x86-64) */
+extern const bc_backend_impl_t bc_impl_avx2;  /* AVX2 + OMP (x86-64) */
 extern const bc_backend_impl_t bc_impl_neon_omp;  /* NEON + OMP (ARM64) */
 
 /**
@@ -120,9 +120,9 @@ cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, size_t nx, size_t 
 cfd_status_t bc_apply_inlet_omp_impl(double* u, double* v, size_t nx, size_t ny,
                                       const bc_inlet_config_t* config);
 
-/* AVX2+OMP inlet implementation - defined in avx2/boundary_conditions_inlet_avx2_omp.c */
-cfd_status_t bc_apply_inlet_avx2_omp_impl(double* u, double* v, size_t nx, size_t ny,
-                                           const bc_inlet_config_t* config);
+/* AVX2+OMP inlet implementation - defined in avx2/boundary_conditions_inlet_avx2.c */
+cfd_status_t bc_apply_inlet_avx2_impl(double* u, double* v, size_t nx, size_t ny,
+                                       const bc_inlet_config_t* config);
 
 /* NEON+OMP inlet implementation - defined in neon/boundary_conditions_inlet_neon_omp.c */
 cfd_status_t bc_apply_inlet_neon_omp_impl(double* u, double* v, size_t nx, size_t ny,
@@ -136,9 +136,9 @@ cfd_status_t bc_apply_outlet_scalar_impl(double* field, size_t nx, size_t ny,
 cfd_status_t bc_apply_outlet_omp_impl(double* field, size_t nx, size_t ny,
                                        const bc_outlet_config_t* config);
 
-/* AVX2+OMP outlet implementation - defined in avx2/boundary_conditions_outlet_avx2_omp.c */
-cfd_status_t bc_apply_outlet_avx2_omp_impl(double* field, size_t nx, size_t ny,
-                                            const bc_outlet_config_t* config);
+/* AVX2+OMP outlet implementation - defined in avx2/boundary_conditions_outlet_avx2.c */
+cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
+                                        const bc_outlet_config_t* config);
 
 /* NEON+OMP outlet implementation - defined in neon/boundary_conditions_outlet_neon_omp.c */
 cfd_status_t bc_apply_outlet_neon_omp_impl(double* field, size_t nx, size_t ny,

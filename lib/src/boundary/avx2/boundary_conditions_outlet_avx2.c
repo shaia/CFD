@@ -27,7 +27,7 @@ static inline int size_to_int(size_t sz) {
     return (sz > (size_t)INT_MAX) ? INT_MAX : (int)sz;
 }
 
-cfd_status_t bc_apply_outlet_avx2_omp_impl(double* field, size_t nx, size_t ny,
+cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
                                             const bc_outlet_config_t* config) {
     if (!field || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
@@ -126,7 +126,7 @@ cfd_status_t bc_apply_outlet_avx2_omp_impl(double* field, size_t nx, size_t ny,
 
 #else /* !BC_HAS_AVX2_OMP */
 
-cfd_status_t bc_apply_outlet_avx2_omp_impl(double* field, size_t nx, size_t ny,
+cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
                                             const bc_outlet_config_t* config) {
     (void)field; (void)nx; (void)ny; (void)config;
     return CFD_ERROR_UNSUPPORTED;

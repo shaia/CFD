@@ -190,7 +190,7 @@ static cfd_status_t jacobi_avx2_omp_iterate(
  * FACTORY FUNCTION
  * ============================================================================ */
 
-poisson_solver_t* create_jacobi_avx2_omp_solver(void) {
+poisson_solver_t* create_jacobi_avx2_solver(void) {
 #if defined(JACOBI_HAS_AVX2_OMP)
     /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_omp_dispatch.c)
      * before calling this function. No need to check again here. */

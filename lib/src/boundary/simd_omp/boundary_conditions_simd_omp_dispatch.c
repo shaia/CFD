@@ -7,7 +7,7 @@
  * - NEON + OpenMP on ARM64 (always available on ARM64)
  *
  * The actual implementations remain in separate files:
- * - avx2/boundary_conditions_avx2_omp.c
+ * - avx2/boundary_conditions_avx2.c
  * - neon/boundary_conditions_neon_omp.c
  *
  * Compile-Time vs Runtime Detection:
@@ -18,7 +18,7 @@
  *
  * This two-phase check handles the case where:
  * - CPU supports AVX2, but code was compiled without -mavx2 flag
- * - In this case, bc_impl_avx2_omp has NULL pointers, so simd_omp_available()
+ * - In this case, bc_impl_avx2 has NULL pointers, so simd_omp_available()
  *   returns false even though runtime detection reports AVX2 support.
  *
  * This design ensures safe operation: SIMD backend is only used when BOTH
@@ -97,8 +97,8 @@ static const bc_backend_impl_t* get_simd_backend(void) {
     cfd_simd_arch_t arch = cfd_detect_simd_arch();
     const bc_backend_impl_t* result = NULL;
 
-    if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_neumann != NULL) {
-        result = &bc_impl_avx2_omp;
+    if (arch == CFD_SIMD_AVX2 && bc_impl_avx2.apply_neumann != NULL) {
+        result = &bc_impl_avx2;
     } else if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_neumann != NULL) {
         result = &bc_impl_neon_omp;
     }
@@ -222,7 +222,7 @@ static bool simd_omp_available(void) {
     cfd_simd_arch_t arch = cfd_detect_simd_arch();
 
     if (arch == CFD_SIMD_AVX2) {
-        return backend_impl_complete(&bc_impl_avx2_omp);
+        return backend_impl_complete(&bc_impl_avx2);
     } else if (arch == CFD_SIMD_NEON) {
         return backend_impl_complete(&bc_impl_neon_omp);
     }

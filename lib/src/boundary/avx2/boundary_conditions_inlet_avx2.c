@@ -25,8 +25,8 @@ static inline int size_to_int(size_t sz) {
     return (sz > (size_t)INT_MAX) ? INT_MAX : (int)sz;
 }
 
-cfd_status_t bc_apply_inlet_avx2_omp_impl(double* u, double* v, size_t nx, size_t ny,
-                                           const bc_inlet_config_t* config) {
+cfd_status_t bc_apply_inlet_avx2_impl(double* u, double* v, size_t nx, size_t ny,
+                                       const bc_inlet_config_t* config) {
     if (!u || !v || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
