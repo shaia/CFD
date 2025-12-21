@@ -47,10 +47,33 @@ poisson_solver_t* create_cg_simd_omp_solver(void);
 
 /**
  * Threshold for detecting CG breakdown (division by near-zero).
- * If (p, Ap) falls below this, the algorithm has stagnated or encountered
- * a singular/near-singular system.
+ * If (p, Ap) or (r, r) falls below this, the algorithm has stagnated
+ * or encountered a singular/near-singular system.
  */
 #define CG_BREAKDOWN_THRESHOLD 1e-30
+
+/**
+ * Macro for CG breakdown check with early return.
+ * Used when a denominator (p_dot_Ap or r_dot_r) becomes too small.
+ *
+ * @param value The value to check against breakdown threshold
+ * @param stats Pointer to stats structure (may be NULL)
+ * @param iter Current iteration index
+ * @param res_norm Current residual norm
+ * @param start_time Start time for elapsed time calculation
+ */
+#define CG_CHECK_BREAKDOWN(value, stats, iter, res_norm, start_time) \
+    do { \
+        if (fabs(value) < CG_BREAKDOWN_THRESHOLD) { \
+            if (stats) { \
+                (stats)->status = POISSON_STAGNATED; \
+                (stats)->iterations = (iter) + 1; \
+                (stats)->final_residual = (res_norm); \
+                (stats)->elapsed_time_ms = poisson_solver_get_time_ms() - (start_time); \
+            } \
+            return CFD_ERROR_MAX_ITER; \
+        } \
+    } while (0)
 
 /* ============================================================================
  * SIMD+OMP BACKEND AVAILABILITY (Runtime detection)

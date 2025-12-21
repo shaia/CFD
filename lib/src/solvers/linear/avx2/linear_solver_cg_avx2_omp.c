@@ -423,15 +423,8 @@ static cfd_status_t cg_avx2_omp_solve(
         /* alpha = (r, r) / (p, Ap) */
         double p_dot_Ap = dot_product_avx2_omp(p, Ap, nx, ny);
 
-        if (fabs(p_dot_Ap) < CG_BREAKDOWN_THRESHOLD) {
-            if (stats) {
-                stats->status = POISSON_STAGNATED;
-                stats->iterations = iter + 1;
-                stats->final_residual = res_norm;
-                stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
-            }
-            return CFD_ERROR_MAX_ITER;
-        }
+        /* Check for breakdown (p_dot_Ap should be positive for SPD) */
+        CG_CHECK_BREAKDOWN(p_dot_Ap, stats, iter, res_norm, start_time);
 
         double alpha = r_dot_r / p_dot_Ap;
 
@@ -458,15 +451,7 @@ static cfd_status_t cg_avx2_omp_solve(
         }
 
         /* Check for breakdown in r_dot_r before computing beta */
-        if (fabs(r_dot_r) < CG_BREAKDOWN_THRESHOLD) {
-            if (stats) {
-                stats->status = POISSON_STAGNATED;
-                stats->iterations = iter + 1;
-                stats->final_residual = res_norm;
-                stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
-            }
-            return CFD_ERROR_MAX_ITER;
-        }
+        CG_CHECK_BREAKDOWN(r_dot_r, stats, iter, res_norm, start_time);
 
         /* beta = (r_{k+1}, r_{k+1}) / (r_k, r_k) */
         double beta = r_dot_r_new / r_dot_r;
