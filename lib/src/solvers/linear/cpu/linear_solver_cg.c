@@ -321,6 +321,11 @@ static cfd_status_t cg_scalar_solve(
         r_dot_r = r_dot_r_new;
     }
 
+    /* Final convergence check (in case we converged between check intervals) */
+    if (!converged && (res_norm < tolerance || res_norm < params->absolute_tolerance)) {
+        converged = 1;
+    }
+
     /* Apply final boundary conditions */
     bc_apply_scalar(x, nx, ny, BC_TYPE_NEUMANN);
 
