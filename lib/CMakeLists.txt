@@ -97,8 +97,8 @@ set(CFD_NAVIER_STOKES_SOURCES
     src/solvers/navier_stokes/cpu/solver_explicit_euler.c
     src/solvers/navier_stokes/cpu/solver_projection.c
     # AVX2 implementations (x86-64)
-    src/solvers/navier_stokes/avx2_omp/solver_explicit_euler_avx2_omp.c
-    src/solvers/navier_stokes/avx2_omp/solver_projection_avx2_omp.c
+    src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c
+    src/solvers/navier_stokes/avx2/solver_projection_avx2.c
 )
 
 # Collect Poisson solver sources (abstraction layer)
