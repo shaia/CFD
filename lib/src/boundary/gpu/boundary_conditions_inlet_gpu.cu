@@ -201,6 +201,12 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
         return CFD_ERROR_UNSUPPORTED;
     }
 
+    /* Validate edge early for consistency with CPU backends */
+    if (config->edge != BC_EDGE_LEFT && config->edge != BC_EDGE_RIGHT &&
+        config->edge != BC_EDGE_BOTTOM && config->edge != BC_EDGE_TOP) {
+        return CFD_ERROR_INVALID;
+    }
+
     /* Extract configuration for kernel */
     double u_spec = 0.0, v_spec = 0.0;
     double magnitude = 0.0, direction = 0.0;
@@ -242,6 +248,7 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
                     v_spec = -avg_velocity;
                     break;
                 default:
+                    /* Unreachable: edge validated at function entry */
                     return CFD_ERROR_INVALID;
             }
             break;
