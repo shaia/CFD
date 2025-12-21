@@ -97,7 +97,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - `lib/src/boundary/avx2/boundary_conditions_outlet_avx2_omp.c` - AVX2+OpenMP outlet BC
 - `lib/src/boundary/neon/boundary_conditions_neon_omp.c` - NEON+OpenMP optimizations
 - `lib/src/boundary/neon/boundary_conditions_outlet_neon_omp.c` - NEON+OpenMP outlet BC
-- `lib/src/boundary/simd_omp/boundary_conditions_simd_omp_dispatch.c` - SIMD runtime dispatch
+- `lib/src/boundary/simd_omp/boundary_conditions_simd_dispatch.c` - SIMD runtime dispatch
 - `lib/src/boundary/gpu/boundary_conditions_gpu.cu` - CUDA kernels
 - `lib/src/boundary/boundary_conditions_internal.h` - Internal declarations
 - `lib/src/boundary/boundary_conditions_inlet_common.h` - Shared inlet BC helpers

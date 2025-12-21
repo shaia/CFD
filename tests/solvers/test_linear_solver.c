@@ -622,7 +622,7 @@ void test_cg_statistics(void) {
 /**
  * Test CG SIMD with larger grid
  */
-void test_cg_simd_omp_larger_grid(void) {
+void test_cg_simd_larger_grid(void) {
     if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
@@ -729,7 +729,7 @@ void test_legacy_poisson_solve_redblack(void) {
  * SIMD BACKEND TESTS (if available)
  * ============================================================================ */
 
-void test_jacobi_simd_omp_if_available(void) {
+void test_jacobi_simd_if_available(void) {
     if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
@@ -760,7 +760,7 @@ void test_jacobi_simd_omp_if_available(void) {
     poisson_solver_destroy(solver);
 }
 
-void test_redblack_simd_omp_if_available(void) {
+void test_redblack_simd_if_available(void) {
     if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
@@ -789,7 +789,7 @@ void test_redblack_simd_omp_if_available(void) {
     poisson_solver_destroy(solver);
 }
 
-void test_cg_simd_omp_if_available(void) {
+void test_cg_simd_if_available(void) {
     if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
@@ -818,7 +818,7 @@ void test_cg_simd_omp_if_available(void) {
     poisson_solver_destroy(solver);
 }
 
-void test_cg_simd_omp_converges_uniform_rhs(void) {
+void test_cg_simd_converges_uniform_rhs(void) {
     if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD_OMP)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
@@ -880,7 +880,7 @@ void test_stats_timing(void) {
  * BACKEND AVAILABILITY DIAGNOSTICS
  * ============================================================================ */
 
-void test_simd_omp_backend_diagnostic(void) {
+void test_simd_backend_diagnostic(void) {
     printf("\n");
     printf("=== SIMD Backend Diagnostic ===\n");
     printf("SIMD backend available: %s\n",
@@ -936,7 +936,7 @@ int main(void) {
     UNITY_BEGIN();
 
     /* Backend diagnostics (run first to show availability) */
-    RUN_TEST(test_simd_omp_backend_diagnostic);
+    RUN_TEST(test_simd_backend_diagnostic);
     RUN_TEST(test_omp_backend_diagnostic);
 
     /* Parameter tests */
@@ -973,7 +973,7 @@ int main(void) {
     RUN_TEST(test_cg_tight_tolerance);
     RUN_TEST(test_cg_auto_backend);
     RUN_TEST(test_cg_statistics);
-    RUN_TEST(test_cg_simd_omp_larger_grid);
+    RUN_TEST(test_cg_simd_larger_grid);
 
     /* Residual tests */
     RUN_TEST(test_compute_residual_zero_rhs);
@@ -984,10 +984,10 @@ int main(void) {
     RUN_TEST(test_legacy_poisson_solve_redblack);
 
     /* SIMD tests */
-    RUN_TEST(test_jacobi_simd_omp_if_available);
-    RUN_TEST(test_redblack_simd_omp_if_available);
-    RUN_TEST(test_cg_simd_omp_if_available);
-    RUN_TEST(test_cg_simd_omp_converges_uniform_rhs);
+    RUN_TEST(test_jacobi_simd_if_available);
+    RUN_TEST(test_redblack_simd_if_available);
+    RUN_TEST(test_cg_simd_if_available);
+    RUN_TEST(test_cg_simd_converges_uniform_rhs);
 
     /* Statistics tests */
     RUN_TEST(test_stats_timing);

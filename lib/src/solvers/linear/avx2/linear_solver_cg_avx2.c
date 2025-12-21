@@ -378,7 +378,7 @@ static cfd_status_t cg_avx2_solve(
     double start_time = poisson_solver_get_time_ms();
 
     /* Apply initial boundary conditions (use SIMD BC) */
-    bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
+    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
 
     /* Compute initial residual */
     compute_residual_avx2(x, rhs, r, nx, ny,
@@ -468,7 +468,7 @@ static cfd_status_t cg_avx2_solve(
     }
 
     /* Apply final boundary conditions */
-    bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
+    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
 
     double end_time = poisson_solver_get_time_ms();
 

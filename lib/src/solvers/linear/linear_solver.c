@@ -444,10 +444,10 @@ cfd_status_t poisson_solver_iterate(
  * Thread-local cache for legacy API
  * Avoids creating/destroying solvers on each call
  */
-static poisson_solver_t* g_legacy_jacobi_simd_omp = NULL;
+static poisson_solver_t* g_legacy_jacobi_simd = NULL;
 static poisson_solver_t* g_legacy_jacobi_scalar = NULL;
 static poisson_solver_t* g_legacy_sor = NULL;
-static poisson_solver_t* g_legacy_redblack_simd_omp = NULL;
+static poisson_solver_t* g_legacy_redblack_simd = NULL;
 static poisson_solver_t* g_legacy_redblack_scalar = NULL;
 static size_t g_legacy_nx = 0;
 static size_t g_legacy_ny = 0;
@@ -456,9 +456,9 @@ static size_t g_legacy_ny = 0;
  * Cleanup legacy solvers (called at program exit)
  */
 static void cleanup_legacy_solvers(void) {
-    if (g_legacy_jacobi_simd_omp) {
-        poisson_solver_destroy(g_legacy_jacobi_simd_omp);
-        g_legacy_jacobi_simd_omp = NULL;
+    if (g_legacy_jacobi_simd) {
+        poisson_solver_destroy(g_legacy_jacobi_simd);
+        g_legacy_jacobi_simd = NULL;
     }
     if (g_legacy_jacobi_scalar) {
         poisson_solver_destroy(g_legacy_jacobi_scalar);
@@ -468,9 +468,9 @@ static void cleanup_legacy_solvers(void) {
         poisson_solver_destroy(g_legacy_sor);
         g_legacy_sor = NULL;
     }
-    if (g_legacy_redblack_simd_omp) {
-        poisson_solver_destroy(g_legacy_redblack_simd_omp);
-        g_legacy_redblack_simd_omp = NULL;
+    if (g_legacy_redblack_simd) {
+        poisson_solver_destroy(g_legacy_redblack_simd);
+        g_legacy_redblack_simd = NULL;
     }
     if (g_legacy_redblack_scalar) {
         poisson_solver_destroy(g_legacy_redblack_scalar);
@@ -494,7 +494,7 @@ int poisson_solve(
     switch (solver_type) {
         case POISSON_SOLVER_JACOBI_SIMD_OMP:
             /* SIMD backend uses runtime CPU detection (AVX2/NEON) */
-            solver_ptr = &g_legacy_jacobi_simd_omp;
+            solver_ptr = &g_legacy_jacobi_simd;
             method = POISSON_METHOD_JACOBI;
             backend = POISSON_BACKEND_SIMD_OMP;
             /* Fallback to scalar Jacobi if SIMD not available */
@@ -504,7 +504,7 @@ int poisson_solve(
 
         case POISSON_SOLVER_REDBLACK_SIMD_OMP:
             /* SIMD backend uses runtime CPU detection (AVX2/NEON) */
-            solver_ptr = &g_legacy_redblack_simd_omp;
+            solver_ptr = &g_legacy_redblack_simd;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SIMD_OMP;
             /* Fallback to scalar Red-Black if SIMD not available */
@@ -589,14 +589,14 @@ int poisson_solve_sor_scalar(
 }
 
 /* SIMD functions with runtime CPU detection */
-int poisson_solve_jacobi_simd_omp(
+int poisson_solve_jacobi_simd(
     double* p, double* p_temp, const double* rhs,
     size_t nx, size_t ny, double dx, double dy)
 {
     return poisson_solve(p, p_temp, rhs, nx, ny, dx, dy, POISSON_SOLVER_JACOBI_SIMD_OMP);
 }
 
-int poisson_solve_redblack_simd_omp(
+int poisson_solve_redblack_simd(
     double* p, double* p_temp, const double* rhs,
     size_t nx, size_t ny, double dx, double dy)
 {

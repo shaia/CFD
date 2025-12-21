@@ -582,7 +582,7 @@ void test_inlet_mass_flow_all_backends_zero_area(void) {
     }
 
     /* Test SIMD backend (if available) */
-    status = bc_apply_inlet_simd_omp(u, v, nx, ny, &config);
+    status = bc_apply_inlet_simd(u, v, nx, ny, &config);
     if (status != CFD_ERROR_UNSUPPORTED) {
         TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     }
@@ -691,7 +691,7 @@ void test_inlet_omp_consistency(void) {
     free(v_omp);
 }
 
-void test_inlet_simd_omp_consistency(void) {
+void test_inlet_simd_consistency(void) {
     if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
@@ -711,7 +711,7 @@ void test_inlet_simd_omp_consistency(void) {
     bc_inlet_set_edge(&config, BC_EDGE_LEFT);
 
     bc_apply_inlet_cpu(u_scalar, v_scalar, nx, ny, &config);
-    bc_apply_inlet_simd_omp(u_simd, v_simd, nx, ny, &config);
+    bc_apply_inlet_simd(u_simd, v_simd, nx, ny, &config);
 
     /* Compare left boundary values */
     for (size_t j = 0; j < ny; j++) {
@@ -897,7 +897,7 @@ void test_inlet_invalid_edge_all_backends(void) {
     }
 
     /* Test SIMD backend (if available) */
-    status = bc_apply_inlet_simd_omp(u, v, nx, ny, &config);
+    status = bc_apply_inlet_simd(u, v, nx, ny, &config);
     if (status != CFD_ERROR_UNSUPPORTED) {
         TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
     }
@@ -1272,7 +1272,7 @@ void test_inlet_backend_consistency_magnitude_dir(void) {
     bc_inlet_set_edge(&config, BC_EDGE_LEFT);
 
     bc_apply_inlet_cpu(u_cpu, v_cpu, nx, ny, &config);
-    bc_apply_inlet_simd_omp(u_simd, v_simd, nx, ny, &config);
+    bc_apply_inlet_simd(u_simd, v_simd, nx, ny, &config);
 
     for (size_t j = 0; j < ny; j++) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_cpu[j * nx], u_simd[j * nx]);
@@ -1483,7 +1483,7 @@ int main(void) {
 
     /* Backend consistency tests */
     RUN_TEST(test_inlet_omp_consistency);
-    RUN_TEST(test_inlet_simd_omp_consistency);
+    RUN_TEST(test_inlet_simd_consistency);
     RUN_TEST(test_inlet_backend_consistency_mass_flow);
     RUN_TEST(test_inlet_backend_consistency_magnitude_dir);
 

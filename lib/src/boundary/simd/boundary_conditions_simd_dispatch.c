@@ -213,7 +213,7 @@ static bool backend_impl_complete(const bc_backend_impl_t* impl) {
 
 /**
  * Check if any SIMD implementation is available.
- * Called during initialization to determine if bc_impl_simd_omp should be used.
+ * Called during initialization to determine if bc_impl_simd should be used.
  *
  * Verifies all three function pointers (neumann, periodic, dirichlet) are present.
  * This ensures the backend is fully functional, not just partially implemented.

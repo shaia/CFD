@@ -336,7 +336,7 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_cpu(double* field, size_t nx, si
  * Returns CFD_ERROR_UNSUPPORTED if SIMD or OpenMP not available.
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_simd_omp(double* field, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type);
 
 /**
  * Apply boundary conditions using OpenMP implementation.
@@ -356,7 +356,7 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_cpu(double* u, double* v, size
  * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_simd_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type);
 
 /**
  * Apply velocity boundary conditions using OpenMP implementation.
@@ -422,7 +422,7 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_cpu(double* field, siz
  * Returns CFD_ERROR_UNSUPPORTED if SIMD or OpenMP not available.
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_simd_omp(double* field, size_t nx, size_t ny,
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
                                                                     const bc_dirichlet_values_t* values);
 
 /**
@@ -446,7 +446,7 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_cpu(double* u, doubl
  * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_simd_omp(double* u, double* v, size_t nx, size_t ny,
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
                                                                       const bc_dirichlet_values_t* u_values,
                                                                       const bc_dirichlet_values_t* v_values);
 
@@ -513,7 +513,7 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_cpu(double* u, double* v, size_t
  * @param ny Number of grid points in y-direction
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_simd_omp(double* u, double* v, size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_simd(double* u, double* v, size_t nx, size_t ny);
 
 /**
  * Apply no-slip wall boundary conditions using OpenMP implementation.
@@ -641,7 +641,7 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_cpu(double* u, double* v, size_t 
  * @param config  Pointer to inlet configuration
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_simd_omp(double* u, double* v, size_t nx, size_t ny,
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_simd(double* u, double* v, size_t nx, size_t ny,
                                                          const bc_inlet_config_t* config);
 
 /**
@@ -756,7 +756,7 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar_cpu(double* field, size_t
  * @param config  Pointer to outlet configuration
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar_simd_omp(double* field, size_t nx, size_t ny,
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar_simd(double* field, size_t nx, size_t ny,
                                                                  const bc_outlet_config_t* config);
 
 /**
@@ -798,7 +798,7 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_cpu(double* u, double* 
  * @param config  Pointer to outlet configuration
  * @return CFD_SUCCESS on success, error code on failure
  */
-CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_simd_omp(double* u, double* v, size_t nx, size_t ny,
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
                                                                    const bc_outlet_config_t* config);
 
 /**

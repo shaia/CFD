@@ -223,7 +223,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     }
 
     // Apply boundary conditions to intermediate velocity (using SIMD backend)
-    bc_apply_velocity_simd_omp(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
+    bc_apply_velocity_simd(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
 
     // ============================================================
     // STEP 2: Solve Poisson equation for pressure
