@@ -477,10 +477,10 @@ void test_cg_nonzero_initial_guess(void) {
 }
 
 /**
- * Test CG converges and Jacobi also converges (on easier problem)
- * This test uses a simpler problem (zero RHS) where both converge quickly
+ * Test that CG uses no more iterations than Jacobi on a simple problem.
+ * Uses zero RHS where both solvers converge quickly.
  */
-void test_cg_faster_than_jacobi(void) {
+void test_cg_no_more_iterations_than_jacobi(void) {
     /* Use zero RHS where both solvers converge very quickly */
     poisson_solver_t* cg_solver = poisson_solver_create(
         POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
@@ -967,7 +967,7 @@ int main(void) {
     RUN_TEST(test_cg_scalar_simd_consistency);
     RUN_TEST(test_cg_larger_grid);
     RUN_TEST(test_cg_nonzero_initial_guess);
-    RUN_TEST(test_cg_faster_than_jacobi);
+    RUN_TEST(test_cg_no_more_iterations_than_jacobi);
     RUN_TEST(test_cg_tight_tolerance);
     RUN_TEST(test_cg_auto_backend);
     RUN_TEST(test_cg_statistics);
