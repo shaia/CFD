@@ -389,13 +389,14 @@ void test_inlet_mass_flow_left(void) {
     TEST_ASSERT_NOT_NULL(u);
     TEST_ASSERT_NOT_NULL(v);
 
-    /* Mass flow rate = 10 kg/s, density = 1000 kg/m^3, inlet length = 0.5 m */
+    /* 2D per unit depth: mass_flow = 10 kg/(s·m), density = 1000 kg/m³, inlet_length = 0.5 m
+     * velocity = mass_flow / (density * inlet_length) = 10 / (1000 * 0.5) = 0.02 m/s */
     double mass_flow = 10.0;
     double density = 1000.0;
-    double length = 0.5;
-    double expected_velocity = mass_flow / (density * length);  /* = 0.02 m/s */
+    double inlet_length = 0.5;
+    double expected_velocity = mass_flow / (density * inlet_length);
 
-    bc_inlet_config_t config = bc_inlet_config_mass_flow(mass_flow, density, length);
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(mass_flow, density, inlet_length);
     bc_inlet_set_edge(&config, BC_EDGE_LEFT);
 
     cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
@@ -418,12 +419,13 @@ void test_inlet_mass_flow_right(void) {
     TEST_ASSERT_NOT_NULL(u);
     TEST_ASSERT_NOT_NULL(v);
 
+    /* 2D per unit depth: velocity = mass_flow / (density * inlet_length) */
     double mass_flow = 10.0;
     double density = 1000.0;
-    double length = 0.5;
-    double expected_velocity = -mass_flow / (density * length);  /* Negative for right */
+    double inlet_length = 0.5;
+    double expected_velocity = -mass_flow / (density * inlet_length);  /* Negative for right */
 
-    bc_inlet_config_t config = bc_inlet_config_mass_flow(mass_flow, density, length);
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(mass_flow, density, inlet_length);
     bc_inlet_set_edge(&config, BC_EDGE_RIGHT);
 
     bc_apply_inlet_cpu(u, v, nx, ny, &config);
@@ -1009,12 +1011,13 @@ void test_inlet_mass_flow_bottom(void) {
     TEST_ASSERT_NOT_NULL(u);
     TEST_ASSERT_NOT_NULL(v);
 
+    /* 2D per unit depth: velocity = mass_flow / (density * inlet_length) */
     double mass_flow = 10.0;
     double density = 1000.0;
-    double length = 0.5;
-    double expected_velocity = mass_flow / (density * length);
+    double inlet_length = 0.5;
+    double expected_velocity = mass_flow / (density * inlet_length);
 
-    bc_inlet_config_t config = bc_inlet_config_mass_flow(mass_flow, density, length);
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(mass_flow, density, inlet_length);
     bc_inlet_set_edge(&config, BC_EDGE_BOTTOM);
 
     cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
@@ -1037,12 +1040,13 @@ void test_inlet_mass_flow_top(void) {
     TEST_ASSERT_NOT_NULL(u);
     TEST_ASSERT_NOT_NULL(v);
 
+    /* 2D per unit depth: velocity = mass_flow / (density * inlet_length) */
     double mass_flow = 10.0;
     double density = 1000.0;
-    double length = 0.5;
-    double expected_velocity = -mass_flow / (density * length);  /* Negative for top */
+    double inlet_length = 0.5;
+    double expected_velocity = -mass_flow / (density * inlet_length);  /* Negative for top */
 
-    bc_inlet_config_t config = bc_inlet_config_mass_flow(mass_flow, density, length);
+    bc_inlet_config_t config = bc_inlet_config_mass_flow(mass_flow, density, inlet_length);
     bc_inlet_set_edge(&config, BC_EDGE_TOP);
 
     cfd_status_t status = bc_apply_inlet_cpu(u, v, nx, ny, &config);
