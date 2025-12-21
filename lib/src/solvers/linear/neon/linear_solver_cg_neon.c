@@ -372,7 +372,7 @@ static cfd_status_t cg_neon_solve(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    /* Apply initial boundary conditions (use SIMD+OMP BC) */
+    /* Apply initial boundary conditions (use SIMD BC) */
     bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
 
     /* Compute initial residual */

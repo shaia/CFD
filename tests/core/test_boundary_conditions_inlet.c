@@ -581,7 +581,7 @@ void test_inlet_mass_flow_all_backends_zero_area(void) {
         TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     }
 
-    /* Test SIMD+OMP backend (if available) */
+    /* Test SIMD backend (if available) */
     status = bc_apply_inlet_simd_omp(u, v, nx, ny, &config);
     if (status != CFD_ERROR_UNSUPPORTED) {
         TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
@@ -693,7 +693,7 @@ void test_inlet_omp_consistency(void) {
 
 void test_inlet_simd_omp_consistency(void) {
     if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
-        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 
@@ -896,7 +896,7 @@ void test_inlet_invalid_edge_all_backends(void) {
         TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
     }
 
-    /* Test SIMD+OMP backend (if available) */
+    /* Test SIMD backend (if available) */
     status = bc_apply_inlet_simd_omp(u, v, nx, ny, &config);
     if (status != CFD_ERROR_UNSUPPORTED) {
         TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
@@ -1254,7 +1254,7 @@ void test_inlet_backend_consistency_mass_flow(void) {
 
 void test_inlet_backend_consistency_magnitude_dir(void) {
     if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
-        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 

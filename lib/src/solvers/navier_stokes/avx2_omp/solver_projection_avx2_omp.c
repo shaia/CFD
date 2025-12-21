@@ -6,7 +6,7 @@
  *
  * - Predictor step: OpenMP parallelized (scalar inner loops)
  * - Corrector step: OpenMP parallelized with AVX2 SIMD inner loops
- * - Poisson solver: Uses SIMD+OMP Poisson solver for pressure computation
+ * - Poisson solver: Uses SIMD Poisson solver for pressure computation
  */
 
 #include "cfd/boundary/boundary_conditions.h"
@@ -222,7 +222,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
         }
     }
 
-    // Apply boundary conditions to intermediate velocity (using SIMD+OMP backend)
+    // Apply boundary conditions to intermediate velocity (using SIMD backend)
     bc_apply_velocity_simd_omp(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
 
     // ============================================================

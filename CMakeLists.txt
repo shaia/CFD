@@ -181,7 +181,7 @@ if(BUILD_TESTS)
     add_executable(test_solver_explicit_euler tests/solvers/navier_stokes/cpu/test_solver_explicit_euler.c)
     add_executable(test_solver_projection tests/solvers/navier_stokes/cpu/test_solver_projection.c)
 
-    # Navier-Stokes solver tests (AVX2+OMP)
+    # Navier-Stokes solver tests (AVX2)
     add_executable(test_solver_explicit_euler_avx2_omp tests/solvers/navier_stokes/avx2_omp/test_solver_explicit_euler_avx2_omp.c)
     add_executable(test_solver_projection_avx2_omp tests/solvers/navier_stokes/avx2_omp/test_solver_projection_avx2_omp.c)
 

@@ -198,7 +198,7 @@ static cfd_status_t bc_simd_outlet(double* field, size_t nx, size_t ny,
 }
 
 /* ============================================================================
- * Check if SIMD+OMP backend is available at runtime
+ * Check if SIMD backend is available at runtime
  * ============================================================================ */
 
 /**

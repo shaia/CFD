@@ -1,5 +1,5 @@
 /**
- * @file linear_solver_cg_avx2_omp.c
+ * @file linear_solver_cg_avx2.c
  * @brief Conjugate Gradient solver - AVX2 + OpenMP implementation
  *
  * Conjugate Gradient method optimized with:
@@ -26,13 +26,13 @@
 
 /* AVX2 + OpenMP detection */
 #if defined(CFD_HAS_AVX2) && defined(CFD_ENABLE_OPENMP)
-#define CG_HAS_AVX2_OMP 1
+#define CG_HAS_AVX2 1
 #include <immintrin.h>
 #include <omp.h>
 #include <limits.h>
 #endif
 
-#if defined(CG_HAS_AVX2_OMP)
+#if defined(CG_HAS_AVX2)
 
 /* ============================================================================
  * CG AVX2 CONTEXT
@@ -53,7 +53,7 @@ typedef struct {
     double* Ap;        /* A * p (Laplacian applied to p) */
 
     int initialized;
-} cg_avx2_omp_context_t;
+} cg_avx2_context_t;
 
 /**
  * Safe conversion from size_t to int for OpenMP loop variables.
@@ -69,7 +69,7 @@ static inline int size_to_int(size_t sz) {
 /**
  * Compute dot product using AVX2 with OpenMP reduction
  */
-static double dot_product_avx2_omp(const double* a, const double* b,
+static double dot_product_avx2(const double* a, const double* b,
                                     size_t nx, size_t ny) {
     double sum = 0.0;
     int ny_int = size_to_int(ny);
@@ -112,7 +112,7 @@ static double dot_product_avx2_omp(const double* a, const double* b,
 /**
  * Compute y = y + alpha * x using AVX2 with OpenMP
  */
-static void axpy_avx2_omp(double alpha, const double* x, double* y,
+static void axpy_avx2(double alpha, const double* x, double* y,
                           size_t nx, size_t ny) {
     __m256d alpha_vec = _mm256_set1_pd(alpha);
     int ny_int = size_to_int(ny);
@@ -143,7 +143,7 @@ static void axpy_avx2_omp(double alpha, const double* x, double* y,
 /**
  * Apply negative Laplacian using AVX2 with OpenMP
  */
-static void apply_laplacian_avx2_omp(const double* p, double* Ap,
+static void apply_laplacian_avx2(const double* p, double* Ap,
                                       size_t nx, size_t ny,
                                       __m256d dx2_inv_vec, __m256d dy2_inv_vec,
                                       __m256d two_vec) {
@@ -199,7 +199,7 @@ static void apply_laplacian_avx2_omp(const double* p, double* Ap,
 /**
  * Compute initial residual using AVX2 with OpenMP
  */
-static void compute_residual_avx2_omp(const double* x, const double* rhs, double* r,
+static void compute_residual_avx2(const double* x, const double* rhs, double* r,
                                        size_t nx, size_t ny,
                                        __m256d dx2_inv_vec, __m256d dy2_inv_vec,
                                        __m256d two_vec) {
@@ -256,7 +256,7 @@ static void compute_residual_avx2_omp(const double* x, const double* rhs, double
 /**
  * Copy vector using OpenMP
  */
-static void copy_vector_omp(const double* src, double* dst,
+static void copy_vector(const double* src, double* dst,
                             size_t nx, size_t ny) {
     int ny_int = size_to_int(ny);
     int j;
@@ -271,7 +271,7 @@ static void copy_vector_omp(const double* src, double* dst,
 /**
  * Update p = r + beta * p using AVX2 with OpenMP
  */
-static void update_search_direction_avx2_omp(const double* r, double* p,
+static void update_search_direction_avx2(const double* r, double* p,
                                               double beta, size_t nx, size_t ny) {
     __m256d beta_vec = _mm256_set1_pd(beta);
     int ny_int = size_to_int(ny);
@@ -304,7 +304,7 @@ static void update_search_direction_avx2_omp(const double* r, double* p,
  * CG AVX2 IMPLEMENTATION
  * ============================================================================ */
 
-static cfd_status_t cg_avx2_omp_init(
+static cfd_status_t cg_avx2_init(
     poisson_solver_t* solver,
     size_t nx, size_t ny,
     double dx, double dy,
@@ -313,8 +313,8 @@ static cfd_status_t cg_avx2_omp_init(
     (void)params;
 
     /* Use aligned allocation for SIMD context */
-    cg_avx2_omp_context_t* ctx = (cg_avx2_omp_context_t*)cfd_aligned_calloc(
-        1, sizeof(cg_avx2_omp_context_t));
+    cg_avx2_context_t* ctx = (cg_avx2_context_t*)cfd_aligned_calloc(
+        1, sizeof(cg_avx2_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
@@ -346,9 +346,9 @@ static cfd_status_t cg_avx2_omp_init(
     return CFD_SUCCESS;
 }
 
-static void cg_avx2_omp_destroy(poisson_solver_t* solver) {
+static void cg_avx2_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
-        cg_avx2_omp_context_t* ctx = (cg_avx2_omp_context_t*)solver->context;
+        cg_avx2_context_t* ctx = (cg_avx2_context_t*)solver->context;
         cfd_aligned_free(ctx->r);
         cfd_aligned_free(ctx->p);
         cfd_aligned_free(ctx->Ap);
@@ -357,7 +357,7 @@ static void cg_avx2_omp_destroy(poisson_solver_t* solver) {
     }
 }
 
-static cfd_status_t cg_avx2_omp_solve(
+static cfd_status_t cg_avx2_solve(
     poisson_solver_t* solver,
     double* x,
     double* x_temp,
@@ -366,7 +366,7 @@ static cfd_status_t cg_avx2_omp_solve(
 {
     (void)x_temp;
 
-    cg_avx2_omp_context_t* ctx = (cg_avx2_omp_context_t*)solver->context;
+    cg_avx2_context_t* ctx = (cg_avx2_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
 
@@ -377,18 +377,18 @@ static cfd_status_t cg_avx2_omp_solve(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    /* Apply initial boundary conditions (use SIMD+OMP BC) */
+    /* Apply initial boundary conditions (use SIMD BC) */
     bc_apply_scalar_simd_omp(x, nx, ny, BC_TYPE_NEUMANN);
 
     /* Compute initial residual */
-    compute_residual_avx2_omp(x, rhs, r, nx, ny,
+    compute_residual_avx2(x, rhs, r, nx, ny,
                               ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->two_vec);
 
     /* Initial search direction: p_0 = r_0 */
-    copy_vector_omp(r, p, nx, ny);
+    copy_vector(r, p, nx, ny);
 
     /* Compute initial r_dot_r */
-    double r_dot_r = dot_product_avx2_omp(r, r, nx, ny);
+    double r_dot_r = dot_product_avx2(r, r, nx, ny);
     double initial_res = sqrt(r_dot_r);
 
     if (stats) {
@@ -417,11 +417,11 @@ static cfd_status_t cg_avx2_omp_solve(
 
     for (iter = 0; iter < params->max_iterations; iter++) {
         /* Compute Ap = A * p */
-        apply_laplacian_avx2_omp(p, Ap, nx, ny,
+        apply_laplacian_avx2(p, Ap, nx, ny,
                                   ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->two_vec);
 
         /* alpha = (r, r) / (p, Ap) */
-        double p_dot_Ap = dot_product_avx2_omp(p, Ap, nx, ny);
+        double p_dot_Ap = dot_product_avx2(p, Ap, nx, ny);
 
         /* Check for breakdown (p_dot_Ap should be positive for SPD) */
         CG_CHECK_BREAKDOWN(p_dot_Ap, stats, iter, res_norm, start_time);
@@ -429,13 +429,13 @@ static cfd_status_t cg_avx2_omp_solve(
         double alpha = r_dot_r / p_dot_Ap;
 
         /* x_{k+1} = x_k + alpha * p */
-        axpy_avx2_omp(alpha, p, x, nx, ny);
+        axpy_avx2(alpha, p, x, nx, ny);
 
         /* r_{k+1} = r_k - alpha * Ap */
-        axpy_avx2_omp(-alpha, Ap, r, nx, ny);
+        axpy_avx2(-alpha, Ap, r, nx, ny);
 
         /* Compute new r_dot_r */
-        double r_dot_r_new = dot_product_avx2_omp(r, r, nx, ny);
+        double r_dot_r_new = dot_product_avx2(r, r, nx, ny);
         res_norm = sqrt(r_dot_r_new);
 
         /* Check convergence at intervals */
@@ -457,7 +457,7 @@ static cfd_status_t cg_avx2_omp_solve(
         double beta = r_dot_r_new / r_dot_r;
 
         /* p_{k+1} = r_{k+1} + beta * p_k */
-        update_search_direction_avx2_omp(r, p, beta, nx, ny);
+        update_search_direction_avx2(r, p, beta, nx, ny);
 
         r_dot_r = r_dot_r_new;
     }
@@ -484,7 +484,7 @@ static cfd_status_t cg_avx2_omp_solve(
     return converged ? CFD_SUCCESS : CFD_ERROR_MAX_ITER;
 }
 
-static cfd_status_t cg_avx2_omp_iterate(
+static cfd_status_t cg_avx2_iterate(
     poisson_solver_t* solver,
     double* x,
     double* x_temp,
@@ -499,14 +499,14 @@ static cfd_status_t cg_avx2_omp_iterate(
     return CFD_SUCCESS;
 }
 
-#endif /* CG_HAS_AVX2_OMP */
+#endif /* CG_HAS_AVX2 */
 
 /* ============================================================================
  * FACTORY FUNCTION
  * ============================================================================ */
 
 poisson_solver_t* create_cg_avx2_solver(void) {
-#if defined(CG_HAS_AVX2_OMP)
+#if defined(CG_HAS_AVX2)
     poisson_solver_t* solver = (poisson_solver_t*)cfd_calloc(1, sizeof(poisson_solver_t));
     if (!solver) {
         return NULL;
@@ -518,10 +518,10 @@ poisson_solver_t* create_cg_avx2_solver(void) {
     solver->backend = POISSON_BACKEND_SIMD_OMP;
     solver->params = poisson_solver_params_default();
 
-    solver->init = cg_avx2_omp_init;
-    solver->destroy = cg_avx2_omp_destroy;
-    solver->solve = cg_avx2_omp_solve;
-    solver->iterate = cg_avx2_omp_iterate;
+    solver->init = cg_avx2_init;
+    solver->destroy = cg_avx2_destroy;
+    solver->solve = cg_avx2_solve;
+    solver->iterate = cg_avx2_iterate;
     solver->apply_bc = NULL;
 
     return solver;

@@ -205,7 +205,7 @@ void test_dirichlet_scalar_large_grid(void) {
 
 void test_dirichlet_simd_omp_basic(void) {
     if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
-        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 
@@ -223,16 +223,16 @@ void test_dirichlet_simd_omp_basic(void) {
     bc_apply_dirichlet_scalar_simd_omp(field, nx, ny, &values);
 
     TEST_ASSERT_TRUE_MESSAGE(verify_dirichlet_bc(field, nx, ny, &values),
-                              "SIMD+OMP Dirichlet BC not correctly applied");
+                              "SIMD Dirichlet BC not correctly applied");
     TEST_ASSERT_TRUE_MESSAGE(verify_interior_unchanged(field, nx, ny),
-                              "Interior values were modified by SIMD+OMP");
+                              "Interior values were modified by SIMD");
 
     free(field);
 }
 
 void test_dirichlet_simd_omp_consistency_with_scalar(void) {
     if (!bc_backend_available(BC_BACKEND_SIMD_OMP)) {
-        TEST_IGNORE_MESSAGE("SIMD+OMP backend not available");
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 
