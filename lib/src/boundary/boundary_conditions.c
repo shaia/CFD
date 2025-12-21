@@ -12,7 +12,7 @@
  * Backend implementations are in separate folders:
  * - cpu/boundary_conditions_scalar.c (baseline, single-threaded)
  * - omp/boundary_conditions_omp.c (OpenMP, multi-threaded scalar loops)
- * - simd_omp/boundary_conditions_simd_omp.c (OpenMP + SIMD: AVX2 on x86, NEON on ARM)
+ * - simd/boundary_conditions_simd.c (SIMD: AVX2 on x86, NEON on ARM)
  */
 
 #include "boundary_conditions_internal.h"
@@ -75,17 +75,17 @@ static const bc_backend_impl_t* get_backend_impl(bc_backend_t backend) {
         case BC_BACKEND_OMP:
             return (bc_impl_omp.apply_neumann != NULL) ? &bc_impl_omp : NULL;
         case BC_BACKEND_SIMD_OMP:
-            /* Use runtime check - bc_impl_simd_omp has non-NULL dispatchers,
+            /* Use runtime check - bc_impl_simd has non-NULL dispatchers,
              * but the underlying SIMD backend may not be available */
-            return bc_simd_omp_backend_available() ? &bc_impl_simd_omp : NULL;
+            return bc_simd_backend_available() ? &bc_impl_simd : NULL;
         case BC_BACKEND_CUDA:
             /* CUDA not yet implemented for boundary conditions */
             return NULL;
         case BC_BACKEND_AUTO:
         default:
-            /* Auto: priority SIMD_OMP > OMP > Scalar (with runtime detection) */
-            if (bc_simd_omp_backend_available()) {
-                return &bc_impl_simd_omp;
+            /* Auto: priority SIMD > OMP > Scalar (with runtime detection) */
+            if (bc_simd_backend_available()) {
+                return &bc_impl_simd;
             }
             if (bc_impl_omp.apply_neumann != NULL) {
                 return &bc_impl_omp;
@@ -105,31 +105,31 @@ bc_backend_t bc_get_backend(void) {
 const char* bc_get_backend_name(void) {
     const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
 
-    if (impl == &bc_impl_simd_omp) {
+    if (impl == &bc_impl_simd) {
         /* Report which SIMD variant is active based on runtime detection.
          * Use enum comparison for robustness instead of string comparison. */
         cfd_simd_arch_t arch = cfd_detect_simd_arch();
         if (g_current_backend == BC_BACKEND_AUTO) {
-            /* Auto mode selected SIMD+OMP */
+            /* Auto mode selected SIMD */
             switch (arch) {
                 case CFD_SIMD_AVX2:
-                    return "auto (simd_omp/avx2)";
+                    return "auto (simd/avx2)";
                 case CFD_SIMD_NEON:
-                    return "auto (simd_omp/neon)";
+                    return "auto (simd/neon)";
                 default:
-                    /* Should not happen: impl == bc_impl_simd_omp implies SIMD available */
-                    return "auto (simd_omp)";
+                    /* Should not happen: impl == bc_impl_simd implies SIMD available */
+                    return "auto (simd)";
             }
         } else {
-            /* Explicit SIMD+OMP selection */
+            /* Explicit SIMD selection */
             switch (arch) {
                 case CFD_SIMD_AVX2:
-                    return "simd_omp (avx2)";
+                    return "simd (avx2)";
                 case CFD_SIMD_NEON:
-                    return "simd_omp (neon)";
+                    return "simd (neon)";
                 default:
-                    /* Should not happen: impl == bc_impl_simd_omp implies SIMD available */
-                    return "simd_omp";
+                    /* Should not happen: impl == bc_impl_simd implies SIMD available */
+                    return "simd";
             }
         }
     }

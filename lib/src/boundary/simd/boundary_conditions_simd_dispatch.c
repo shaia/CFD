@@ -1,24 +1,24 @@
 /**
- * Boundary Conditions - SIMD + OpenMP Dispatcher with Runtime Detection
+ * Boundary Conditions - SIMD Dispatcher with Runtime Detection
  *
- * This file provides the unified bc_impl_simd_omp interface by selecting
+ * This file provides the unified bc_impl_simd interface by selecting
  * the correct architecture-specific implementation at RUNTIME:
- * - AVX2 + OpenMP on x86-64 (detected via CPUID)
- * - NEON + OpenMP on ARM64 (always available on ARM64)
+ * - AVX2 on x86-64 (detected via CPUID)
+ * - NEON on ARM64 (always available on ARM64)
  *
  * The actual implementations remain in separate files:
- * - avx2/boundary_conditions_avx2_omp.c
- * - neon/boundary_conditions_neon_omp.c
+ * - avx2/boundary_conditions_avx2.c
+ * - neon/boundary_conditions_neon.c
  *
  * Compile-Time vs Runtime Detection:
  * ----------------------------------
- * The availability check (simd_omp_available) uses BOTH:
+ * The availability check (simd_available) uses BOTH:
  * 1. Runtime CPU detection: cfd_detect_simd_arch() checks if CPU supports AVX2/NEON
  * 2. Compile-time availability: Checks if function pointers are non-NULL
  *
  * This two-phase check handles the case where:
  * - CPU supports AVX2, but code was compiled without -mavx2 flag
- * - In this case, bc_impl_avx2_omp has NULL pointers, so simd_omp_available()
+ * - In this case, bc_impl_avx2 has NULL pointers, so simd_available()
  *   returns false even though runtime detection reports AVX2 support.
  *
  * This design ensures safe operation: SIMD backend is only used when BOTH
@@ -31,7 +31,7 @@
  * 2. Assert in debug builds
  * 3. Fall back to scalar implementation to avoid leaving fields in invalid state
  *
- * Callers SHOULD check bc_simd_omp_backend_available() before using this backend.
+ * Callers SHOULD check bc_simd_backend_available() before using this backend.
  */
 
 #include "../boundary_conditions_internal.h"
@@ -97,10 +97,10 @@ static const bc_backend_impl_t* get_simd_backend(void) {
     cfd_simd_arch_t arch = cfd_detect_simd_arch();
     const bc_backend_impl_t* result = NULL;
 
-    if (arch == CFD_SIMD_AVX2 && bc_impl_avx2_omp.apply_neumann != NULL) {
-        result = &bc_impl_avx2_omp;
-    } else if (arch == CFD_SIMD_NEON && bc_impl_neon_omp.apply_neumann != NULL) {
-        result = &bc_impl_neon_omp;
+    if (arch == CFD_SIMD_AVX2 && bc_impl_avx2.apply_neumann != NULL) {
+        result = &bc_impl_avx2;
+    } else if (arch == CFD_SIMD_NEON && bc_impl_neon.apply_neumann != NULL) {
+        result = &bc_impl_neon;
     }
 
     /* Encode result: NULL becomes CACHE_NO_BACKEND, valid pointer becomes ptr+1 */
@@ -126,11 +126,11 @@ static const bc_backend_impl_t* get_simd_backend(void) {
 static void report_no_simd_error(const char* function) {
     char message[128];
     snprintf(message, sizeof(message),
-             "SIMD+OMP backend called but no SIMD available (detected: %s). "
+             "SIMD backend called but no SIMD available (detected: %s). "
              "Falling back to scalar.",
              cfd_get_simd_name());
     bc_report_error(BC_ERROR_NO_SIMD_BACKEND, function, message);
-    assert(0 && "SIMD+OMP backend called without available implementation");
+    assert(0 && "SIMD backend called without available implementation");
 }
 
 /* ============================================================================
@@ -139,39 +139,39 @@ static void report_no_simd_error(const char* function) {
  * These functions use get_simd_backend() for unified dispatch logic.
  * ============================================================================ */
 
-static void bc_simd_omp_neumann(double* field, size_t nx, size_t ny) {
+static void bc_simd_neumann(double* field, size_t nx, size_t ny) {
     const bc_backend_impl_t* impl = get_simd_backend();
     if (impl != NULL) {
         impl->apply_neumann(field, nx, ny);
         return;
     }
-    report_no_simd_error("bc_simd_omp_neumann");
+    report_no_simd_error("bc_simd_neumann");
     bc_apply_neumann_scalar_impl(field, nx, ny);
 }
 
-static void bc_simd_omp_periodic(double* field, size_t nx, size_t ny) {
+static void bc_simd_periodic(double* field, size_t nx, size_t ny) {
     const bc_backend_impl_t* impl = get_simd_backend();
     if (impl != NULL) {
         impl->apply_periodic(field, nx, ny);
         return;
     }
-    report_no_simd_error("bc_simd_omp_periodic");
+    report_no_simd_error("bc_simd_periodic");
     bc_apply_periodic_scalar_impl(field, nx, ny);
 }
 
-static void bc_simd_omp_dirichlet(double* field, size_t nx, size_t ny,
-                                   const bc_dirichlet_values_t* values) {
+static void bc_simd_dirichlet(double* field, size_t nx, size_t ny,
+                               const bc_dirichlet_values_t* values) {
     const bc_backend_impl_t* impl = get_simd_backend();
     if (impl != NULL) {
         impl->apply_dirichlet(field, nx, ny, values);
         return;
     }
-    report_no_simd_error("bc_simd_omp_dirichlet");
+    report_no_simd_error("bc_simd_dirichlet");
     bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
 }
 
-static cfd_status_t bc_simd_omp_inlet(double* u, double* v, size_t nx, size_t ny,
-                                       const bc_inlet_config_t* config) {
+static cfd_status_t bc_simd_inlet(double* u, double* v, size_t nx, size_t ny,
+                                   const bc_inlet_config_t* config) {
     /* Inlet BCs operate on 1D boundaries - SIMD provides limited benefit.
      * Delegate to the architecture-specific backend if available, otherwise
      * fall back to scalar implementation. */
@@ -183,8 +183,8 @@ static cfd_status_t bc_simd_omp_inlet(double* u, double* v, size_t nx, size_t ny
     return bc_apply_inlet_scalar_impl(u, v, nx, ny, config);
 }
 
-static cfd_status_t bc_simd_omp_outlet(double* field, size_t nx, size_t ny,
-                                        const bc_outlet_config_t* config) {
+static cfd_status_t bc_simd_outlet(double* field, size_t nx, size_t ny,
+                                    const bc_outlet_config_t* config) {
     /* Outlet BCs operate on 1D boundaries - SIMD provides limited benefit
      * except for top/bottom edges where memory is contiguous.
      * Delegate to the architecture-specific backend if available, otherwise
@@ -218,45 +218,45 @@ static bool backend_impl_complete(const bc_backend_impl_t* impl) {
  * Verifies all three function pointers (neumann, periodic, dirichlet) are present.
  * This ensures the backend is fully functional, not just partially implemented.
  */
-static bool simd_omp_available(void) {
+static bool simd_available(void) {
     cfd_simd_arch_t arch = cfd_detect_simd_arch();
 
     if (arch == CFD_SIMD_AVX2) {
-        return backend_impl_complete(&bc_impl_avx2_omp);
+        return backend_impl_complete(&bc_impl_avx2);
     } else if (arch == CFD_SIMD_NEON) {
-        return backend_impl_complete(&bc_impl_neon_omp);
+        return backend_impl_complete(&bc_impl_neon);
     }
     return false;
 }
 
 /* ============================================================================
- * Unified SIMD + OMP Interface
+ * Unified SIMD Interface
  *
- * bc_impl_simd_omp provides runtime-dispatching functions.
+ * bc_impl_simd provides runtime-dispatching functions.
  * The functions check availability internally.
  * ============================================================================ */
 
-const bc_backend_impl_t bc_impl_simd_omp = {
-    .apply_neumann = bc_simd_omp_neumann,
-    .apply_periodic = bc_simd_omp_periodic,
-    .apply_dirichlet = bc_simd_omp_dirichlet,
-    .apply_inlet = bc_simd_omp_inlet,
-    .apply_outlet = bc_simd_omp_outlet
+const bc_backend_impl_t bc_impl_simd = {
+    .apply_neumann = bc_simd_neumann,
+    .apply_periodic = bc_simd_periodic,
+    .apply_dirichlet = bc_simd_dirichlet,
+    .apply_inlet = bc_simd_inlet,
+    .apply_outlet = bc_simd_outlet
 };
 
 /**
- * Query function for external code to check if SIMD+OMP is actually available.
- * This is used by the backend availability check since bc_impl_simd_omp
+ * Query function for external code to check if SIMD is actually available.
+ * This is used by the backend availability check since bc_impl_simd
  * always has non-NULL function pointers (they do runtime dispatch).
  */
-bool bc_simd_omp_backend_available(void) {
-    return simd_omp_available();
+bool bc_simd_backend_available(void) {
+    return simd_available();
 }
 
 /**
  * Get the name of the detected SIMD architecture.
  * Returns "avx2", "neon", or "none" based on runtime detection.
  */
-const char* bc_simd_omp_get_arch_name(void) {
+const char* bc_simd_get_arch_name(void) {
     return cfd_get_simd_name();
 }

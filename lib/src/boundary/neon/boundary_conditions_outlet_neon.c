@@ -1,7 +1,7 @@
 /**
- * Outlet Boundary Conditions - ARM NEON + OpenMP Implementation
+ * Outlet Boundary Conditions - ARM NEON Implementation
  *
- * Combined ARM NEON SIMD and OpenMP parallelized outlet boundary condition implementation.
+ * ARM NEON SIMD outlet boundary condition implementation with OpenMP parallelization.
  * Uses OpenMP for thread-level parallelism across rows.
  * Uses NEON SIMD for instruction-level parallelism on contiguous memory.
  *
@@ -13,22 +13,22 @@
 #include "../boundary_conditions_outlet_common.h"
 
 #if (defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
-#define BC_HAS_NEON_OMP 1
+#define BC_HAS_NEON 1
 #include <arm_neon.h>
 #include <omp.h>
 #include <limits.h>
 #endif
 
-#if defined(BC_HAS_NEON_OMP)
+#if defined(BC_HAS_NEON)
 
-#define BC_NEON_OMP_THRESHOLD 256
+#define BC_NEON_THRESHOLD 256
 
 static inline int size_to_int(size_t sz) {
     return (sz > (size_t)INT_MAX) ? INT_MAX : (int)sz;
 }
 
-cfd_status_t bc_apply_outlet_neon_omp_impl(double* field, size_t nx, size_t ny,
-                                            const bc_outlet_config_t* config) {
+cfd_status_t bc_apply_outlet_neon_impl(double* field, size_t nx, size_t ny,
+                                        const bc_outlet_config_t* config) {
     if (!field || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
@@ -72,7 +72,7 @@ cfd_status_t bc_apply_outlet_neon_omp_impl(double* field, size_t nx, size_t ny,
                     double* src = field + nx;
                     size_t simd_end = nx & ~(size_t)1;
 
-                    if (nx >= BC_NEON_OMP_THRESHOLD) {
+                    if (nx >= BC_NEON_THRESHOLD) {
                         #pragma omp parallel for schedule(static)
                         for (i = 0; i < size_to_int(simd_end); i += 2) {
                             vst1q_f64(dst + i, vld1q_f64(src + i));
@@ -95,7 +95,7 @@ cfd_status_t bc_apply_outlet_neon_omp_impl(double* field, size_t nx, size_t ny,
                     double* src = field + ((ny - 2) * nx);
                     size_t simd_end = nx & ~(size_t)1;
 
-                    if (nx >= BC_NEON_OMP_THRESHOLD) {
+                    if (nx >= BC_NEON_THRESHOLD) {
                         #pragma omp parallel for schedule(static)
                         for (i = 0; i < size_to_int(simd_end); i += 2) {
                             vst1q_f64(dst + i, vld1q_f64(src + i));
@@ -124,12 +124,12 @@ cfd_status_t bc_apply_outlet_neon_omp_impl(double* field, size_t nx, size_t ny,
     return CFD_SUCCESS;
 }
 
-#else /* !BC_HAS_NEON_OMP */
+#else /* !BC_HAS_NEON */
 
-cfd_status_t bc_apply_outlet_neon_omp_impl(double* field, size_t nx, size_t ny,
-                                            const bc_outlet_config_t* config) {
+cfd_status_t bc_apply_outlet_neon_impl(double* field, size_t nx, size_t ny,
+                                        const bc_outlet_config_t* config) {
     (void)field; (void)nx; (void)ny; (void)config;
     return CFD_ERROR_UNSUPPORTED;
 }
 
-#endif /* BC_HAS_NEON_OMP */
+#endif /* BC_HAS_NEON */

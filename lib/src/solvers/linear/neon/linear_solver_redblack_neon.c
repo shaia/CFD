@@ -1,5 +1,5 @@
 /**
- * @file linear_solver_redblack_neon_omp.c
+ * @file linear_solver_redblack_neon.c
  * @brief Red-Black SOR solver - ARM NEON + OpenMP implementation
  *
  * Red-Black SOR characteristics:
@@ -28,13 +28,13 @@
 
 /* ARM NEON + OpenMP detection */
 #if (defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
-#define REDBLACK_HAS_NEON_OMP 1
+#define REDBLACK_HAS_NEON 1
 #include <arm_neon.h>
 #include <omp.h>
 #include <limits.h>
 #endif
 
-#if defined(REDBLACK_HAS_NEON_OMP)
+#if defined(REDBLACK_HAS_NEON)
 
 /* ============================================================================
  * RED-BLACK NEON+OMP CONTEXT
@@ -50,7 +50,7 @@ typedef struct {
     float64x2_t neg_inv_factor_vec;
     float64x2_t omega_vec;
     int initialized;
-} redblack_neon_omp_context_t;
+} redblack_neon_context_t;
 
 /**
  * Safe conversion from size_t to int for OpenMP loop variables.
@@ -79,7 +79,7 @@ static inline void redblack_neon_process_row(
     double* x,
     const double* rhs,
     size_t nx,
-    const redblack_neon_omp_context_t* ctx)
+    const redblack_neon_context_t* ctx)
 {
     double dx2 = ctx->dx2;
     double dy2 = ctx->dy2;
@@ -144,7 +144,7 @@ static inline void redblack_neon_process_row(
     }
 }
 
-static cfd_status_t redblack_neon_omp_init(
+static cfd_status_t redblack_neon_init(
     poisson_solver_t* solver,
     size_t nx, size_t ny,
     double dx, double dy,
@@ -152,7 +152,7 @@ static cfd_status_t redblack_neon_omp_init(
 {
     (void)nx; (void)ny;
 
-    redblack_neon_omp_context_t* ctx = (redblack_neon_omp_context_t*)cfd_calloc(1, sizeof(redblack_neon_omp_context_t));
+    redblack_neon_context_t* ctx = (redblack_neon_context_t*)cfd_calloc(1, sizeof(redblack_neon_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
@@ -174,14 +174,14 @@ static cfd_status_t redblack_neon_omp_init(
     return CFD_SUCCESS;
 }
 
-static void redblack_neon_omp_destroy(poisson_solver_t* solver) {
+static void redblack_neon_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
         cfd_free(solver->context);
         solver->context = NULL;
     }
 }
 
-static cfd_status_t redblack_neon_omp_iterate(
+static cfd_status_t redblack_neon_iterate(
     poisson_solver_t* solver,
     double* x,
     double* x_temp,
@@ -190,7 +190,7 @@ static cfd_status_t redblack_neon_omp_iterate(
 {
     (void)x_temp;
 
-    redblack_neon_omp_context_t* ctx = (redblack_neon_omp_context_t*)solver->context;
+    redblack_neon_context_t* ctx = (redblack_neon_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
     int ny_int = size_to_int(ny);
@@ -221,14 +221,14 @@ static cfd_status_t redblack_neon_omp_iterate(
     return CFD_SUCCESS;
 }
 
-#endif /* REDBLACK_HAS_NEON_OMP */
+#endif /* REDBLACK_HAS_NEON */
 
 /* ============================================================================
  * FACTORY FUNCTION
  * ============================================================================ */
 
-poisson_solver_t* create_redblack_neon_omp_solver(void) {
-#if defined(REDBLACK_HAS_NEON_OMP)
+poisson_solver_t* create_redblack_neon_solver(void) {
+#if defined(REDBLACK_HAS_NEON)
     /* Note: Runtime SIMD check is done by the dispatcher (linear_solver_simd_omp_dispatch.c)
      * before calling this function. No need to check again here. */
     poisson_solver_t* solver = (poisson_solver_t*)cfd_calloc(1, sizeof(poisson_solver_t));
@@ -242,10 +242,10 @@ poisson_solver_t* create_redblack_neon_omp_solver(void) {
     solver->backend = POISSON_BACKEND_SIMD_OMP;
     solver->params = poisson_solver_params_default();
 
-    solver->init = redblack_neon_omp_init;
-    solver->destroy = redblack_neon_omp_destroy;
+    solver->init = redblack_neon_init;
+    solver->destroy = redblack_neon_destroy;
     solver->solve = NULL;
-    solver->iterate = redblack_neon_omp_iterate;
+    solver->iterate = redblack_neon_iterate;
     solver->apply_bc = NULL;
 
     return solver;
