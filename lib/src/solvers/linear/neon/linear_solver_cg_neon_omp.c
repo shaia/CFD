@@ -472,7 +472,9 @@ static cfd_status_t cg_neon_omp_solve(
     double end_time = poisson_solver_get_time_ms();
 
     if (stats) {
-        stats->iterations = iter + 1;
+        /* When loop breaks early (converged), iter is the last iteration index, so +1.
+         * When loop completes naturally, iter == max_iterations, report as-is. */
+        stats->iterations = (iter < params->max_iterations) ? (iter + 1) : iter;
         stats->final_residual = res_norm;
         stats->elapsed_time_ms = end_time - start_time;
         stats->status = converged ? POISSON_CONVERGED : POISSON_MAX_ITER;
