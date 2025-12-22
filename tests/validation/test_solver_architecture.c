@@ -1,0 +1,344 @@
+/**
+ * @file test_solver_architecture.c
+ * @brief Cross-architecture solver consistency tests
+ *
+ * This test file verifies that ALL solver backend implementations (CPU scalar,
+ * AVX2/SIMD, OpenMP, GPU) produce IDENTICAL results for the same problem.
+ *
+ * VALIDATION REQUIREMENTS:
+ * 1. All backends of the same solver type MUST produce identical results
+ * 2. Consistency tolerance: u_center difference < 0.001 (0.1%)
+ * 3. All non-optional backends must succeed
+ *
+ * If tests fail, the BACKEND implementation needs fixing, not the tolerance.
+ */
+
+#include "cavity_reference_data.h"
+#include "lid_driven_cavity_common.h"
+
+#include <string.h>
+
+void setUp(void) {}
+void tearDown(void) {}
+
+/* ============================================================================
+ * TEST CONFIGURATION
+ * ============================================================================ */
+
+/* Minimal configuration for architecture consistency checks */
+#define ARCH_TEST_STEPS     50
+#define ARCH_TEST_DT        0.005
+#define ARCH_GRID_SIZE      9
+
+/* Tolerance for backend consistency (must match exactly) */
+#define ARCH_CONSISTENCY_TOL 0.001
+
+/* ============================================================================
+ * SOLVER RESULT STRUCTURE
+ * ============================================================================ */
+
+typedef struct {
+    double u_at_center;
+    double v_at_center;
+    double max_velocity;
+    int success;
+    char error_msg[256];
+} solver_result_t;
+
+/* ============================================================================
+ * Run simulation with specific solver
+ * ============================================================================ */
+
+static solver_result_t run_solver(const char* solver_type,
+                                   size_t nx, size_t ny,
+                                   int max_steps, double dt) {
+    solver_result_t result = {0};
+    result.success = 0;
+    result.error_msg[0] = '\0';
+
+    /* Create context */
+    cavity_context_t* ctx = cavity_context_create(nx, ny);
+    if (!ctx) {
+        snprintf(result.error_msg, sizeof(result.error_msg), "Failed to create context");
+        return result;
+    }
+
+    double reynolds = 100.0;
+    double lid_vel = 1.0;
+    double L = ctx->g->xmax - ctx->g->xmin;
+    double nu = lid_vel * L / reynolds;
+
+    ns_solver_params_t params = {
+        .dt = dt,
+        .cfl = 0.5,
+        .gamma = 1.4,
+        .mu = nu,
+        .k = 0.0,
+        .max_iter = 1,
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.0,
+        .source_amplitude_v = 0.0,
+        .source_decay_rate = 0.0,
+        .pressure_coupling = 0.1
+    };
+
+    /* Create solver */
+    ns_solver_registry_t* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    ns_solver_t* solver = cfd_solver_create(registry, solver_type);
+    if (!solver) {
+        snprintf(result.error_msg, sizeof(result.error_msg), "Solver not available");
+        cfd_registry_destroy(registry);
+        cavity_context_destroy(ctx);
+        return result;
+    }
+
+    solver_init(solver, ctx->g, &params);
+    ns_solver_stats_t stats = ns_solver_stats_default();
+
+    for (int step = 0; step < max_steps; step++) {
+        apply_cavity_bc(ctx->field, lid_vel);
+        solver_step(solver, ctx->field, ctx->g, &params, &stats);
+
+        if (!check_field_finite(ctx->field)) {
+            snprintf(result.error_msg, sizeof(result.error_msg), "Blew up at step %d", step);
+            solver_destroy(solver);
+            cfd_registry_destroy(registry);
+            cavity_context_destroy(ctx);
+            return result;
+        }
+    }
+
+    /* Extract results */
+    size_t center_i = nx / 2;
+    size_t center_j = ny / 2;
+    size_t center_idx = center_j * nx + center_i;
+
+    result.u_at_center = ctx->field->u[center_idx];
+    result.v_at_center = ctx->field->v[center_idx];
+    result.max_velocity = find_max_velocity(ctx->field);
+    result.success = 1;
+
+    solver_destroy(solver);
+    cfd_registry_destroy(registry);
+    cavity_context_destroy(ctx);
+
+    return result;
+}
+
+/* ============================================================================
+ * TEST: Explicit Euler - CPU, AVX2, OpenMP must match exactly
+ * ============================================================================ */
+
+void test_euler_cpu_avx2_consistency(void) {
+    printf("\n    Comparing Explicit Euler: CPU vs AVX2/SIMD\n");
+
+    solver_result_t cpu = run_solver(
+        NS_SOLVER_TYPE_EXPLICIT_EULER,
+        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
+        ARCH_TEST_STEPS, ARCH_TEST_DT
+    );
+    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Euler must succeed");
+
+    solver_result_t avx2 = run_solver(
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
+        ARCH_TEST_STEPS, ARCH_TEST_DT
+    );
+    TEST_ASSERT_TRUE_MESSAGE(avx2.success, "AVX2 Euler must succeed");
+
+    double diff = fabs(cpu.u_at_center - avx2.u_at_center);
+    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
+    printf("      AVX2 u_center: %.6f\n", avx2.u_at_center);
+    printf("      Difference:    %.6f\n", diff);
+
+    TEST_ASSERT_TRUE_MESSAGE(diff < ARCH_CONSISTENCY_TOL,
+        "CPU and AVX2 Euler must produce identical results");
+}
+
+void test_euler_cpu_omp_consistency(void) {
+    printf("\n    Comparing Explicit Euler: CPU vs OpenMP\n");
+
+    solver_result_t cpu = run_solver(
+        NS_SOLVER_TYPE_EXPLICIT_EULER,
+        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
+        ARCH_TEST_STEPS, ARCH_TEST_DT
+    );
+    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Euler must succeed");
+
+    solver_result_t omp = run_solver(
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
+        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
+        ARCH_TEST_STEPS, ARCH_TEST_DT
+    );
+    TEST_ASSERT_TRUE_MESSAGE(omp.success, "OMP Euler must succeed");
+
+    double diff = fabs(cpu.u_at_center - omp.u_at_center);
+    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
+    printf("      OMP  u_center: %.6f\n", omp.u_at_center);
+    printf("      Difference:    %.6f\n", diff);
+
+    TEST_ASSERT_TRUE_MESSAGE(diff < ARCH_CONSISTENCY_TOL,
+        "CPU and OpenMP Euler must produce identical results");
+}
+
+/* ============================================================================
+ * TEST: Projection - CPU, AVX2, OpenMP must match exactly
+ * ============================================================================ */
+
+void test_projection_cpu_avx2_consistency(void) {
+    printf("\n    Comparing Projection: CPU vs AVX2/SIMD\n");
+
+    solver_result_t cpu = run_solver(
+        NS_SOLVER_TYPE_PROJECTION,
+        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
+        ARCH_TEST_STEPS, ARCH_TEST_DT
+    );
+    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Projection must succeed");
+
+    solver_result_t avx2 = run_solver(
+        NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
+        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
+        ARCH_TEST_STEPS, ARCH_TEST_DT
+    );
+    TEST_ASSERT_TRUE_MESSAGE(avx2.success, "AVX2 Projection must succeed");
+
+    double diff = fabs(cpu.u_at_center - avx2.u_at_center);
+    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
+    printf("      AVX2 u_center: %.6f\n", avx2.u_at_center);
+    printf("      Difference:    %.6f\n", diff);
+
+    TEST_ASSERT_TRUE_MESSAGE(diff < ARCH_CONSISTENCY_TOL,
+        "CPU and AVX2 Projection must produce identical results");
+}
+
+void test_projection_cpu_omp_consistency(void) {
+    printf("\n    Comparing Projection: CPU vs OpenMP\n");
+
+    solver_result_t cpu = run_solver(
+        NS_SOLVER_TYPE_PROJECTION,
+        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
+        ARCH_TEST_STEPS, ARCH_TEST_DT
+    );
+    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Projection must succeed");
+
+    solver_result_t omp = run_solver(
+        NS_SOLVER_TYPE_PROJECTION_OMP,
+        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
+        ARCH_TEST_STEPS, ARCH_TEST_DT
+    );
+    TEST_ASSERT_TRUE_MESSAGE(omp.success, "OMP Projection must succeed");
+
+    double diff = fabs(cpu.u_at_center - omp.u_at_center);
+    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
+    printf("      OMP  u_center: %.6f\n", omp.u_at_center);
+    printf("      Difference:    %.6f\n", diff);
+
+    /* NOTE: This test is currently expected to FAIL until the OMP projection
+     * solver bug is fixed. The OMP implementation produces different results
+     * than CPU/AVX2, indicating a parallelization bug. */
+    TEST_ASSERT_TRUE_MESSAGE(diff < ARCH_CONSISTENCY_TOL,
+        "CPU and OpenMP Projection must produce identical results");
+}
+
+/* ============================================================================
+ * TEST: GPU backend (optional)
+ * ============================================================================ */
+
+void test_projection_gpu_available(void) {
+    printf("\n    Checking GPU backend availability\n");
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+
+    if (solver) {
+        printf("      GPU backend: AVAILABLE\n");
+        solver_destroy(solver);
+        TEST_PASS();
+    } else {
+        printf("      GPU backend: NOT AVAILABLE (skipped)\n");
+        TEST_PASS_MESSAGE("GPU not required, skipping");
+    }
+
+    cfd_registry_destroy(registry);
+}
+
+/* ============================================================================
+ * TEST: All solver types can be instantiated
+ * ============================================================================ */
+
+void test_all_solvers_instantiate(void) {
+    printf("\n    Testing solver instantiation\n");
+
+    const char* solver_types[] = {
+        NS_SOLVER_TYPE_EXPLICIT_EULER,
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
+        NS_SOLVER_TYPE_PROJECTION,
+        NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
+        NS_SOLVER_TYPE_PROJECTION_OMP,
+    };
+    const char* names[] = {
+        "Explicit Euler CPU",
+        "Explicit Euler AVX2",
+        "Explicit Euler OMP",
+        "Projection CPU",
+        "Projection AVX2",
+        "Projection OMP",
+    };
+    const int num_solvers = 6;
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    int success_count = 0;
+    for (int i = 0; i < num_solvers; i++) {
+        ns_solver_t* solver = cfd_solver_create(registry, solver_types[i]);
+        if (solver) {
+            printf("      %s: OK\n", names[i]);
+            solver_destroy(solver);
+            success_count++;
+        } else {
+            printf("      %s: FAILED\n", names[i]);
+        }
+    }
+
+    cfd_registry_destroy(registry);
+
+    printf("      %d/%d solvers instantiated\n", success_count, num_solvers);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(num_solvers, success_count,
+        "All non-optional solvers must be instantiable");
+}
+
+/* ============================================================================
+ * MAIN
+ * ============================================================================ */
+
+int main(void) {
+    UNITY_BEGIN();
+
+    printf("\n");
+    printf("========================================\n");
+    printf("CROSS-ARCHITECTURE CONSISTENCY TESTS\n");
+    printf("========================================\n");
+    printf("\n");
+    printf("Consistency tolerance: diff < %.3f\n", ARCH_CONSISTENCY_TOL);
+    printf("\n");
+
+    printf("[Solver Instantiation]\n");
+    RUN_TEST(test_all_solvers_instantiate);
+    RUN_TEST(test_projection_gpu_available);
+
+    printf("\n[Explicit Euler Backend Consistency]\n");
+    RUN_TEST(test_euler_cpu_avx2_consistency);
+    RUN_TEST(test_euler_cpu_omp_consistency);
+
+    printf("\n[Projection Backend Consistency]\n");
+    RUN_TEST(test_projection_cpu_avx2_consistency);
+    RUN_TEST(test_projection_cpu_omp_consistency);
+
+    return UNITY_END();
+}

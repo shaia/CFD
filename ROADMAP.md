@@ -30,7 +30,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Limited boundary conditions (no outlets, symmetry planes)
 - [ ] Only structured grids
 - [ ] No turbulence models
-- [ ] Limited linear solvers (SOR/Jacobi only, no CG/BiCGSTAB/multigrid)
+- [ ] Limited linear solvers (no BiCGSTAB/multigrid)
 - [ ] No restart/checkpoint capability
 
 ---
@@ -118,7 +118,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 **Still needed:**
 
 - [x] Solver abstraction interface
-- [ ] Conjugate Gradient (CG) for SPD systems
+- [x] Conjugate Gradient (CG) for SPD systems (scalar, AVX2, NEON backends)
 - [ ] BiCGSTAB for non-symmetric systems
 - [ ] Preconditioners (Jacobi, ILU)
 - [ ] Geometric multigrid
@@ -457,7 +457,56 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 ### 6.2 Benchmark Validation (P0 - Critical)
 
-- [ ] Lid-driven cavity (Re 100, 400, 1000) - compare to Ghia et al. (1982)
+#### 6.2.1 Lid-Driven Cavity Validation
+
+**Status:** Tests implemented, solver NOT meeting scientific tolerance (RMS ~0.38, target < 0.10)
+
+**Test files created:**
+- `tests/validation/test_cavity_setup.c` - Basic setup and BC tests (7 tests)
+- `tests/validation/test_cavity_flow.c` - Flow development and stability (8 tests)
+- `tests/validation/test_cavity_validation.c` - Conservation and Ghia comparison (5 tests)
+- `tests/validation/test_cavity_reference.c` - Reference-based regression tests (5 tests)
+- `tests/validation/lid_driven_cavity_common.h` - Shared utilities
+- `tests/validation/cavity_reference_data.h` - Ghia reference data
+- `docs/validation/lid_driven_cavity.md` - Validation methodology documentation
+
+**TODO - Honest Validation (MUST achieve full Ghia convergence):**
+
+1. **Match Ghia et al. parameters EXACTLY:**
+   - [ ] Grid: 129×129 (Ghia used 129×129 for all Re)
+   - [ ] Boundary conditions: Regularized lid velocity at corners
+   - [ ] Steady-state criterion: Residual < 1e-6 or 50000+ iterations
+   - [ ] Reynolds numbers: Re=100, 400, 1000 (all must pass)
+
+2. **Fix current solver convergence issues (RMS ~0.38 → target < 0.10):**
+   - [ ] Increase pressure solver iterations (Jacobi may need 100+ per step)
+   - [ ] Use smaller time step (dt < 0.0001 for stability)
+   - [ ] Run to true steady state (20000+ time steps minimum)
+   - [ ] Implement corner singularity regularization
+   - [ ] Consider multigrid or CG for pressure solve
+
+3. **Test ALL solver backends (run tests in parallel for speed):**
+   - [ ] CPU scalar (explicit Euler, projection)
+   - [ ] AVX2/SIMD (explicit Euler, projection)
+   - [ ] OpenMP (explicit Euler, projection)
+   - [ ] CUDA GPU (projection Jacobi)
+   - [ ] Each backend must independently achieve RMS < 0.10
+
+4. **Verification that tests are honest:**
+   - [ ] Tests MUST fail if RMS > 0.10 (no loose tolerances)
+   - [ ] Tests compare computed values at EXACT Ghia sample points
+   - [ ] Tests report actual vs expected values transparently
+   - [ ] No "current baseline" workarounds - fix solver, not tolerance
+
+**Acceptance Criteria (non-negotiable):**
+
+- RMS error vs Ghia < 0.10 for Re=100, 400, 1000
+- All 7 solver backends produce identical results (within 0.1%)
+- Grid convergence: error decreases monotonically with refinement
+- Tests run in parallel to complete in < 60 seconds
+
+#### 6.2.2 Other Benchmarks
+
 - [ ] Channel flow (Poiseuille) - compare to analytical parabolic profile
 - [ ] Backward-facing step - compare to Armaly et al. (1983)
 - [ ] Flow over cylinder - compare to Williamson (1996)
@@ -465,8 +514,8 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 **Files to create:**
 
-- `tests/validation/test_benchmark_cases.c`
-- `tests/validation/reference_data/ghia_cavity.h`
+- `tests/validation/test_poiseuille_flow.c`
+- `tests/validation/test_backward_step.c`
 
 ### 6.3 Convergence Studies (P1)
 
@@ -555,8 +604,9 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 **Remaining:**
 
-- [ ] At least one Krylov solver (CG or BiCGSTAB)
-- [ ] Lid-driven cavity validation
+- [x] Conjugate Gradient (CG) Krylov solver
+- [~] Lid-driven cavity validation (tests implemented, solver needs tuning for RMS < 0.10)
+- [ ] Cross-architecture solver validation (CPU, AVX2, OpenMP, CUDA)
 - [ ] Basic documentation
 
 ### v0.2.0 - 3D Support

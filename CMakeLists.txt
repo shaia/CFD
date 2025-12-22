@@ -195,6 +195,25 @@ if(BUILD_TESTS)
     # Linear solver abstraction tests
     add_executable(test_linear_solver tests/solvers/test_linear_solver.c)
 
+    # Validation tests - cavity setup and flow
+    add_executable(test_cavity_setup tests/validation/test_cavity_setup.c)
+    add_executable(test_cavity_flow tests/validation/test_cavity_flow.c)
+    add_executable(test_cavity_validation tests/validation/test_cavity_validation.c)
+    add_executable(test_cavity_reference tests/validation/test_cavity_reference.c)
+    add_executable(test_cavity_all_solvers tests/validation/test_cavity_all_solvers.c)
+
+    # Ghia validation - per-architecture test files
+    add_executable(test_ghia_euler_cpu tests/validation/test_ghia_euler_cpu.c)
+    add_executable(test_ghia_euler_avx2 tests/validation/test_ghia_euler_avx2.c)
+    add_executable(test_ghia_euler_omp tests/validation/test_ghia_euler_omp.c)
+    add_executable(test_ghia_projection_cpu tests/validation/test_ghia_projection_cpu.c)
+    add_executable(test_ghia_projection_avx2 tests/validation/test_ghia_projection_avx2.c)
+    add_executable(test_ghia_projection_omp tests/validation/test_ghia_projection_omp.c)
+    add_executable(test_ghia_projection_gpu tests/validation/test_ghia_projection_gpu.c)
+
+    # Cross-architecture consistency tests
+    add_executable(test_solver_architecture tests/validation/test_solver_architecture.c)
+
     # Link test executables with CFD library and Unity
     target_link_libraries(test_simulation_basic PRIVATE CFD::Library unity)
     target_link_libraries(test_runner PRIVATE CFD::Library unity)
@@ -225,6 +244,19 @@ if(BUILD_TESTS)
     target_link_libraries(test_solver_projection_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_projection_jacobi_gpu PRIVATE CFD::Library unity)
     target_link_libraries(test_linear_solver PRIVATE CFD::Library unity)
+    target_link_libraries(test_cavity_setup PRIVATE CFD::Library unity)
+    target_link_libraries(test_cavity_flow PRIVATE CFD::Library unity)
+    target_link_libraries(test_cavity_validation PRIVATE CFD::Library unity)
+    target_link_libraries(test_cavity_reference PRIVATE CFD::Library unity)
+    target_link_libraries(test_cavity_all_solvers PRIVATE CFD::Library unity)
+    target_link_libraries(test_ghia_euler_cpu PRIVATE CFD::Library unity)
+    target_link_libraries(test_ghia_euler_avx2 PRIVATE CFD::Library unity)
+    target_link_libraries(test_ghia_euler_omp PRIVATE CFD::Library unity)
+    target_link_libraries(test_ghia_projection_cpu PRIVATE CFD::Library unity)
+    target_link_libraries(test_ghia_projection_avx2 PRIVATE CFD::Library unity)
+    target_link_libraries(test_ghia_projection_omp PRIVATE CFD::Library unity)
+    target_link_libraries(test_ghia_projection_gpu PRIVATE CFD::Library unity)
+    target_link_libraries(test_solver_architecture PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
     enable_testing()
@@ -257,6 +289,23 @@ if(BUILD_TESTS)
     add_test(NAME SolverProjectionOmpTest COMMAND test_solver_projection_omp)
     add_test(NAME SolverProjectionJacobiGpuTest COMMAND test_solver_projection_jacobi_gpu)
     add_test(NAME LinearSolverTest COMMAND test_linear_solver)
+    add_test(NAME CavitySetupTest COMMAND test_cavity_setup)
+    add_test(NAME CavityFlowTest COMMAND test_cavity_flow)
+    add_test(NAME CavityValidationTest COMMAND test_cavity_validation)
+    add_test(NAME CavityReferenceTest COMMAND test_cavity_reference)
+    add_test(NAME CavityAllSolversTest COMMAND test_cavity_all_solvers)
+
+    # Ghia validation tests - per architecture
+    add_test(NAME GhiaEulerCpuTest COMMAND test_ghia_euler_cpu)
+    add_test(NAME GhiaEulerAvx2Test COMMAND test_ghia_euler_avx2)
+    add_test(NAME GhiaEulerOmpTest COMMAND test_ghia_euler_omp)
+    add_test(NAME GhiaProjectionCpuTest COMMAND test_ghia_projection_cpu)
+    add_test(NAME GhiaProjectionAvx2Test COMMAND test_ghia_projection_avx2)
+    add_test(NAME GhiaProjectionOmpTest COMMAND test_ghia_projection_omp)
+    add_test(NAME GhiaProjectionGpuTest COMMAND test_ghia_projection_gpu)
+
+    # Cross-architecture consistency tests
+    add_test(NAME SolverArchitectureTest COMMAND test_solver_architecture)
 endif()
 
 # Documentation target (Doxygen)
