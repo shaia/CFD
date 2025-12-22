@@ -1,5 +1,6 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/gpu_device.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
@@ -27,6 +28,12 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
 cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params);
 #endif
+
+// GPU solver functions
+cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
+                                         const ns_solver_params_t* params,
+                                         const gpu_config_t* config);
+int gpu_is_available(void);
 
 // SIMD solver functions
 
@@ -879,45 +886,54 @@ static ns_solver_t* create_explicit_euler_gpu_solver(void) {
  * Built-in solver: GPU-Accelerated Projection Method
  */
 
-#if 0
 static cfd_status_t gpu_projection_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
-    // Dummy implementation
+    (void)solver;
+    (void)stats;
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
-    solve_projection_method(field, grid, &step_params);
-    return CFD_SUCCESS;
+    /* Override thresholds to allow single-step GPU execution on small grids */
+    gpu_config_t cfg = gpu_config_default();
+    cfg.min_grid_size = 1;
+    cfg.min_steps = 1;
+    return solve_projection_method_gpu(field, grid, &step_params, &cfg);
 }
 
 static cfd_status_t gpu_projection_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, ns_solver_stats_t* stats) {
-    solve_projection_method(field, grid, params);
-    return CFD_SUCCESS;
+    (void)solver;
+    (void)stats;
+    /* Override thresholds to allow GPU execution on small grids */
+    gpu_config_t cfg = gpu_config_default();
+    cfg.min_grid_size = 1;
+    cfg.min_steps = 1;
+    return solve_projection_method_gpu(field, grid, params, &cfg);
 }
-#endif
 
 static ns_solver_t* create_projection_gpu_solver(void) {
-    return NULL;
-    /*
-        ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
-        if (!s) {
-            return NULL;
-        }
+    /* Check if GPU is available before creating the solver */
+    if (!gpu_is_available()) {
+        return NULL;
+    }
 
-        s->name = NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU;
-        s->description = "GPU-accelerated projection method with Jacobi iteration (CUDA)";
-        s->version = "1.0.0";
-        s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
+    if (!s) {
+        return NULL;
+    }
 
-        s->init = gpu_euler_init;  // Same init handles GPU context
-        s->destroy = gpu_euler_destroy;
-        s->step = gpu_projection_step;
-        s->solve = gpu_projection_solve;
-        s->apply_boundary = NULL;
-        s->compute_dt = NULL;
+    s->name = NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU;
+    s->description = "GPU-accelerated projection method with Jacobi iteration (CUDA)";
+    s->version = "1.0.0";
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
 
-        return s;
-    */
+    s->init = NULL;
+    s->destroy = NULL;
+    s->step = gpu_projection_step;
+    s->solve = gpu_projection_solve;
+    s->apply_boundary = NULL;
+    s->compute_dt = NULL;
+
+    return s;
 }
 
 #ifdef CFD_ENABLE_OPENMP
