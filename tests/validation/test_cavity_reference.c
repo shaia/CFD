@@ -255,9 +255,11 @@ void test_grid_convergence(void) {
         cavity_context_t* ctx = cavity_context_create(n, n);
         TEST_ASSERT_NOT_NULL(ctx);
 
-        /* Scale dt with grid size for stability */
+        /* Scale dt with grid size for stability, and scale steps inversely
+         * so all grids simulate the same physical time */
         double dt = FINE_DT * (33.0 / n);
-        run_cavity_simulation(ctx, 100.0, 1.0, MEDIUM_STEPS, dt);
+        int steps = (int)(MEDIUM_STEPS * (n / 33.0));
+        run_cavity_simulation(ctx, 100.0, 1.0, steps, dt);
 
         centerline_data_t data = extract_centerlines(ctx);
 
