@@ -105,6 +105,45 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - `lib/src/boundary/boundary_conditions_inlet_common.h` - Shared inlet BC helpers
 - `lib/src/boundary/boundary_conditions_outlet_common.h` - Shared outlet BC helpers
 
+#### 1.1.1 Boundary Conditions Code Refactoring (P2)
+
+**Current State:** Moderate to high code duplication across backends (CPU, OMP, AVX2, NEON).
+
+| BC Type | Duplication Level | Notes |
+|---------|-------------------|-------|
+| **Inlet** | **98%** | 4 nearly identical implementations (~42 lines each) - no SIMD benefit for 1D boundaries |
+| **Outlet** | **70-95%** | AVX2/NEON have similar edge dispatch logic (~80 lines duplicated) |
+| **Neumann/Periodic/Dirichlet** | **60-85%** | OMP just adds pragmas; AVX2/NEON differ only in intrinsics |
+
+**What's Done Well:**
+- Common headers (`boundary_conditions_inlet_common.h`, `boundary_conditions_outlet_common.h`) extract shared logic
+- Table-driven dispatch design reduces branching
+- Clear separation between dispatcher and backend implementations
+
+**Refactoring Opportunities:**
+
+1. **Consolidate Inlet BC Implementations (Priority 1)**
+   - [ ] Extract single `bc_apply_inlet_impl()` that all backends use
+   - [ ] Inlet BCs operate on 1D boundaries - no SIMD benefit justifies 4 copies
+   - **Estimated savings:** ~126 lines of redundant code
+
+2. **Extract Common Outlet Dispatch Logic (Priority 2)**
+   - [ ] Create edge-specific helper functions for AVX2/NEON
+   - [ ] Unify edge-switch patterns (LEFT, RIGHT, BOTTOM, TOP)
+   - **Estimated savings:** ~80 lines
+
+3. **Templatize OMP vs Scalar (Priority 3)**
+   - [ ] Use conditional macros for OMP pragmas instead of duplicate functions
+   - [ ] Example: `OMP_PRAGMA(pragma omp parallel for)` wrapper
+   - **Estimated savings:** ~50-60 lines
+
+4. **Unify AVX2 and NEON (Priority 4)**
+   - [ ] Use preprocessor or code generation for SIMD backends
+   - [ ] Only differences: intrinsic set and vector width (4 vs 2 doubles)
+   - **Benefit:** Easier to add new SIMD backends (e.g., AVX-512)
+
+**Total Estimated Savings:** ~150-200 lines of redundant code
+
 ### 1.2 Linear Solvers (P0 - Critical)
 
 **Implemented:**
