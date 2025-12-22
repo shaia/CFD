@@ -181,10 +181,22 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             }
         }
 
-// Apply Neumann BCs (zero gradient) to intermediate velocity for proper
-        // divergence computation. Final velocity gets periodic BCs later.
-        // Using OMP backend explicitly for optimal parallelization.
-        bc_apply_velocity_omp(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
+        // Copy boundary values from field to u_star/v_star
+        // This preserves whatever BCs the caller set (Dirichlet for cavity, etc.)
+        // Bottom and top boundaries (j = 0 and j = ny-1)
+        for (i = 0; i < (int)nx; i++) {
+            u_star[i] = field->u[i];
+            v_star[i] = field->v[i];
+            u_star[(ny - 1) * nx + i] = field->u[(ny - 1) * nx + i];
+            v_star[(ny - 1) * nx + i] = field->v[(ny - 1) * nx + i];
+        }
+        // Left and right boundaries (i = 0 and i = nx-1)
+        for (j = 0; j < (int)ny; j++) {
+            u_star[j * nx] = field->u[j * nx];
+            v_star[j * nx] = field->v[j * nx];
+            u_star[j * nx + nx - 1] = field->u[j * nx + nx - 1];
+            v_star[j * nx + nx - 1] = field->v[j * nx + nx - 1];
+        }
 
         // STEP 2: Pressure
         double rho = field->rho[0] < 1e-10 ? 1.0 : field->rho[0];
@@ -228,7 +240,21 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
         }
 
         memcpy(field->p, p_new, size * sizeof(double));
-        apply_boundary_conditions(field, grid);
+
+        // Copy boundary velocity values from u_star (which has caller's BCs)
+        // to field to ensure boundary conditions are preserved
+        for (i = 0; i < (int)nx; i++) {
+            field->u[i] = u_star[i];
+            field->v[i] = v_star[i];
+            field->u[(ny - 1) * nx + i] = u_star[(ny - 1) * nx + i];
+            field->v[(ny - 1) * nx + i] = v_star[(ny - 1) * nx + i];
+        }
+        for (j = 1; j < (int)ny - 1; j++) {
+            field->u[j * nx] = u_star[j * nx];
+            field->v[j * nx] = v_star[j * nx];
+            field->u[j * nx + nx - 1] = u_star[j * nx + nx - 1];
+            field->v[j * nx + nx - 1] = v_star[j * nx + nx - 1];
+        }
 
         // Check for NaN
         for (k = 0; k < (int)size; k++) {

@@ -203,10 +203,22 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
             }
         }
 
-        // Apply Neumann BCs (zero gradient) to intermediate velocity for proper
-        // divergence computation. Final velocity gets periodic BCs later.
-        // Using scalar CPU backend explicitly for baseline CPU solver.
-        bc_apply_velocity_cpu(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
+        // Copy boundary values from field to u_star/v_star
+        // This preserves whatever BCs the caller set (Dirichlet for cavity, etc.)
+        // Bottom and top boundaries (j = 0 and j = ny-1)
+        for (size_t i = 0; i < nx; i++) {
+            u_star[i] = field->u[i];                           // bottom
+            v_star[i] = field->v[i];
+            u_star[(ny - 1) * nx + i] = field->u[(ny - 1) * nx + i];  // top
+            v_star[(ny - 1) * nx + i] = field->v[(ny - 1) * nx + i];
+        }
+        // Left and right boundaries (i = 0 and i = nx-1)
+        for (size_t j = 0; j < ny; j++) {
+            u_star[j * nx] = field->u[j * nx];                 // left
+            v_star[j * nx] = field->v[j * nx];
+            u_star[j * nx + nx - 1] = field->u[j * nx + nx - 1];  // right
+            v_star[j * nx + nx - 1] = field->v[j * nx + nx - 1];
+        }
 
         // ============================================================
         // STEP 2: Solve Poisson equation for pressure
@@ -265,8 +277,20 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         // Update pressure
         memcpy(field->p, p_new, size * sizeof(double));
 
-        // Apply boundary conditions
-        apply_boundary_conditions(field, grid);
+        // Copy boundary velocity values from u_star (which has caller's BCs)
+        // to field to ensure boundary conditions are preserved
+        for (size_t i = 0; i < nx; i++) {
+            field->u[i] = u_star[i];
+            field->v[i] = v_star[i];
+            field->u[(ny - 1) * nx + i] = u_star[(ny - 1) * nx + i];
+            field->v[(ny - 1) * nx + i] = v_star[(ny - 1) * nx + i];
+        }
+        for (size_t j = 1; j < ny - 1; j++) {
+            field->u[j * nx] = u_star[j * nx];
+            field->v[j * nx] = v_star[j * nx];
+            field->u[j * nx + nx - 1] = u_star[j * nx + nx - 1];
+            field->v[j * nx + nx - 1] = v_star[j * nx + nx - 1];
+        }
 
         // Check for NaN
         for (size_t k = 0; k < size; k++) {
