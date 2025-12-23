@@ -271,28 +271,40 @@ void test_projection_cpu_omp_consistency(void) {
 }
 
 /* ============================================================================
- * TEST: GPU backend (optional)
+ * TEST: GPU backend consistency
  * ============================================================================ */
 
-void test_projection_gpu_available(void) {
-    printf("\n    Checking GPU backend availability\n");
+void test_projection_cpu_gpu_consistency(void) {
+    printf("\n    Comparing Projection: CPU vs GPU\n");
 
-    ns_solver_registry_t* registry = cfd_registry_create();
-    cfd_registry_register_defaults(registry);
+    solver_result_t cpu = run_solver(
+        NS_SOLVER_TYPE_PROJECTION,
+        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
+        ARCH_TEST_STEPS, ARCH_TEST_DT
+    );
+    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Projection must succeed");
 
-    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    solver_result_t gpu = run_solver(
+        NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
+        ARCH_TEST_STEPS, ARCH_TEST_DT
+    );
 
-    if (solver) {
-        printf("      GPU backend: AVAILABLE\n");
-        solver_destroy(solver);
-    } else {
-        printf("      GPU backend: NOT AVAILABLE (skipped)\n");
+    /* Skip test if GPU solver is not available */
+    if (!gpu.success && strstr(gpu.error_msg, "not available") != NULL) {
+        printf("      GPU solver not available, skipping\n");
+        TEST_IGNORE_MESSAGE("GPU solver not available (CUDA not enabled or no GPU)");
     }
 
-    cfd_registry_destroy(registry);
+    TEST_ASSERT_TRUE_MESSAGE(gpu.success, "GPU Projection must succeed");
 
-    /* GPU is optional, so we always pass this test */
-    TEST_PASS_MESSAGE("GPU not required, skipping");
+    double diff = fabs(cpu.u_at_center - gpu.u_at_center);
+    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
+    printf("      GPU  u_center: %.6f\n", gpu.u_at_center);
+    printf("      Difference:    %.6f\n", diff);
+
+    TEST_ASSERT_TRUE_MESSAGE(diff < ARCH_CONSISTENCY_TOL,
+        "CPU and GPU Projection must produce identical results");
 }
 
 /* ============================================================================
@@ -321,12 +333,14 @@ void test_all_solvers_instantiate(void) {
     const char* optional_types[] = {
         NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
         NS_SOLVER_TYPE_PROJECTION_OMP,
+        NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
     };
     const char* optional_names[] = {
         "Explicit Euler OMP",
         "Projection OMP",
+        "Projection GPU",
     };
-    const int num_optional = 2;
+    const int num_optional = 3;
 
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
@@ -386,7 +400,6 @@ int main(void) {
 
     printf("[Solver Instantiation]\n");
     RUN_TEST(test_all_solvers_instantiate);
-    RUN_TEST(test_projection_gpu_available);
 
     printf("\n[Explicit Euler Backend Consistency]\n");
     RUN_TEST(test_euler_cpu_avx2_consistency);
@@ -395,6 +408,7 @@ int main(void) {
     printf("\n[Projection Backend Consistency]\n");
     RUN_TEST(test_projection_cpu_avx2_consistency);
     RUN_TEST(test_projection_cpu_omp_consistency);
+    RUN_TEST(test_projection_cpu_gpu_consistency);
 
     return UNITY_END();
 }
