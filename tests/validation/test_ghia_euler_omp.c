@@ -31,35 +31,9 @@ void test_euler_omp_ghia_re100(void) {
         "Must meet current baseline tolerance");
 }
 
-void test_euler_omp_matches_cpu(void) {
-    printf("\n    Verifying OpenMP matches CPU scalar...\n");
-
-    ghia_result_t cpu = run_ghia_validation(
-        NS_SOLVER_TYPE_EXPLICIT_EULER,
-        17, 17, 100.0, 1.0, 100, 0.005
-    );
-
-    ghia_result_t omp = run_ghia_validation(
-        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
-        17, 17, 100.0, 1.0, 100, 0.005
-    );
-
-    /* Skip test if OMP solver is not available */
-    if (!omp.success && strstr(omp.error_msg, "not available") != NULL) {
-        TEST_IGNORE_MESSAGE("OpenMP solver not available (OpenMP not enabled)");
-    }
-
-    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU must succeed");
-    TEST_ASSERT_TRUE_MESSAGE(omp.success, "OMP must succeed");
-
-    double diff = fabs(cpu.u_at_center - omp.u_at_center);
-    printf("      CPU u_center: %.6f\n", cpu.u_at_center);
-    printf("      OMP u_center: %.6f\n", omp.u_at_center);
-    printf("      Difference:   %.6f\n", diff);
-
-    TEST_ASSERT_TRUE_MESSAGE(diff < 0.001,
-        "OpenMP must produce identical results to CPU");
-}
+/* Note: Cross-architecture consistency (OMP vs CPU) is now tested in
+ * test_solver_architecture.c which runs in the dedicated cross-arch-validation
+ * CI job with proper tolerance settings. */
 
 int main(void) {
     UNITY_BEGIN();
@@ -69,7 +43,6 @@ int main(void) {
     printf("========================================\n");
 
     RUN_TEST(test_euler_omp_ghia_re100);
-    RUN_TEST(test_euler_omp_matches_cpu);
 
     return UNITY_END();
 }

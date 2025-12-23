@@ -62,37 +62,9 @@ void test_projection_gpu_ghia_re100(void) {
         "Must meet current baseline tolerance");
 }
 
-void test_projection_gpu_matches_cpu(void) {
-    if (!check_gpu_available()) {
-        TEST_IGNORE_MESSAGE("GPU not available, skipping consistency check");
-        return;
-    }
-
-    printf("\n    Verifying GPU matches CPU scalar...\n");
-
-    ghia_result_t cpu = run_ghia_validation(
-        NS_SOLVER_TYPE_PROJECTION,
-        17, 17, 100.0, 1.0, 100, 0.005
-    );
-
-    ghia_result_t gpu = run_ghia_validation(
-        NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
-        17, 17, 100.0, 1.0, 100, 0.005
-    );
-
-    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU must succeed");
-    TEST_ASSERT_TRUE_MESSAGE(gpu.success, "GPU must succeed");
-
-    double diff = fabs(cpu.u_at_center - gpu.u_at_center);
-    printf("      CPU u_center: %.6f\n", cpu.u_at_center);
-    printf("      GPU u_center: %.6f\n", gpu.u_at_center);
-    printf("      Difference:   %.6f\n", diff);
-
-    /* GPU may have slightly different floating point due to parallelism,
-     * so we use a slightly looser tolerance of 0.01 (1%) */
-    TEST_ASSERT_TRUE_MESSAGE(diff < 0.01,
-        "GPU must produce similar results to CPU (within 1%)");
-}
+/* Note: Cross-architecture consistency (GPU vs CPU) is now tested in
+ * test_solver_architecture.c which runs in the dedicated cross-arch-validation
+ * CI job with proper tolerance settings. */
 
 void test_projection_gpu_stability(void) {
     if (!check_gpu_available()) {
@@ -128,7 +100,6 @@ int main(void) {
 
     RUN_TEST(test_gpu_availability);
     RUN_TEST(test_projection_gpu_ghia_re100);
-    RUN_TEST(test_projection_gpu_matches_cpu);
     RUN_TEST(test_projection_gpu_stability);
 
     return UNITY_END();

@@ -26,30 +26,9 @@ void test_projection_avx2_ghia_re100(void) {
         "Must meet current baseline tolerance");
 }
 
-void test_projection_avx2_matches_cpu(void) {
-    printf("\n    Verifying AVX2 matches CPU scalar...\n");
-
-    ghia_result_t cpu = run_ghia_validation(
-        NS_SOLVER_TYPE_PROJECTION,
-        17, 17, 100.0, 1.0, 100, 0.005
-    );
-
-    ghia_result_t avx2 = run_ghia_validation(
-        NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
-        17, 17, 100.0, 1.0, 100, 0.005
-    );
-
-    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU must succeed");
-    TEST_ASSERT_TRUE_MESSAGE(avx2.success, "AVX2 must succeed");
-
-    double diff = fabs(cpu.u_at_center - avx2.u_at_center);
-    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
-    printf("      AVX2 u_center: %.6f\n", avx2.u_at_center);
-    printf("      Difference:    %.6f\n", diff);
-
-    TEST_ASSERT_TRUE_MESSAGE(diff < 0.001,
-        "AVX2 must produce identical results to CPU");
-}
+/* Note: Cross-architecture consistency (AVX2 vs CPU) is now tested in
+ * test_solver_architecture.c which runs in the dedicated cross-arch-validation
+ * CI job with proper tolerance settings. */
 
 int main(void) {
     UNITY_BEGIN();
@@ -59,7 +38,6 @@ int main(void) {
     printf("========================================\n");
 
     RUN_TEST(test_projection_avx2_ghia_re100);
-    RUN_TEST(test_projection_avx2_matches_cpu);
 
     return UNITY_END();
 }
