@@ -445,10 +445,8 @@ cfd_status_t poisson_solver_iterate(
  * Avoids creating/destroying solvers on each call.
  */
 static poisson_solver_t* g_cached_jacobi_simd = NULL;
-static poisson_solver_t* g_cached_jacobi_scalar = NULL;
 static poisson_solver_t* g_cached_sor = NULL;
 static poisson_solver_t* g_cached_redblack_simd = NULL;
-static poisson_solver_t* g_cached_redblack_scalar = NULL;
 static poisson_solver_t* g_cached_redblack_omp = NULL;
 static size_t g_cached_nx = 0;
 static size_t g_cached_ny = 0;
@@ -461,10 +459,6 @@ static void cleanup_cached_solvers(void) {
         poisson_solver_destroy(g_cached_jacobi_simd);
         g_cached_jacobi_simd = NULL;
     }
-    if (g_cached_jacobi_scalar) {
-        poisson_solver_destroy(g_cached_jacobi_scalar);
-        g_cached_jacobi_scalar = NULL;
-    }
     if (g_cached_sor) {
         poisson_solver_destroy(g_cached_sor);
         g_cached_sor = NULL;
@@ -472,10 +466,6 @@ static void cleanup_cached_solvers(void) {
     if (g_cached_redblack_simd) {
         poisson_solver_destroy(g_cached_redblack_simd);
         g_cached_redblack_simd = NULL;
-    }
-    if (g_cached_redblack_scalar) {
-        poisson_solver_destroy(g_cached_redblack_scalar);
-        g_cached_redblack_scalar = NULL;
     }
     if (g_cached_redblack_omp) {
         poisson_solver_destroy(g_cached_redblack_omp);
@@ -493,38 +483,24 @@ int poisson_solve(
     poisson_solver_t** solver_ptr;
     poisson_solver_method_t method;
     poisson_solver_backend_t backend;
-    poisson_solver_backend_t fallback_backend = POISSON_BACKEND_SCALAR;
-    poisson_solver_t** fallback_ptr = NULL;
 
     switch (solver_type) {
         case POISSON_SOLVER_JACOBI_SIMD:
-            /* SIMD backend uses runtime CPU detection (AVX2/NEON) */
             solver_ptr = &g_cached_jacobi_simd;
             method = POISSON_METHOD_JACOBI;
             backend = POISSON_BACKEND_SIMD;
-            /* Fallback to scalar Jacobi if SIMD not available */
-            fallback_backend = POISSON_BACKEND_SCALAR;
-            fallback_ptr = &g_cached_jacobi_scalar;
             break;
 
         case POISSON_SOLVER_REDBLACK_SIMD:
-            /* SIMD backend uses runtime CPU detection (AVX2/NEON) */
             solver_ptr = &g_cached_redblack_simd;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SIMD;
-            /* Fallback to scalar Red-Black if SIMD not available */
-            fallback_backend = POISSON_BACKEND_SCALAR;
-            fallback_ptr = &g_cached_redblack_scalar;
             break;
 
         case POISSON_SOLVER_REDBLACK_OMP:
-            /* OpenMP parallelized Red-Black SOR */
             solver_ptr = &g_cached_redblack_omp;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_OMP;
-            /* Fallback to scalar Red-Black if OMP not available */
-            fallback_backend = POISSON_BACKEND_SCALAR;
-            fallback_ptr = &g_cached_redblack_scalar;
             break;
 
         case POISSON_SOLVER_SOR_SCALAR:
@@ -552,21 +528,6 @@ int poisson_solve(
 
         /* Create new solver */
         *solver_ptr = poisson_solver_create(method, backend);
-
-        /* If SIMD solver creation failed, try fallback backend */
-        if (*solver_ptr == NULL && fallback_ptr != NULL) {
-            /* Use fallback solver pointer and backend */
-            solver_ptr = fallback_ptr;
-
-            /* Destroy any old fallback solver */
-            if (*solver_ptr) {
-                poisson_solver_destroy(*solver_ptr);
-                *solver_ptr = NULL;
-            }
-
-            /* Create fallback solver */
-            *solver_ptr = poisson_solver_create(method, fallback_backend);
-        }
 
         if (*solver_ptr) {
             poisson_solver_init(*solver_ptr, nx, ny, dx, dy, NULL);
