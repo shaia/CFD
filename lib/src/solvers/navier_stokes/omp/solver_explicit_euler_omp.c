@@ -129,8 +129,38 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
         memcpy(field->v, v_new, field->nx * field->ny * sizeof(double));
         memcpy(field->p, p_new, field->nx * field->ny * sizeof(double));
 
+        // Store caller-set boundary values before apply_boundary_conditions overwrites them
+        size_t nx = field->nx;
+        size_t ny = field->ny;
+        for (size_t ii = 0; ii < nx; ii++) {
+            u_new[ii] = field->u[ii];
+            v_new[ii] = field->v[ii];
+            u_new[(ny - 1) * nx + ii] = field->u[(ny - 1) * nx + ii];
+            v_new[(ny - 1) * nx + ii] = field->v[(ny - 1) * nx + ii];
+        }
+        for (size_t jj = 0; jj < ny; jj++) {
+            u_new[jj * nx] = field->u[jj * nx];
+            v_new[jj * nx] = field->v[jj * nx];
+            u_new[jj * nx + nx - 1] = field->u[jj * nx + nx - 1];
+            v_new[jj * nx + nx - 1] = field->v[jj * nx + nx - 1];
+        }
+
         // Boundary conditions - applied sequentially in this implementation (O(N) vs O(N^2))
         apply_boundary_conditions(field, grid);
+
+        // Restore caller-set velocity boundary values
+        for (size_t ii = 0; ii < nx; ii++) {
+            field->u[ii] = u_new[ii];
+            field->v[ii] = v_new[ii];
+            field->u[(ny - 1) * nx + ii] = u_new[(ny - 1) * nx + ii];
+            field->v[(ny - 1) * nx + ii] = v_new[(ny - 1) * nx + ii];
+        }
+        for (size_t jj = 0; jj < ny; jj++) {
+            field->u[jj * nx] = u_new[jj * nx];
+            field->v[jj * nx] = v_new[jj * nx];
+            field->u[jj * nx + nx - 1] = u_new[jj * nx + nx - 1];
+            field->v[jj * nx + nx - 1] = v_new[jj * nx + nx - 1];
+        }
 
         // Check for NaN/Inf values
         int has_nan = 0;
