@@ -594,17 +594,30 @@ jobs:
           echo "- **Compiler**: MSVC" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
 
-  # Cross-Architecture Validation - Tests that CPU, AVX2, and OpenMP backends produce identical results
-  # This job enables BOTH AVX2 AND OpenMP to compare all backend implementations
+  # Cross-Architecture Validation - Tests that CPU, AVX2, OpenMP, and GPU backends produce identical results
+  # This job enables ALL backends (AVX2, OpenMP, CUDA) to compare implementations
+  # Note: GPU tests will be skipped since GitHub runners don't have GPU hardware
   cross-arch-validation:
-    name: Cross-Architecture Validation (Linux)
+    name: Cross-Architecture Validation (Linux + CUDA)
     runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.2.0-devel-ubuntu22.04
 
     steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential cmake git
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Verify AVX2 hardware support (REQUIRED)
         run: |
           echo "CPU Info:"
-          lscpu | grep -E "(Model name|Flags)" || cat /proc/cpuinfo | grep -E "(model name|flags)" | head -2
+          cat /proc/cpuinfo | grep -E "(model name|flags)" | head -2
           echo ""
           if grep -q avx2 /proc/cpuinfo; then
             echo "✅ AVX2 is supported on this runner"
@@ -614,15 +627,7 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake
-
-      - name: Configure with AVX2 + OpenMP
+      - name: Configure with AVX2 + OpenMP + CUDA
         run: |
           mkdir -p build
           cd build
@@ -631,7 +636,8 @@ jobs:
             -DCMAKE_C_COMPILER=gcc \
             -DBUILD_EXAMPLES=OFF \
             -DBUILD_TESTS=ON \
-            -DCFD_ENABLE_AVX2=ON
+            -DCFD_ENABLE_AVX2=ON \
+            -DCFD_ENABLE_CUDA=ON
 
       - name: Build
         run: |
@@ -656,11 +662,20 @@ jobs:
           else
             echo "⚠️ OpenMP backend may not be available"
           fi
+          # Verify CUDA/GPU symbols are compiled in
+          echo ""
+          echo "Checking for GPU symbols in library..."
+          if nm -C lib/libcfd_library.a 2>/dev/null | grep -q "gpu"; then
+            echo "✅ GPU symbols found in library (CUDA compiled)"
+          else
+            echo "⚠️ GPU symbols NOT found (CUDA may not be enabled)"
+          fi
 
       - name: Run cross-architecture validation tests
         run: |
           cd build
           # Run ONLY the cross-arch labeled tests
+          # Note: GPU tests will be skipped since no GPU hardware is available
           echo "Running cross-architecture consistency tests..."
           ctest --output-on-failure -L "cross-arch" -V
 
@@ -669,10 +684,11 @@ jobs:
         run: |
           echo "## Cross-Architecture Validation Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "This job validates that all solver backends (CPU, AVX2, OpenMP) produce identical results." >> $GITHUB_STEP_SUMMARY
+          echo "This job validates that all solver backends (CPU, AVX2, OpenMP, GPU) produce identical results." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **AVX2**: Enabled" >> $GITHUB_STEP_SUMMARY
           echo "- **OpenMP**: Enabled (GCC built-in)" >> $GITHUB_STEP_SUMMARY
+          echo "- **CUDA**: Enabled (compiled, GPU tests skipped - no hardware)" >> $GITHUB_STEP_SUMMARY
           echo "- **Compiler**: GCC" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
 
