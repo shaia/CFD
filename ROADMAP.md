@@ -615,6 +615,60 @@ u(y) = 4 * U_max * y * (H - y) / H²
 - [ ] Backward-facing step - compare to Armaly et al. (1983)
 - [ ] Flow over cylinder - compare to Williamson (1996)
 
+#### 6.2.5 Release Validation Workflow (P1)
+
+**Goal:** Full-length validation tests that run during releases (too slow for CI).
+
+**Rationale:** CI tests use reduced grid sizes and iteration counts for fast feedback (~30 seconds). Release validation uses full parameters for scientific accuracy verification.
+
+**CI vs Release Parameters:**
+
+| Test | CI Mode | Release Mode |
+|------|---------|--------------|
+| Cavity Flow Development | 17×17, 500 steps | 33×33, 5000 steps |
+| Cavity Re=100 Stability | 21×21, 500 steps | 33×33, 10000 steps |
+| Cavity Re=400 Stability | 25×25, 500 steps | 65×65, 20000 steps |
+| Reynolds Dependency | 17×17, 400 steps | 33×33, 5000 steps |
+| Ghia Validation | 33×33, 5000 steps | 129×129, 50000 steps |
+| Grid Convergence | 17→25→33 | 33→65→129 |
+| Taylor-Green Vortex | 32×32, 1000 steps | 128×128, 10000 steps |
+
+**Release Validation Tests to Implement:**
+
+- [ ] Full Ghia validation at 129×129 grid for Re=100, 400, 1000
+- [ ] Extended cavity flow convergence (run to true steady-state, residual < 1e-8)
+- [ ] Multi-Reynolds grid convergence study (Richardson extrapolation)
+- [ ] Taylor-Green vortex decay rate verification (extended time)
+- [ ] Cross-architecture consistency check (all backends produce identical results)
+- [ ] Memory usage and performance regression benchmarks
+
+**Implementation:**
+
+```bash
+# CI mode (default) - fast, reduced parameters
+cmake -DCAVITY_FULL_VALIDATION=0 ..
+ctest -R validation
+
+# Release mode - full scientific validation
+cmake -DCAVITY_FULL_VALIDATION=1 ..
+ctest -R validation --timeout 3600
+```
+
+**Files to create:**
+
+- `tests/validation/test_ghia_full.c` - Full 129×129 Ghia validation
+- `tests/validation/test_taylor_green_full.c` - Extended Taylor-Green decay
+- `tests/validation/test_release_validation.c` - All backends consistency check
+- `.github/workflows/release-validation.yml` - GitHub Actions workflow for releases
+
+**Acceptance Criteria:**
+
+- All tests pass with full parameters
+- RMS error vs Ghia < 0.05 at 129×129 grid
+- Taylor-Green decay rate within 1% of analytical
+- All solver backends produce identical results (within floating-point tolerance)
+- Total runtime < 30 minutes on release CI runner
+
 ### 6.3 Convergence Studies (P1)
 
 - [ ] Grid independence studies for benchmark cases

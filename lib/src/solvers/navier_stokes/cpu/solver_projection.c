@@ -170,9 +170,10 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
             }
         }
 
-        // Solve Poisson equation using library solver (scalar SOR for CPU)
+        // Solve Poisson equation using library solver
+        // Use DEFAULT_POISSON_SOLVER for consistency with AVX2/OMP backends
         int poisson_iters = poisson_solve(p_new, p_temp, rhs, nx, ny, dx, dy,
-                                          POISSON_SOLVER_SOR_SCALAR);
+                                          DEFAULT_POISSON_SOLVER);
 
         if (poisson_iters < 0) {
             // Poisson solver didn't converge - use simple pressure update as fallback

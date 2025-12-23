@@ -58,10 +58,10 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
     for (int iter = 0; iter < params->max_iter; iter++) {
         // STEP 1: Predictor
         // Use static scheduling for uniform grid load balancing
-        int i, j, k;
+        int j;
 #pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
-            for (i = 1; i < (int)nx - 1; i++) {
+            for (int i = 1; i < (int)nx - 1; i++) {
                 size_t idx = (j * nx) + i;
 
                 double u = field->u[idx];
@@ -103,18 +103,18 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
         // Copy boundary values from field to u_star/v_star
         // This preserves whatever BCs the caller set (Dirichlet for cavity, etc.)
         // Bottom and top boundaries (j = 0 and j = ny-1)
-        for (i = 0; i < (int)nx; i++) {
+        for (size_t i = 0; i < nx; i++) {
             u_star[i] = field->u[i];
             v_star[i] = field->v[i];
             u_star[(ny - 1) * nx + i] = field->u[(ny - 1) * nx + i];
             v_star[(ny - 1) * nx + i] = field->v[(ny - 1) * nx + i];
         }
         // Left and right boundaries (i = 0 and i = nx-1)
-        for (j = 0; j < (int)ny; j++) {
-            u_star[j * nx] = field->u[j * nx];
-            v_star[j * nx] = field->v[j * nx];
-            u_star[j * nx + nx - 1] = field->u[j * nx + nx - 1];
-            v_star[j * nx + nx - 1] = field->v[j * nx + nx - 1];
+        for (size_t jb = 0; jb < ny; jb++) {
+            u_star[jb * nx] = field->u[jb * nx];
+            v_star[jb * nx] = field->v[jb * nx];
+            u_star[jb * nx + nx - 1] = field->u[jb * nx + nx - 1];
+            v_star[jb * nx + nx - 1] = field->v[jb * nx + nx - 1];
         }
 
         // STEP 2: Pressure
@@ -122,7 +122,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 
 #pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
-            for (i = 1; i < (int)nx - 1; i++) {
+            for (int i = 1; i < (int)nx - 1; i++) {
                 size_t idx = (j * nx) + i;
                 double du_star_dx = (u_star[idx + 1] - u_star[idx - 1]) / (2.0 * dx);
                 double dv_star_dy = (v_star[idx + nx] - v_star[idx - nx]) / (2.0 * dy);
@@ -130,8 +130,9 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             }
         }
 
+        // Use DEFAULT_POISSON_SOLVER for consistency with CPU/AVX2 backends
         int poisson_iters = poisson_solve(p_new, p_temp, rhs, nx, ny, dx, dy,
-                                          POISSON_SOLVER_REDBLACK_OMP);
+                                          DEFAULT_POISSON_SOLVER);
 
         if (poisson_iters < 0) {
             // Poisson solver didn't converge - use simple pressure update as fallback
@@ -142,10 +143,10 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             }
         }
 
-// STEP 3: Corrector
+        // STEP 3: Corrector
 #pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
-            for (i = 1; i < (int)nx - 1; i++) {
+            for (int i = 1; i < (int)nx - 1; i++) {
                 size_t idx = (j * nx) + i;
                 double dp_dx = (p_new[idx + 1] - p_new[idx - 1]) / (2.0 * dx);
                 double dp_dy = (p_new[idx + nx] - p_new[idx - nx]) / (2.0 * dy);
@@ -162,21 +163,21 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 
         // Copy boundary velocity values from u_star (which has caller's BCs)
         // to field to ensure boundary conditions are preserved
-        for (i = 0; i < (int)nx; i++) {
+        for (size_t i = 0; i < nx; i++) {
             field->u[i] = u_star[i];
             field->v[i] = v_star[i];
             field->u[(ny - 1) * nx + i] = u_star[(ny - 1) * nx + i];
             field->v[(ny - 1) * nx + i] = v_star[(ny - 1) * nx + i];
         }
-        for (j = 1; j < (int)ny - 1; j++) {
-            field->u[j * nx] = u_star[j * nx];
-            field->v[j * nx] = v_star[j * nx];
-            field->u[j * nx + nx - 1] = u_star[j * nx + nx - 1];
-            field->v[j * nx + nx - 1] = v_star[j * nx + nx - 1];
+        for (size_t jb = 1; jb < ny - 1; jb++) {
+            field->u[jb * nx] = u_star[jb * nx];
+            field->v[jb * nx] = v_star[jb * nx];
+            field->u[jb * nx + nx - 1] = u_star[jb * nx + nx - 1];
+            field->v[jb * nx + nx - 1] = v_star[jb * nx + nx - 1];
         }
 
         // Check for NaN
-        for (k = 0; k < (int)size; k++) {
+        for (size_t k = 0; k < size; k++) {
             if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
                 cfd_free(u_star);
                 cfd_free(v_star);
