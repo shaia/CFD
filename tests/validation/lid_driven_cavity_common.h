@@ -164,6 +164,37 @@ typedef struct {
     int blew_up;
 } simulation_result_t;
 
+/**
+ * Unified simulation result structure
+ *
+ * Contains all fields needed by different test scenarios:
+ * - Basic simulation info (success, error messages)
+ * - Center point values (for architecture consistency tests)
+ * - Min/max values (for stability and sanity checks)
+ * - Convergence tracking (for regression tests)
+ */
+typedef struct {
+    /* Status */
+    int success;
+    char error_msg[256];
+
+    /* Center point values */
+    double u_at_center;
+    double v_at_center;
+
+    /* Field statistics */
+    double max_velocity;
+    double u_min;
+    double kinetic_energy;
+
+    /* Convergence tracking */
+    int steps_completed;
+    double final_residual;
+    int converged;
+} cavity_sim_result_t;
+
+/* Field analysis helper functions (must be defined before cavity_run_with_solver) */
+
 static inline double compute_kinetic_energy(const flow_field* field) {
     double ke = 0.0;
     size_t total = field->nx * field->ny;
@@ -194,6 +225,266 @@ static inline int check_field_finite(const flow_field* field) {
     return 1;
 }
 
+/**
+ * Run cavity simulation with specified solver type
+ *
+ * This is the unified base function for all cavity simulation tests.
+ * It handles solver creation, time stepping, and result extraction.
+ *
+ * @param solver_type  Solver type string (e.g., NS_SOLVER_TYPE_PROJECTION)
+ * @param nx, ny       Grid dimensions
+ * @param reynolds     Reynolds number
+ * @param lid_velocity Lid velocity (typically 1.0)
+ * @param max_steps    Maximum number of time steps
+ * @param dt           Time step size
+ * @return Simulation result with all extracted data
+ */
+static inline cavity_sim_result_t cavity_run_with_solver(
+    const char* solver_type,
+    size_t nx, size_t ny,
+    double reynolds, double lid_velocity,
+    int max_steps, double dt)
+{
+    cavity_sim_result_t result = {0};
+    result.success = 0;
+    result.error_msg[0] = '\0';
+
+    /* Create context */
+    cavity_context_t* ctx = cavity_context_create(nx, ny);
+    if (!ctx) {
+        snprintf(result.error_msg, sizeof(result.error_msg), "Failed to create context");
+        return result;
+    }
+
+    double L = ctx->g->xmax - ctx->g->xmin;
+    double nu = lid_velocity * L / reynolds;
+
+    ns_solver_params_t params = {
+        .dt = dt,
+        .cfl = 0.5,
+        .gamma = 1.4,
+        .mu = nu,
+        .k = 0.0,
+        .max_iter = 1,
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.0,
+        .source_amplitude_v = 0.0,
+        .source_decay_rate = 0.0,
+        .pressure_coupling = 0.1
+    };
+
+    /* Create solver */
+    ns_solver_registry_t* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    ns_solver_t* solver = cfd_solver_create(registry, solver_type);
+    if (!solver) {
+        snprintf(result.error_msg, sizeof(result.error_msg),
+                 "Solver '%s' not available", solver_type);
+        cfd_registry_destroy(registry);
+        cavity_context_destroy(ctx);
+        return result;
+    }
+
+    solver_init(solver, ctx->g, &params);
+    ns_solver_stats_t stats = ns_solver_stats_default();
+
+    double prev_ke = compute_kinetic_energy(ctx->field);
+
+    for (int step = 0; step < max_steps; step++) {
+        apply_cavity_bc(ctx->field, lid_velocity);
+        solver_step(solver, ctx->field, ctx->g, &params, &stats);
+
+        if (!check_field_finite(ctx->field)) {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Simulation blew up at step %d", step);
+            solver_destroy(solver);
+            cfd_registry_destroy(registry);
+            cavity_context_destroy(ctx);
+            return result;
+        }
+
+        double ke = compute_kinetic_energy(ctx->field);
+        result.final_residual = fabs(ke - prev_ke) / (prev_ke + 1e-10);
+        prev_ke = ke;
+        result.steps_completed = step + 1;
+
+        if (step > 100 && result.final_residual < 1e-8) {
+            result.converged = 1;
+            break;
+        }
+    }
+
+    /* Extract results */
+    size_t center_i = nx / 2;
+    size_t center_j = ny / 2;
+    size_t center_idx = center_j * nx + center_i;
+
+    result.u_at_center = ctx->field->u[center_idx];
+    result.v_at_center = ctx->field->v[center_idx];
+    result.max_velocity = find_max_velocity(ctx->field);
+    result.kinetic_energy = compute_kinetic_energy(ctx->field);
+
+    /* Find u_min along vertical centerline */
+    result.u_min = 1e10;
+    for (size_t j = 0; j < ny; j++) {
+        double u_val = ctx->field->u[j * nx + center_i];
+        if (u_val < result.u_min) {
+            result.u_min = u_val;
+        }
+    }
+
+    result.success = 1;
+
+    solver_destroy(solver);
+    cfd_registry_destroy(registry);
+    cavity_context_destroy(ctx);
+
+    return result;
+}
+
+/**
+ * Run cavity simulation and return context for post-processing
+ *
+ * Like cavity_run_with_solver() but returns the context instead of destroying
+ * it, allowing the caller to extract additional data (e.g., full profiles for
+ * Ghia validation).
+ *
+ * IMPORTANT: Caller is responsible for calling cavity_context_destroy() on
+ * the returned context when done.
+ *
+ * @param solver_type  Solver type string (e.g., NS_SOLVER_TYPE_PROJECTION)
+ * @param nx, ny       Grid dimensions
+ * @param reynolds     Reynolds number
+ * @param lid_velocity Lid velocity (typically 1.0)
+ * @param max_steps    Maximum number of time steps
+ * @param dt           Time step size
+ * @param out_ctx      Output: pointer to store the context (NULL on failure)
+ * @return Simulation result with basic status info
+ */
+static inline cavity_sim_result_t cavity_run_with_solver_ctx(
+    const char* solver_type,
+    size_t nx, size_t ny,
+    double reynolds, double lid_velocity,
+    int max_steps, double dt,
+    cavity_context_t** out_ctx)
+{
+    cavity_sim_result_t result = {0};
+    result.success = 0;
+    result.error_msg[0] = '\0';
+    if (out_ctx) *out_ctx = NULL;
+
+    /* Create context */
+    cavity_context_t* ctx = cavity_context_create(nx, ny);
+    if (!ctx) {
+        snprintf(result.error_msg, sizeof(result.error_msg), "Failed to create context");
+        return result;
+    }
+
+    double L = ctx->g->xmax - ctx->g->xmin;
+    double nu = lid_velocity * L / reynolds;
+
+    ns_solver_params_t params = {
+        .dt = dt,
+        .cfl = 0.5,
+        .gamma = 1.4,
+        .mu = nu,
+        .k = 0.0,
+        .max_iter = 1,
+        .tolerance = 1e-6,
+        .source_amplitude_u = 0.0,
+        .source_amplitude_v = 0.0,
+        .source_decay_rate = 0.0,
+        .pressure_coupling = 0.1
+    };
+
+    /* Create solver */
+    ns_solver_registry_t* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    ns_solver_t* solver = cfd_solver_create(registry, solver_type);
+    if (!solver) {
+        snprintf(result.error_msg, sizeof(result.error_msg),
+                 "Solver '%s' not available", solver_type);
+        cfd_registry_destroy(registry);
+        cavity_context_destroy(ctx);
+        return result;
+    }
+
+    solver_init(solver, ctx->g, &params);
+    ns_solver_stats_t stats = ns_solver_stats_default();
+
+    double prev_ke = compute_kinetic_energy(ctx->field);
+
+    for (int step = 0; step < max_steps; step++) {
+        apply_cavity_bc(ctx->field, lid_velocity);
+        solver_step(solver, ctx->field, ctx->g, &params, &stats);
+
+        if (!check_field_finite(ctx->field)) {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Simulation blew up at step %d", step);
+            solver_destroy(solver);
+            cfd_registry_destroy(registry);
+            cavity_context_destroy(ctx);
+            return result;
+        }
+
+        double ke = compute_kinetic_energy(ctx->field);
+        result.final_residual = fabs(ke - prev_ke) / (prev_ke + 1e-10);
+        prev_ke = ke;
+        result.steps_completed = step + 1;
+
+        if (step > 100 && result.final_residual < 1e-8) {
+            result.converged = 1;
+            break;
+        }
+    }
+
+    /* Extract basic results */
+    size_t center_i = nx / 2;
+    size_t center_j = ny / 2;
+    size_t center_idx = center_j * nx + center_i;
+
+    result.u_at_center = ctx->field->u[center_idx];
+    result.v_at_center = ctx->field->v[center_idx];
+    result.max_velocity = find_max_velocity(ctx->field);
+    result.kinetic_energy = compute_kinetic_energy(ctx->field);
+
+    /* Find u_min along vertical centerline */
+    result.u_min = 1e10;
+    for (size_t j = 0; j < ny; j++) {
+        double u_val = ctx->field->u[j * nx + center_i];
+        if (u_val < result.u_min) {
+            result.u_min = u_val;
+        }
+    }
+
+    result.success = 1;
+
+    solver_destroy(solver);
+    cfd_registry_destroy(registry);
+
+    /* Return context to caller for additional post-processing */
+    if (out_ctx) {
+        *out_ctx = ctx;
+    } else {
+        cavity_context_destroy(ctx);
+    }
+
+    return result;
+}
+
+/**
+ * Run cavity simulation with default projection solver (legacy interface)
+ *
+ * This function maintains backward compatibility with tests that pass
+ * a pre-created context. It runs the simulation in-place, modifying
+ * the context's field.
+ *
+ * Note: This function is less efficient than cavity_run_with_solver()
+ * because it requires the caller to manage the context. Prefer using
+ * cavity_run_with_solver() for new code.
+ */
 static inline simulation_result_t run_cavity_simulation(
     cavity_context_t* ctx, double reynolds, double lid_velocity,
     int max_steps, double dt)

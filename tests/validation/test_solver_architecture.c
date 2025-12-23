@@ -35,96 +35,23 @@ void tearDown(void) {}
 
 /* ============================================================================
  * SOLVER RESULT STRUCTURE
- * ============================================================================ */
+ * ============================================================================
+ * Uses cavity_sim_result_t from lid_driven_cavity_common.h as the underlying
+ * type. The solver_result_t typedef provides backward compatibility.
+ */
 
-typedef struct {
-    double u_at_center;
-    double v_at_center;
-    double max_velocity;
-    int success;
-    char error_msg[256];
-} solver_result_t;
+typedef cavity_sim_result_t solver_result_t;
 
 /* ============================================================================
  * Run simulation with specific solver
- * ============================================================================ */
+ * ============================================================================
+ * Thin wrapper around cavity_run_with_solver() with fixed Re=100, lid_vel=1.0
+ */
 
 static solver_result_t run_solver(const char* solver_type,
                                    size_t nx, size_t ny,
                                    int max_steps, double dt) {
-    solver_result_t result = {0};
-    result.success = 0;
-    result.error_msg[0] = '\0';
-
-    /* Create context */
-    cavity_context_t* ctx = cavity_context_create(nx, ny);
-    if (!ctx) {
-        snprintf(result.error_msg, sizeof(result.error_msg), "Failed to create context");
-        return result;
-    }
-
-    double reynolds = 100.0;
-    double lid_vel = 1.0;
-    double L = ctx->g->xmax - ctx->g->xmin;
-    double nu = lid_vel * L / reynolds;
-
-    ns_solver_params_t params = {
-        .dt = dt,
-        .cfl = 0.5,
-        .gamma = 1.4,
-        .mu = nu,
-        .k = 0.0,
-        .max_iter = 1,
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.0,
-        .source_amplitude_v = 0.0,
-        .source_decay_rate = 0.0,
-        .pressure_coupling = 0.1
-    };
-
-    /* Create solver */
-    ns_solver_registry_t* registry = cfd_registry_create();
-    cfd_registry_register_defaults(registry);
-
-    ns_solver_t* solver = cfd_solver_create(registry, solver_type);
-    if (!solver) {
-        snprintf(result.error_msg, sizeof(result.error_msg), "Solver not available");
-        cfd_registry_destroy(registry);
-        cavity_context_destroy(ctx);
-        return result;
-    }
-
-    solver_init(solver, ctx->g, &params);
-    ns_solver_stats_t stats = ns_solver_stats_default();
-
-    for (int step = 0; step < max_steps; step++) {
-        apply_cavity_bc(ctx->field, lid_vel);
-        solver_step(solver, ctx->field, ctx->g, &params, &stats);
-
-        if (!check_field_finite(ctx->field)) {
-            snprintf(result.error_msg, sizeof(result.error_msg), "Blew up at step %d", step);
-            solver_destroy(solver);
-            cfd_registry_destroy(registry);
-            cavity_context_destroy(ctx);
-            return result;
-        }
-    }
-
-    /* Extract results */
-    size_t center_i = nx / 2;
-    size_t center_j = ny / 2;
-    size_t center_idx = center_j * nx + center_i;
-
-    result.u_at_center = ctx->field->u[center_idx];
-    result.v_at_center = ctx->field->v[center_idx];
-    result.max_velocity = find_max_velocity(ctx->field);
-    result.success = 1;
-
-    solver_destroy(solver);
-    cfd_registry_destroy(registry);
-    cavity_context_destroy(ctx);
-
-    return result;
+    return cavity_run_with_solver(solver_type, nx, ny, 100.0, 1.0, max_steps, dt);
 }
 
 /* ============================================================================

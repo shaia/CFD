@@ -66,7 +66,10 @@ static inline double ghia_compute_rms_error(const double* computed_coords,
 
 /* ============================================================================
  * RUN GHIA VALIDATION WITH SPECIFIC SOLVER
- * ============================================================================ */
+ * ============================================================================
+ * Uses cavity_run_with_solver_ctx() for simulation, then extracts centerline
+ * profiles for RMS error computation against Ghia reference data.
+ */
 
 static inline ghia_result_t run_ghia_validation(const char* solver_type,
                                                  size_t nx, size_t ny,
@@ -76,59 +79,23 @@ static inline ghia_result_t run_ghia_validation(const char* solver_type,
     result.success = 0;
     result.error_msg[0] = '\0';
 
-    /* Create context */
-    cavity_context_t* ctx = cavity_context_create(nx, ny);
-    if (!ctx) {
-        snprintf(result.error_msg, sizeof(result.error_msg), "Failed to create context");
+    /* Run simulation using shared base function */
+    cavity_context_t* ctx = NULL;
+    cavity_sim_result_t sim = cavity_run_with_solver_ctx(
+        solver_type, nx, ny, reynolds, lid_vel, max_steps, dt, &ctx);
+
+    if (!sim.success) {
+        strncpy(result.error_msg, sim.error_msg, sizeof(result.error_msg) - 1);
         return result;
     }
 
-    double L = ctx->g->xmax - ctx->g->xmin;
-    double nu = lid_vel * L / reynolds;
+    /* Copy basic results from simulation */
+    result.u_at_center = sim.u_at_center;
+    result.v_at_center = sim.v_at_center;
+    result.u_min = sim.u_min;
+    result.max_velocity = sim.max_velocity;
 
-    ns_solver_params_t params = {
-        .dt = dt,
-        .cfl = 0.5,
-        .gamma = 1.4,
-        .mu = nu,
-        .k = 0.0,
-        .max_iter = 1,
-        .tolerance = 1e-6,
-        .source_amplitude_u = 0.0,
-        .source_amplitude_v = 0.0,
-        .source_decay_rate = 0.0,
-        .pressure_coupling = 0.1
-    };
-
-    /* Create solver */
-    ns_solver_registry_t* registry = cfd_registry_create();
-    cfd_registry_register_defaults(registry);
-
-    ns_solver_t* solver = cfd_solver_create(registry, solver_type);
-    if (!solver) {
-        snprintf(result.error_msg, sizeof(result.error_msg), "Solver '%s' not available", solver_type);
-        cfd_registry_destroy(registry);
-        cavity_context_destroy(ctx);
-        return result;
-    }
-
-    solver_init(solver, ctx->g, &params);
-    ns_solver_stats_t stats = ns_solver_stats_default();
-
-    for (int step = 0; step < max_steps; step++) {
-        apply_cavity_bc(ctx->field, lid_vel);
-        solver_step(solver, ctx->field, ctx->g, &params, &stats);
-
-        if (!check_field_finite(ctx->field)) {
-            snprintf(result.error_msg, sizeof(result.error_msg), "Simulation blew up at step %d", step);
-            solver_destroy(solver);
-            cfd_registry_destroy(registry);
-            cavity_context_destroy(ctx);
-            return result;
-        }
-    }
-
-    /* Extract results */
+    /* Extract centerline profiles for RMS computation */
     double* y_coords = malloc(ny * sizeof(double));
     double* u_vals = malloc(ny * sizeof(double));
     double* x_coords = malloc(nx * sizeof(double));
@@ -136,12 +103,10 @@ static inline ghia_result_t run_ghia_validation(const char* solver_type,
 
     size_t center_i = nx / 2;
     size_t center_j = ny / 2;
-    result.u_min = 1e10;
 
     for (size_t j = 0; j < ny; j++) {
         y_coords[j] = ctx->g->y[j];
         u_vals[j] = ctx->field->u[j * nx + center_i];
-        if (u_vals[j] < result.u_min) result.u_min = u_vals[j];
     }
 
     for (size_t i = 0; i < nx; i++) {
@@ -149,11 +114,7 @@ static inline ghia_result_t run_ghia_validation(const char* solver_type,
         v_vals[i] = ctx->field->v[center_j * nx + i];
     }
 
-    size_t center_idx = center_j * nx + center_i;
-    result.u_at_center = ctx->field->u[center_idx];
-    result.v_at_center = ctx->field->v[center_idx];
-    result.max_velocity = find_max_velocity(ctx->field);
-
+    /* Compute RMS errors against Ghia reference data */
     result.rms_u_error = ghia_compute_rms_error(
         y_coords, u_vals, ny,
         GHIA_Y_COORDS, GHIA_U_RE100, GHIA_NUM_POINTS
@@ -169,8 +130,6 @@ static inline ghia_result_t run_ghia_validation(const char* solver_type,
     free(u_vals);
     free(x_coords);
     free(v_vals);
-    solver_destroy(solver);
-    cfd_registry_destroy(registry);
     cavity_context_destroy(ctx);
 
     return result;
