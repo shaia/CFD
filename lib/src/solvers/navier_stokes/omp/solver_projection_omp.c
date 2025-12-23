@@ -3,6 +3,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/poisson_solver.h"
 
 #include <math.h>
 #include <omp.h>
@@ -14,92 +15,8 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-// Poisson solver parameters
-#define POISSON_MAX_ITER  1000
-#define POISSON_TOLERANCE 1e-6
-#define POISSON_OMEGA     1.5
-
 // Physical limits
 #define MAX_VELOCITY 100.0
-
-static int solve_poisson_sor_omp(double* p, const double* rhs, size_t nx, size_t ny, double dx,
-                                 double dy, int max_iter, double tolerance) {
-    double dx2 = dx * dx;
-    double dy2 = dy * dy;
-    double factor = 2.0 * (1.0 / dx2 + 1.0 / dy2);
-
-    if (factor < 1e-10) {
-        return -1;
-    }
-
-    double inv_factor = 1.0 / factor;
-    int iter;
-    int converged = 0;
-
-    // Allocate temporary buffer to avoid race conditions
-    double* p_temp = (double*)cfd_calloc(nx * ny, sizeof(double));
-    if (!p_temp) {
-        return -1;
-    }
-
-    for (iter = 0; iter < max_iter; iter++) {
-        double max_residual = 0.0;
-
-        // Red-Black Gauss-Seidel with Double Buffering
-        int i, j;
-        for (int color = 0; color < 2; color++) {
-// Phase 1: Compute updates into temporary buffer
-#pragma omp parallel for reduction(max : max_residual) private(i) schedule(static)
-            for (j = 1; j < (int)ny - 1; j++) {
-                for (i = 1; i < (int)nx - 1; i++) {
-                    if ((i + j) % 2 != color) {
-                        continue;
-                    }
-
-                    size_t idx = (j * nx) + i;
-
-                    double p_xx = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / dx2;
-                    double p_yy = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / dy2;
-                    double residual = p_xx + p_yy - rhs[idx];
-
-                    if (fabs(residual) > max_residual) {
-                        max_residual = fabs(residual);
-                    }
-
-                    double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2 -
-                                    (p[idx + nx] + p[idx - nx]) / dy2) *
-                                   (-inv_factor);
-
-                    p_temp[idx] = p[idx] + (POISSON_OMEGA * (p_new - p[idx]));
-                }
-            }
-
-// Phase 2: Commit updates to main array
-#pragma omp parallel for private(i) schedule(static)
-            for (j = 1; j < (int)ny - 1; j++) {
-                for (i = 1; i < (int)nx - 1; i++) {
-                    if ((i + j) % 2 != color) {
-                        continue;
-                    }
-                    size_t idx = (j * nx) + i;
-                    p[idx] = p_temp[idx];
-                }
-            }
-        }
-
-        // Apply Neumann boundary conditions (using OMP backend)
-        bc_apply_scalar_omp(p, nx, ny, BC_TYPE_NEUMANN);
-
-        if (max_residual < tolerance) {
-            converged = 1;
-            break;
-        }
-    }
-
-    cfd_free(p_temp);
-
-    return converged ? iter : -1;
-}
 
 cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params) {
@@ -122,12 +39,14 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
     double* u_star = (double*)cfd_calloc(size, sizeof(double));
     double* v_star = (double*)cfd_calloc(size, sizeof(double));
     double* p_new = (double*)cfd_calloc(size, sizeof(double));
+    double* p_temp = (double*)cfd_calloc(size, sizeof(double));
     double* rhs = (double*)cfd_calloc(size, sizeof(double));
 
-    if (!u_star || !v_star || !p_new || !rhs) {
+    if (!u_star || !v_star || !p_new || !p_temp || !rhs) {
         cfd_free(u_star);
         cfd_free(v_star);
         cfd_free(p_new);
+        cfd_free(p_temp);
         cfd_free(rhs);
         return CFD_ERROR_NOMEM;
     }
@@ -211,8 +130,8 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             }
         }
 
-        int poisson_iters =
-            solve_poisson_sor_omp(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
+        int poisson_iters = poisson_solve(p_new, p_temp, rhs, nx, ny, dx, dy,
+                                          POISSON_SOLVER_REDBLACK_OMP);
 
         if (poisson_iters < 0) {
             // Poisson solver didn't converge - use simple pressure update as fallback
@@ -262,6 +181,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
                 cfd_free(u_star);
                 cfd_free(v_star);
                 cfd_free(p_new);
+                cfd_free(p_temp);
                 cfd_free(rhs);
                 return CFD_ERROR_DIVERGED;
             }
@@ -271,6 +191,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
     cfd_free(u_star);
     cfd_free(v_star);
     cfd_free(p_new);
+    cfd_free(p_temp);
     cfd_free(rhs);
     return CFD_SUCCESS;
 }
