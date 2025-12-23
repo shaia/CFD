@@ -153,21 +153,25 @@ poisson_solver_t* poisson_solver_create(
         backend = select_best_backend();
     }
 
-    /* Create appropriate solver */
+    /* Create appropriate solver - no silent fallbacks */
     switch (method) {
         case POISSON_METHOD_JACOBI:
             switch (backend) {
                 case POISSON_BACKEND_SIMD:
                     return create_jacobi_simd_solver();
                 case POISSON_BACKEND_SCALAR:
-                default:
                     return create_jacobi_scalar_solver();
+                default:
+                    return NULL;  /* Requested backend not available for Jacobi */
             }
 
         case POISSON_METHOD_SOR:
         case POISSON_METHOD_GAUSS_SEIDEL:
-            /* SOR/GS are inherently sequential */
-            return create_sor_scalar_solver();
+            /* SOR/GS are inherently sequential - only scalar backend */
+            if (backend == POISSON_BACKEND_SCALAR) {
+                return create_sor_scalar_solver();
+            }
+            return NULL;  /* SOR not available for SIMD/OMP/GPU */
 
         case POISSON_METHOD_REDBLACK_SOR:
             switch (backend) {
@@ -178,8 +182,9 @@ poisson_solver_t* poisson_solver_create(
                     return create_redblack_omp_solver();
 #endif
                 case POISSON_BACKEND_SCALAR:
-                default:
                     return create_redblack_scalar_solver();
+                default:
+                    return NULL;  /* Requested backend not available for Red-Black */
             }
 
         case POISSON_METHOD_CG:
@@ -187,8 +192,9 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SIMD:
                     return create_cg_simd_solver();
                 case POISSON_BACKEND_SCALAR:
-                default:
                     return create_cg_scalar_solver();
+                default:
+                    return NULL;  /* Requested backend not available for CG */
             }
 
         case POISSON_METHOD_BICGSTAB:
