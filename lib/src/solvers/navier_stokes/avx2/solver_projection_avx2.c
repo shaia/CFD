@@ -269,7 +269,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     // Use SIMD Poisson solver (Red-Black SOR with SIMD)
     // ctx->u_new is used as temp buffer for the Poisson solver
     int poisson_iters = poisson_solve(p_new, ctx->u_new, rhs, nx, ny, dx, dy,
-                                       DEFAULT_POISSON_SOLVER);
+                                       POISSON_SOLVER_REDBLACK_SIMD);
 
     if (poisson_iters < 0) {
         // Poisson solver didn't converge - use simple pressure update as fallback

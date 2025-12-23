@@ -454,6 +454,7 @@ static poisson_solver_t* g_cached_jacobi_simd = NULL;
 static poisson_solver_t* g_cached_sor = NULL;
 static poisson_solver_t* g_cached_redblack_simd = NULL;
 static poisson_solver_t* g_cached_redblack_omp = NULL;
+static poisson_solver_t* g_cached_redblack_scalar = NULL;
 static size_t g_cached_nx = 0;
 static size_t g_cached_ny = 0;
 
@@ -476,6 +477,10 @@ static void cleanup_cached_solvers(void) {
     if (g_cached_redblack_omp) {
         poisson_solver_destroy(g_cached_redblack_omp);
         g_cached_redblack_omp = NULL;
+    }
+    if (g_cached_redblack_scalar) {
+        poisson_solver_destroy(g_cached_redblack_scalar);
+        g_cached_redblack_scalar = NULL;
     }
     g_cached_nx = 0;
     g_cached_ny = 0;
@@ -512,6 +517,12 @@ int poisson_solve(
         case POISSON_SOLVER_SOR_SCALAR:
             solver_ptr = &g_cached_sor;
             method = POISSON_METHOD_SOR;
+            backend = POISSON_BACKEND_SCALAR;
+            break;
+
+        case POISSON_SOLVER_REDBLACK_SCALAR:
+            solver_ptr = &g_cached_redblack_scalar;
+            method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SCALAR;
             break;
 

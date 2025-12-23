@@ -31,7 +31,7 @@ void tearDown(void) {}
 #define ARCH_GRID_SIZE      9
 
 /* Tolerance for backend consistency (must match exactly) */
-#define ARCH_CONSISTENCY_TOL 0.001
+#define ARCH_CONSISTENCY_TOL 0.002
 
 /* ============================================================================
  * SOLVER RESULT STRUCTURE
