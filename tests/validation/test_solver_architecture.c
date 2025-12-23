@@ -172,6 +172,13 @@ void test_euler_cpu_omp_consistency(void) {
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
         ARCH_TEST_STEPS, ARCH_TEST_DT
     );
+
+    /* Skip test if OMP solver is not available */
+    if (!omp.success && strstr(omp.error_msg, "not available") != NULL) {
+        printf("      OpenMP solver not available, skipping\n");
+        TEST_IGNORE_MESSAGE("OpenMP solver not available (OpenMP not enabled)");
+    }
+
     TEST_ASSERT_TRUE_MESSAGE(omp.success, "OMP Euler must succeed");
 
     double diff = fabs(cpu.u_at_center - omp.u_at_center);
@@ -228,6 +235,13 @@ void test_projection_cpu_omp_consistency(void) {
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
         ARCH_TEST_STEPS, ARCH_TEST_DT
     );
+
+    /* Skip test if OMP solver is not available */
+    if (!omp.success && strstr(omp.error_msg, "not available") != NULL) {
+        printf("      OpenMP solver not available, skipping\n");
+        TEST_IGNORE_MESSAGE("OpenMP solver not available (OpenMP not enabled)");
+    }
+
     TEST_ASSERT_TRUE_MESSAGE(omp.success, "OMP Projection must succeed");
 
     double diff = fabs(cpu.u_at_center - omp.u_at_center);
@@ -273,44 +287,71 @@ void test_projection_gpu_available(void) {
 void test_all_solvers_instantiate(void) {
     printf("\n    Testing solver instantiation\n");
 
-    const char* solver_types[] = {
+    /* Required solvers (must always be available) */
+    const char* required_types[] = {
         NS_SOLVER_TYPE_EXPLICIT_EULER,
         NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
-        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
         NS_SOLVER_TYPE_PROJECTION,
         NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
-        NS_SOLVER_TYPE_PROJECTION_OMP,
     };
-    const char* names[] = {
+    const char* required_names[] = {
         "Explicit Euler CPU",
         "Explicit Euler AVX2",
-        "Explicit Euler OMP",
         "Projection CPU",
         "Projection AVX2",
+    };
+    const int num_required = 4;
+
+    /* Optional solvers (may not be available depending on build configuration) */
+    const char* optional_types[] = {
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
+        NS_SOLVER_TYPE_PROJECTION_OMP,
+    };
+    const char* optional_names[] = {
+        "Explicit Euler OMP",
         "Projection OMP",
     };
-    const int num_solvers = 6;
+    const int num_optional = 2;
 
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    int success_count = 0;
-    for (int i = 0; i < num_solvers; i++) {
-        ns_solver_t* solver = cfd_solver_create(registry, solver_types[i]);
+    int required_count = 0;
+    int optional_count = 0;
+
+    /* Check required solvers */
+    for (int i = 0; i < num_required; i++) {
+        ns_solver_t* solver = cfd_solver_create(registry, required_types[i]);
         if (solver) {
-            printf("      %s: OK\n", names[i]);
+            printf("      %s: OK\n", required_names[i]);
             solver_destroy(solver);
-            success_count++;
+            required_count++;
         } else {
-            printf("      %s: FAILED\n", names[i]);
+            printf("      %s: FAILED\n", required_names[i]);
+        }
+    }
+
+    /* Check optional solvers */
+    for (int i = 0; i < num_optional; i++) {
+        ns_solver_t* solver = cfd_solver_create(registry, optional_types[i]);
+        if (solver) {
+            printf("      %s: OK (optional)\n", optional_names[i]);
+            solver_destroy(solver);
+            optional_count++;
+        } else {
+            printf("      %s: SKIPPED (optional, OpenMP not enabled)\n", optional_names[i]);
         }
     }
 
     cfd_registry_destroy(registry);
 
-    printf("      %d/%d solvers instantiated\n", success_count, num_solvers);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(num_solvers, success_count,
-        "All non-optional solvers must be instantiable");
+    printf("      %d/%d required solvers instantiated\n", required_count, num_required);
+    if (optional_count > 0) {
+        printf("      %d/%d optional solvers instantiated\n", optional_count, num_optional);
+    }
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(num_required, required_count,
+        "All required solvers must be instantiable");
 }
 
 /* ============================================================================

@@ -35,13 +35,13 @@ static const solver_backend_t SOLVER_BACKENDS[] = {
     /* Explicit Euler variants */
     {NS_SOLVER_TYPE_EXPLICIT_EULER,           "CPU Scalar (Euler)",    0},
     {NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, "AVX2/SIMD (Euler)",     0},
-    {NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,       "OpenMP (Euler)",        0},
+    {NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,       "OpenMP (Euler)",        1},  /* Optional: requires OpenMP */
 
     /* Projection method variants */
     {NS_SOLVER_TYPE_PROJECTION,               "CPU Scalar (Proj)",     0},
     {NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,     "AVX2/SIMD (Proj)",      0},
-    {NS_SOLVER_TYPE_PROJECTION_OMP,           "OpenMP (Proj)",         0},
-    {NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,    "CUDA GPU (Proj)",       1},
+    {NS_SOLVER_TYPE_PROJECTION_OMP,           "OpenMP (Proj)",         1},  /* Optional: requires OpenMP */
+    {NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,    "CUDA GPU (Proj)",       1},  /* Optional: requires GPU */
 };
 
 #define NUM_BACKENDS (sizeof(SOLVER_BACKENDS) / sizeof(SOLVER_BACKENDS[0]))
@@ -253,9 +253,11 @@ void test_all_solvers_complete(void) {
 
     printf("\n    %d/%zu solvers succeeded\n", success_count, NUM_BACKENDS);
 
-    /* At least 6 required (non-optional) solvers must succeed */
-    TEST_ASSERT_TRUE_MESSAGE(success_count >= 6,
-        "At least 6 non-optional solvers must complete successfully");
+    /* At least 4 required (non-optional) solvers must succeed:
+     * - Euler CPU, Euler AVX2, Projection CPU, Projection AVX2
+     * OMP and GPU solvers are optional and may not be available */
+    TEST_ASSERT_TRUE_MESSAGE(success_count >= 4,
+        "At least 4 required solvers must complete successfully");
 }
 
 /* ============================================================================

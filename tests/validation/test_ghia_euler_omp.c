@@ -19,6 +19,11 @@ void test_euler_omp_ghia_re100(void) {
         FULL_STEPS, FINE_DT
     );
 
+    /* Skip test if OMP solver is not available (not compiled with OpenMP) */
+    if (!result.success && strstr(result.error_msg, "not available") != NULL) {
+        TEST_IGNORE_MESSAGE("OpenMP solver not available (OpenMP not enabled)");
+    }
+
     TEST_ASSERT_TRUE_MESSAGE(result.success, result.error_msg);
     print_ghia_result(&result, "Explicit Euler OMP");
 
@@ -38,6 +43,11 @@ void test_euler_omp_matches_cpu(void) {
         NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
         17, 17, 100.0, 1.0, 100, 0.005
     );
+
+    /* Skip test if OMP solver is not available */
+    if (!omp.success && strstr(omp.error_msg, "not available") != NULL) {
+        TEST_IGNORE_MESSAGE("OpenMP solver not available (OpenMP not enabled)");
+    }
 
     TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU must succeed");
     TEST_ASSERT_TRUE_MESSAGE(omp.success, "OMP must succeed");
