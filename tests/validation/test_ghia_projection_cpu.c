@@ -70,13 +70,17 @@ void test_projection_cpu_grid_convergence(void) {
 
     for (int i = 0; i < 3; i++) {
         size_t n = sizes[i];
-        double dt = FINE_DT * (33.0 / n);  /* Scale dt with grid */
+        /* Scale dt inversely with grid size for CFL stability.
+         * Scale iterations with grid size - finer grids need more
+         * iterations for the Poisson solver to converge. */
+        double dt = FINE_DT * (33.0 / n);
+        int steps = (int)(MEDIUM_STEPS * n / 17.0);
 
         ghia_result_t result = run_ghia_validation(
             NS_SOLVER_TYPE_PROJECTION,
             n, n,
             100.0, 1.0,
-            MEDIUM_STEPS, dt
+            steps, dt
         );
 
         TEST_ASSERT_TRUE_MESSAGE(result.success, result.error_msg);

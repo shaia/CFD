@@ -255,10 +255,11 @@ void test_grid_convergence(void) {
         cavity_context_t* ctx = cavity_context_create(n, n);
         TEST_ASSERT_NOT_NULL(ctx);
 
-        /* Scale dt with grid size for stability, and scale steps inversely
-         * so all grids simulate the same physical time */
+        /* Scale dt inversely with grid size for CFL stability.
+         * Scale iterations with grid size - finer grids need more
+         * iterations for the Poisson solver to converge. */
         double dt = FINE_DT * (33.0 / n);
-        int steps = (int)(MEDIUM_STEPS * (n / 33.0));
+        int steps = (int)(MEDIUM_STEPS * n / 17.0);  /* Scale up from smallest grid */
         run_cavity_simulation(ctx, 100.0, 1.0, steps, dt);
 
         centerline_data_t data = extract_centerlines(ctx);
