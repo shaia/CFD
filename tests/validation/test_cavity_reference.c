@@ -19,9 +19,9 @@
  *
  * CURRENT STATUS:
  * ===============
- * The solver currently produces RMS ~0.38 which is ABOVE acceptable tolerance.
- * These tests use GHIA_TOLERANCE_CURRENT to pass CI while tracking regression,
- * but print warnings about the scientific validity gap.
+ * The solver currently produces RMS ~0.12 with POISSON_SOLVER_REDBLACK_SCALAR.
+ * These tests use GHIA_TOLERANCE_CURRENT (0.12) to pass CI while tracking
+ * regression, but print warnings when above the scientific target (0.10).
  */
 
 #include "cavity_reference_data.h"

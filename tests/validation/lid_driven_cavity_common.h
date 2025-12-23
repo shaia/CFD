@@ -39,10 +39,10 @@
 #define FINE_DT         0.0005
 #else
 /* Fast mode for CI - uses fewer iterations
- * At Re=100 with 33x33 grid:
- *   - 5000 steps achieves RMS ~0.03 (good for CI)
- *   - 10000 steps achieves RMS ~0.01 (publication quality)
- * Using dt=0.0005 for stability */
+ * At Re=100 with 33x33 grid using POISSON_SOLVER_REDBLACK_SCALAR:
+ *   - 5000 steps achieves RMS ~0.12
+ * Using SIMD backends achieves RMS < 0.05.
+ * Using dt=0.0005 for stability. */
 #define FAST_STEPS      2000
 #define MEDIUM_STEPS    3000
 #define FULL_STEPS      5000
