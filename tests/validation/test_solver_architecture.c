@@ -146,6 +146,13 @@ void test_euler_cpu_avx2_consistency(void) {
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
         ARCH_TEST_STEPS, ARCH_TEST_DT
     );
+
+    /* Skip test if AVX2 solver is not available */
+    if (!avx2.success && strstr(avx2.error_msg, "not available") != NULL) {
+        printf("      AVX2 solver not available, skipping\n");
+        TEST_IGNORE_MESSAGE("AVX2 solver not available (AVX2 not enabled)");
+    }
+
     TEST_ASSERT_TRUE_MESSAGE(avx2.success, "AVX2 Euler must succeed");
 
     double diff = fabs(cpu.u_at_center - avx2.u_at_center);
@@ -209,6 +216,13 @@ void test_projection_cpu_avx2_consistency(void) {
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
         ARCH_TEST_STEPS, ARCH_TEST_DT
     );
+
+    /* Skip test if AVX2 solver is not available */
+    if (!avx2.success && strstr(avx2.error_msg, "not available") != NULL) {
+        printf("      AVX2 solver not available, skipping\n");
+        TEST_IGNORE_MESSAGE("AVX2 solver not available (AVX2 not enabled)");
+    }
+
     TEST_ASSERT_TRUE_MESSAGE(avx2.success, "AVX2 Projection must succeed");
 
     double diff = fabs(cpu.u_at_center - avx2.u_at_center);

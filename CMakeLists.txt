@@ -302,7 +302,9 @@ if(BUILD_TESTS)
     add_test(NAME GhiaProjectionGpuTest COMMAND test_ghia_projection_gpu)
 
     # Cross-architecture consistency tests
+    # This test requires AVX2+OpenMP and is run only in the dedicated CI job
     add_test(NAME SolverArchitectureTest COMMAND test_solver_architecture)
+    set_tests_properties(SolverArchitectureTest PROPERTIES LABELS "cross-arch")
 endif()
 
 # Documentation target (Doxygen)
