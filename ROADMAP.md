@@ -572,6 +572,39 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 - Grid convergence: error decreases monotonically with refinement
 - Tests run in parallel to complete in < 60 seconds
 
+#### 6.2.1.1 Grid Convergence Validation (P1)
+
+**Issue:** Current grid convergence tests use relaxed tolerance (`prev_error + 0.08`) because RMS error does not strictly decrease with grid refinement when using the scalar Red-Black SOR Poisson solver.
+
+**Observed behavior:**
+
+- 17×17: RMS ~0.056
+- 25×25: RMS ~0.037
+- 33×33: RMS ~0.094 (worse than 25×25!)
+
+**Root cause:** The scalar Poisson solver has accuracy limitations at larger grid sizes that prevent proper convergence.
+
+**TODO - Strict Grid Convergence Validation:**
+
+1. **Fix Poisson solver convergence at larger grids:**
+   - [ ] Investigate why 33×33 produces worse results than 25×25
+   - [ ] May need more Poisson iterations for larger grids
+   - [ ] Consider using SIMD Red-Black SOR or multigrid for better accuracy
+
+2. **Validate RMS monotonically decreases:**
+   - [ ] Remove relaxed tolerance (`+ 0.08`) from grid convergence tests
+   - [ ] Ensure RMS(33×33) < RMS(25×25) < RMS(17×17)
+   - [ ] Test larger grids: 65×65, 129×129
+
+3. **Add strict grid convergence test:**
+   - [ ] Test must FAIL if RMS increases with refinement
+   - [ ] No tolerance workarounds allowed
+
+**Acceptance Criteria:**
+
+- RMS error strictly decreases with each grid refinement level
+- Convergence order approaches O(h²) asymptotically
+
 #### 6.2.2 Taylor-Green Vortex Validation (P0)
 
 **Analytical solution with known decay rate - ideal for full NS validation:**

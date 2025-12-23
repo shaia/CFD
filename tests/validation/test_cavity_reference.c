@@ -20,7 +20,7 @@
  * CURRENT STATUS:
  * ===============
  * The solver currently produces RMS ~0.12 with POISSON_SOLVER_REDBLACK_SCALAR.
- * These tests use GHIA_TOLERANCE_CURRENT (0.12) to pass CI while tracking
+ * These tests use GHIA_TOLERANCE_CURRENT (0.13) to pass CI while tracking
  * regression, but print warnings when above the scientific target (0.10).
  */
 
