@@ -510,11 +510,13 @@ int poisson_solve(
             break;
 
         case POISSON_SOLVER_SOR_SCALAR:
-        default:
             solver_ptr = &g_cached_sor;
             method = POISSON_METHOD_SOR;
             backend = POISSON_BACKEND_SCALAR;
             break;
+
+        default:
+            return -1;  /* Unknown solver type */
     }
 
     /* Recreate solver if grid size changed */
