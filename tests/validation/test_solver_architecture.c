@@ -271,13 +271,14 @@ void test_projection_gpu_available(void) {
     if (solver) {
         printf("      GPU backend: AVAILABLE\n");
         solver_destroy(solver);
-        TEST_PASS();
     } else {
         printf("      GPU backend: NOT AVAILABLE (skipped)\n");
-        TEST_PASS_MESSAGE("GPU not required, skipping");
     }
 
     cfd_registry_destroy(registry);
+
+    /* GPU is optional, so we always pass this test */
+    TEST_PASS_MESSAGE("GPU not required, skipping");
 }
 
 /* ============================================================================

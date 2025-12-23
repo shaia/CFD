@@ -758,7 +758,7 @@ ctest -R validation --timeout 3600
 
 - [x] Conjugate Gradient (CG) Krylov solver
 - [~] Lid-driven cavity validation (tests implemented, solver needs tuning for RMS < 0.10)
-- [ ] Cross-architecture solver validation (CPU, AVX2, OpenMP, CUDA)
+- [x] Cross-architecture solver validation (CPU, AVX2, OpenMP, CUDA)
 - [ ] Basic documentation
 
 ### v0.2.0 - 3D Support
