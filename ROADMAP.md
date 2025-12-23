@@ -487,11 +487,39 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 - [ ] Convergence rate verification for all Poisson variants (SOR, Jacobi, Red-Black)
 - [ ] Residual convergence tracking
 
+#### 6.1.5 Laplacian Operator Validation
+
+**Test the discrete Laplacian against manufactured solutions:**
+
+- [ ] Manufactured solution: p = sin(πx)sin(πy) → ∇²p = -2π²p
+- [ ] Verify 2nd-order accuracy O(dx²) with grid refinement
+- [ ] Compare CPU, AVX2, and CG implementations
+
+**Files:** `lib/src/solvers/linear/cpu/linear_solver_cg.c` - `apply_laplacian()`
+
+#### 6.1.6 Divergence-Free Constraint Validation
+
+**Verify projection method enforces incompressibility:**
+
+- [ ] Measure max|∇·u| after projection step (should be < tolerance)
+- [ ] Test with various initial velocity fields
+- [ ] Verify all projection backends (CPU, AVX2, OMP, GPU)
+
+#### 6.1.7 Linear Solver Convergence Validation
+
+**Verify convergence rates match theory:**
+
+- [ ] Jacobi: spectral radius ρ < 1
+- [ ] SOR: optimal ω ≈ 2/(1 + sin(πh)) for Poisson
+- [ ] Red-Black SOR: same convergence as SOR, parallelizable
+- [ ] CG: convergence in ≤ n iterations for n×n system
+
 **Files to create:**
 
 - `tests/math/test_finite_differences.c`
 - `tests/math/test_convergence_order.c`
 - `tests/math/test_mms.c`
+- `tests/math/test_linear_solver_convergence.c`
 - `tests/math/manufactured_solutions.h`
 
 ### 6.2 Benchmark Validation (P0 - Critical)
@@ -544,17 +572,48 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 - Grid convergence: error decreases monotonically with refinement
 - Tests run in parallel to complete in < 60 seconds
 
-#### 6.2.2 Other Benchmarks
+#### 6.2.2 Taylor-Green Vortex Validation (P0)
 
-- [ ] Channel flow (Poiseuille) - compare to analytical parabolic profile
-- [ ] Backward-facing step - compare to Armaly et al. (1983)
-- [ ] Flow over cylinder - compare to Williamson (1996)
-- [ ] Taylor-Green vortex decay - compare to analytical decay rate
+**Analytical solution with known decay rate - ideal for full NS validation:**
+
+```c
+u(x,y,t) = cos(x) * sin(y) * exp(-2νt)
+v(x,y,t) = -sin(x) * cos(y) * exp(-2νt)
+p(x,y,t) = -0.25 * (cos(2x) + cos(2y)) * exp(-4νt)
+```
+
+**Tests to implement:**
+- [ ] Verify velocity decay rate matches exp(-2νt)
+- [ ] Verify pressure decay rate matches exp(-4νt)
+- [ ] Test kinetic energy decay: KE(t) = KE₀ * exp(-4νt)
+- [ ] Verify vorticity conservation
+- [ ] Compare all solver backends (CPU, AVX2, OMP, GPU)
 
 **Files to create:**
+- `tests/validation/test_taylor_green_vortex.c`
+- `tests/validation/taylor_green_reference.h`
 
+#### 6.2.3 Poiseuille Flow Validation (P1)
+
+**Analytical parabolic profile for channel flow:**
+
+```c
+u(y) = 4 * U_max * y * (H - y) / H²
+```
+
+**Tests to implement:**
+- [ ] Steady-state velocity profile vs analytical
+- [ ] Mass conservation verification
+- [ ] Pressure gradient accuracy
+- [ ] Inlet BC accuracy (parabolic profile)
+
+**Files to create:**
 - `tests/validation/test_poiseuille_flow.c`
-- `tests/validation/test_backward_step.c`
+
+#### 6.2.4 Other Benchmarks (P2)
+
+- [ ] Backward-facing step - compare to Armaly et al. (1983)
+- [ ] Flow over cylinder - compare to Williamson (1996)
 
 ### 6.3 Convergence Studies (P1)
 
