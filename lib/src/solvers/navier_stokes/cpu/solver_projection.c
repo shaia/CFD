@@ -36,6 +36,38 @@
 #define MAX_PRESSURE 1000.0
 
 /**
+ * Copy boundary values between velocity arrays
+ *
+ * Used to preserve caller-set boundary conditions (e.g., lid velocity for
+ * cavity flow) during the projection method's predictor and corrector steps.
+ *
+ * @param dst_u  Destination u-velocity array
+ * @param dst_v  Destination v-velocity array
+ * @param src_u  Source u-velocity array
+ * @param src_v  Source v-velocity array
+ * @param nx     Grid width
+ * @param ny     Grid height
+ */
+static void copy_boundary_velocities(double* dst_u, double* dst_v,
+                                     const double* src_u, const double* src_v,
+                                     size_t nx, size_t ny) {
+    // Bottom and top boundaries (j = 0 and j = ny-1)
+    for (size_t i = 0; i < nx; i++) {
+        dst_u[i] = src_u[i];
+        dst_v[i] = src_v[i];
+        dst_u[(ny - 1) * nx + i] = src_u[(ny - 1) * nx + i];
+        dst_v[(ny - 1) * nx + i] = src_v[(ny - 1) * nx + i];
+    }
+    // Left and right boundaries (i = 0 and i = nx-1)
+    for (size_t j = 1; j < ny - 1; j++) {
+        dst_u[j * nx] = src_u[j * nx];
+        dst_v[j * nx] = src_v[j * nx];
+        dst_u[j * nx + nx - 1] = src_u[j * nx + nx - 1];
+        dst_v[j * nx + nx - 1] = src_v[j * nx + nx - 1];
+    }
+}
+
+/**
  * Projection Method Solver
  */
 cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
@@ -132,20 +164,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
         // Copy boundary values from field to u_star/v_star
         // This preserves whatever BCs the caller set (Dirichlet for cavity, etc.)
-        // Bottom and top boundaries (j = 0 and j = ny-1)
-        for (size_t i = 0; i < nx; i++) {
-            u_star[i] = field->u[i];                           // bottom
-            v_star[i] = field->v[i];
-            u_star[(ny - 1) * nx + i] = field->u[(ny - 1) * nx + i];  // top
-            v_star[(ny - 1) * nx + i] = field->v[(ny - 1) * nx + i];
-        }
-        // Left and right boundaries (i = 0 and i = nx-1)
-        for (size_t j = 0; j < ny; j++) {
-            u_star[j * nx] = field->u[j * nx];                 // left
-            v_star[j * nx] = field->v[j * nx];
-            u_star[j * nx + nx - 1] = field->u[j * nx + nx - 1];  // right
-            v_star[j * nx + nx - 1] = field->v[j * nx + nx - 1];
-        }
+        copy_boundary_velocities(u_star, v_star, field->u, field->v, nx, ny);
 
         // ============================================================
         // STEP 2: Solve Poisson equation for pressure
@@ -207,18 +226,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
         // Copy boundary velocity values from u_star (which has caller's BCs)
         // to field to ensure boundary conditions are preserved
-        for (size_t i = 0; i < nx; i++) {
-            field->u[i] = u_star[i];
-            field->v[i] = v_star[i];
-            field->u[(ny - 1) * nx + i] = u_star[(ny - 1) * nx + i];
-            field->v[(ny - 1) * nx + i] = v_star[(ny - 1) * nx + i];
-        }
-        for (size_t j = 1; j < ny - 1; j++) {
-            field->u[j * nx] = u_star[j * nx];
-            field->v[j * nx] = v_star[j * nx];
-            field->u[j * nx + nx - 1] = u_star[j * nx + nx - 1];
-            field->v[j * nx + nx - 1] = v_star[j * nx + nx - 1];
-        }
+        copy_boundary_velocities(field->u, field->v, u_star, v_star, nx, ny);
 
         // Check for NaN
         for (size_t k = 0; k < size; k++) {
