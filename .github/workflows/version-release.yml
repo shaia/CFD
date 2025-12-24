@@ -70,9 +70,59 @@ jobs:
       version: ${{ needs.check-version.outputs.version }}
       retention_days: 90
 
+  # Full physics validation - runs all Ghia validation tests
+  # These are excluded from sanitizer builds due to long runtime
+  physics-validation:
+    name: Physics Validation (Ghia Tests)
+    needs: check-version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Configure
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --parallel $(nproc)
+
+      - name: Run validation tests
+        run: |
+          cd build
+          echo "Running Ghia validation tests..."
+          # Run ONLY validation-labeled tests
+          ctest --output-on-failure -L "validation" -V
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## Physics Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Ran Ghia et al. (1982) validation tests:" >> $GITHUB_STEP_SUMMARY
+          echo "- Lid-driven cavity at Re=100" >> $GITHUB_STEP_SUMMARY
+          echo "- Grid convergence studies (17x17, 25x25, 33x33)" >> $GITHUB_STEP_SUMMARY
+          echo "- RMS error vs published reference data" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Target: RMS < 0.10 (industry standard)" >> $GITHUB_STEP_SUMMARY
+
   create-release:
     name: Create GitHub Release
-    needs: [check-version, build]
+    needs: [check-version, build, physics-validation]
     runs-on: ubuntu-latest
 
     steps:

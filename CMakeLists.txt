@@ -293,6 +293,7 @@ if(BUILD_TESTS)
     add_test(NAME CavityReferenceTest COMMAND test_cavity_reference)
 
     # Ghia validation tests - per architecture
+    # These run long simulations (3000-5000 steps) to validate physics accuracy
     add_test(NAME GhiaEulerCpuTest COMMAND test_ghia_euler_cpu)
     add_test(NAME GhiaEulerAvx2Test COMMAND test_ghia_euler_avx2)
     add_test(NAME GhiaEulerOmpTest COMMAND test_ghia_euler_omp)
@@ -300,6 +301,21 @@ if(BUILD_TESTS)
     add_test(NAME GhiaProjectionAvx2Test COMMAND test_ghia_projection_avx2)
     add_test(NAME GhiaProjectionOmpTest COMMAND test_ghia_projection_omp)
     add_test(NAME GhiaProjectionGpuTest COMMAND test_ghia_projection_gpu)
+
+    # Label long-running validation tests to exclude from sanitizer job
+    # These tests validate physics accuracy, not memory safety
+    set_tests_properties(
+        CavityValidationTest
+        CavityReferenceTest
+        GhiaEulerCpuTest
+        GhiaEulerAvx2Test
+        GhiaEulerOmpTest
+        GhiaProjectionCpuTest
+        GhiaProjectionAvx2Test
+        GhiaProjectionOmpTest
+        GhiaProjectionGpuTest
+        PROPERTIES LABELS "validation"
+    )
 
     # Cross-architecture consistency tests
     # This test requires AVX2+OpenMP and is run only in the dedicated CI job

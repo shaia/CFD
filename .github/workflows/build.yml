@@ -797,8 +797,11 @@ jobs:
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: |
           cd build
-          # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
-          ctest --output-on-failure -LE "cross-arch"
+          # Exclude cross-arch and validation tests
+          # Validation tests run long simulations (3000-5000 steps) which are
+          # very slow under sanitizers. They validate physics accuracy, not
+          # memory safety. Full validation runs in the release workflow.
+          ctest --output-on-failure -LE "cross-arch|validation"
 
       - name: Generate summary
         if: always()
