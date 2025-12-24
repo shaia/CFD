@@ -5,6 +5,8 @@
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
 
+#include "../boundary_copy_utils.h"
+
 #include <math.h>
 #include <omp.h>
 #include <stdio.h>
@@ -102,20 +104,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 
         // Copy boundary values from field to u_star/v_star
         // This preserves whatever BCs the caller set (Dirichlet for cavity, etc.)
-        // Bottom and top boundaries (j = 0 and j = ny-1)
-        for (size_t i = 0; i < nx; i++) {
-            u_star[i] = field->u[i];
-            v_star[i] = field->v[i];
-            u_star[(ny - 1) * nx + i] = field->u[(ny - 1) * nx + i];
-            v_star[(ny - 1) * nx + i] = field->v[(ny - 1) * nx + i];
-        }
-        // Left and right boundaries (i = 0 and i = nx-1)
-        for (size_t jb = 0; jb < ny; jb++) {
-            u_star[jb * nx] = field->u[jb * nx];
-            v_star[jb * nx] = field->v[jb * nx];
-            u_star[jb * nx + nx - 1] = field->u[jb * nx + nx - 1];
-            v_star[jb * nx + nx - 1] = field->v[jb * nx + nx - 1];
-        }
+        copy_boundary_velocities(u_star, v_star, field->u, field->v, nx, ny);
 
         // STEP 2: Pressure
         double rho = field->rho[0] < 1e-10 ? 1.0 : field->rho[0];
@@ -163,18 +152,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 
         // Copy boundary velocity values from u_star (which has caller's BCs)
         // to field to ensure boundary conditions are preserved
-        for (size_t i = 0; i < nx; i++) {
-            field->u[i] = u_star[i];
-            field->v[i] = v_star[i];
-            field->u[(ny - 1) * nx + i] = u_star[(ny - 1) * nx + i];
-            field->v[(ny - 1) * nx + i] = v_star[(ny - 1) * nx + i];
-        }
-        for (size_t jb = 1; jb < ny - 1; jb++) {
-            field->u[jb * nx] = u_star[jb * nx];
-            field->v[jb * nx] = v_star[jb * nx];
-            field->u[jb * nx + nx - 1] = u_star[jb * nx + nx - 1];
-            field->v[jb * nx + nx - 1] = v_star[jb * nx + nx - 1];
-        }
+        copy_boundary_velocities(field->u, field->v, u_star, v_star, nx, ny);
 
         // Check for NaN
         for (size_t k = 0; k < size; k++) {

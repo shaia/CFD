@@ -16,6 +16,8 @@
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
 
+#include "../boundary_copy_utils.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -224,20 +226,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
 
     // Copy boundary values from field to u_star/v_star
     // This preserves whatever BCs the caller set (Dirichlet for cavity, etc.)
-    // Bottom and top boundaries (j = 0 and j = ny-1)
-    for (size_t i = 0; i < nx; i++) {
-        u_star[i] = field->u[i];
-        v_star[i] = field->v[i];
-        u_star[(ny - 1) * nx + i] = field->u[(ny - 1) * nx + i];
-        v_star[(ny - 1) * nx + i] = field->v[(ny - 1) * nx + i];
-    }
-    // Left and right boundaries (i = 0 and i = nx-1)
-    for (size_t j = 0; j < ny; j++) {
-        u_star[j * nx] = field->u[j * nx];
-        v_star[j * nx] = field->v[j * nx];
-        u_star[j * nx + nx - 1] = field->u[j * nx + nx - 1];
-        v_star[j * nx + nx - 1] = field->v[j * nx + nx - 1];
-    }
+    copy_boundary_velocities(u_star, v_star, field->u, field->v, nx, ny);
 
     // ============================================================
     // STEP 2: Solve Poisson equation for pressure
@@ -357,18 +346,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
 
     // Copy boundary velocity values from u_star (which has caller's BCs)
     // to field to ensure boundary conditions are preserved
-    for (size_t i = 0; i < nx; i++) {
-        field->u[i] = u_star[i];
-        field->v[i] = v_star[i];
-        field->u[(ny - 1) * nx + i] = u_star[(ny - 1) * nx + i];
-        field->v[(ny - 1) * nx + i] = v_star[(ny - 1) * nx + i];
-    }
-    for (size_t j = 1; j < ny - 1; j++) {
-        field->u[j * nx] = u_star[j * nx];
-        field->v[j * nx] = v_star[j * nx];
-        field->u[j * nx + nx - 1] = u_star[j * nx + nx - 1];
-        field->v[j * nx + nx - 1] = v_star[j * nx + nx - 1];
-    }
+    copy_boundary_velocities(field->u, field->v, u_star, v_star, nx, ny);
 
     // Check for NaN
     for (size_t k = 0; k < size; k++) {
