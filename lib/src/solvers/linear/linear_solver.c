@@ -527,7 +527,8 @@ int poisson_solve(
             break;
 
         default:
-            return -1;  /* Unknown solver type */
+            fprintf(stderr, "poisson_solve: Unknown solver type %d\n", solver_type);
+            return -1;
     }
 
     /* Recreate solver if grid size changed */
