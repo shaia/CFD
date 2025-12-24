@@ -25,25 +25,11 @@
  */
 
 #include "cavity_reference_data.h"
+#include "cavity_validation_utils.h"
 #include "lid_driven_cavity_common.h"
 
 void setUp(void) {}
 void tearDown(void) {}
-
-/* ============================================================================
- * HELPER: Interpolate value at specific coordinate
- * ============================================================================ */
-
-static double interpolate_at(const double* coords, const double* vals,
-                             size_t n, double target) {
-    for (size_t i = 0; i < n - 1; i++) {
-        if (target >= coords[i] && target <= coords[i + 1]) {
-            double t = (target - coords[i]) / (coords[i + 1] - coords[i]);
-            return vals[i] + t * (vals[i + 1] - vals[i]);
-        }
-    }
-    return vals[n - 1];
-}
 
 /* ============================================================================
  * HELPER: Extract centerline profiles from field
@@ -118,8 +104,8 @@ static double compute_ghia_rms_error(const double* computed_coords,
     double sum_sq_error = 0.0;
 
     for (size_t i = 0; i < GHIA_NUM_POINTS; i++) {
-        double computed = interpolate_at(computed_coords, computed_vals,
-                                         computed_n, ghia_coords[i]);
+        double computed = ghia_interpolate_at(computed_coords, computed_vals,
+                                               computed_n, ghia_coords[i]);
         double error = computed - ghia_vals[i];
         sum_sq_error += error * error;
     }
