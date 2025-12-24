@@ -295,7 +295,7 @@ void test_all_solvers_instantiate(void) {
             solver_destroy(solver);
             optional_count++;
         } else {
-            printf("      %s: SKIPPED (optional, OpenMP not enabled)\n", optional_names[i]);
+            printf("      %s: SKIPPED (optional, not available)\n", optional_names[i]);
         }
     }
 
