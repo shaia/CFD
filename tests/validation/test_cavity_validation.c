@@ -77,7 +77,7 @@ void test_u_centerline_re100(void) {
 
     double rms_error = compute_profile_rms_error(
         y_vals, u_vals, ctx->ny,
-        ghia_y_coords, ghia_u_re100, GHIA_NUM_POINTS
+        GHIA_Y_COORDS, GHIA_U_RE100, GHIA_NUM_POINTS
     );
 
     printf("\n    u-centerline RMS error vs Ghia: %.4f\n", rms_error);
@@ -116,7 +116,7 @@ void test_v_centerline_re100(void) {
 
     double rms_error = compute_profile_rms_error(
         x_vals, v_vals, ctx->nx,
-        ghia_x_coords, ghia_v_re100, GHIA_NUM_POINTS
+        GHIA_X_COORDS, GHIA_V_RE100, GHIA_NUM_POINTS
     );
 
     printf("\n    v-centerline RMS error vs Ghia: %.4f\n", rms_error);
