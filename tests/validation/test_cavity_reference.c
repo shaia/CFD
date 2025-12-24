@@ -48,7 +48,7 @@ typedef struct {
 } centerline_data_t;
 
 static centerline_data_t extract_centerlines(const cavity_context_t* ctx) {
-    centerline_data_t data;
+    centerline_data_t data = {0};
     size_t nx = ctx->nx;
     size_t ny = ctx->ny;
 
@@ -56,6 +56,19 @@ static centerline_data_t extract_centerlines(const cavity_context_t* ctx) {
     data.u_values = malloc(ny * sizeof(double));
     data.x_coords = malloc(nx * sizeof(double));
     data.v_values = malloc(nx * sizeof(double));
+
+    if (!data.y_coords || !data.u_values || !data.x_coords || !data.v_values) {
+        free(data.y_coords);
+        free(data.u_values);
+        free(data.x_coords);
+        free(data.v_values);
+        data.y_coords = NULL;
+        data.u_values = NULL;
+        data.x_coords = NULL;
+        data.v_values = NULL;
+        return data;
+    }
+
     data.ny = ny;
     data.nx = nx;
 
@@ -124,6 +137,7 @@ void test_u_centerline_vs_ghia_re100(void) {
     run_cavity_simulation(ctx, 100.0, 1.0, FULL_STEPS, FINE_DT);
 
     centerline_data_t data = extract_centerlines(ctx);
+    TEST_ASSERT_NOT_NULL_MESSAGE(data.y_coords, "Failed to allocate centerline data");
 
     double rms_error = compute_ghia_rms_error(
         data.y_coords, data.u_values, data.ny,
@@ -163,6 +177,7 @@ void test_v_centerline_vs_ghia_re100(void) {
     run_cavity_simulation(ctx, 100.0, 1.0, FULL_STEPS, FINE_DT);
 
     centerline_data_t data = extract_centerlines(ctx);
+    TEST_ASSERT_NOT_NULL_MESSAGE(data.y_coords, "Failed to allocate centerline data");
 
     double rms_error = compute_ghia_rms_error(
         data.x_coords, data.v_values, data.nx,
@@ -198,6 +213,8 @@ void test_regression_re100_33x33(void) {
     run_cavity_simulation(ctx, 100.0, 1.0, FULL_STEPS, FINE_DT);
 
     centerline_data_t data = extract_centerlines(ctx);
+    TEST_ASSERT_NOT_NULL_MESSAGE(data.y_coords, "Failed to allocate centerline data");
+
     double ke = compute_kinetic_energy(ctx->field);
     double max_vel = find_max_velocity(ctx->field);
 
@@ -249,6 +266,7 @@ void test_grid_convergence(void) {
         run_cavity_simulation(ctx, 100.0, 1.0, steps, dt);
 
         centerline_data_t data = extract_centerlines(ctx);
+        TEST_ASSERT_NOT_NULL_MESSAGE(data.y_coords, "Failed to allocate centerline data");
 
         errors[i] = compute_ghia_rms_error(
             data.y_coords, data.u_values, data.ny,
@@ -302,6 +320,8 @@ void test_reynolds_variation(void) {
             "Simulation blew up");
 
         centerline_data_t data = extract_centerlines(ctx);
+        TEST_ASSERT_NOT_NULL_MESSAGE(data.y_coords, "Failed to allocate centerline data");
+
         double max_vel = find_max_velocity(ctx->field);
 
         printf("      Re=%.0f: u_min=%.4f, max_vel=%.4f\n",
