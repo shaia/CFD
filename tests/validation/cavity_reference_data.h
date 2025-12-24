@@ -79,6 +79,15 @@ static const double GHIA_V_RE1000[] = {
 
 #define GHIA_NUM_POINTS 17
 
+/* Named indices for key reference points */
+#define GHIA_IDX_CENTER     8   /* Index for y=0.5 (u_center) and x=0.5 (v_center) */
+#define GHIA_IDX_U_MIN_RE100 7  /* Index of minimum u-velocity for Re=100 (y≈0.4531) */
+
+/* Convenience macros for common reference values */
+#define GHIA_U_CENTER_RE100  GHIA_U_RE100[GHIA_IDX_CENTER]      /* -0.20581 */
+#define GHIA_U_MIN_RE100     GHIA_U_RE100[GHIA_IDX_U_MIN_RE100] /* -0.21090 */
+#define GHIA_V_CENTER_RE100  GHIA_V_RE100[GHIA_IDX_CENTER]      /* 0.05454 */
+
 /* ============================================================================
  * SOLVER REFERENCE VALUES
  * ============================================================================

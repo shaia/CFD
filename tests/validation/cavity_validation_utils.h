@@ -143,8 +143,8 @@ static inline void print_ghia_result(const ghia_result_t* result, const char* so
     printf("\n    %s Ghia Validation:\n", solver_name);
     printf("      RMS_u: %.4f (target: < %.2f)\n", result->rms_u_error, GHIA_TOLERANCE_MEDIUM);
     printf("      RMS_v: %.4f\n", result->rms_v_error);
-    printf("      u_center: %.4f (Ghia: -0.20581)\n", result->u_at_center);
-    printf("      u_min:    %.4f (Ghia: -0.21090)\n", result->u_min);
+    printf("      u_center: %.4f (Ghia: %.5f)\n", result->u_at_center, GHIA_U_CENTER_RE100);
+    printf("      u_min:    %.4f (Ghia: %.5f)\n", result->u_min, GHIA_U_MIN_RE100);
 
     if (result->rms_u_error > GHIA_TOLERANCE_MEDIUM) {
         printf("      [WARNING] RMS %.4f > target %.2f\n",

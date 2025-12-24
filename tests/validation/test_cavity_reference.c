@@ -148,9 +148,9 @@ void test_u_centerline_vs_ghia_re100(void) {
     printf("    u-centerline vs Ghia Re=100:\n");
     printf("      RMS error:    %.4f\n", rms_error);
     printf("      u_min:        %.4f (Ghia: %.4f, diff: %.4f)\n",
-           data.u_min, -0.21090, fabs(data.u_min - (-0.21090)));
+           data.u_min, GHIA_U_MIN_RE100, fabs(data.u_min - GHIA_U_MIN_RE100));
     printf("      u_center:     %.4f (Ghia: %.4f, diff: %.4f)\n",
-           data.u_at_center, -0.20581, fabs(data.u_at_center - (-0.20581)));
+           data.u_at_center, GHIA_U_CENTER_RE100, fabs(data.u_at_center - GHIA_U_CENTER_RE100));
 
     /* Scientific target vs current status */
     if (rms_error > GHIA_TOLERANCE_MEDIUM) {
@@ -188,7 +188,7 @@ void test_v_centerline_vs_ghia_re100(void) {
     printf("    v-centerline vs Ghia Re=100:\n");
     printf("      RMS error:    %.4f\n", rms_error);
     printf("      v_center:     %.4f (Ghia: %.4f, diff: %.4f)\n",
-           data.v_at_center, 0.05454, fabs(data.v_at_center - 0.05454));
+           data.v_at_center, GHIA_V_CENTER_RE100, fabs(data.v_at_center - GHIA_V_CENTER_RE100));
 
     if (rms_error > GHIA_TOLERANCE_MEDIUM) {
         printf("      [WARNING] RMS %.4f > target %.2f - solver needs improvement\n",
