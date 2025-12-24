@@ -49,6 +49,18 @@
 #define FINE_DT         0.0005
 #endif
 
+/* Domain configuration for unit square cavity [0,1] x [0,1] */
+#define CAVITY_DOMAIN_XMIN  0.0
+#define CAVITY_DOMAIN_XMAX  1.0
+#define CAVITY_DOMAIN_YMIN  0.0
+#define CAVITY_DOMAIN_YMAX  1.0
+
+/* Initial field values */
+#define CAVITY_INITIAL_DENSITY      1.0
+#define CAVITY_INITIAL_TEMPERATURE  300.0
+#define CAVITY_INITIAL_PRESSURE     0.0
+#define CAVITY_INITIAL_VELOCITY     0.0
+
 /* ============================================================================
  * GHIA ET AL. REFERENCE DATA (1982)
  * ============================================================================ */
@@ -108,7 +120,9 @@ static inline cavity_context_t* cavity_context_create(size_t nx, size_t ny) {
 
     ctx->nx = nx;
     ctx->ny = ny;
-    ctx->g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
+    ctx->g = grid_create(nx, ny,
+                         CAVITY_DOMAIN_XMIN, CAVITY_DOMAIN_XMAX,
+                         CAVITY_DOMAIN_YMIN, CAVITY_DOMAIN_YMAX);
     ctx->field = flow_field_create(nx, ny);
 
     if (!ctx->g || !ctx->field) {
@@ -123,11 +137,11 @@ static inline cavity_context_t* cavity_context_create(size_t nx, size_t ny) {
     /* Initialize field to quiescent state */
     size_t total = nx * ny;
     for (size_t i = 0; i < total; i++) {
-        ctx->field->u[i] = 0.0;
-        ctx->field->v[i] = 0.0;
-        ctx->field->p[i] = 0.0;
-        ctx->field->rho[i] = 1.0;
-        ctx->field->T[i] = 300.0;
+        ctx->field->u[i] = CAVITY_INITIAL_VELOCITY;
+        ctx->field->v[i] = CAVITY_INITIAL_VELOCITY;
+        ctx->field->p[i] = CAVITY_INITIAL_PRESSURE;
+        ctx->field->rho[i] = CAVITY_INITIAL_DENSITY;
+        ctx->field->T[i] = CAVITY_INITIAL_TEMPERATURE;
     }
 
     return ctx;
