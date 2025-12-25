@@ -2,7 +2,7 @@
 
 This document outlines the development roadmap for achieving a commercial-grade, open-source CFD library.
 
-## Current State (v0.1.0)
+## Current State (v0.1.5)
 
 ### What We Have
 
@@ -778,7 +778,7 @@ ctest -R validation --timeout 3600
 - [x] 11 example programs
 - [x] VTK and CSV output
 
-### v0.1.x - Boundary Condition Improvements (Current)
+### v0.1.x - Boundary Condition Improvements
 
 **Completed:**
 
@@ -786,13 +786,18 @@ ctest -R validation --timeout 3600
 - [x] No-slip wall boundary conditions
 - [x] Inlet velocity boundary conditions (uniform, parabolic, custom profiles)
 - [x] Outlet boundary conditions (zero-gradient, convective)
-
-**Remaining:**
-
 - [x] Conjugate Gradient (CG) Krylov solver
-- [~] Lid-driven cavity validation (tests implemented, solver needs tuning for RMS < 0.10)
+- [x] Lid-driven cavity validation (Ghia et al. 1982 benchmark)
 - [x] Cross-architecture solver validation (CPU, AVX2, OpenMP, CUDA)
-- [ ] Basic documentation
+- [x] Per-architecture Ghia validation tests
+- [x] Basic documentation (OMP solvers, API constants)
+
+### v0.1.5 - Current Release
+
+- [x] OpenMP solver variants documented (explicit_euler_omp, projection_omp)
+- [x] Updated solver type constants with NS_SOLVER_TYPE_ prefix
+- [x] Doxyfile version synchronized with VERSION file
+- [x] Ghia validation tests use appropriate step counts for Euler solvers
 
 ### v0.2.0 - 3D Support
 
