@@ -6,7 +6,10 @@
  *
  * - Outer loops are parallelized with OpenMP
  * - Inner loops use AVX2 SIMD intrinsics for vectorization
- * - Falls back to scalar code when AVX2 is not available
+ *
+ * Note: When AVX2 is not enabled at compile time (CFD_ENABLE_AVX2=OFF),
+ * this solver uses scalar code paths. Use the base explicit_euler solver
+ * for guaranteed scalar-only execution.
  */
 
 // Enable C11 features for aligned_alloc
