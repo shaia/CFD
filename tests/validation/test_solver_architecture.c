@@ -25,10 +25,17 @@ void tearDown(void) {}
  * TEST CONFIGURATION
  * ============================================================================ */
 
-/* Minimal configuration for architecture consistency checks */
-#define ARCH_TEST_STEPS     50
-#define ARCH_TEST_DT        0.005
-#define ARCH_GRID_SIZE      9
+/* Minimal configuration for architecture consistency checks
+ *
+ * Note: Explicit Euler solver uses a conservative dt limit (0.0001) internally
+ * for stability. We use more steps for Euler tests to ensure non-zero flow
+ * develops at the center point, providing meaningful consistency validation.
+ * With dt=0.0001 and 5000 steps, we get 0.5s of simulation time.
+ */
+#define ARCH_TEST_STEPS_EULER  5000  /* Euler needs many steps due to internal dt limit */
+#define ARCH_TEST_STEPS_PROJ   50    /* Projection uses full dt, fewer steps needed */
+#define ARCH_TEST_DT           0.005
+#define ARCH_GRID_SIZE         9
 
 /* Tolerance for backend consistency (must match exactly) */
 #define ARCH_CONSISTENCY_TOL 0.002
@@ -64,14 +71,14 @@ void test_euler_cpu_avx2_consistency(void) {
     solver_result_t cpu = run_solver(
         NS_SOLVER_TYPE_EXPLICIT_EULER,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS, ARCH_TEST_DT
+        ARCH_TEST_STEPS_EULER, ARCH_TEST_DT
     );
     TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Euler must succeed");
 
     solver_result_t avx2 = run_solver(
         NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS, ARCH_TEST_DT
+        ARCH_TEST_STEPS_EULER, ARCH_TEST_DT
     );
 
     /* Skip test if AVX2 solver is not available */
@@ -97,14 +104,14 @@ void test_euler_cpu_omp_consistency(void) {
     solver_result_t cpu = run_solver(
         NS_SOLVER_TYPE_EXPLICIT_EULER,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS, ARCH_TEST_DT
+        ARCH_TEST_STEPS_EULER, ARCH_TEST_DT
     );
     TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Euler must succeed");
 
     solver_result_t omp = run_solver(
         NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS, ARCH_TEST_DT
+        ARCH_TEST_STEPS_EULER, ARCH_TEST_DT
     );
 
     /* Skip test if OMP solver is not available */
@@ -134,14 +141,14 @@ void test_projection_cpu_avx2_consistency(void) {
     solver_result_t cpu = run_solver(
         NS_SOLVER_TYPE_PROJECTION,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS, ARCH_TEST_DT
+        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
     );
     TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Projection must succeed");
 
     solver_result_t avx2 = run_solver(
         NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS, ARCH_TEST_DT
+        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
     );
 
     /* Skip test if AVX2 solver is not available */
@@ -167,14 +174,14 @@ void test_projection_cpu_omp_consistency(void) {
     solver_result_t cpu = run_solver(
         NS_SOLVER_TYPE_PROJECTION,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS, ARCH_TEST_DT
+        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
     );
     TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Projection must succeed");
 
     solver_result_t omp = run_solver(
         NS_SOLVER_TYPE_PROJECTION_OMP,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS, ARCH_TEST_DT
+        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
     );
 
     /* Skip test if OMP solver is not available */
@@ -207,14 +214,14 @@ void test_projection_cpu_gpu_consistency(void) {
     solver_result_t cpu = run_solver(
         NS_SOLVER_TYPE_PROJECTION,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS, ARCH_TEST_DT
+        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
     );
     TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Projection must succeed");
 
     solver_result_t gpu = run_solver(
         NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS, ARCH_TEST_DT
+        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
     );
 
     /* Skip test if GPU solver is not available */
