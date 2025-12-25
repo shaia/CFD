@@ -4,6 +4,8 @@
  *
  * This header provides helper functions used across all projection solver
  * backends (CPU, AVX2, OpenMP) to copy boundary velocity values.
+ *
+ * Include from backend subdirectories as: #include "../boundary_copy_utils.h"
  */
 
 #ifndef BOUNDARY_COPY_UTILS_H
