@@ -380,8 +380,43 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         memcpy(field->rho, rho_new, field->nx * field->ny * sizeof(double));
         memcpy(field->T, t_new, field->nx * field->ny * sizeof(double));
 
-        // Apply boundary conditions
+        // Copy caller-set boundary values to preserve them (e.g., lid-driven cavity BCs)
+        // We store boundaries before apply_boundary_conditions overwrites them
+        size_t nx = field->nx;
+        size_t ny = field->ny;
+
+        // Store boundary values from u_new/v_new (which have the correct caller BCs)
+        for (size_t i = 0; i < nx; i++) {
+            // Bottom and top boundaries
+            u_new[i] = field->u[i];
+            v_new[i] = field->v[i];
+            u_new[(ny - 1) * nx + i] = field->u[(ny - 1) * nx + i];
+            v_new[(ny - 1) * nx + i] = field->v[(ny - 1) * nx + i];
+        }
+        for (size_t jj = 0; jj < ny; jj++) {
+            // Left and right boundaries
+            u_new[jj * nx] = field->u[jj * nx];
+            v_new[jj * nx] = field->v[jj * nx];
+            u_new[jj * nx + nx - 1] = field->u[jj * nx + nx - 1];
+            v_new[jj * nx + nx - 1] = field->v[jj * nx + nx - 1];
+        }
+
+        // Apply boundary conditions (this applies periodic BCs)
         apply_boundary_conditions(field, grid);
+
+        // Restore caller-set velocity boundary values
+        for (size_t i = 0; i < nx; i++) {
+            field->u[i] = u_new[i];
+            field->v[i] = v_new[i];
+            field->u[(ny - 1) * nx + i] = u_new[(ny - 1) * nx + i];
+            field->v[(ny - 1) * nx + i] = v_new[(ny - 1) * nx + i];
+        }
+        for (size_t jj = 0; jj < ny; jj++) {
+            field->u[jj * nx] = u_new[jj * nx];
+            field->v[jj * nx] = v_new[jj * nx];
+            field->u[jj * nx + nx - 1] = u_new[jj * nx + nx - 1];
+            field->v[jj * nx + nx - 1] = v_new[jj * nx + nx - 1];
+        }
 
         // Check for NaN/Inf values and stop if found
         int has_nan = 0;

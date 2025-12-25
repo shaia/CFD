@@ -153,21 +153,25 @@ poisson_solver_t* poisson_solver_create(
         backend = select_best_backend();
     }
 
-    /* Create appropriate solver */
+    /* Create appropriate solver - no silent fallbacks */
     switch (method) {
         case POISSON_METHOD_JACOBI:
             switch (backend) {
                 case POISSON_BACKEND_SIMD:
                     return create_jacobi_simd_solver();
                 case POISSON_BACKEND_SCALAR:
-                default:
                     return create_jacobi_scalar_solver();
+                default:
+                    return NULL;  /* Requested backend not available for Jacobi */
             }
 
         case POISSON_METHOD_SOR:
         case POISSON_METHOD_GAUSS_SEIDEL:
-            /* SOR/GS are inherently sequential */
-            return create_sor_scalar_solver();
+            /* SOR/GS are inherently sequential - only scalar backend */
+            if (backend == POISSON_BACKEND_SCALAR) {
+                return create_sor_scalar_solver();
+            }
+            return NULL;  /* SOR not available for SIMD/OMP/GPU */
 
         case POISSON_METHOD_REDBLACK_SOR:
             switch (backend) {
@@ -178,8 +182,9 @@ poisson_solver_t* poisson_solver_create(
                     return create_redblack_omp_solver();
 #endif
                 case POISSON_BACKEND_SCALAR:
-                default:
                     return create_redblack_scalar_solver();
+                default:
+                    return NULL;  /* Requested backend not available for Red-Black */
             }
 
         case POISSON_METHOD_CG:
@@ -187,8 +192,9 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SIMD:
                     return create_cg_simd_solver();
                 case POISSON_BACKEND_SCALAR:
-                default:
                     return create_cg_scalar_solver();
+                default:
+                    return NULL;  /* Requested backend not available for CG */
             }
 
         case POISSON_METHOD_BICGSTAB:
@@ -437,47 +443,47 @@ cfd_status_t poisson_solver_iterate(
 }
 
 /* ============================================================================
- * BACKWARD COMPATIBILITY - LEGACY POISSON API
+ * CACHED SOLVER INSTANCES
  * ============================================================================ */
 
 /*
- * Thread-local cache for legacy API
- * Avoids creating/destroying solvers on each call
+ * Cached solver instances for poisson_solve() convenience API.
+ * Avoids creating/destroying solvers on each call.
  */
-static poisson_solver_t* g_legacy_jacobi_simd = NULL;
-static poisson_solver_t* g_legacy_jacobi_scalar = NULL;
-static poisson_solver_t* g_legacy_sor = NULL;
-static poisson_solver_t* g_legacy_redblack_simd = NULL;
-static poisson_solver_t* g_legacy_redblack_scalar = NULL;
-static size_t g_legacy_nx = 0;
-static size_t g_legacy_ny = 0;
+static poisson_solver_t* g_cached_jacobi_simd = NULL;
+static poisson_solver_t* g_cached_sor = NULL;
+static poisson_solver_t* g_cached_redblack_simd = NULL;
+static poisson_solver_t* g_cached_redblack_omp = NULL;
+static poisson_solver_t* g_cached_redblack_scalar = NULL;
+static size_t g_cached_nx = 0;
+static size_t g_cached_ny = 0;
 
 /**
- * Cleanup legacy solvers (called at program exit)
+ * Cleanup cached solvers (called at program exit)
  */
-static void cleanup_legacy_solvers(void) {
-    if (g_legacy_jacobi_simd) {
-        poisson_solver_destroy(g_legacy_jacobi_simd);
-        g_legacy_jacobi_simd = NULL;
+static void cleanup_cached_solvers(void) {
+    if (g_cached_jacobi_simd) {
+        poisson_solver_destroy(g_cached_jacobi_simd);
+        g_cached_jacobi_simd = NULL;
     }
-    if (g_legacy_jacobi_scalar) {
-        poisson_solver_destroy(g_legacy_jacobi_scalar);
-        g_legacy_jacobi_scalar = NULL;
+    if (g_cached_sor) {
+        poisson_solver_destroy(g_cached_sor);
+        g_cached_sor = NULL;
     }
-    if (g_legacy_sor) {
-        poisson_solver_destroy(g_legacy_sor);
-        g_legacy_sor = NULL;
+    if (g_cached_redblack_simd) {
+        poisson_solver_destroy(g_cached_redblack_simd);
+        g_cached_redblack_simd = NULL;
     }
-    if (g_legacy_redblack_simd) {
-        poisson_solver_destroy(g_legacy_redblack_simd);
-        g_legacy_redblack_simd = NULL;
+    if (g_cached_redblack_omp) {
+        poisson_solver_destroy(g_cached_redblack_omp);
+        g_cached_redblack_omp = NULL;
     }
-    if (g_legacy_redblack_scalar) {
-        poisson_solver_destroy(g_legacy_redblack_scalar);
-        g_legacy_redblack_scalar = NULL;
+    if (g_cached_redblack_scalar) {
+        poisson_solver_destroy(g_cached_redblack_scalar);
+        g_cached_redblack_scalar = NULL;
     }
-    g_legacy_nx = 0;
-    g_legacy_ny = 0;
+    g_cached_nx = 0;
+    g_cached_ny = 0;
 }
 
 int poisson_solve(
@@ -488,44 +494,49 @@ int poisson_solve(
     poisson_solver_t** solver_ptr;
     poisson_solver_method_t method;
     poisson_solver_backend_t backend;
-    poisson_solver_backend_t fallback_backend = POISSON_BACKEND_SCALAR;
-    poisson_solver_t** fallback_ptr = NULL;
 
     switch (solver_type) {
         case POISSON_SOLVER_JACOBI_SIMD:
-            /* SIMD backend uses runtime CPU detection (AVX2/NEON) */
-            solver_ptr = &g_legacy_jacobi_simd;
+            solver_ptr = &g_cached_jacobi_simd;
             method = POISSON_METHOD_JACOBI;
             backend = POISSON_BACKEND_SIMD;
-            /* Fallback to scalar Jacobi if SIMD not available */
-            fallback_backend = POISSON_BACKEND_SCALAR;
-            fallback_ptr = &g_legacy_jacobi_scalar;
             break;
 
         case POISSON_SOLVER_REDBLACK_SIMD:
-            /* SIMD backend uses runtime CPU detection (AVX2/NEON) */
-            solver_ptr = &g_legacy_redblack_simd;
+            solver_ptr = &g_cached_redblack_simd;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SIMD;
-            /* Fallback to scalar Red-Black if SIMD not available */
-            fallback_backend = POISSON_BACKEND_SCALAR;
-            fallback_ptr = &g_legacy_redblack_scalar;
+            break;
+
+        case POISSON_SOLVER_REDBLACK_OMP:
+            solver_ptr = &g_cached_redblack_omp;
+            method = POISSON_METHOD_REDBLACK_SOR;
+            backend = POISSON_BACKEND_OMP;
             break;
 
         case POISSON_SOLVER_SOR_SCALAR:
-        default:
-            solver_ptr = &g_legacy_sor;
+            solver_ptr = &g_cached_sor;
             method = POISSON_METHOD_SOR;
             backend = POISSON_BACKEND_SCALAR;
             break;
+
+        case POISSON_SOLVER_REDBLACK_SCALAR:
+            solver_ptr = &g_cached_redblack_scalar;
+            method = POISSON_METHOD_REDBLACK_SOR;
+            backend = POISSON_BACKEND_SCALAR;
+            break;
+
+        default:
+            fprintf(stderr, "poisson_solve: Unknown solver type %d\n", solver_type);
+            return -1;
     }
 
     /* Recreate solver if grid size changed */
-    if (*solver_ptr == NULL || g_legacy_nx != nx || g_legacy_ny != ny) {
+    if (*solver_ptr == NULL || g_cached_nx != nx || g_cached_ny != ny) {
         /* Register cleanup on first use */
         static int cleanup_registered = 0;
         if (!cleanup_registered) {
-            atexit(cleanup_legacy_solvers);
+            atexit(cleanup_cached_solvers);
             cleanup_registered = 1;
         }
 
@@ -538,25 +549,10 @@ int poisson_solve(
         /* Create new solver */
         *solver_ptr = poisson_solver_create(method, backend);
 
-        /* If SIMD solver creation failed, try fallback backend */
-        if (*solver_ptr == NULL && fallback_ptr != NULL) {
-            /* Use fallback solver pointer and backend */
-            solver_ptr = fallback_ptr;
-
-            /* Destroy any old fallback solver */
-            if (*solver_ptr) {
-                poisson_solver_destroy(*solver_ptr);
-                *solver_ptr = NULL;
-            }
-
-            /* Create fallback solver */
-            *solver_ptr = poisson_solver_create(method, fallback_backend);
-        }
-
         if (*solver_ptr) {
             poisson_solver_init(*solver_ptr, nx, ny, dx, dy, NULL);
-            g_legacy_nx = nx;
-            g_legacy_ny = ny;
+            g_cached_nx = nx;
+            g_cached_ny = ny;
         }
     }
 
@@ -579,7 +575,7 @@ int poisson_solve(
     return -1;
 }
 
-/* Legacy individual functions - delegate to unified interface */
+/* Direct solver functions - delegate to unified interface */
 int poisson_solve_sor_scalar(
     double* p, const double* rhs,
     size_t nx, size_t ny, double dx, double dy)

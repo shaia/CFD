@@ -30,7 +30,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Limited boundary conditions (no outlets, symmetry planes)
 - [ ] Only structured grids
 - [ ] No turbulence models
-- [ ] Limited linear solvers (SOR/Jacobi only, no CG/BiCGSTAB/multigrid)
+- [ ] Limited linear solvers (no BiCGSTAB/multigrid)
 - [ ] No restart/checkpoint capability
 
 ---
@@ -105,6 +105,45 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - `lib/src/boundary/boundary_conditions_inlet_common.h` - Shared inlet BC helpers
 - `lib/src/boundary/boundary_conditions_outlet_common.h` - Shared outlet BC helpers
 
+#### 1.1.1 Boundary Conditions Code Refactoring (P2)
+
+**Current State:** Moderate to high code duplication across backends (CPU, OMP, AVX2, NEON).
+
+| BC Type | Duplication Level | Notes |
+|---------|-------------------|-------|
+| **Inlet** | **98%** | 4 nearly identical implementations (~42 lines each) - no SIMD benefit for 1D boundaries |
+| **Outlet** | **70-95%** | AVX2/NEON have similar edge dispatch logic (~80 lines duplicated) |
+| **Neumann/Periodic/Dirichlet** | **60-85%** | OMP just adds pragmas; AVX2/NEON differ only in intrinsics |
+
+**What's Done Well:**
+- Common headers (`boundary_conditions_inlet_common.h`, `boundary_conditions_outlet_common.h`) extract shared logic
+- Table-driven dispatch design reduces branching
+- Clear separation between dispatcher and backend implementations
+
+**Refactoring Opportunities:**
+
+1. **Consolidate Inlet BC Implementations (Priority 1)**
+   - [ ] Extract single `bc_apply_inlet_impl()` that all backends use
+   - [ ] Inlet BCs operate on 1D boundaries - no SIMD benefit justifies 4 copies
+   - **Estimated savings:** ~126 lines of redundant code
+
+2. **Extract Common Outlet Dispatch Logic (Priority 2)**
+   - [ ] Create edge-specific helper functions for AVX2/NEON
+   - [ ] Unify edge-switch patterns (LEFT, RIGHT, BOTTOM, TOP)
+   - **Estimated savings:** ~80 lines
+
+3. **Templatize OMP vs Scalar (Priority 3)**
+   - [ ] Use conditional macros for OMP pragmas instead of duplicate functions
+   - [ ] Example: `OMP_PRAGMA(pragma omp parallel for)` wrapper
+   - **Estimated savings:** ~50-60 lines
+
+4. **Unify AVX2 and NEON (Priority 4)**
+   - [ ] Use preprocessor or code generation for SIMD backends
+   - [ ] Only differences: intrinsic set and vector width (4 vs 2 doubles)
+   - **Benefit:** Easier to add new SIMD backends (e.g., AVX-512)
+
+**Total Estimated Savings:** ~150-200 lines of redundant code
+
 ### 1.2 Linear Solvers (P0 - Critical)
 
 **Implemented:**
@@ -118,7 +157,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 **Still needed:**
 
 - [x] Solver abstraction interface
-- [ ] Conjugate Gradient (CG) for SPD systems
+- [x] Conjugate Gradient (CG) for SPD systems (scalar, AVX2, NEON backends)
 - [ ] BiCGSTAB for non-symmetric systems
 - [ ] Preconditioners (Jacobi, ILU)
 - [ ] Geometric multigrid
@@ -448,25 +487,220 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 - [ ] Convergence rate verification for all Poisson variants (SOR, Jacobi, Red-Black)
 - [ ] Residual convergence tracking
 
+#### 6.1.5 Laplacian Operator Validation
+
+**Test the discrete Laplacian against manufactured solutions:**
+
+- [ ] Manufactured solution: p = sin(πx)sin(πy) → ∇²p = -2π²p
+- [ ] Verify 2nd-order accuracy O(dx²) with grid refinement
+- [ ] Compare CPU, AVX2, and CG implementations
+
+**Files:** `lib/src/solvers/linear/cpu/linear_solver_cg.c` - `apply_laplacian()`
+
+#### 6.1.6 Divergence-Free Constraint Validation
+
+**Verify projection method enforces incompressibility:**
+
+- [ ] Measure max|∇·u| after projection step (should be < tolerance)
+- [ ] Test with various initial velocity fields
+- [ ] Verify all projection backends (CPU, AVX2, OMP, GPU)
+
+#### 6.1.7 Linear Solver Convergence Validation
+
+**Verify convergence rates match theory:**
+
+- [ ] Jacobi: spectral radius ρ < 1
+- [ ] SOR: optimal ω ≈ 2/(1 + sin(πh)) for Poisson
+- [ ] Red-Black SOR: same convergence as SOR, parallelizable
+- [ ] CG: convergence in ≤ n iterations for n×n system
+
 **Files to create:**
 
 - `tests/math/test_finite_differences.c`
 - `tests/math/test_convergence_order.c`
 - `tests/math/test_mms.c`
+- `tests/math/test_linear_solver_convergence.c`
 - `tests/math/manufactured_solutions.h`
 
 ### 6.2 Benchmark Validation (P0 - Critical)
 
-- [ ] Lid-driven cavity (Re 100, 400, 1000) - compare to Ghia et al. (1982)
-- [ ] Channel flow (Poiseuille) - compare to analytical parabolic profile
+#### 6.2.1 Lid-Driven Cavity Validation
+
+**Status:** Tests implemented, solver NOT meeting scientific tolerance (RMS ~0.38, target < 0.10)
+
+**Test files created:**
+- `tests/validation/test_cavity_setup.c` - Basic setup and BC tests (7 tests)
+- `tests/validation/test_cavity_flow.c` - Flow development and stability (8 tests)
+- `tests/validation/test_cavity_validation.c` - Conservation and Ghia comparison (5 tests)
+- `tests/validation/test_cavity_reference.c` - Reference-based regression tests (5 tests)
+- `tests/validation/lid_driven_cavity_common.h` - Shared utilities
+- `tests/validation/cavity_reference_data.h` - Ghia reference data
+- `docs/validation/lid_driven_cavity.md` - Validation methodology documentation
+
+**TODO - Honest Validation (MUST achieve full Ghia convergence):**
+
+1. **Match Ghia et al. parameters EXACTLY:**
+   - [ ] Grid: 129×129 (Ghia used 129×129 for all Re)
+   - [ ] Boundary conditions: Regularized lid velocity at corners
+   - [ ] Steady-state criterion: Residual < 1e-6 or 50000+ iterations
+   - [ ] Reynolds numbers: Re=100, 400, 1000 (all must pass)
+
+2. **Fix current solver convergence issues (RMS ~0.38 → target < 0.10):**
+   - [ ] Increase pressure solver iterations (Jacobi may need 100+ per step)
+   - [ ] Use smaller time step (dt < 0.0001 for stability)
+   - [ ] Run to true steady state (20000+ time steps minimum)
+   - [ ] Implement corner singularity regularization
+   - [ ] Consider multigrid or CG for pressure solve
+
+3. **Test ALL solver backends (run tests in parallel for speed):**
+   - [ ] CPU scalar (explicit Euler, projection)
+   - [ ] AVX2/SIMD (explicit Euler, projection)
+   - [ ] OpenMP (explicit Euler, projection)
+   - [ ] CUDA GPU (projection Jacobi)
+   - [ ] Each backend must independently achieve RMS < 0.10
+
+4. **Verification that tests are honest:**
+   - [ ] Tests MUST fail if RMS > 0.10 (no loose tolerances)
+   - [ ] Tests compare computed values at EXACT Ghia sample points
+   - [ ] Tests report actual vs expected values transparently
+   - [ ] No "current baseline" workarounds - fix solver, not tolerance
+
+**Acceptance Criteria (non-negotiable):**
+
+- RMS error vs Ghia < 0.10 for Re=100, 400, 1000
+- All 7 solver backends produce identical results (within 0.1%)
+- Grid convergence: error decreases monotonically with refinement
+- Tests run in parallel to complete in < 60 seconds
+
+#### 6.2.1.1 Grid Convergence Validation (P1)
+
+**Issue:** Current grid convergence tests use relaxed tolerance (`prev_error + 0.08`) because RMS error does not strictly decrease with grid refinement when using the scalar Red-Black SOR Poisson solver.
+
+**Observed behavior:**
+
+- 17×17: RMS ~0.056
+- 25×25: RMS ~0.037
+- 33×33: RMS ~0.094 (worse than 25×25!)
+
+**Root cause:** The scalar Poisson solver has accuracy limitations at larger grid sizes that prevent proper convergence.
+
+**TODO - Strict Grid Convergence Validation:**
+
+1. **Fix Poisson solver convergence at larger grids:**
+   - [ ] Investigate why 33×33 produces worse results than 25×25
+   - [ ] May need more Poisson iterations for larger grids
+   - [ ] Consider using SIMD Red-Black SOR or multigrid for better accuracy
+
+2. **Validate RMS monotonically decreases:**
+   - [ ] Remove relaxed tolerance (`+ 0.08`) from grid convergence tests
+   - [ ] Ensure RMS(33×33) < RMS(25×25) < RMS(17×17)
+   - [ ] Test larger grids: 65×65, 129×129
+
+3. **Add strict grid convergence test:**
+   - [ ] Test must FAIL if RMS increases with refinement
+   - [ ] No tolerance workarounds allowed
+
+**Acceptance Criteria:**
+
+- RMS error strictly decreases with each grid refinement level
+- Convergence order approaches O(h²) asymptotically
+
+#### 6.2.2 Taylor-Green Vortex Validation (P0)
+
+**Analytical solution with known decay rate - ideal for full NS validation:**
+
+```c
+u(x,y,t) = cos(x) * sin(y) * exp(-2νt)
+v(x,y,t) = -sin(x) * cos(y) * exp(-2νt)
+p(x,y,t) = -0.25 * (cos(2x) + cos(2y)) * exp(-4νt)
+```
+
+**Tests to implement:**
+- [ ] Verify velocity decay rate matches exp(-2νt)
+- [ ] Verify pressure decay rate matches exp(-4νt)
+- [ ] Test kinetic energy decay: KE(t) = KE₀ * exp(-4νt)
+- [ ] Verify vorticity conservation
+- [ ] Compare all solver backends (CPU, AVX2, OMP, GPU)
+
+**Files to create:**
+- `tests/validation/test_taylor_green_vortex.c`
+- `tests/validation/taylor_green_reference.h`
+
+#### 6.2.3 Poiseuille Flow Validation (P1)
+
+**Analytical parabolic profile for channel flow:**
+
+```c
+u(y) = 4 * U_max * y * (H - y) / H²
+```
+
+**Tests to implement:**
+- [ ] Steady-state velocity profile vs analytical
+- [ ] Mass conservation verification
+- [ ] Pressure gradient accuracy
+- [ ] Inlet BC accuracy (parabolic profile)
+
+**Files to create:**
+- `tests/validation/test_poiseuille_flow.c`
+
+#### 6.2.4 Other Benchmarks (P2)
+
 - [ ] Backward-facing step - compare to Armaly et al. (1983)
 - [ ] Flow over cylinder - compare to Williamson (1996)
-- [ ] Taylor-Green vortex decay - compare to analytical decay rate
+
+#### 6.2.5 Release Validation Workflow (P1)
+
+**Goal:** Full-length validation tests that run during releases (too slow for CI).
+
+**Rationale:** CI tests use reduced grid sizes and iteration counts for fast feedback (~30 seconds). Release validation uses full parameters for scientific accuracy verification.
+
+**CI vs Release Parameters:**
+
+| Test | CI Mode | Release Mode |
+|------|---------|--------------|
+| Cavity Flow Development | 17×17, 500 steps | 33×33, 5000 steps |
+| Cavity Re=100 Stability | 21×21, 500 steps | 33×33, 10000 steps |
+| Cavity Re=400 Stability | 25×25, 500 steps | 65×65, 20000 steps |
+| Reynolds Dependency | 17×17, 400 steps | 33×33, 5000 steps |
+| Ghia Validation | 33×33, 5000 steps | 129×129, 50000 steps |
+| Grid Convergence | 17→25→33 | 33→65→129 |
+| Taylor-Green Vortex | 32×32, 1000 steps | 128×128, 10000 steps |
+
+**Release Validation Tests to Implement:**
+
+- [ ] Full Ghia validation at 129×129 grid for Re=100, 400, 1000
+- [ ] Extended cavity flow convergence (run to true steady-state, residual < 1e-8)
+- [ ] Multi-Reynolds grid convergence study (Richardson extrapolation)
+- [ ] Taylor-Green vortex decay rate verification (extended time)
+- [ ] Cross-architecture consistency check (all backends produce identical results)
+- [ ] Memory usage and performance regression benchmarks
+
+**Implementation:**
+
+```bash
+# CI mode (default) - fast, reduced parameters
+cmake -DCAVITY_FULL_VALIDATION=0 ..
+ctest -R validation
+
+# Release mode - full scientific validation
+cmake -DCAVITY_FULL_VALIDATION=1 ..
+ctest -R validation --timeout 3600
+```
 
 **Files to create:**
 
-- `tests/validation/test_benchmark_cases.c`
-- `tests/validation/reference_data/ghia_cavity.h`
+- `tests/validation/test_ghia_full.c` - Full 129×129 Ghia validation
+- `tests/validation/test_taylor_green_full.c` - Extended Taylor-Green decay
+- `tests/validation/test_release_validation.c` - All backends consistency check
+- `.github/workflows/release-validation.yml` - GitHub Actions workflow for releases
+
+**Acceptance Criteria:**
+
+- All tests pass with full parameters
+- RMS error vs Ghia < 0.05 at 129×129 grid
+- Taylor-Green decay rate within 1% of analytical
+- All solver backends produce identical results (within floating-point tolerance)
+- Total runtime < 30 minutes on release CI runner
 
 ### 6.3 Convergence Studies (P1)
 
@@ -555,8 +789,9 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 **Remaining:**
 
-- [ ] At least one Krylov solver (CG or BiCGSTAB)
-- [ ] Lid-driven cavity validation
+- [x] Conjugate Gradient (CG) Krylov solver
+- [~] Lid-driven cavity validation (tests implemented, solver needs tuning for RMS < 0.10)
+- [x] Cross-architecture solver validation (CPU, AVX2, OpenMP, CUDA)
 - [ ] Basic documentation
 
 ### v0.2.0 - 3D Support

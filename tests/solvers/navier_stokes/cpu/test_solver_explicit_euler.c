@@ -248,24 +248,33 @@ void test_spatial_convergence(void) {
         grid_initialize_uniform(g);
         test_init_taylor_green_with_params(field, g, U, k);
 
+        double dx = g->dx[0];
+
         ns_solver_params_t params = ns_solver_params_default();
-        params.dt = 0.0001;
+        // For spatial convergence, use dt proportional to dx^2 so that:
+        // 1. Diffusion CFL is satisfied: dt < dx^2 / (4*nu)
+        // 2. Total error = spatial + temporal both scale as h^2
+        // This allows us to see 2nd order convergence
+        double dt_cfl = 0.2 * dx * dx / nu;  // Safe CFL factor
+        params.dt = dt_cfl;
         params.mu = nu;
         params.max_iter = 1;
+
+        // Run same number of iterations - final time will differ but error comparison still valid
+        // since we compare numerical vs analytical at actual final time
+        int num_steps = 10;
 
         ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
         solver_init(slv, g, &params);
         ns_solver_stats_t stats = ns_solver_stats_default();
 
         double t = 0.0;
-        int num_steps = 50;
         for (int step = 0; step < num_steps; step++) {
             solver_step(slv, field, g, &params, &stats);
             t += params.dt;
         }
 
         // Compute analytical solution at final time
-        double dx = g->dx[0];
         double dy = g->dy[0];
         double decay = exp(-2.0 * nu * k * k * t);
         for (size_t j = 0; j < n; j++) {
@@ -277,7 +286,8 @@ void test_spatial_convergence(void) {
         }
 
         errors[g_idx] = test_compute_l2_error(field->u, analytical_u, n * n);
-        printf("Grid %zux%zu (h=%.4f): L2 error = %.6e\n", n, n, dx, errors[g_idx]);
+        printf("Grid %zux%zu (h=%.4f, dt=%.2e, steps=%d): L2 error = %.6e\n",
+               n, n, dx, params.dt, num_steps, errors[g_idx]);
 
         solver_destroy(slv);
         cfd_free(analytical_u);

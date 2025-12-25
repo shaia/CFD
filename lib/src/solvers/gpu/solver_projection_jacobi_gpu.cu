@@ -61,6 +61,9 @@ struct gpu_solver_context_impl {
     double* d_y;
     double* d_dx;
     double* d_dy;
+    // Boundary value storage for preserving caller-set BCs
+    double* d_u_bc;  // Stores u boundary values from initial upload
+    double* d_v_bc;  // Stores v boundary values from initial upload
     gpu_config_t config;
     gpu_solver_stats_t stats;
     cudaStream_t stream;
@@ -202,6 +205,39 @@ __global__ void kernel_scale_rhs(double* __restrict__ rhs, size_t nx, size_t ny,
         rhs[j * nx + i] *= scale;
 }
 
+// Copy boundary values from stored BC arrays to velocity arrays
+// This preserves caller-set boundary conditions (e.g., Dirichlet for lid-driven cavity)
+__global__ void kernel_copy_velocity_boundaries(double* __restrict__ u, double* __restrict__ v,
+                                                 const double* __restrict__ u_bc,
+                                                 const double* __restrict__ v_bc,
+                                                 size_t nx, size_t ny) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Bottom boundary (j = 0)
+    if (idx < nx) {
+        u[idx] = u_bc[idx];
+        v[idx] = v_bc[idx];
+    }
+    // Top boundary (j = ny-1)
+    if (idx < nx) {
+        size_t top_idx = (ny - 1) * nx + idx;
+        u[top_idx] = u_bc[top_idx];
+        v[top_idx] = v_bc[top_idx];
+    }
+    // Left boundary (i = 0)
+    if (idx < ny) {
+        size_t left_idx = idx * nx;
+        u[left_idx] = u_bc[left_idx];
+        v[left_idx] = v_bc[left_idx];
+    }
+    // Right boundary (i = nx-1)
+    if (idx < ny) {
+        size_t right_idx = idx * nx + (nx - 1);
+        u[right_idx] = u_bc[right_idx];
+        v[right_idx] = v_bc[right_idx];
+    }
+}
+
 // ============================================================================
 // Host Functions
 // ============================================================================
@@ -314,7 +350,9 @@ gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, const gpu_config_t
         cudaMalloc(&ctx->d_x, nx * sizeof(double)) != cudaSuccess ||
         cudaMalloc(&ctx->d_y, ny * sizeof(double)) != cudaSuccess ||
         cudaMalloc(&ctx->d_dx, (nx - 1) * sizeof(double)) != cudaSuccess ||
-        cudaMalloc(&ctx->d_dy, (ny - 1) * sizeof(double)) != cudaSuccess) {
+        cudaMalloc(&ctx->d_dy, (ny - 1) * sizeof(double)) != cudaSuccess ||
+        cudaMalloc(&ctx->d_u_bc, bytes) != cudaSuccess ||
+        cudaMalloc(&ctx->d_v_bc, bytes) != cudaSuccess) {
         gpu_solver_destroy((gpu_solver_context_t*)ctx);
         return nullptr;
     }
@@ -341,6 +379,8 @@ void gpu_solver_destroy(gpu_solver_context_t* ctx_void) {
     cudaFree(ctx->d_y);
     cudaFree(ctx->d_dx);
     cudaFree(ctx->d_dy);
+    cudaFree(ctx->d_u_bc);
+    cudaFree(ctx->d_v_bc);
     cudaEventDestroy(ctx->start_event);
     cudaEventDestroy(ctx->stop_event);
     cudaStreamDestroy(ctx->stream);
@@ -356,6 +396,9 @@ cfd_status_t gpu_solver_upload(gpu_solver_context_t* ctx_void, const flow_field*
     CUDA_CHECK(cudaMemcpyAsync(ctx->d_v, field->v, bytes, cudaMemcpyHostToDevice, ctx->stream));
     CUDA_CHECK(cudaMemcpyAsync(ctx->d_p, field->p, bytes, cudaMemcpyHostToDevice, ctx->stream));
     CUDA_CHECK(cudaMemcpyAsync(ctx->d_rho, field->rho, bytes, cudaMemcpyHostToDevice, ctx->stream));
+    // Store initial boundary values for preserving caller-set BCs (e.g., lid-driven cavity)
+    CUDA_CHECK(cudaMemcpyAsync(ctx->d_u_bc, field->u, bytes, cudaMemcpyHostToDevice, ctx->stream));
+    CUDA_CHECK(cudaMemcpyAsync(ctx->d_v_bc, field->v, bytes, cudaMemcpyHostToDevice, ctx->stream));
     CUDA_CHECK(cudaStreamSynchronize(ctx->stream));
     return CFD_SUCCESS;
 }
@@ -479,12 +522,18 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
     dim3 block(cfg.block_size_x, cfg.block_size_y);
     dim3 grid_dim((nx - 2 + block.x - 1) / block.x, (ny - 2 + block.y - 1) / block.y);
 
+    // 1D grid for boundary kernel (needs to cover max(nx, ny) elements)
+    int bc_block = 256;
+    int bc_grid = ((nx > ny ? nx : ny) + bc_block - 1) / bc_block;
+
     for (int iter = 0; iter < params->max_iter; iter++) {
         // Step 1: Predictor - compute u* without pressure
         kernel_predictor<<<grid_dim, block, 0, ctx->stream>>>(ctx->d_u, ctx->d_v, ctx->d_u_new,
                                                               ctx->d_v_new, nx, ny, dt, nu, inv_2dx,
                                                               inv_2dy, inv_dx2, inv_dy2);
-        bc_apply_velocity_gpu(ctx->d_u_new, ctx->d_v_new, nx, ny, BC_TYPE_NEUMANN, ctx->stream);
+        // Copy caller-set boundary values to u_star/v_star (preserves lid-driven cavity BCs)
+        kernel_copy_velocity_boundaries<<<bc_grid, bc_block, 0, ctx->stream>>>(
+            ctx->d_u_new, ctx->d_v_new, ctx->d_u_bc, ctx->d_v_bc, nx, ny);
 
         // Step 2: Compute divergence of u*
         kernel_compute_divergence<<<grid_dim, block, 0, ctx->stream>>>(
@@ -512,7 +561,9 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         kernel_projection_correct<<<grid_dim, block, 0, ctx->stream>>>(
             ctx->d_u, ctx->d_v, ctx->d_u_new, ctx->d_v_new, ctx->d_p, nx, ny, dt_rho, inv_2dx,
             inv_2dy);
-        bc_apply_velocity_gpu(ctx->d_u, ctx->d_v, nx, ny, BC_TYPE_NEUMANN, ctx->stream);
+        // Copy caller-set boundary values back to final velocity (preserves lid-driven cavity BCs)
+        kernel_copy_velocity_boundaries<<<bc_grid, bc_block, 0, ctx->stream>>>(
+            ctx->d_u, ctx->d_v, ctx->d_u_bc, ctx->d_v_bc, nx, ny);
     }
 
     cudaStreamSynchronize(ctx->stream);

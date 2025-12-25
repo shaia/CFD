@@ -387,7 +387,9 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
 typedef enum {
     POISSON_SOLVER_SOR_SCALAR = 0,     /**< SOR method with scalar backend */
     POISSON_SOLVER_JACOBI_SIMD = 1,    /**< Jacobi method with SIMD backend (runtime detection) */
-    POISSON_SOLVER_REDBLACK_SIMD = 2   /**< Red-Black SOR with SIMD backend (runtime detection) */
+    POISSON_SOLVER_REDBLACK_SIMD = 2,  /**< Red-Black SOR with SIMD backend (runtime detection) */
+    POISSON_SOLVER_REDBLACK_OMP = 3,   /**< Red-Black SOR with OpenMP backend */
+    POISSON_SOLVER_REDBLACK_SCALAR = 4 /**< Red-Black SOR with scalar backend (always available) */
 } poisson_solver_type;
 
 /** Default Poisson solver - uses runtime SIMD detection */

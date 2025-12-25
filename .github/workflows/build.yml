@@ -5,6 +5,7 @@ name: Build and Test
 on:
   push:
     branches: [master, main]
+  workflow_dispatch:
   workflow_call:
     inputs:
       version:
@@ -157,10 +158,13 @@ jobs:
       - name: Test
         run: |
           cd build
+          # Exclude cross-arch and validation tests
+          # - cross-arch: require AVX2+OpenMP, run in dedicated job
+          # - validation: long-running physics tests, run in dedicated job
           if [ "$RUNNER_OS" == "Windows" ]; then
-            ctest -C ${{ matrix.config.build_type }} --output-on-failure
+            ctest -C ${{ matrix.config.build_type }} --output-on-failure -LE "cross-arch|validation"
           else
-            ctest --output-on-failure
+            ctest --output-on-failure -LE "cross-arch|validation"
           fi
         shell: bash
 
@@ -315,7 +319,8 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure
+          # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
+          ctest --output-on-failure -LE "cross-arch|validation"
 
       - name: Verify AVX2 code is running
         run: |
@@ -391,7 +396,8 @@ jobs:
         shell: bash
         run: |
           cd build
-          ctest -C Release --output-on-failure
+          # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
+          ctest -C Release --output-on-failure -LE "cross-arch|validation"
 
       - name: Verify AVX2 code is running
         shell: bash
@@ -468,7 +474,8 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure
+          # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
+          ctest --output-on-failure -LE "cross-arch|validation"
 
       - name: Generate summary
         if: always()
@@ -519,7 +526,8 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure
+          # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
+          ctest --output-on-failure -LE "cross-arch|validation"
 
       - name: Generate summary
         if: always()
@@ -576,7 +584,8 @@ jobs:
         shell: bash
         run: |
           cd build
-          ctest -C Release --output-on-failure
+          # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
+          ctest -C Release --output-on-failure -LE "cross-arch|validation"
 
       - name: Generate summary
         if: always()
@@ -586,6 +595,110 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **OpenMP**: Enabled (MSVC built-in)" >> $GITHUB_STEP_SUMMARY
           echo "- **Compiler**: MSVC" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
+
+  # Cross-Architecture Validation - Tests that CPU, AVX2, OpenMP, and GPU backends produce identical results
+  # This job enables ALL backends (AVX2, OpenMP, CUDA) to compare implementations
+  # Note: GPU tests will be skipped since GitHub runners don't have GPU hardware
+  cross-arch-validation:
+    name: Cross-Architecture Validation (Linux + CUDA)
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.2.0-devel-ubuntu22.04
+
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential cmake git
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify AVX2 hardware support (REQUIRED)
+        run: |
+          echo "CPU Info:"
+          cat /proc/cpuinfo | grep -E "(model name|flags)" | head -2
+          echo ""
+          if grep -q avx2 /proc/cpuinfo; then
+            echo "✅ AVX2 is supported on this runner"
+          else
+            echo "❌ ERROR: AVX2 is NOT supported on this runner"
+            echo "This job REQUIRES AVX2 hardware."
+            exit 1
+          fi
+
+      - name: Configure with AVX2 + OpenMP + CUDA
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON \
+            -DCFD_ENABLE_AVX2=ON \
+            -DCFD_ENABLE_CUDA=ON
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --parallel $(nproc)
+
+      - name: Verify backends are available
+        run: |
+          cd build
+          # Verify AVX2 SIMD backend is available
+          OUTPUT=$(./test_linear_solver 2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "SIMD backend available: YES"; then
+            echo "✅ AVX2 SIMD backend is correctly enabled"
+          else
+            echo "❌ ERROR: AVX2 was expected but SIMD backend reports NO"
+            exit 1
+          fi
+          # Verify OpenMP backend is available (GCC has built-in OpenMP)
+          if echo "$OUTPUT" | grep -q "OMP"; then
+            echo "✅ OpenMP backend is available"
+          else
+            echo "⚠️ OpenMP backend may not be available"
+          fi
+          # Verify CUDA/GPU symbols are compiled in
+          echo ""
+          echo "Checking for GPU symbols in library..."
+          if nm -C lib/libcfd_library.a 2>/dev/null | grep -q "gpu"; then
+            echo "✅ GPU symbols found in library (CUDA compiled)"
+          else
+            echo "⚠️ GPU symbols NOT found (CUDA may not be enabled)"
+          fi
+
+      - name: Run cross-architecture and validation tests
+        run: |
+          cd build
+          # Run cross-arch and validation labeled tests
+          # - cross-arch: verify all backends produce identical results
+          # - validation: Ghia reference data comparison (physics accuracy)
+          # Note: GPU tests will be skipped since no GPU hardware is available
+          echo "Running cross-architecture consistency tests..."
+          ctest --output-on-failure -L "cross-arch" -V
+          echo "Running physics validation tests..."
+          ctest --output-on-failure -L "validation" -V
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## Cross-Architecture & Physics Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This job validates:" >> $GITHUB_STEP_SUMMARY
+          echo "- All solver backends (CPU, AVX2, OpenMP, GPU) produce identical results" >> $GITHUB_STEP_SUMMARY
+          echo "- Physics accuracy vs Ghia et al. (1982) reference data" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **AVX2**: Enabled" >> $GITHUB_STEP_SUMMARY
+          echo "- **OpenMP**: Enabled (GCC built-in)" >> $GITHUB_STEP_SUMMARY
+          echo "- **CUDA**: Enabled (compiled, GPU tests skipped - no hardware)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compiler**: GCC" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
 
   # CUDA build on Windows - Verify CUDA code compiles (optional, slow)
@@ -693,7 +806,11 @@ jobs:
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: |
           cd build
-          ctest --output-on-failure
+          # Exclude cross-arch and validation tests
+          # Validation tests run long simulations (3000-5000 steps) which are
+          # very slow under sanitizers. They validate physics accuracy, not
+          # memory safety. Full validation runs in the release workflow.
+          ctest --output-on-failure -LE "cross-arch|validation"
 
       - name: Generate summary
         if: always()
@@ -738,7 +855,8 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure
+          # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
+          ctest --output-on-failure -LE "cross-arch|validation"
 
       - name: Generate coverage report
         run: |
@@ -832,6 +950,7 @@ jobs:
       - openmp-test-linux
       - openmp-test-clang
       - openmp-test-windows
+      - cross-arch-validation
       - cuda-build
       - cuda-build-windows
       - sanitizers
@@ -885,6 +1004,7 @@ jobs:
           check_job "OpenMP (Linux GCC)" "${{ needs.openmp-test-linux.result }}"
           check_job "OpenMP (Linux Clang)" "${{ needs.openmp-test-clang.result }}"
           check_job "OpenMP (Windows)" "${{ needs.openmp-test-windows.result }}"
+          check_job "Cross-Arch Validation" "${{ needs.cross-arch-validation.result }}"
           check_job "CUDA (Linux)" "${{ needs.cuda-build.result }}"
           check_optional_job "CUDA (Windows)" "${{ needs.cuda-build-windows.result }}"
           check_job "Sanitizers" "${{ needs.sanitizers.result }}"

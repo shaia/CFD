@@ -16,6 +16,8 @@
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
 
+#include "../boundary_copy_utils.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -222,8 +224,9 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
         }
     }
 
-    // Apply boundary conditions to intermediate velocity (using SIMD backend)
-    bc_apply_velocity_simd(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
+    // Copy boundary values from field to u_star/v_star
+    // This preserves whatever BCs the caller set (Dirichlet for cavity, etc.)
+    copy_boundary_velocities(u_star, v_star, field->u, field->v, nx, ny);
 
     // ============================================================
     // STEP 2: Solve Poisson equation for pressure
@@ -255,7 +258,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     // Use SIMD Poisson solver (Red-Black SOR with SIMD)
     // ctx->u_new is used as temp buffer for the Poisson solver
     int poisson_iters = poisson_solve(p_new, ctx->u_new, rhs, nx, ny, dx, dy,
-                                       DEFAULT_POISSON_SOLVER);
+                                       POISSON_SOLVER_REDBLACK_SIMD);
 
     if (poisson_iters < 0) {
         // Poisson solver didn't converge - use simple pressure update as fallback
@@ -341,8 +344,9 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     // Update pressure field
     memcpy(field->p, p_new, size * sizeof(double));
 
-    // Apply boundary conditions to final velocity
-    apply_boundary_conditions(field, grid);
+    // Copy boundary velocity values from u_star (which has caller's BCs)
+    // to field to ensure boundary conditions are preserved
+    copy_boundary_velocities(field->u, field->v, u_star, v_star, nx, ny);
 
     // Check for NaN
     for (size_t k = 0; k < size; k++) {

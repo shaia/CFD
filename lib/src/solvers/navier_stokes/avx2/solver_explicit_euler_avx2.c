@@ -6,7 +6,10 @@
  *
  * - Outer loops are parallelized with OpenMP
  * - Inner loops use AVX2 SIMD intrinsics for vectorization
- * - Falls back to scalar code when AVX2 is not available
+ *
+ * Note: When AVX2 is not enabled at compile time (CFD_ENABLE_AVX2=OFF),
+ * this solver uses scalar code paths. Use the base explicit_euler solver
+ * for guaranteed scalar-only execution.
  */
 
 // Enable C11 features for aligned_alloc
@@ -410,7 +413,38 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     memcpy(field->u, ctx->u_new, size * sizeof(double));
     memcpy(field->v, ctx->v_new, size * sizeof(double));
     memcpy(field->p, ctx->p_new, size * sizeof(double));
+
+    // Store caller-set boundary values before apply_boundary_conditions overwrites them
+    size_t nx = ctx->nx;
+    size_t ny = ctx->ny;
+    for (size_t i = 0; i < nx; i++) {
+        ctx->u_new[i] = field->u[i];
+        ctx->v_new[i] = field->v[i];
+        ctx->u_new[(ny - 1) * nx + i] = field->u[(ny - 1) * nx + i];
+        ctx->v_new[(ny - 1) * nx + i] = field->v[(ny - 1) * nx + i];
+    }
+    for (size_t jj = 0; jj < ny; jj++) {
+        ctx->u_new[jj * nx] = field->u[jj * nx];
+        ctx->v_new[jj * nx] = field->v[jj * nx];
+        ctx->u_new[jj * nx + nx - 1] = field->u[jj * nx + nx - 1];
+        ctx->v_new[jj * nx + nx - 1] = field->v[jj * nx + nx - 1];
+    }
+
     apply_boundary_conditions(field, grid);
+
+    // Restore caller-set velocity boundary values
+    for (size_t i = 0; i < nx; i++) {
+        field->u[i] = ctx->u_new[i];
+        field->v[i] = ctx->v_new[i];
+        field->u[(ny - 1) * nx + i] = ctx->u_new[(ny - 1) * nx + i];
+        field->v[(ny - 1) * nx + i] = ctx->v_new[(ny - 1) * nx + i];
+    }
+    for (size_t jj = 0; jj < ny; jj++) {
+        field->u[jj * nx] = ctx->u_new[jj * nx];
+        field->v[jj * nx] = ctx->v_new[jj * nx];
+        field->u[jj * nx + nx - 1] = ctx->u_new[jj * nx + nx - 1];
+        field->v[jj * nx + nx - 1] = ctx->v_new[jj * nx + nx - 1];
+    }
 
     if (stats) {
         stats->iterations = 1;

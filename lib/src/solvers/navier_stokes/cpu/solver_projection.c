@@ -21,6 +21,9 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/poisson_solver.h"
+
+#include "../boundary_copy_utils.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -30,85 +33,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-// Poisson solver parameters
-#define POISSON_MAX_ITER  1000
-#define POISSON_TOLERANCE 1e-6
-#define POISSON_OMEGA     1.5  // SOR relaxation parameter (1 < omega < 2)
-
 // Physical limits
 #define MAX_VELOCITY 100.0
 #define MAX_PRESSURE 1000.0
-
-/**
- * Solve the Poisson equation for pressure using Successive Over-Relaxation (SOR)
- *
- * ∇²p = rhs
- *
- * With Neumann boundary conditions (dp/dn = 0)
- */
-static int solve_poisson_sor(double* p, const double* rhs, size_t nx, size_t ny, double dx,
-                             double dy, int max_iter, double tolerance) {
-    double dx2 = dx * dx;
-    double dy2 = dy * dy;
-    double factor = 2.0 * (1.0 / dx2 + 1.0 / dy2);
-
-    if (factor < 1e-10) {
-        return -1;
-    }
-
-    double inv_factor = 1.0 / factor;
-
-    int converged = 0;
-    int iter;
-
-    for (iter = 0; iter < max_iter; iter++) {
-        double max_residual = 0.0;
-
-        // Red-black Gauss-Seidel with SOR for better convergence
-        for (int color = 0; color < 2; color++) {
-            for (size_t j = 1; j < ny - 1; j++) {
-                for (size_t i = 1; i < nx - 1; i++) {
-                    // Red-black ordering
-                    if ((int)((i + j) % 2) != color) {
-                        continue;
-                    }
-
-                    size_t idx = (j * nx) + i;
-
-                    // Compute Laplacian stencil
-                    double p_xx = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / dx2;
-                    double p_yy = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / dy2;
-
-                    // Residual: ∇²p - rhs
-                    double residual = p_xx + p_yy - rhs[idx];
-
-                    // Track maximum residual
-                    if (fabs(residual) > max_residual) {
-                        max_residual = fabs(residual);
-                    }
-
-                    // SOR update
-                    double p_new = (rhs[idx] - (p[idx + 1] + p[idx - 1]) / dx2 -
-                                    (p[idx + nx] + p[idx - nx]) / dy2) *
-                                   (-inv_factor);
-
-                    p[idx] = p[idx] + (POISSON_OMEGA * (p_new - p[idx]));
-                }
-            }
-        }
-
-        // Apply Neumann boundary conditions (using scalar CPU backend)
-        bc_apply_scalar_cpu(p, nx, ny, BC_TYPE_NEUMANN);
-
-        // Check convergence
-        if (max_residual < tolerance) {
-            converged = 1;
-            break;
-        }
-    }
-
-    return converged ? iter : -1;
-}
 
 /**
  * Projection Method Solver
@@ -136,12 +63,14 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     double* u_star = (double*)cfd_calloc(size, sizeof(double));
     double* v_star = (double*)cfd_calloc(size, sizeof(double));
     double* p_new = (double*)cfd_calloc(size, sizeof(double));
+    double* p_temp = (double*)cfd_calloc(size, sizeof(double));
     double* rhs = (double*)cfd_calloc(size, sizeof(double));
 
-    if (!u_star || !v_star || !p_new || !rhs) {
+    if (!u_star || !v_star || !p_new || !p_temp || !rhs) {
         cfd_free(u_star);
         cfd_free(v_star);
         cfd_free(p_new);
+        cfd_free(p_temp);
         cfd_free(rhs);
         return CFD_ERROR_NOMEM;
     }
@@ -203,10 +132,9 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
             }
         }
 
-        // Apply Neumann BCs (zero gradient) to intermediate velocity for proper
-        // divergence computation. Final velocity gets periodic BCs later.
-        // Using scalar CPU backend explicitly for baseline CPU solver.
-        bc_apply_velocity_cpu(u_star, v_star, nx, ny, BC_TYPE_NEUMANN);
+        // Copy boundary values from field to u_star/v_star
+        // This preserves whatever BCs the caller set (Dirichlet for cavity, etc.)
+        copy_boundary_velocities(u_star, v_star, field->u, field->v, nx, ny);
 
         // ============================================================
         // STEP 2: Solve Poisson equation for pressure
@@ -231,9 +159,10 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
             }
         }
 
-        // Solve Poisson equation
-        int poisson_iters =
-            solve_poisson_sor(p_new, rhs, nx, ny, dx, dy, POISSON_MAX_ITER, POISSON_TOLERANCE);
+        // Solve Poisson equation using library solver
+        // Use POISSON_SOLVER_REDBLACK_SCALAR for consistency with AVX2/OMP backends
+        int poisson_iters = poisson_solve(p_new, p_temp, rhs, nx, ny, dx, dy,
+                                          POISSON_SOLVER_REDBLACK_SCALAR);
 
         if (poisson_iters < 0) {
             // Poisson solver didn't converge - use simple pressure update as fallback
@@ -265,8 +194,9 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         // Update pressure
         memcpy(field->p, p_new, size * sizeof(double));
 
-        // Apply boundary conditions
-        apply_boundary_conditions(field, grid);
+        // Copy boundary velocity values from u_star (which has caller's BCs)
+        // to field to ensure boundary conditions are preserved
+        copy_boundary_velocities(field->u, field->v, u_star, v_star, nx, ny);
 
         // Check for NaN
         for (size_t k = 0; k < size; k++) {
@@ -274,6 +204,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                 cfd_free(u_star);
                 cfd_free(v_star);
                 cfd_free(p_new);
+                cfd_free(p_temp);
                 cfd_free(rhs);
                 return CFD_ERROR_DIVERGED;
             }
@@ -284,6 +215,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     cfd_free(u_star);
     cfd_free(v_star);
     cfd_free(p_new);
+    cfd_free(p_temp);
     cfd_free(rhs);
 
     return CFD_SUCCESS;
