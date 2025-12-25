@@ -30,8 +30,10 @@ A computational fluid dynamics (CFD) framework implemented in C. This project pr
 |--------|------|-------------|----------|
 | `explicit_euler` | CPU | Basic finite difference solver | Learning, debugging |
 | `explicit_euler_optimized` | CPU+SIMD | AVX2/FMA optimized | Large grids on modern CPUs |
+| `explicit_euler_omp` | CPU+OpenMP | Multi-threaded explicit Euler | Multi-core parallelism |
 | `projection` | CPU | Chorin's projection method | Accurate pressure-velocity coupling |
 | `projection_optimized` | CPU+SIMD | SIMD-optimized projection | Production simulations |
+| `projection_omp` | CPU+OpenMP | Multi-threaded projection | Multi-core parallelism |
 | `explicit_euler_gpu` | GPU | CUDA-accelerated Euler solver | Very large grids with GPU |
 | `projection_jacobi_gpu` | GPU | CUDA-accelerated projection | High-performance simulations |
 
@@ -629,16 +631,18 @@ void free_simulation(SimulationData* sim);
 
 ```c
 // Explicit Euler family
-#define SOLVER_TYPE_EXPLICIT_EULER           "explicit_euler"
-#define SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED "explicit_euler_optimized"
+#define NS_SOLVER_TYPE_EXPLICIT_EULER           "explicit_euler"
+#define NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED "explicit_euler_optimized"
+#define NS_SOLVER_TYPE_EXPLICIT_EULER_OMP       "explicit_euler_omp"
 
 // Projection method family
-#define SOLVER_TYPE_PROJECTION               "projection"
-#define SOLVER_TYPE_PROJECTION_OPTIMIZED     "projection_optimized"
+#define NS_SOLVER_TYPE_PROJECTION               "projection"
+#define NS_SOLVER_TYPE_PROJECTION_OPTIMIZED     "projection_optimized"
+#define NS_SOLVER_TYPE_PROJECTION_OMP           "projection_omp"
 
 // GPU-accelerated
-#define SOLVER_TYPE_EXPLICIT_EULER_GPU       "explicit_euler_gpu"
-#define SOLVER_TYPE_PROJECTION_JACOBI_GPU           "projection_jacobi_gpu"
+#define NS_SOLVER_TYPE_EXPLICIT_EULER_GPU       "explicit_euler_gpu"
+#define NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU    "projection_jacobi_gpu"
 ```
 
 ## License
