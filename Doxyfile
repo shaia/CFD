@@ -5,7 +5,7 @@
 # Project settings
 #---------------------------------------------------------------------------
 PROJECT_NAME           = "CFD Framework"
-PROJECT_NUMBER         = 0.0.6
+PROJECT_NUMBER         = 0.1.0
 PROJECT_BRIEF          = "A high-performance Computational Fluid Dynamics library in C"
 PROJECT_LOGO           =
 OUTPUT_DIRECTORY       = docs
