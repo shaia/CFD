@@ -157,11 +157,13 @@ jobs:
       - name: Test
         run: |
           cd build
-          # Exclude cross-arch tests (they require AVX2+OpenMP which is not enabled in all matrix configs)
+          # Exclude cross-arch and validation tests
+          # - cross-arch: require AVX2+OpenMP, run in dedicated job
+          # - validation: long-running physics tests, run in dedicated job
           if [ "$RUNNER_OS" == "Windows" ]; then
-            ctest -C ${{ matrix.config.build_type }} --output-on-failure -LE "cross-arch"
+            ctest -C ${{ matrix.config.build_type }} --output-on-failure -LE "cross-arch|validation"
           else
-            ctest --output-on-failure -LE "cross-arch"
+            ctest --output-on-failure -LE "cross-arch|validation"
           fi
         shell: bash
 
@@ -317,7 +319,7 @@ jobs:
         run: |
           cd build
           # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
-          ctest --output-on-failure -LE "cross-arch"
+          ctest --output-on-failure -LE "cross-arch|validation"
 
       - name: Verify AVX2 code is running
         run: |
@@ -394,7 +396,7 @@ jobs:
         run: |
           cd build
           # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
-          ctest -C Release --output-on-failure -LE "cross-arch"
+          ctest -C Release --output-on-failure -LE "cross-arch|validation"
 
       - name: Verify AVX2 code is running
         shell: bash
@@ -472,7 +474,7 @@ jobs:
         run: |
           cd build
           # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
-          ctest --output-on-failure -LE "cross-arch"
+          ctest --output-on-failure -LE "cross-arch|validation"
 
       - name: Generate summary
         if: always()
@@ -524,7 +526,7 @@ jobs:
         run: |
           cd build
           # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
-          ctest --output-on-failure -LE "cross-arch"
+          ctest --output-on-failure -LE "cross-arch|validation"
 
       - name: Generate summary
         if: always()
@@ -582,7 +584,7 @@ jobs:
         run: |
           cd build
           # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
-          ctest -C Release --output-on-failure -LE "cross-arch"
+          ctest -C Release --output-on-failure -LE "cross-arch|validation"
 
       - name: Generate summary
         if: always()
@@ -671,20 +673,26 @@ jobs:
             echo "⚠️ GPU symbols NOT found (CUDA may not be enabled)"
           fi
 
-      - name: Run cross-architecture validation tests
+      - name: Run cross-architecture and validation tests
         run: |
           cd build
-          # Run ONLY the cross-arch labeled tests
+          # Run cross-arch and validation labeled tests
+          # - cross-arch: verify all backends produce identical results
+          # - validation: Ghia reference data comparison (physics accuracy)
           # Note: GPU tests will be skipped since no GPU hardware is available
           echo "Running cross-architecture consistency tests..."
           ctest --output-on-failure -L "cross-arch" -V
+          echo "Running physics validation tests..."
+          ctest --output-on-failure -L "validation" -V
 
       - name: Generate summary
         if: always()
         run: |
-          echo "## Cross-Architecture Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## Cross-Architecture & Physics Validation Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "This job validates that all solver backends (CPU, AVX2, OpenMP, GPU) produce identical results." >> $GITHUB_STEP_SUMMARY
+          echo "This job validates:" >> $GITHUB_STEP_SUMMARY
+          echo "- All solver backends (CPU, AVX2, OpenMP, GPU) produce identical results" >> $GITHUB_STEP_SUMMARY
+          echo "- Physics accuracy vs Ghia et al. (1982) reference data" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **AVX2**: Enabled" >> $GITHUB_STEP_SUMMARY
           echo "- **OpenMP**: Enabled (GCC built-in)" >> $GITHUB_STEP_SUMMARY
@@ -847,7 +855,7 @@ jobs:
         run: |
           cd build
           # Exclude cross-arch tests (run in dedicated job with AVX2+OpenMP)
-          ctest --output-on-failure -LE "cross-arch"
+          ctest --output-on-failure -LE "cross-arch|validation"
 
       - name: Generate coverage report
         run: |
