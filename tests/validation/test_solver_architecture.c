@@ -7,7 +7,7 @@
  *
  * VALIDATION REQUIREMENTS:
  * 1. All backends of the same solver type MUST produce identical results
- * 2. Consistency tolerance: u_center difference < ARCH_CONSISTENCY_TOL (0.2%)
+ * 2. Consistency tolerance: u_center difference <= 0.2% (ARCH_CONSISTENCY_TOL)
  * 3. All non-optional backends must succeed
  *
  * If tests fail, the BACKEND implementation needs fixing, not the tolerance.
