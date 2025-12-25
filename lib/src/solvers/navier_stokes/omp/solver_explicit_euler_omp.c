@@ -51,10 +51,10 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
 
     for (int iter = 0; iter < params->max_iter; iter++) {
         // Parallelize the main loop
-        int i, j;
-#pragma omp parallel for private(i) schedule(static)
+        int j;
+#pragma omp parallel for schedule(static)
         for (j = 1; j < (int)field->ny - 1; j++) {
-            for (i = 1; i < (int)field->nx - 1; i++) {
+            for (int i = 1; i < (int)field->nx - 1; i++) {
                 size_t idx = (j * field->nx) + i;
 
                 // Derivatives
