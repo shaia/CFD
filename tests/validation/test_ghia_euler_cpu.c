@@ -16,7 +16,7 @@ void test_euler_cpu_ghia_re100(void) {
         NS_SOLVER_TYPE_EXPLICIT_EULER,
         33, 33,
         100.0, 1.0,
-        FULL_STEPS, FINE_DT
+        EULER_FULL_STEPS, FINE_DT
     );
 
     TEST_ASSERT_TRUE_MESSAGE(result.success, result.error_msg);
@@ -33,7 +33,7 @@ void test_euler_cpu_stability(void) {
         NS_SOLVER_TYPE_EXPLICIT_EULER,
         17, 17,
         100.0, 1.0,
-        MEDIUM_STEPS, FINE_DT
+        EULER_MEDIUM_STEPS, FINE_DT
     );
 
     TEST_ASSERT_TRUE_MESSAGE(result.success, "Simulation must complete without blowing up");

@@ -50,6 +50,13 @@
 #define FINE_DT         0.0005
 #endif
 
+/* Explicit Euler solvers have internal DT_CONSERVATIVE_LIMIT = 0.0001
+ * which caps the actual time step to 0.0001 regardless of FINE_DT.
+ * They need 5x more steps to achieve equivalent simulation time. */
+#define EULER_FULL_STEPS   25000
+#define EULER_MEDIUM_STEPS 15000
+#define EULER_FAST_STEPS   10000
+
 /* Domain configuration for unit square cavity [0,1] x [0,1] */
 #define CAVITY_DOMAIN_XMIN  0.0
 #define CAVITY_DOMAIN_XMAX  1.0

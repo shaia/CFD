@@ -16,7 +16,7 @@ void test_euler_omp_ghia_re100(void) {
         NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
         33, 33,
         100.0, 1.0,
-        FULL_STEPS, FINE_DT
+        EULER_FULL_STEPS, FINE_DT
     );
 
     /* Skip test if OMP solver is not available (not compiled with OpenMP) */

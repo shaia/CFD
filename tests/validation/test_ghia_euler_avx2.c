@@ -16,7 +16,7 @@ void test_euler_avx2_ghia_re100(void) {
         NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
         33, 33,
         100.0, 1.0,
-        FULL_STEPS, FINE_DT
+        EULER_FULL_STEPS, FINE_DT
     );
 
     TEST_ASSERT_TRUE_MESSAGE(result.success, result.error_msg);
