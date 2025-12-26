@@ -716,20 +716,23 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.16
+        uses: Jimver/cuda-toolkit@v0.2.18
         id: cuda-toolkit
         with:
-          cuda: '12.4.0'
+          cuda: '12.6.2'
           method: 'network'
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
 
       - name: Configure CMake with CUDA
         shell: pwsh
         run: |
           mkdir build
           cd build
+          # Build with CUDA for Turing+ architectures (RTX 20 series onwards)
           cmake .. -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
             -DCFD_ENABLE_CUDA=ON `
+            -DCFD_CUDA_ARCHITECTURES="75;80;86;89;90" `
             -DBUILD_TESTS=ON `
             -DBUILD_EXAMPLES=OFF
 
