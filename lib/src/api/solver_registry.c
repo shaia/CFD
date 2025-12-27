@@ -1,4 +1,5 @@
 #include "cfd/core/cfd_status.h"
+#include "cfd/core/cpu_features.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/gpu_device.h"
 #include "cfd/core/grid.h"
@@ -262,9 +263,21 @@ ns_solver_t* cfd_solver_create(ns_solver_registry_t* registry, const char* type_
 
     for (int i = 0; i < registry->count; i++) {
         if (strcmp(registry->entries[i].name, type_name) == 0) {
-            return registry->entries[i].factory();
+            ns_solver_t* solver = registry->entries[i].factory();
+            if (!solver) {
+                /* Factory returned NULL - check if error was already set by the factory.
+                 * If not (e.g., out of memory), set a generic error.
+                 * GPU factories set CFD_ERROR_UNSUPPORTED when GPU is not available. */
+                if (cfd_get_last_status() == CFD_SUCCESS) {
+                    cfd_set_error(CFD_ERROR, "Failed to create solver");
+                }
+            }
+            return solver;
         }
     }
+
+    /* Solver type not found in registry */
+    cfd_set_error(CFD_ERROR_INVALID, "Solver type not registered");
     return NULL;
 }
 
@@ -500,6 +513,7 @@ static ns_solver_t* create_explicit_euler_solver(void) {
     s->description = "Basic explicit Euler finite difference solver for 2D Navier-Stokes";
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT;
+    s->backend = NS_SOLVER_BACKEND_SCALAR;
 
     s->init = explicit_euler_init;
     s->destroy = explicit_euler_destroy;
@@ -554,6 +568,7 @@ static ns_solver_t* create_explicit_euler_optimized_solver(void) {
     s->description = "SIMD-optimized explicit Euler solver (AVX2)";
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_SIMD;
+    s->backend = NS_SOLVER_BACKEND_SIMD;
 
     s->init = explicit_euler_simd_init;
     s->destroy = explicit_euler_simd_destroy;
@@ -663,6 +678,7 @@ static ns_solver_t* create_projection_solver(void) {
     s->description = "Projection method (Chorin's method)";
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT;
+    s->backend = NS_SOLVER_BACKEND_SCALAR;
 
     s->init = projection_init;
     s->destroy = projection_destroy;
@@ -719,6 +735,7 @@ static ns_solver_t* create_projection_optimized_solver(void) {
     s->description = "SIMD-optimized Projection solver (AVX2)";
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_SIMD;
+    s->backend = NS_SOLVER_BACKEND_SIMD;
 
     s->init = projection_simd_init;
     s->destroy = projection_simd_destroy;
@@ -867,6 +884,12 @@ static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, cons
 }
 
 static ns_solver_t* create_explicit_euler_gpu_solver(void) {
+    /* Check if GPU is available at runtime before creating the solver */
+    if (!gpu_is_available()) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED, "CUDA GPU not available at runtime");
+        return NULL;
+    }
+
     ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
     if (!s) {
         return NULL;
@@ -876,6 +899,7 @@ static ns_solver_t* create_explicit_euler_gpu_solver(void) {
     s->description = "GPU-accelerated explicit Euler solver (CUDA)";
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
+    s->backend = NS_SOLVER_BACKEND_CUDA;
 
     s->init = gpu_euler_init;
     s->destroy = gpu_euler_destroy;
@@ -916,8 +940,9 @@ static cfd_status_t gpu_projection_solve(ns_solver_t* solver, flow_field* field,
 }
 
 static ns_solver_t* create_projection_gpu_solver(void) {
-    /* Check if GPU is available before creating the solver */
+    /* Check if GPU is available at runtime before creating the solver */
     if (!gpu_is_available()) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED, "CUDA GPU not available at runtime");
         return NULL;
     }
 
@@ -930,6 +955,7 @@ static ns_solver_t* create_projection_gpu_solver(void) {
     s->description = "GPU-accelerated projection method with Jacobi iteration (CUDA)";
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
+    s->backend = NS_SOLVER_BACKEND_CUDA;
 
     s->init = NULL;
     s->destroy = NULL;
@@ -1014,6 +1040,7 @@ static ns_solver_t* create_explicit_euler_omp_solver(void) {
     s->description = "OpenMP-parallelized explicit Euler solver";
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_PARALLEL;
+    s->backend = NS_SOLVER_BACKEND_OMP;
 
     s->init = explicit_euler_init;        // Can reuse existing init
     s->destroy = explicit_euler_destroy;  // Can reuse existing destroy
@@ -1103,7 +1130,103 @@ static ns_solver_t* create_projection_omp_solver(void) {
     s->solve = projection_omp_solve;
     s->apply_boundary = NULL;
     s->compute_dt = NULL;
+    s->backend = NS_SOLVER_BACKEND_OMP;
 
     return s;
 }
 #endif
+
+//=============================================================================
+// Backend Availability API
+//=============================================================================
+
+int cfd_backend_is_available(ns_solver_backend_t backend) {
+    switch (backend) {
+        case NS_SOLVER_BACKEND_SCALAR:
+            return 1;  // Always available
+
+        case NS_SOLVER_BACKEND_SIMD:
+            return cfd_has_simd();
+
+        case NS_SOLVER_BACKEND_OMP:
+#ifdef CFD_ENABLE_OPENMP
+            return 1;
+#else
+            return 0;
+#endif
+
+        case NS_SOLVER_BACKEND_CUDA:
+            return gpu_is_available();
+
+        default:
+            return 0;
+    }
+}
+
+const char* cfd_backend_get_name(ns_solver_backend_t backend) {
+    switch (backend) {
+        case NS_SOLVER_BACKEND_SCALAR:
+            return "scalar";
+        case NS_SOLVER_BACKEND_SIMD:
+            return "simd";
+        case NS_SOLVER_BACKEND_OMP:
+            return "openmp";
+        case NS_SOLVER_BACKEND_CUDA:
+            return "cuda";
+        default:
+            return "unknown";
+    }
+}
+
+int cfd_registry_list_by_backend(ns_solver_registry_t* registry, ns_solver_backend_t backend,
+                                  const char** names, int max_count) {
+    if (!registry) {
+        return 0;
+    }
+
+    int count = 0;
+
+    for (int i = 0; i < registry->count && count < max_count; i++) {
+        /* Create a temporary solver to check its backend */
+        ns_solver_t* solver = registry->entries[i].factory();
+        if (solver) {
+            if (solver->backend == backend) {
+                if (names) {
+                    names[count] = registry->entries[i].name;
+                }
+                count++;
+            }
+            solver_destroy(solver);
+        }
+    }
+
+    return count;
+}
+
+ns_solver_t* cfd_solver_create_checked(ns_solver_registry_t* registry, const char* type_name) {
+    if (!registry || !type_name) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for solver creation");
+        return NULL;
+    }
+
+    /* First create the solver to get its backend */
+    ns_solver_t* solver = cfd_solver_create(registry, type_name);
+    if (!solver) {
+        /* Error already set by cfd_solver_create */
+        return NULL;
+    }
+
+    /* Check if the backend is available */
+    if (!cfd_backend_is_available(solver->backend)) {
+        const char* backend_name = cfd_backend_get_name(solver->backend);
+        solver_destroy(solver);
+
+        char error_msg[128];
+        snprintf(error_msg, sizeof(error_msg),
+                 "Backend '%s' is not available on this system", backend_name);
+        cfd_set_error(CFD_ERROR_UNSUPPORTED, error_msg);
+        return NULL;
+    }
+
+    return solver;
+}

@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- **Modular Backend Libraries** - Split library into separate per-backend components:
+  - `cfd_core` - Grid, memory, I/O, utilities (base library)
+  - `cfd_scalar` - Scalar CPU solvers (baseline implementation)
+  - `cfd_simd` - AVX2/NEON optimized solvers
+  - `cfd_omp` - OpenMP parallelized solvers
+  - `cfd_cuda` - CUDA GPU solvers
+  - `cfd_library` - Unified library (all backends, backward compatible)
+  - CMake aliases: `CFD::Core`, `CFD::Scalar`, `CFD::SIMD`, `CFD::OMP`, `CFD::CUDA`, `CFD::Library`
+- **Backend Availability API** for runtime detection of computational backends:
+  - `cfd_backend_is_available()` - Check if SCALAR/SIMD/OMP/CUDA backend is available
+  - `cfd_backend_get_name()` - Get human-readable backend name
+  - `cfd_registry_list_by_backend()` - List solvers for a specific backend
+  - `cfd_solver_create_checked()` - Create solver with backend validation
+- `ns_solver_backend_t` enum and `backend` field on solver struct
+- Runtime GPU availability detection with proper error codes
+- Comprehensive test suite for backend API (`test_solver_backend_api.c`)
+- Comprehensive test suite for modular libraries (`test_modular_libraries.c`)
+
+## [0.1.5] - 2025-12-26
+
+### Added
+
+- **Per-architecture Ghia validation tests** for CPU, AVX2, OpenMP, and GPU backends
+- **Conjugate Gradient (CG) solver** with SIMD and OpenMP support
+- **Outlet boundary conditions** with zero-gradient and convective types
+- **Inlet velocity boundary conditions** with uniform, parabolic, and custom profiles
+- **No-slip wall boundary conditions**
+- **Dirichlet (fixed value) boundary conditions**
+- **Runtime CPU feature detection** with unified SIMD architecture
+- **Boundary condition abstraction layer** with runtime backend selection
 - CHANGELOG.md following Keep a Changelog format
 - GPU solver unit tests for configuration and execution
 - Comprehensive simulation API tests
@@ -19,16 +50,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Pages deployment for API documentation and code coverage
 
 ### Changed
+
+- Simplified AVX2 internal symbol names (removed redundant suffixes)
+- Removed SSE2 support, simplified to AVX2-only SIMD
 - Documentation now publishes only on version releases (not every push)
 - Renamed tests for better descriptiveness and consistency
 - Refactored field statistics computation into DerivedFields module
 - Updated macOS CI runner from retired macos-13 to macos-14 (ARM64)
+- Reorganized solver tests by architecture (CPU, SIMD, OMP, GPU)
+- Removed silent fallbacks from SIMD, GPU, and BC backends
 
 ### Fixed
+
 - CI workflow permissions for GitHub Pages deployment
 - Heredoc variable interpolation in version-release workflow
 - Buffer overflow security issue
 - Missing includes in test files (stdlib.h, string.h)
+- GPU Poisson solver sign error
+- Use-after-free in `simulation_list_solvers`
+- CMAKE_CUDA_ARCHITECTURES CMP0104 warning
 
 ## [0.1.0] - 2025-12-13
 
@@ -99,7 +139,9 @@ _Note: v0.0.4 was skipped due to release pipeline testing._
 - Basic boundary condition support
 - Unity testing framework integration
 
-[Unreleased]: https://github.com/shaia/CFD/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/shaia/CFD/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/shaia/CFD/compare/v0.1.0...v0.1.5
+[0.1.0]: https://github.com/shaia/CFD/compare/v0.0.6...v0.1.0
 [0.0.6]: https://github.com/shaia/CFD/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/shaia/CFD/compare/v0.0.3...v0.0.5
 [0.0.3]: https://github.com/shaia/CFD/compare/v0.0.2...v0.0.3
