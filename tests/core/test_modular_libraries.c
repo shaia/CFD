@@ -184,6 +184,13 @@ void test_scalar_solver_step(void) {
 //=============================================================================
 
 void test_simd_solver_creation(void) {
+    // SIMD solvers may not be available on all CPUs
+    if (!cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
+        printf("SIMD not available - skipping SIMD solver creation test\n");
+        TEST_PASS();
+        return;
+    }
+
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
@@ -416,15 +423,23 @@ void test_unified_solver_switching(void) {
     ns_solver_params_t params = ns_solver_params_default();
     ns_solver_stats_t stats;
 
+    int simd_available = cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD);
+
     // Test switching between different backends
+    // Only test SIMD solvers if SIMD is available
     const char* solver_types[] = {
         NS_SOLVER_TYPE_EXPLICIT_EULER,
-        NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
         NS_SOLVER_TYPE_PROJECTION,
+    };
+    int num_solvers = 2;
+
+    const char* simd_solver_types[] = {
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
         NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
     };
 
-    for (int i = 0; i < 4; i++) {
+    // Test scalar solvers (always available)
+    for (int i = 0; i < num_solvers; i++) {
         ns_solver_t* solver = cfd_solver_create(registry, solver_types[i]);
         TEST_ASSERT_NOT_NULL_MESSAGE(solver, solver_types[i]);
 
@@ -436,6 +451,25 @@ void test_unified_solver_switching(void) {
         TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
         solver_destroy(solver);
+    }
+
+    // Test SIMD solvers only if available
+    if (simd_available) {
+        for (int i = 0; i < 2; i++) {
+            ns_solver_t* solver = cfd_solver_create(registry, simd_solver_types[i]);
+            TEST_ASSERT_NOT_NULL_MESSAGE(solver, simd_solver_types[i]);
+
+            cfd_status_t status = solver_init(solver, g, &params);
+            TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+            stats = ns_solver_stats_default();
+            status = solver_step(solver, field, g, &params, &stats);
+            TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+            solver_destroy(solver);
+        }
+    } else {
+        printf("SIMD not available - skipping SIMD solver switching tests\n");
     }
 
     flow_field_destroy(field);
