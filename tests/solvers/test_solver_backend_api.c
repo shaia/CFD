@@ -149,18 +149,25 @@ void test_list_by_backend_omp(void) {
     const char* names[16];
     int count = cfd_registry_list_by_backend(registry, NS_SOLVER_BACKEND_OMP, names, 16);
 
-    // Should have OMP solvers: explicit_euler_omp, projection_omp
-    TEST_ASSERT_TRUE(count >= 2);
+    // OMP solvers are only registered if CFD_ENABLE_OPENMP is defined at compile time
+    if (cfd_backend_is_available(NS_SOLVER_BACKEND_OMP)) {
+        // OpenMP is available - should have OMP solvers registered
+        TEST_ASSERT_TRUE(count >= 2);
 
-    int found_euler_omp = 0, found_projection_omp = 0;
-    for (int i = 0; i < count; i++) {
-        if (strcmp(names[i], NS_SOLVER_TYPE_EXPLICIT_EULER_OMP) == 0)
-            found_euler_omp = 1;
-        if (strcmp(names[i], NS_SOLVER_TYPE_PROJECTION_OMP) == 0)
-            found_projection_omp = 1;
+        int found_euler_omp = 0, found_projection_omp = 0;
+        for (int i = 0; i < count; i++) {
+            if (strcmp(names[i], NS_SOLVER_TYPE_EXPLICIT_EULER_OMP) == 0)
+                found_euler_omp = 1;
+            if (strcmp(names[i], NS_SOLVER_TYPE_PROJECTION_OMP) == 0)
+                found_projection_omp = 1;
+        }
+        TEST_ASSERT_TRUE(found_euler_omp);
+        TEST_ASSERT_TRUE(found_projection_omp);
+    } else {
+        // OpenMP not available - no OMP solvers registered
+        printf("OpenMP not available - OMP solvers not registered (count=%d)\n", count);
+        TEST_ASSERT_EQUAL_INT(0, count);
     }
-    TEST_ASSERT_TRUE(found_euler_omp);
-    TEST_ASSERT_TRUE(found_projection_omp);
 }
 
 void test_list_by_backend_cuda(void) {
@@ -251,9 +258,14 @@ void test_create_checked_omp_conditional(void) {
         TEST_ASSERT_EQUAL_INT(NS_SOLVER_BACKEND_OMP, solver->backend);
         solver_destroy(solver);
     } else {
+        // OpenMP not available - solver creation should fail
+        // Error could be:
+        // - CFD_ERROR_INVALID: if OpenMP not compiled in (solver type not registered)
+        // - CFD_ERROR_UNSUPPORTED: if OpenMP compiled in but not available at runtime
         TEST_ASSERT_NULL(solver);
-        TEST_ASSERT_EQUAL(CFD_ERROR_UNSUPPORTED, cfd_get_last_status());
-        printf("OpenMP not available - error correctly returned\n");
+        cfd_status_t status = cfd_get_last_status();
+        TEST_ASSERT_TRUE(status == CFD_ERROR_UNSUPPORTED || status == CFD_ERROR_INVALID);
+        printf("OpenMP not available - error correctly returned (status=%d)\n", status);
     }
 }
 
@@ -321,16 +333,20 @@ void test_solver_backend_field_set_correctly(void) {
     TEST_ASSERT_EQUAL_INT(NS_SOLVER_BACKEND_SIMD, solver->backend);
     solver_destroy(solver);
 
-    // OMP solvers
-    solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP);
-    TEST_ASSERT_NOT_NULL(solver);
-    TEST_ASSERT_EQUAL_INT(NS_SOLVER_BACKEND_OMP, solver->backend);
-    solver_destroy(solver);
+    // OMP solvers - only test if OpenMP is available
+    if (cfd_backend_is_available(NS_SOLVER_BACKEND_OMP)) {
+        solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP);
+        TEST_ASSERT_NOT_NULL(solver);
+        TEST_ASSERT_EQUAL_INT(NS_SOLVER_BACKEND_OMP, solver->backend);
+        solver_destroy(solver);
 
-    solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_OMP);
-    TEST_ASSERT_NOT_NULL(solver);
-    TEST_ASSERT_EQUAL_INT(NS_SOLVER_BACKEND_OMP, solver->backend);
-    solver_destroy(solver);
+        solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_OMP);
+        TEST_ASSERT_NOT_NULL(solver);
+        TEST_ASSERT_EQUAL_INT(NS_SOLVER_BACKEND_OMP, solver->backend);
+        solver_destroy(solver);
+    } else {
+        printf("OpenMP not available - skipping OMP solver backend field tests\n");
+    }
 }
 
 void test_gpu_solver_backend_field(void) {

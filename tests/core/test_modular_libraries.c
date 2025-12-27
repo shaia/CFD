@@ -246,6 +246,13 @@ void test_simd_solver_step_conditional(void) {
 //=============================================================================
 
 void test_omp_solver_creation(void) {
+    // OMP solvers are only registered if OpenMP is available
+    if (!cfd_backend_is_available(NS_SOLVER_BACKEND_OMP)) {
+        printf("OpenMP not available - skipping OMP solver creation test\n");
+        TEST_PASS();
+        return;
+    }
+
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
