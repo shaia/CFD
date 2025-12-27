@@ -73,6 +73,8 @@ endif()
 #=============================================================================
 
 # Core sources (always required)
+# Note: API sources are NOT part of core because they depend on solver backends.
+# They are in a separate cfd_api library that links all backends.
 set(CFD_CORE_SOURCES
     src/core/grid.c
     src/core/memory.c
@@ -84,7 +86,10 @@ set(CFD_CORE_SOURCES
     src/core/field_ops.c
     src/core/derived_fields.c
     src/core/cpu_features.c
-    # API sources - fundamental to using the library
+)
+
+# API sources - these depend on solver backends and must link against all of them
+set(CFD_API_SOURCES
     src/api/simulation_api.c
     src/api/solver_registry.c
     src/api/output_registry.c
@@ -150,8 +155,8 @@ set(CFD_OMP_SOURCES
     src/solvers/linear/omp/linear_solver_redblack_omp.c
 )
 
-# Note: API sources (solver_registry, simulation_api, output_registry) are now
-# part of CFD_CORE_SOURCES to ensure modular libraries can access the API layer.
+# Note: API sources (solver_registry, simulation_api, output_registry) are in
+# a separate cfd_api library that links against all solver backends.
 
 # GPU stub (when CUDA not available)
 set(CFD_GPU_STUB_SOURCES
@@ -349,6 +354,43 @@ else()
     set(CFD_HAS_CUDA FALSE)
 endif()
 
+# --- CFD API Library ---
+# Contains: solver_registry, simulation_api, output_registry
+# Dependencies: cfd_core, cfd_scalar, cfd_simd (and optionally cfd_omp, cfd_cuda)
+# This library provides the high-level API and must link all solver backends.
+set(CFD_API_DEPS cfd_core cfd_scalar cfd_simd)
+if(CFD_HAS_OMP)
+    list(APPEND CFD_API_DEPS cfd_omp)
+endif()
+if(CFD_HAS_CUDA)
+    list(APPEND CFD_API_DEPS cfd_cuda)
+endif()
+
+add_library(cfd_api STATIC
+    ${CFD_API_SOURCES}
+)
+set_target_properties(cfd_api PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    OUTPUT_NAME cfd_api
+)
+target_include_directories(cfd_api
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(cfd_api PUBLIC ${CFD_API_DEPS})
+apply_compiler_options(cfd_api)
+if(CFD_HAS_OMP)
+    apply_omp_options(cfd_api)
+endif()
+if(CFD_HAS_CUDA)
+    target_compile_definitions(cfd_api PRIVATE CFD_HAS_CUDA=1)
+endif()
+add_library(CFD::API ALIAS cfd_api)
+
 #=============================================================================
 # Unified Library (cfd_library) - Combines All Backends
 # This maintains backward compatibility with existing code
@@ -358,21 +400,8 @@ endif()
 #=============================================================================
 
 # Collect modular libraries to link
-set(CFD_MODULAR_LIBS
-    cfd_core
-    cfd_scalar
-    cfd_simd
-)
-
-# Add OMP library if available
-if(CFD_HAS_OMP)
-    list(APPEND CFD_MODULAR_LIBS cfd_omp)
-endif()
-
-# Add CUDA library if available
-if(CFD_HAS_CUDA)
-    list(APPEND CFD_MODULAR_LIBS cfd_cuda)
-endif()
+# cfd_api already links all the backend libraries, so we just need cfd_api
+set(CFD_MODULAR_LIBS cfd_api)
 
 # For static builds, create a unified library by linking modular libraries
 # For shared builds, we need to recompile to properly export symbols
@@ -381,6 +410,7 @@ if(BUILD_SHARED_LIBS)
     set(CFD_UNIFIED_SOURCES
         ${CFD_CORE_SOURCES}
         ${CFD_IO_SOURCES}
+        ${CFD_API_SOURCES}
         ${CFD_SCALAR_SOURCES}
         ${CFD_SIMD_SOURCES}
     )
@@ -500,7 +530,7 @@ set(CFD_LIBRARY_HEADERS
 )
 
 # Targets to install
-set(INSTALL_TARGETS cfd_library cfd_core cfd_scalar cfd_simd)
+set(INSTALL_TARGETS cfd_library cfd_core cfd_scalar cfd_simd cfd_api)
 if(CFD_HAS_OMP)
     list(APPEND INSTALL_TARGETS cfd_omp)
 endif()
@@ -570,10 +600,10 @@ if(CFD_HAS_CUDA)
     message(STATUS "    - cfd_cuda     (CUDA GPU solvers)")
     message(STATUS "      CUDA Architectures: ${CFD_CUDA_ARCHITECTURES}")
 endif()
+message(STATUS "    - cfd_api      (solver registry, simulation API)")
 message(STATUS "    - cfd_library  (unified library - all backends)")
 message(STATUS "")
 message(STATUS "  Usage:")
-message(STATUS "    target_link_libraries(app PRIVATE CFD::Library)  # All backends")
-message(STATUS "    target_link_libraries(app PRIVATE CFD::Core CFD::Scalar)  # Minimal")
-message(STATUS "    target_link_libraries(app PRIVATE CFD::Core CFD::SIMD)    # SIMD only")
+message(STATUS "    target_link_libraries(app PRIVATE CFD::Library)  # All backends (recommended)")
+message(STATUS "    target_link_libraries(app PRIVATE CFD::API)      # API + all backends")
 message(STATUS "")
