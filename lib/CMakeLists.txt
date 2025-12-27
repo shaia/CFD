@@ -352,114 +352,119 @@ endif()
 #=============================================================================
 # Unified Library (cfd_library) - Combines All Backends
 # This maintains backward compatibility with existing code
+#
+# The unified library links against the modular libraries rather than
+# recompiling sources. This ensures consistency and reduces build time.
 #=============================================================================
 
-# Collect all sources for the unified library
-# Note: CFD_CORE_SOURCES now includes API sources
-set(CFD_UNIFIED_SOURCES
-    ${CFD_CORE_SOURCES}
-    ${CFD_IO_SOURCES}
-    ${CFD_SCALAR_SOURCES}
-    ${CFD_SIMD_SOURCES}
+# Collect modular libraries to link
+set(CFD_MODULAR_LIBS
+    cfd_core
+    cfd_scalar
+    cfd_simd
 )
 
-# Add OMP sources if available
-if(OpenMP_C_FOUND)
-    list(APPEND CFD_UNIFIED_SOURCES ${CFD_OMP_SOURCES})
+# Add OMP library if available
+if(CFD_HAS_OMP)
+    list(APPEND CFD_MODULAR_LIBS cfd_omp)
 endif()
 
-# Add GPU sources based on CUDA availability
+# Add CUDA library if available
 if(CFD_HAS_CUDA)
-    list(APPEND CFD_UNIFIED_SOURCES ${CFD_CUDA_SOURCES})
-else()
-    list(APPEND CFD_UNIFIED_SOURCES ${CFD_GPU_STUB_SOURCES})
+    list(APPEND CFD_MODULAR_LIBS cfd_cuda)
 endif()
 
-# Create unified library (both static and shared if requested)
+# For static builds, create a unified library by linking modular libraries
+# For shared builds, we need to recompile to properly export symbols
 if(BUILD_SHARED_LIBS)
-    add_library(cfd_library SHARED ${CFD_UNIFIED_SOURCES})
-    add_library(cfd_library_static STATIC ${CFD_UNIFIED_SOURCES})
-    set_target_properties(cfd_library_static PROPERTIES OUTPUT_NAME cfd_library)
-else()
-    add_library(cfd_library STATIC ${CFD_UNIFIED_SOURCES})
-    target_compile_definitions(cfd_library PUBLIC CFD_LIBRARY_STATIC_DEFINE)
-endif()
-
-# Set properties for unified library
-set_target_properties(cfd_library PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-    VERSION ${PROJECT_VERSION}
-    SOVERSION 1
-)
-
-target_include_directories(cfd_library
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-
-# Apply all compiler options
-apply_compiler_options(cfd_library)
-apply_omp_options(cfd_library)
-
-# CUDA settings for unified library
-if(CFD_HAS_CUDA)
-    set_target_properties(cfd_library PROPERTIES
-        CUDA_SEPARABLE_COMPILATION OFF
-        CUDA_RESOLVE_DEVICE_SYMBOLS ON
-        CUDA_ARCHITECTURES "${CFD_CUDA_ARCHITECTURES}"
+    # Shared library needs source recompilation for proper symbol export
+    set(CFD_UNIFIED_SOURCES
+        ${CFD_CORE_SOURCES}
+        ${CFD_IO_SOURCES}
+        ${CFD_SCALAR_SOURCES}
+        ${CFD_SIMD_SOURCES}
     )
-    target_compile_definitions(cfd_library PRIVATE CFD_HAS_CUDA=1)
-    target_link_libraries(cfd_library PUBLIC CUDA::cudart)
-    apply_cuda_options(cfd_library)
-
-    if(BUILD_SHARED_LIBS)
-        set_target_properties(cfd_library_static PROPERTIES
-            CUDA_SEPARABLE_COMPILATION OFF
-            CUDA_RESOLVE_DEVICE_SYMBOLS ON
-            CUDA_ARCHITECTURES "${CFD_CUDA_ARCHITECTURES}"
-        )
-        target_compile_definitions(cfd_library_static PRIVATE CFD_HAS_CUDA=1)
-        target_link_libraries(cfd_library_static PUBLIC CUDA::cudart)
+    if(OpenMP_C_FOUND)
+        list(APPEND CFD_UNIFIED_SOURCES ${CFD_OMP_SOURCES})
     endif()
-endif()
+    if(CFD_HAS_CUDA)
+        list(APPEND CFD_UNIFIED_SOURCES ${CFD_CUDA_SOURCES})
+    else()
+        list(APPEND CFD_UNIFIED_SOURCES ${CFD_GPU_STUB_SOURCES})
+    endif()
 
-# Symbol Visibility and Export Header
-include(GenerateExportHeader)
-generate_export_header(cfd_library
-    BASE_NAME CFD_LIBRARY
-    EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/include/cfd/cfd_export.h"
-)
+    add_library(cfd_library SHARED ${CFD_UNIFIED_SOURCES})
 
-set_target_properties(cfd_library PROPERTIES
-    C_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN ON
-)
-
-target_include_directories(cfd_library PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-)
-
-# Shared library configuration
-if(BUILD_SHARED_LIBS)
-    set_target_properties(cfd_library_static PROPERTIES
+    # Set properties for shared library
+    set_target_properties(cfd_library PROPERTIES
         POSITION_INDEPENDENT_CODE ON
         VERSION ${PROJECT_VERSION}
+        SOVERSION 1
+        C_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
     )
-    target_include_directories(cfd_library_static
+
+    target_include_directories(cfd_library
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
             $<INSTALL_INTERFACE:include>
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
-    target_compile_definitions(cfd_library_static PUBLIC CFD_LIBRARY_STATIC_DEFINE)
-    apply_compiler_options(cfd_library_static)
-    apply_omp_options(cfd_library_static)
+
+    apply_compiler_options(cfd_library)
+    apply_omp_options(cfd_library)
+
+    # CUDA settings for shared library
+    if(CFD_HAS_CUDA)
+        set_target_properties(cfd_library PROPERTIES
+            CUDA_SEPARABLE_COMPILATION OFF
+            CUDA_RESOLVE_DEVICE_SYMBOLS ON
+            CUDA_ARCHITECTURES "${CFD_CUDA_ARCHITECTURES}"
+        )
+        target_compile_definitions(cfd_library PRIVATE CFD_HAS_CUDA=1)
+        target_link_libraries(cfd_library PUBLIC CUDA::cudart)
+        apply_cuda_options(cfd_library)
+    endif()
+
+    # Also create a static INTERFACE library to aggregate modular libraries
+    add_library(cfd_library_static INTERFACE)
+    target_link_libraries(cfd_library_static INTERFACE ${CFD_MODULAR_LIBS})
+    target_include_directories(cfd_library_static INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    )
+else()
+    # Static build: use INTERFACE library to aggregate modular libraries
+    # This ensures consistency between modular and unified builds and reduces build time
+    add_library(cfd_library INTERFACE)
+    target_link_libraries(cfd_library INTERFACE ${CFD_MODULAR_LIBS})
+    target_include_directories(cfd_library INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    )
+endif()
+
+# Symbol Visibility and Export Header (needed for both builds)
+include(GenerateExportHeader)
+# For INTERFACE libraries, we can't generate export header from it, use cfd_core instead
+if(BUILD_SHARED_LIBS)
+    generate_export_header(cfd_library
+        BASE_NAME CFD_LIBRARY
+        EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/include/cfd/cfd_export.h"
+    )
+    target_include_directories(cfd_library PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+    )
+else()
+    # For static builds, generate export header from cfd_core
+    generate_export_header(cfd_core
+        BASE_NAME CFD_LIBRARY
+        EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/include/cfd/cfd_export.h"
+        STATIC_DEFINE CFD_LIBRARY_STATIC_DEFINE
+    )
 endif()
 
 # Create alias for backward compatibility
