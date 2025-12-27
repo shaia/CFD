@@ -65,6 +65,7 @@ typedef struct {
     char name[64];
     ns_solver_factory_func factory;
     const char* description;
+    ns_solver_backend_t backend;  // Backend type for efficient filtering
 } solver_registry_entry;
 
 // ns_solver_registry_t structure
@@ -158,6 +159,35 @@ void cfd_registry_register_defaults(ns_solver_registry_t* registry) {
 #endif
 }
 
+/**
+ * Infer backend from solver type name based on naming convention.
+ * Returns the likely backend, or NS_SOLVER_BACKEND_SCALAR as default.
+ * Note: Defined here (before first use) and also used by cfd_solver_create_checked.
+ */
+static ns_solver_backend_t infer_backend_from_type(const char* type_name) {
+    if (!type_name) {
+        return NS_SOLVER_BACKEND_SCALAR;
+    }
+
+    /* Check for GPU suffix first (most specific) */
+    if (strstr(type_name, "_gpu") != NULL) {
+        return NS_SOLVER_BACKEND_CUDA;
+    }
+
+    /* Check for OMP suffix */
+    if (strstr(type_name, "_omp") != NULL) {
+        return NS_SOLVER_BACKEND_OMP;
+    }
+
+    /* Check for optimized suffix (SIMD) */
+    if (strstr(type_name, "_optimized") != NULL) {
+        return NS_SOLVER_BACKEND_SIMD;
+    }
+
+    /* Default to scalar */
+    return NS_SOLVER_BACKEND_SCALAR;
+}
+
 int cfd_registry_register(ns_solver_registry_t* registry, const char* type_name,
                           ns_solver_factory_func factory) {
     if (!registry || !type_name || !factory) {
@@ -173,11 +203,15 @@ int cfd_registry_register(ns_solver_registry_t* registry, const char* type_name,
         return -1;
     }
 
+    /* Infer backend from type name for efficient filtering later */
+    ns_solver_backend_t backend = infer_backend_from_type(type_name);
+
     // Check if already registered
     for (int i = 0; i < registry->count; i++) {
         if (strcmp(registry->entries[i].name, type_name) == 0) {
             // Update existing entry
             registry->entries[i].factory = factory;
+            registry->entries[i].backend = backend;
             return 0;
         }
     }
@@ -186,6 +220,7 @@ int cfd_registry_register(ns_solver_registry_t* registry, const char* type_name,
     snprintf(registry->entries[registry->count].name,
              sizeof(registry->entries[registry->count].name), "%s", type_name);
     registry->entries[registry->count].factory = factory;
+    registry->entries[registry->count].backend = backend;
     registry->count++;
 
     return 0;
@@ -1187,48 +1222,17 @@ int cfd_registry_list_by_backend(ns_solver_registry_t* registry, ns_solver_backe
     int count = 0;
 
     for (int i = 0; i < registry->count && count < max_count; i++) {
-        /* Create a temporary solver to check its backend */
-        ns_solver_t* solver = registry->entries[i].factory();
-        if (solver) {
-            if (solver->backend == backend) {
-                if (names) {
-                    names[count] = registry->entries[i].name;
-                }
-                count++;
+        /* Use the stored backend instead of creating temporary solvers.
+         * This is much more efficient and avoids side effects from factory calls. */
+        if (registry->entries[i].backend == backend) {
+            if (names) {
+                names[count] = registry->entries[i].name;
             }
-            solver_destroy(solver);
+            count++;
         }
     }
 
     return count;
-}
-
-/**
- * Infer backend from solver type name based on naming convention.
- * Returns the likely backend, or NS_SOLVER_BACKEND_SCALAR as default.
- */
-static ns_solver_backend_t infer_backend_from_type(const char* type_name) {
-    if (!type_name) {
-        return NS_SOLVER_BACKEND_SCALAR;
-    }
-
-    /* Check for GPU suffix first (most specific) */
-    if (strstr(type_name, "_gpu") != NULL) {
-        return NS_SOLVER_BACKEND_CUDA;
-    }
-
-    /* Check for OMP suffix */
-    if (strstr(type_name, "_omp") != NULL) {
-        return NS_SOLVER_BACKEND_OMP;
-    }
-
-    /* Check for optimized suffix (SIMD) */
-    if (strstr(type_name, "_optimized") != NULL) {
-        return NS_SOLVER_BACKEND_SIMD;
-    }
-
-    /* Default to scalar */
-    return NS_SOLVER_BACKEND_SCALAR;
 }
 
 ns_solver_t* cfd_solver_create_checked(ns_solver_registry_t* registry, const char* type_name) {
