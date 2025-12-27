@@ -84,6 +84,10 @@ set(CFD_CORE_SOURCES
     src/core/field_ops.c
     src/core/derived_fields.c
     src/core/cpu_features.c
+    # API sources - fundamental to using the library
+    src/api/simulation_api.c
+    src/api/solver_registry.c
+    src/api/output_registry.c
 )
 
 # I/O sources (part of core)
@@ -146,12 +150,8 @@ set(CFD_OMP_SOURCES
     src/solvers/linear/omp/linear_solver_redblack_omp.c
 )
 
-# API sources (registry, simulation API - includes solver factory)
-set(CFD_API_SOURCES
-    src/api/simulation_api.c
-    src/api/solver_registry.c
-    src/api/output_registry.c
-)
+# Note: API sources (solver_registry, simulation_api, output_registry) are now
+# part of CFD_CORE_SOURCES to ensure modular libraries can access the API layer.
 
 # GPU stub (when CUDA not available)
 set(CFD_GPU_STUB_SOURCES
@@ -207,11 +207,14 @@ endfunction()
 #=============================================================================
 
 # --- CFD Core Library ---
-# Contains: grid, memory, I/O, status, utilities
+# Contains: grid, memory, I/O, status, utilities, API layer
 # Dependencies: None (base library)
+# Note: GPU stub is always included in cfd_core to provide gpu_is_available().
+#       The unified library (cfd_library) handles CUDA vs stub selection separately.
 add_library(cfd_core STATIC
     ${CFD_CORE_SOURCES}
     ${CFD_IO_SOURCES}
+    ${CFD_GPU_STUB_SOURCES}
 )
 set_target_properties(cfd_core PROPERTIES
     POSITION_INDEPENDENT_CODE ON
@@ -349,12 +352,12 @@ endif()
 #=============================================================================
 
 # Collect all sources for the unified library
+# Note: CFD_CORE_SOURCES now includes API sources
 set(CFD_UNIFIED_SOURCES
     ${CFD_CORE_SOURCES}
     ${CFD_IO_SOURCES}
     ${CFD_SCALAR_SOURCES}
     ${CFD_SIMD_SOURCES}
-    ${CFD_API_SOURCES}
 )
 
 # Add OMP sources if available
