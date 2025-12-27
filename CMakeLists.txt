@@ -219,6 +219,13 @@ if(BUILD_TESTS)
     # Modular backend library tests
     add_executable(test_modular_libraries tests/core/test_modular_libraries.c)
 
+    # Backend-focused tests - verify specific backend functionality
+    # Note: Currently linked against CFD::Library because the architecture has
+    # cross-backend symbol dependencies. True modular linking requires refactoring
+    # to use weak symbols or conditional registration (see ROADMAP.md 4.2).
+    add_executable(test_modular_core_scalar tests/core/test_modular_core_scalar.c)
+    add_executable(test_modular_core_simd tests/core/test_modular_core_simd.c)
+
     # Link test executables with CFD library and Unity
     target_link_libraries(test_simulation_basic PRIVATE CFD::Library unity)
     target_link_libraries(test_runner PRIVATE CFD::Library unity)
@@ -251,6 +258,12 @@ if(BUILD_TESTS)
     target_link_libraries(test_linear_solver PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_backend_api PRIVATE CFD::Library unity)
     target_link_libraries(test_modular_libraries PRIVATE CFD::Library unity)
+
+    # Backend-focused tests - linked against unified library due to cross-backend dependencies
+    # TODO: Refactor architecture to support true modular linking (weak symbols/conditional registration)
+    target_link_libraries(test_modular_core_scalar PRIVATE CFD::Library unity)
+    target_link_libraries(test_modular_core_simd PRIVATE CFD::Library unity)
+
     target_link_libraries(test_cavity_setup PRIVATE CFD::Library unity)
     target_link_libraries(test_cavity_flow PRIVATE CFD::Library unity)
     target_link_libraries(test_cavity_validation PRIVATE CFD::Library unity)
@@ -297,6 +310,8 @@ if(BUILD_TESTS)
     add_test(NAME LinearSolverTest COMMAND test_linear_solver)
     add_test(NAME SolverBackendApiTest COMMAND test_solver_backend_api)
     add_test(NAME ModularLibrariesTest COMMAND test_modular_libraries)
+    add_test(NAME ModularCoreScalarTest COMMAND test_modular_core_scalar)
+    add_test(NAME ModularCoreSIMDTest COMMAND test_modular_core_simd)
     add_test(NAME CavitySetupTest COMMAND test_cavity_setup)
     add_test(NAME CavityFlowTest COMMAND test_cavity_flow)
     add_test(NAME CavityValidationTest COMMAND test_cavity_validation)

@@ -374,15 +374,31 @@ Find eigenvalues/eigenvectors for stability analysis.
 - [ ] Update examples/tests to link against specific backends (optional)
 - [ ] Support shared library builds (currently static only)
 - [ ] Plugin loading system for dynamic backend selection
+- [ ] Refactor for true modular linking (see Known Limitations below)
+
+**Known Limitations:**
+
+Currently, the modular libraries have cross-backend symbol dependencies that prevent
+truly independent linking. For example:
+
+- `solver_registry.c` (in Core) references SIMD and OMP solver implementations
+- `boundary_conditions.c` (in Scalar) references SIMD and OMP backend tables
+- `linear_solver.c` (in Scalar) references SIMD and OMP solver factories
+
+To achieve true modular linking, these need to be refactored using:
+
+- Weak symbols (platform-specific)
+- Conditional registration at runtime
+- Plugin architecture with dynamic loading
 
 **Usage Examples:**
 
 ```cmake
-# Link only what you need
-target_link_libraries(my_app PRIVATE CFD::Core CFD::SIMD)
-
-# Or use the unified library (backward compatible)
+# Currently, use the unified library for full functionality
 target_link_libraries(my_app PRIVATE CFD::Library)
+
+# Future: Link only what you need (after refactoring)
+# target_link_libraries(my_app PRIVATE CFD::Core CFD::SIMD)
 ```
 
 ### 4.3 GPU Improvements (P2)
