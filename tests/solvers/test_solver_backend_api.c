@@ -258,14 +258,11 @@ void test_create_checked_omp_conditional(void) {
         TEST_ASSERT_EQUAL_INT(NS_SOLVER_BACKEND_OMP, solver->backend);
         solver_destroy(solver);
     } else {
-        // OpenMP not available - solver creation should fail
-        // Error could be:
-        // - CFD_ERROR_INVALID: if OpenMP not compiled in (solver type not registered)
-        // - CFD_ERROR_UNSUPPORTED: if OpenMP compiled in but not available at runtime
+        // OpenMP not available - create_checked returns CFD_ERROR_UNSUPPORTED
+        // (checks backend availability BEFORE attempting to create solver)
         TEST_ASSERT_NULL(solver);
-        cfd_status_t status = cfd_get_last_status();
-        TEST_ASSERT_TRUE(status == CFD_ERROR_UNSUPPORTED || status == CFD_ERROR_INVALID);
-        printf("OpenMP not available - error correctly returned (status=%d)\n", status);
+        TEST_ASSERT_EQUAL(CFD_ERROR_UNSUPPORTED, cfd_get_last_status());
+        printf("OpenMP not available - CFD_ERROR_UNSUPPORTED correctly returned\n");
     }
 }
 
@@ -277,14 +274,11 @@ void test_create_checked_cuda_conditional(void) {
         TEST_ASSERT_EQUAL_INT(NS_SOLVER_BACKEND_CUDA, solver->backend);
         solver_destroy(solver);
     } else {
-        // GPU not available - solver creation should fail
-        // Error could be:
-        // - CFD_ERROR_INVALID: if CUDA not compiled in (solver type not registered)
-        // - CFD_ERROR_UNSUPPORTED: if CUDA compiled in but no GPU at runtime
+        // GPU not available - create_checked returns CFD_ERROR_UNSUPPORTED
+        // (checks backend availability BEFORE attempting to create solver)
         TEST_ASSERT_NULL(solver);
-        cfd_status_t status = cfd_get_last_status();
-        TEST_ASSERT_TRUE(status == CFD_ERROR_UNSUPPORTED || status == CFD_ERROR_INVALID);
-        printf("CUDA not available - error correctly returned (status=%d)\n", status);
+        TEST_ASSERT_EQUAL(CFD_ERROR_UNSUPPORTED, cfd_get_last_status());
+        printf("CUDA not available - CFD_ERROR_UNSUPPORTED correctly returned\n");
     }
 }
 

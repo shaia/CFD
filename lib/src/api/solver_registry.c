@@ -1203,28 +1203,55 @@ int cfd_registry_list_by_backend(ns_solver_registry_t* registry, ns_solver_backe
     return count;
 }
 
+/**
+ * Infer backend from solver type name based on naming convention.
+ * Returns the likely backend, or NS_SOLVER_BACKEND_SCALAR as default.
+ */
+static ns_solver_backend_t infer_backend_from_type(const char* type_name) {
+    if (!type_name) {
+        return NS_SOLVER_BACKEND_SCALAR;
+    }
+
+    /* Check for GPU suffix first (most specific) */
+    if (strstr(type_name, "_gpu") != NULL) {
+        return NS_SOLVER_BACKEND_CUDA;
+    }
+
+    /* Check for OMP suffix */
+    if (strstr(type_name, "_omp") != NULL) {
+        return NS_SOLVER_BACKEND_OMP;
+    }
+
+    /* Check for optimized suffix (SIMD) */
+    if (strstr(type_name, "_optimized") != NULL) {
+        return NS_SOLVER_BACKEND_SIMD;
+    }
+
+    /* Default to scalar */
+    return NS_SOLVER_BACKEND_SCALAR;
+}
+
 ns_solver_t* cfd_solver_create_checked(ns_solver_registry_t* registry, const char* type_name) {
     if (!registry || !type_name) {
         cfd_set_error(CFD_ERROR_INVALID, "Invalid arguments for solver creation");
         return NULL;
     }
 
-    /* First create the solver to get its backend */
-    ns_solver_t* solver = cfd_solver_create(registry, type_name);
-    if (!solver) {
-        /* Error already set by cfd_solver_create */
-        return NULL;
-    }
-
-    /* Check if the backend is available */
-    if (!cfd_backend_is_available(solver->backend)) {
-        const char* backend_name = cfd_backend_get_name(solver->backend);
-        solver_destroy(solver);
-
+    /* Check backend availability BEFORE creating the solver */
+    ns_solver_backend_t expected_backend = infer_backend_from_type(type_name);
+    if (!cfd_backend_is_available(expected_backend)) {
+        const char* backend_name = cfd_backend_get_name(expected_backend);
         char error_msg[128];
         snprintf(error_msg, sizeof(error_msg),
                  "Backend '%s' is not available on this system", backend_name);
         cfd_set_error(CFD_ERROR_UNSUPPORTED, error_msg);
+        return NULL;
+    }
+
+    /* Now create the solver - backend is available */
+    ns_solver_t* solver = cfd_solver_create(registry, type_name);
+    if (!solver) {
+        /* Error already set by cfd_solver_create */
         return NULL;
     }
 
