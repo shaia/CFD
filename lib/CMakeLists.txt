@@ -5,11 +5,11 @@ cmake_minimum_required(VERSION 3.10)
 option(CFD_ENABLE_CUDA "Enable CUDA GPU acceleration" OFF)
 
 # CUDA architecture configuration
-# Default: Support wide range of GPUs from Pascal (GTX 10xx) onwards
-# Users can override with -DCFD_CUDA_ARCHITECTURES="70;75" etc.
+# Default: Support GPUs from Turing (RTX 20 series) onwards
+# Users can override with -DCFD_CUDA_ARCHITECTURES="75;80" etc.
 if(NOT DEFINED CFD_CUDA_ARCHITECTURES)
     set(CFD_CUDA_ARCHITECTURES "75;80;86;89;90" CACHE STRING
-        "CUDA architectures to build for (75=Turing, 80=Ampere, 86=Ampere, 89=Ada, 90=Hopper)")
+        "CUDA architectures to build for (75=Turing, 80/86=Ampere, 89=Ada, 90=Hopper)")
 endif()
 
 # Set CMAKE_CUDA_ARCHITECTURES before project() to satisfy CMP0104

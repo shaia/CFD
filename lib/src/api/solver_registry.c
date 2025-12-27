@@ -77,8 +77,10 @@ static ns_solver_t* create_explicit_euler_solver(void);
 static ns_solver_t* create_explicit_euler_optimized_solver(void);
 static ns_solver_t* create_projection_solver(void);
 static ns_solver_t* create_projection_optimized_solver(void);
+#ifdef CFD_HAS_CUDA
 static ns_solver_t* create_explicit_euler_gpu_solver(void);
 static ns_solver_t* create_projection_gpu_solver(void);
+#endif
 #ifdef CFD_ENABLE_OPENMP
 static ns_solver_t* create_explicit_euler_omp_solver(void);
 static ns_solver_t* create_projection_omp_solver(void);
@@ -140,10 +142,12 @@ void cfd_registry_register_defaults(ns_solver_registry_t* registry) {
                           create_projection_optimized_solver);
 
     // Register GPU solvers (requires CUDA)
+#ifdef CFD_HAS_CUDA
     cfd_registry_register(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU,
                           create_explicit_euler_gpu_solver);
     cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
                           create_projection_gpu_solver);
+#endif
 
     // Register OpenMP solvers
 #ifdef CFD_ENABLE_OPENMP
@@ -726,6 +730,7 @@ static ns_solver_t* create_projection_optimized_solver(void) {
     return s;
 }
 
+#ifdef CFD_HAS_CUDA
 /**
  * Built-in solver: GPU-Accelerated Explicit Euler
  * Uses CUDA for GPU acceleration (requires CUDA support)
@@ -935,6 +940,7 @@ static ns_solver_t* create_projection_gpu_solver(void) {
 
     return s;
 }
+#endif /* CFD_HAS_CUDA */
 
 #ifdef CFD_ENABLE_OPENMP
 /**
