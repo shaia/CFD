@@ -88,6 +88,17 @@ typedef struct {
 typedef struct NSSolver ns_solver_t;
 
 /**
+ * Solver backend types
+ * Defines the computational backend used by a solver
+ */
+typedef enum {
+    NS_SOLVER_BACKEND_SCALAR = 0,  /**< Basic scalar CPU implementation */
+    NS_SOLVER_BACKEND_SIMD = 1,    /**< SIMD-optimized (AVX2/SSE) */
+    NS_SOLVER_BACKEND_OMP = 2,     /**< OpenMP parallelized */
+    NS_SOLVER_BACKEND_CUDA = 3,    /**< CUDA GPU acceleration */
+} ns_solver_backend_t;
+
+/**
  * NSSolver capability flags
  * Used to describe what features a solver supports
  */
@@ -167,6 +178,7 @@ struct NSSolver {
     const char* description;
     const char* version;
     ns_solver_capabilities_t capabilities;
+    ns_solver_backend_t backend;  /**< Computational backend type */
 
     /* NSSolver-specific context (internal state, buffers, etc.) */
     ns_solver_context_t context;
@@ -258,6 +270,26 @@ CFD_LIBRARY_EXPORT int cfd_registry_has(ns_solver_registry_t* registry, const ch
 /** Get description for a solver type */
 CFD_LIBRARY_EXPORT const char* cfd_registry_get_description(ns_solver_registry_t* registry,
                                                             const char* type_name);
+
+/**
+ * Backend Availability API
+ * Query which computational backends are available at runtime
+ */
+
+/** Check if a specific backend is available at runtime */
+CFD_LIBRARY_EXPORT int cfd_backend_is_available(ns_solver_backend_t backend);
+
+/** Get human-readable name for a backend */
+CFD_LIBRARY_EXPORT const char* cfd_backend_get_name(ns_solver_backend_t backend);
+
+/** Get list of solvers for a specific backend (returns count, fills names array) */
+CFD_LIBRARY_EXPORT int cfd_registry_list_by_backend(ns_solver_registry_t* registry,
+                                                     ns_solver_backend_t backend,
+                                                     const char** names, int max_count);
+
+/** Create solver with backend validation - returns NULL if backend unavailable */
+CFD_LIBRARY_EXPORT ns_solver_t* cfd_solver_create_checked(ns_solver_registry_t* registry,
+                                                           const char* type_name);
 
 /**
  * Standard Built-in NSSolver Types

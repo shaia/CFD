@@ -279,13 +279,100 @@ for (int i = 0; i < num_solvers; i++) {
 }
 ```
 
+### Backend Availability API
+
+The library provides runtime detection of available computational backends:
+
+```c
+#include "cfd/solvers/navier_stokes_solver.h"
+
+// Check which backends are available at runtime
+if (cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
+    printf("SIMD (AVX2) is available\n");
+}
+if (cfd_backend_is_available(NS_SOLVER_BACKEND_OMP)) {
+    printf("OpenMP is available\n");
+}
+if (cfd_backend_is_available(NS_SOLVER_BACKEND_CUDA)) {
+    printf("CUDA GPU is available\n");
+}
+
+// Get human-readable backend names
+const char* name = cfd_backend_get_name(NS_SOLVER_BACKEND_SIMD);  // Returns "simd"
+
+// List all solvers for a specific backend
+ns_solver_registry_t* registry = cfd_registry_create();
+cfd_registry_register_defaults(registry);
+
+const char* simd_solvers[16];
+int count = cfd_registry_list_by_backend(registry, NS_SOLVER_BACKEND_SIMD, simd_solvers, 16);
+printf("Available SIMD solvers:\n");
+for (int i = 0; i < count; i++) {
+    printf("  - %s\n", simd_solvers[i]);
+}
+
+// Create solver with backend validation (returns NULL if backend unavailable)
+ns_solver_t* solver = cfd_solver_create_checked(registry, "projection_optimized");
+if (!solver) {
+    printf("Error: %s\n", cfd_get_last_error());
+}
+```
+
+**Backend Types:**
+
+| Backend | Enum Value | Description |
+| ------- | ---------- | ----------- |
+| Scalar | `NS_SOLVER_BACKEND_SCALAR` | Basic CPU implementation (always available) |
+| SIMD | `NS_SOLVER_BACKEND_SIMD` | AVX2/NEON optimized (detected at runtime) |
+| OpenMP | `NS_SOLVER_BACKEND_OMP` | Multi-threaded (compile-time option) |
+| CUDA | `NS_SOLVER_BACKEND_CUDA` | GPU acceleration (requires CUDA + GPU) |
+
+### Modular Backend Libraries
+
+The CFD framework provides modular library components that allow you to link only the backends you need, reducing binary size and dependencies:
+
+| Library | CMake Target | Description | Dependencies |
+| ------- | ------------ | ----------- | ------------ |
+| `cfd_core` | `CFD::Core` | Grid, memory, I/O, utilities | None |
+| `cfd_scalar` | `CFD::Scalar` | Scalar CPU solvers | CFD::Core |
+| `cfd_simd` | `CFD::SIMD` | AVX2/NEON optimized solvers | CFD::Core, CFD::Scalar |
+| `cfd_omp` | `CFD::OMP` | OpenMP parallelized solvers | CFD::Core, CFD::Scalar |
+| `cfd_cuda` | `CFD::CUDA` | CUDA GPU solvers | CFD::Core |
+| `cfd_library` | `CFD::Library` | Unified library (all backends) | All above |
+
+**CMake Usage:**
+
+```cmake
+# Link only what you need
+find_package(CFD REQUIRED)
+
+# For a lightweight SIMD-only application:
+target_link_libraries(my_app PRIVATE CFD::SIMD)
+
+# For OpenMP parallelization:
+target_link_libraries(my_app PRIVATE CFD::OMP)
+
+# For GPU acceleration:
+target_link_libraries(my_app PRIVATE CFD::CUDA)
+
+# For full functionality (backward compatible):
+target_link_libraries(my_app PRIVATE CFD::Library)
+```
+
+**Benefits:**
+
+- **Reduced binary size** - Link only the backends you use
+- **Fewer dependencies** - No OpenMP/CUDA requirements for scalar-only builds
+- **Faster compilation** - Compile only needed components
+- **Clear dependencies** - Each library declares what it needs
+
 ### GPU Solver Configuration
 
 ```c
-#include "solver_gpu.h"
+#include "cfd/core/gpu_device.h"
 
 // Get default GPU configuration
-GPUConfig config = gpu_config_default();
+gpu_config_t config = gpu_config_default();
 
 // Customize settings
 config.enable_gpu = 1;
@@ -643,6 +730,33 @@ void free_simulation(SimulationData* sim);
 // GPU-accelerated
 #define NS_SOLVER_TYPE_EXPLICIT_EULER_GPU       "explicit_euler_gpu"
 #define NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU    "projection_jacobi_gpu"
+```
+
+### Backend Availability Functions
+
+```c
+// Backend types
+typedef enum {
+    NS_SOLVER_BACKEND_SCALAR = 0,  // Basic scalar CPU implementation
+    NS_SOLVER_BACKEND_SIMD = 1,    // SIMD-optimized (AVX2/NEON)
+    NS_SOLVER_BACKEND_OMP = 2,     // OpenMP parallelized
+    NS_SOLVER_BACKEND_CUDA = 3,    // CUDA GPU acceleration
+} ns_solver_backend_t;
+
+// Check if a backend is available at runtime
+int cfd_backend_is_available(ns_solver_backend_t backend);
+
+// Get human-readable name for a backend ("scalar", "simd", "openmp", "cuda")
+const char* cfd_backend_get_name(ns_solver_backend_t backend);
+
+// List solvers for a specific backend (returns count)
+int cfd_registry_list_by_backend(ns_solver_registry_t* registry,
+                                 ns_solver_backend_t backend,
+                                 const char** names, int max_count);
+
+// Create solver with backend validation (returns NULL if backend unavailable)
+ns_solver_t* cfd_solver_create_checked(ns_solver_registry_t* registry,
+                                       const char* type_name);
 ```
 
 ## License

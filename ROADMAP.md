@@ -339,7 +339,69 @@ Find eigenvalues/eigenvectors for stability analysis.
 - [ ] Load balancing
 - [ ] Hybrid MPI+OpenMP
 
-### 4.2 GPU Improvements (P2)
+### 4.2 Modular Backend Libraries (P1) ✅
+
+**Goal:** Split the monolithic library into separate per-backend libraries for flexible deployment.
+
+**Status:** Implemented in v0.1.5
+
+**Rationale:**
+
+- Users only link what they need (smaller binaries)
+- CUDA library can be loaded dynamically (plugin pattern)
+- Clear ABI boundaries between backends
+- Allows mixing compiler toolchains (e.g., nvcc for CUDA only)
+- Easier to add new backends (OpenCL, SYCL, etc.)
+
+**Library Structure:**
+
+| Library | CMake Target | Contents | Dependencies |
+| ------- | ------------ | -------- | ------------ |
+| `cfd_core` | `CFD::Core` | Grid, memory, I/O, status, common utilities | None |
+| `cfd_scalar` | `CFD::Scalar` | Scalar CPU solvers | CFD::Core |
+| `cfd_simd` | `CFD::SIMD` | AVX2/NEON SIMD solvers | CFD::Core, CFD::Scalar |
+| `cfd_omp` | `CFD::OMP` | OpenMP parallelized solvers | CFD::Core, CFD::Scalar |
+| `cfd_cuda` | `CFD::CUDA` | CUDA GPU solvers | CFD::Core |
+| `cfd_library` | `CFD::Library` | Unified library (all backends) | All above |
+
+**Implementation Tasks:**
+
+- [x] Split `lib/CMakeLists.txt` into multiple library targets
+- [x] Create separate source lists for each backend
+- [x] Define public/private header boundaries per library
+- [x] Add CMake aliases for clean target references
+- [x] Add comprehensive test suite (`test_modular_libraries.c`)
+- [ ] Update examples/tests to link against specific backends (optional)
+- [ ] Support shared library builds (currently static only)
+- [ ] Plugin loading system for dynamic backend selection
+- [ ] Refactor for true modular linking (see Known Limitations below)
+
+**Known Limitations:**
+
+Currently, the modular libraries have cross-backend symbol dependencies that prevent
+truly independent linking. For example:
+
+- `solver_registry.c` (in Core) references SIMD and OMP solver implementations
+- `boundary_conditions.c` (in Scalar) references SIMD and OMP backend tables
+- `linear_solver.c` (in Scalar) references SIMD and OMP solver factories
+
+To achieve true modular linking, these need to be refactored using:
+
+- Weak symbols (platform-specific)
+- Conditional registration at runtime
+- Plugin architecture with dynamic loading
+
+**Usage Examples:**
+
+```cmake
+# Currently, use the unified library for full functionality
+target_link_libraries(my_app PRIVATE CFD::Library)
+
+# Future: Link only what you need (after refactoring)
+# target_link_libraries(my_app PRIVATE CFD::Core CFD::SIMD)
+```
+
+### 4.3 GPU Improvements (P2)
 
 **Implemented:**
 
