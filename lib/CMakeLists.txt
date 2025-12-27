@@ -211,6 +211,7 @@ endfunction()
 # Dependencies: None (base library)
 # Note: GPU stub is always included in cfd_core to provide gpu_is_available().
 #       The unified library (cfd_library) handles CUDA vs stub selection separately.
+# Note: OpenMP is optional for core - used for parallelizing derived_fields.c
 add_library(cfd_core STATIC
     ${CFD_CORE_SOURCES}
     ${CFD_IO_SOURCES}
@@ -229,6 +230,8 @@ target_include_directories(cfd_core
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 apply_compiler_options(cfd_core)
+# Core uses OpenMP for derived_fields.c parallelization (optional)
+apply_omp_options(cfd_core)
 add_library(CFD::Core ALIAS cfd_core)
 
 # --- CFD Scalar Library ---
