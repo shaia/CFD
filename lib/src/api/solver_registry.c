@@ -301,18 +301,23 @@ ns_solver_t* cfd_solver_create(ns_solver_registry_t* registry, const char* type_
             ns_solver_t* solver = registry->entries[i].factory();
             if (!solver) {
                 /* Factory returned NULL - check if error was already set by the factory.
-                 * If not (e.g., out of memory), set a generic error.
-                 * GPU factories set CFD_ERROR_UNSUPPORTED when GPU is not available. */
+                 * Factories should set specific errors:
+                 * - CFD_ERROR_UNSUPPORTED: backend not available (GPU, SIMD, etc.)
+                 * - CFD_ERROR_NOMEM: allocation failed
+                 * If no error was set, assume memory allocation failure. */
                 if (cfd_get_last_status() == CFD_SUCCESS) {
-                    cfd_set_error(CFD_ERROR, "Failed to create solver");
+                    cfd_set_error(CFD_ERROR_NOMEM, "Failed to allocate solver");
                 }
             }
             return solver;
         }
     }
 
-    /* Solver type not found in registry */
-    cfd_set_error(CFD_ERROR_INVALID, "Solver type not registered");
+    /* Solver type not found in registry - use CFD_ERROR_NOT_FOUND
+     * to distinguish from CFD_ERROR_UNSUPPORTED (backend unavailable) */
+    char error_msg[128];
+    snprintf(error_msg, sizeof(error_msg), "Solver type '%s' not registered", type_name);
+    cfd_set_error(CFD_ERROR_NOT_FOUND, error_msg);
     return NULL;
 }
 

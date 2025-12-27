@@ -16,10 +16,11 @@ typedef enum {
     CFD_ERROR_NOMEM = -2,          // Out of memory
     CFD_ERROR_INVALID = -3,        // Invalid argument/input
     CFD_ERROR_IO = -4,             // File I/O error
-    CFD_ERROR_UNSUPPORTED = -5,    // Operation not supported
+    CFD_ERROR_UNSUPPORTED = -5,    // Operation not supported (backend unavailable)
     CFD_ERROR_DIVERGED = -6,       // NSSolver diverged
     CFD_ERROR_MAX_ITER = -7,       // NSSolver reached max iterations
-    CFD_ERROR_LIMIT_EXCEEDED = -8  // Resource limit exceeded
+    CFD_ERROR_LIMIT_EXCEEDED = -8, // Resource limit exceeded
+    CFD_ERROR_NOT_FOUND = -9       // Resource not found (e.g., solver type not registered)
 } cfd_status_t;
 
 /**

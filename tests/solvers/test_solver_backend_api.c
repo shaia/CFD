@@ -285,6 +285,8 @@ void test_create_checked_cuda_conditional(void) {
 void test_create_checked_invalid_type(void) {
     ns_solver_t* solver = cfd_solver_create_checked(registry, "nonexistent_solver");
     TEST_ASSERT_NULL(solver);
+    /* CFD_ERROR_NOT_FOUND for missing solver type, not CFD_ERROR_INVALID or CFD_ERROR_UNSUPPORTED */
+    TEST_ASSERT_EQUAL(CFD_ERROR_NOT_FOUND, cfd_get_last_status());
 }
 
 void test_create_checked_null_registry(void) {

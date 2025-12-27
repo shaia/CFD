@@ -58,6 +58,8 @@ const char* cfd_get_error_string(cfd_status_t status) {
             return "Max iterations reached";
         case CFD_ERROR_LIMIT_EXCEEDED:
             return "Resource limit exceeded";
+        case CFD_ERROR_NOT_FOUND:
+            return "Resource not found";
         default:
             return "Unknown error";
     }
