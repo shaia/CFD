@@ -20,10 +20,10 @@ endif()
 
 # Define the library project with optional CUDA
 if(CFD_ENABLE_CUDA)
-    project(cfd_library VERSION 0.1.0 LANGUAGES C CUDA)
+    project(cfd_library VERSION 0.1.6 LANGUAGES C CUDA)
     message(STATUS "CUDA support enabled")
 else()
-    project(cfd_library VERSION 0.1.0 LANGUAGES C)
+    project(cfd_library VERSION 0.1.6 LANGUAGES C)
     message(STATUS "CUDA support disabled (use -DCFD_ENABLE_CUDA=ON to enable)")
 endif()
 
