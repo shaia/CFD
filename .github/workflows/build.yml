@@ -109,7 +109,7 @@ jobs:
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
-          brew install cmake ninja
+          brew install cmake ninja libomp
 
       # Windows setup
       - name: Setup MSVC
@@ -134,6 +134,18 @@ jobs:
               -DBUILD_SHARED_LIBS=ON \
               -DBUILD_EXAMPLES=ON \
               -DBUILD_TESTS=ON
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            # macOS needs help finding Homebrew's libomp for OpenMP support
+            cmake .. -G "${{ matrix.config.generator }}" \
+              -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }} \
+              -DBUILD_SHARED_LIBS=ON \
+              -DBUILD_EXAMPLES=ON \
+              -DBUILD_TESTS=ON \
+              -DCMAKE_C_COMPILER=${{ matrix.config.cc }} \
+              -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }} \
+              -DOpenMP_C_FLAGS="-Xpreprocessor -fopenmp -I$(brew --prefix libomp)/include" \
+              -DOpenMP_C_LIB_NAMES="omp" \
+              -DOpenMP_omp_LIBRARY="$(brew --prefix libomp)/lib/libomp.dylib"
           else
             cmake .. -G "${{ matrix.config.generator }}" \
               -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }} \
@@ -668,10 +680,16 @@ jobs:
           # Verify CUDA/GPU symbols are compiled in
           echo ""
           echo "Checking for GPU symbols in library..."
-          if nm -C lib/libcfd_library.a 2>/dev/null | grep -q "gpu"; then
-            echo "✅ GPU symbols found in library (CUDA compiled)"
+          # For static builds, cfd_library is an INTERFACE library, check cfd_api instead
+          if [ -f lib/libcfd_library.a ]; then
+            LIB_CHECK=lib/libcfd_library.a
           else
-            echo "⚠️ GPU symbols NOT found (CUDA may not be enabled)"
+            LIB_CHECK=lib/libcfd_api.a
+          fi
+          if nm -C "$LIB_CHECK" 2>/dev/null | grep -q "gpu"; then
+            echo "✅ GPU symbols found in $LIB_CHECK (CUDA compiled)"
+          else
+            echo "⚠️ GPU symbols NOT found in $LIB_CHECK (CUDA may not be enabled)"
           fi
 
       - name: Run cross-architecture and validation tests
@@ -924,12 +942,20 @@ jobs:
         run: |
           cd build
           echo "Checking for GPU symbols in library..."
-          if nm -C lib/libcfd_library.a 2>/dev/null | grep -q "gpu"; then
-            echo "✅ GPU symbols found in library"
-            nm -C lib/libcfd_library.a | grep -i gpu | head -10
+          # For static builds, cfd_library is an INTERFACE library, check cfd_api instead
+          if [ -f lib/libcfd_library.a ]; then
+            LIB_TO_CHECK=lib/libcfd_library.a
           else
-            echo "❌ GPU symbols NOT found"
-            nm -C lib/libcfd_library.a | head -30
+            LIB_TO_CHECK=lib/libcfd_api.a
+          fi
+          if nm -C "$LIB_TO_CHECK" 2>/dev/null | grep -q "gpu"; then
+            echo "✅ GPU symbols found in $LIB_TO_CHECK"
+            nm -C "$LIB_TO_CHECK" | grep -i gpu | head -10
+          else
+            echo "❌ GPU symbols NOT found in $LIB_TO_CHECK"
+            echo "Available libraries:"
+            ls -la lib/*.a 2>/dev/null || true
+            nm -C "$LIB_TO_CHECK" | head -30
             exit 1
           fi
 
