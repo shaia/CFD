@@ -91,15 +91,3 @@ const bc_backend_impl_t bc_impl_scalar = {
     .apply_inlet = bc_apply_inlet_scalar_impl,
     .apply_outlet = bc_apply_outlet_scalar_impl
 };
-
-/* Stub for OpenMP backend when OpenMP is not available.
- * The dispatcher checks for NULL function pointers to determine availability. */
-#ifndef CFD_ENABLE_OPENMP
-const bc_backend_impl_t bc_impl_omp = {
-    .apply_neumann = NULL,
-    .apply_periodic = NULL,
-    .apply_dirichlet = NULL,
-    .apply_inlet = NULL,
-    .apply_outlet = NULL
-};
-#endif
