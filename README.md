@@ -338,7 +338,16 @@ The CFD framework provides modular library components that allow you to link onl
 | `cfd_simd` | `CFD::SIMD` | AVX2/NEON optimized solvers | CFD::Core, CFD::Scalar |
 | `cfd_omp` | `CFD::OMP` | OpenMP parallelized solvers | CFD::Core, CFD::Scalar |
 | `cfd_cuda` | `CFD::CUDA` | CUDA GPU solvers | CFD::Core |
+| `cfd_api` | `CFD::API` | Dispatcher layer and high-level API | All backends |
 | `cfd_library` | `CFD::Library` | Unified library (all backends) | All above |
+
+**Architecture:**
+
+The modular architecture separates concerns by technology:
+- **cfd_core** provides the foundation: grid structures, memory management, I/O utilities
+- **Backend libraries** (scalar, simd, omp, cuda) contain technology-specific solver implementations
+- **cfd_api** provides dispatchers that route calls to the appropriate backend at runtime
+- **cfd_library** is the unified interface that combines all components (recommended for most users)
 
 **CMake Usage:**
 
@@ -365,6 +374,31 @@ target_link_libraries(my_app PRIVATE CFD::Library)
 - **Fewer dependencies** - No OpenMP/CUDA requirements for scalar-only builds
 - **Faster compilation** - Compile only needed components
 - **Clear dependencies** - Each library declares what it needs
+- **Runtime backend detection** - Backends provide NULL stubs when unavailable
+
+**Build Options:**
+
+The framework supports both static and shared library builds:
+
+```bash
+# Static libraries (default)
+cmake -B build
+
+# Shared libraries
+cmake -DBUILD_SHARED_LIBS=ON -B build
+```
+
+**Technical Notes:**
+
+The modular libraries have circular dependencies that are handled via linker groups:
+- `cfd_scalar`/`cfd_simd` call `poisson_solve()` (defined in `cfd_api`)
+- `cfd_api` links against `cfd_scalar`/`cfd_simd`
+
+**Solution:**
+- **Linux**: GNU linker groups (`-Wl,--start-group` ... `-Wl,--end-group`) resolve circular references
+- **Windows/macOS**: Linker automatically handles multiple passes
+- **Shared builds**: Recompile sources into unified shared library
+- **Static builds**: INTERFACE library links modular libraries without recompiling
 
 ### GPU Solver Configuration
 
