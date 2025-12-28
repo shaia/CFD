@@ -295,9 +295,24 @@ add_library(CFD::SIMD ALIAS cfd_simd)
 # Contains: OpenMP parallelized solvers (or stubs when OpenMP not available)
 # Dependencies: cfd_core, cfd_scalar
 # Note: Always build this library to provide bc_impl_omp symbol needed by cfd_api dispatcher.
-#       When OpenMP is not available, the library contains only NULL stub tables.
+#       When OpenMP is not available, only boundary condition stubs are compiled (they have guards).
+if(OpenMP_C_FOUND)
+    # Full OpenMP implementation
+    set(CFD_OMP_BUILD_SOURCES ${CFD_OMP_SOURCES})
+    set(CFD_HAS_OMP TRUE)
+else()
+    # Only boundary condition files (they have #ifdef CFD_ENABLE_OPENMP guards)
+    # Solver files require omp.h and can't be compiled without OpenMP
+    set(CFD_OMP_BUILD_SOURCES
+        src/boundary/omp/boundary_conditions_omp.c
+        src/boundary/omp/boundary_conditions_inlet_omp.c
+        src/boundary/omp/boundary_conditions_outlet_omp.c
+    )
+    set(CFD_HAS_OMP FALSE)
+endif()
+
 add_library(cfd_omp STATIC
-    ${CFD_OMP_SOURCES}
+    ${CFD_OMP_BUILD_SOURCES}
 )
 set_target_properties(cfd_omp PROPERTIES
     POSITION_INDEPENDENT_CODE ON
@@ -315,9 +330,6 @@ target_link_libraries(cfd_omp PUBLIC cfd_core cfd_scalar)
 apply_compiler_options(cfd_omp)
 if(OpenMP_C_FOUND)
     apply_omp_options(cfd_omp)
-    set(CFD_HAS_OMP TRUE)
-else()
-    set(CFD_HAS_OMP FALSE)
 endif()
 add_library(CFD::OMP ALIAS cfd_omp)
 

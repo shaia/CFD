@@ -1226,16 +1226,23 @@ int cfd_registry_list_by_backend(ns_solver_registry_t* registry, ns_solver_backe
 
     int count = 0;
 
-    /* Always iterate through all entries to count total matches.
-     * Only populate the names array if provided and space is available. */
+    /* If names is NULL, just count total matches (discovery mode).
+     * Otherwise, fill the array up to max_count and return number filled. */
     for (int i = 0; i < registry->count; i++) {
         /* Use the stored backend instead of creating temporary solvers.
          * This is much more efficient and avoids side effects from factory calls. */
         if (registry->entries[i].backend == backend) {
-            if (names && count < max_count) {
+            if (names == NULL) {
+                /* Discovery mode: count all matches */
+                count++;
+            } else if (count < max_count) {
+                /* Fill mode: add to array if space available */
                 names[count] = registry->entries[i].name;
+                count++;
+            } else {
+                /* Array full, stop filling but don't count more */
+                break;
             }
-            count++;
         }
     }
 
