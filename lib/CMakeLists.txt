@@ -89,10 +89,14 @@ set(CFD_CORE_SOURCES
 )
 
 # API sources - these depend on solver backends and must link against all of them
+# Includes dispatcher files that reference multiple backends
 set(CFD_API_SOURCES
     src/api/simulation_api.c
     src/api/solver_registry.c
     src/api/output_registry.c
+    # Dispatcher files that select between backends at runtime
+    src/boundary/boundary_conditions.c
+    src/solvers/linear/linear_solver.c
 )
 
 # I/O sources (part of core)
@@ -102,17 +106,17 @@ set(CFD_IO_SOURCES
 )
 
 # Scalar CPU sources (baseline implementation)
+# Note: Dispatcher files (boundary_conditions.c, linear_solver.c) are in CFD_API_SOURCES
+# because they reference all backends and must link against them.
 set(CFD_SCALAR_SOURCES
-    # Boundary conditions - scalar
-    src/boundary/boundary_conditions.c
+    # Boundary conditions - scalar implementations only
     src/boundary/cpu/boundary_conditions_scalar.c
     src/boundary/cpu/boundary_conditions_inlet_scalar.c
     src/boundary/cpu/boundary_conditions_outlet_scalar.c
     # Navier-Stokes solvers - scalar
     src/solvers/navier_stokes/cpu/solver_explicit_euler.c
     src/solvers/navier_stokes/cpu/solver_projection.c
-    # Linear solvers - scalar
-    src/solvers/linear/linear_solver.c
+    # Linear solvers - scalar implementations only
     src/solvers/linear/cpu/linear_solver_jacobi.c
     src/solvers/linear/cpu/linear_solver_sor.c
     src/solvers/linear/cpu/linear_solver_redblack.c
