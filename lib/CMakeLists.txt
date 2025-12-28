@@ -292,32 +292,34 @@ apply_compiler_options(cfd_simd)
 add_library(CFD::SIMD ALIAS cfd_simd)
 
 # --- CFD OpenMP Library ---
-# Contains: OpenMP parallelized solvers
+# Contains: OpenMP parallelized solvers (or stubs when OpenMP not available)
 # Dependencies: cfd_core, cfd_scalar
+# Note: Always build this library to provide bc_impl_omp symbol needed by cfd_api dispatcher.
+#       When OpenMP is not available, the library contains only NULL stub tables.
+add_library(cfd_omp STATIC
+    ${CFD_OMP_SOURCES}
+)
+set_target_properties(cfd_omp PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    OUTPUT_NAME cfd_omp
+)
+target_include_directories(cfd_omp
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(cfd_omp PUBLIC cfd_core cfd_scalar)
+apply_compiler_options(cfd_omp)
 if(OpenMP_C_FOUND)
-    add_library(cfd_omp STATIC
-        ${CFD_OMP_SOURCES}
-    )
-    set_target_properties(cfd_omp PROPERTIES
-        POSITION_INDEPENDENT_CODE ON
-        OUTPUT_NAME cfd_omp
-    )
-    target_include_directories(cfd_omp
-        PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
-            $<INSTALL_INTERFACE:include>
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-    target_link_libraries(cfd_omp PUBLIC cfd_core cfd_scalar)
-    apply_compiler_options(cfd_omp)
     apply_omp_options(cfd_omp)
-    add_library(CFD::OMP ALIAS cfd_omp)
     set(CFD_HAS_OMP TRUE)
 else()
     set(CFD_HAS_OMP FALSE)
 endif()
+add_library(CFD::OMP ALIAS cfd_omp)
 
 # --- CFD CUDA Library ---
 # Contains: CUDA GPU solvers
@@ -363,13 +365,12 @@ else()
 endif()
 
 # --- CFD API Library ---
-# Contains: solver_registry, simulation_api, output_registry
-# Dependencies: cfd_core, cfd_scalar, cfd_simd (and optionally cfd_omp, cfd_cuda)
+# Contains: solver_registry, simulation_api, output_registry, dispatchers
+# Dependencies: cfd_core, cfd_scalar, cfd_simd, cfd_omp (always), cfd_cuda (optional)
 # This library provides the high-level API and must link all solver backends.
-set(CFD_API_DEPS cfd_core cfd_scalar cfd_simd)
-if(CFD_HAS_OMP)
-    list(APPEND CFD_API_DEPS cfd_omp)
-endif()
+# Note: cfd_omp is always linked because the boundary_conditions dispatcher references
+#       bc_impl_omp. When OpenMP is disabled, cfd_omp contains only NULL stub tables.
+set(CFD_API_DEPS cfd_core cfd_scalar cfd_simd cfd_omp)
 if(CFD_HAS_CUDA)
     list(APPEND CFD_API_DEPS cfd_cuda)
 endif()
@@ -487,10 +488,8 @@ else()
     # (cfd_scalar/cfd_simd call poisson_solve from cfd_api)
     if(UNIX AND NOT APPLE)
         # Explicitly list all backend libraries for the linker group
-        set(LINKER_GROUP_LIBS cfd_api cfd_core cfd_scalar cfd_simd)
-        if(CFD_HAS_OMP)
-            list(APPEND LINKER_GROUP_LIBS cfd_omp)
-        endif()
+        # Note: cfd_omp is always included (contains stubs when OpenMP disabled)
+        set(LINKER_GROUP_LIBS cfd_api cfd_core cfd_scalar cfd_simd cfd_omp)
         if(CFD_HAS_CUDA)
             list(APPEND LINKER_GROUP_LIBS cfd_cuda)
         endif()
@@ -564,10 +563,8 @@ set(CFD_LIBRARY_HEADERS
 )
 
 # Targets to install
-set(INSTALL_TARGETS cfd_library cfd_core cfd_scalar cfd_simd cfd_api)
-if(CFD_HAS_OMP)
-    list(APPEND INSTALL_TARGETS cfd_omp)
-endif()
+# Note: cfd_omp is always included (contains stubs when OpenMP disabled)
+set(INSTALL_TARGETS cfd_library cfd_core cfd_scalar cfd_simd cfd_omp cfd_api)
 if(CFD_HAS_CUDA)
     list(APPEND INSTALL_TARGETS cfd_cuda)
 endif()
@@ -629,6 +626,8 @@ message(STATUS "    - cfd_scalar   (scalar CPU solvers)")
 message(STATUS "    - cfd_simd     (AVX2/NEON optimized solvers)")
 if(CFD_HAS_OMP)
     message(STATUS "    - cfd_omp      (OpenMP parallelized solvers)")
+else()
+    message(STATUS "    - cfd_omp      (stub - OpenMP not available)")
 endif()
 if(CFD_HAS_CUDA)
     message(STATUS "    - cfd_cuda     (CUDA GPU solvers)")
