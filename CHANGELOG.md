@@ -13,10 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `cfd_core` - Grid, memory, I/O, utilities (base library)
   - `cfd_scalar` - Scalar CPU solvers (baseline implementation)
   - `cfd_simd` - AVX2/NEON optimized solvers
-  - `cfd_omp` - OpenMP parallelized solvers
-  - `cfd_cuda` - CUDA GPU solvers
+  - `cfd_omp` - OpenMP parallelized solvers (with stubs when OpenMP unavailable)
+  - `cfd_cuda` - CUDA GPU solvers (conditional compilation)
+  - `cfd_api` - Dispatcher layer and high-level API (links all backends)
   - `cfd_library` - Unified library (all backends, backward compatible)
-  - CMake aliases: `CFD::Core`, `CFD::Scalar`, `CFD::SIMD`, `CFD::OMP`, `CFD::CUDA`, `CFD::Library`
+  - CMake aliases: `CFD::Core`, `CFD::Scalar`, `CFD::SIMD`, `CFD::OMP`, `CFD::CUDA`, `CFD::API`, `CFD::Library`
 - **Backend Availability API** for runtime detection of computational backends:
   - `cfd_backend_is_available()` - Check if SCALAR/SIMD/OMP/CUDA backend is available
   - `cfd_backend_get_name()` - Get human-readable backend name
@@ -26,6 +27,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runtime GPU availability detection with proper error codes
 - Comprehensive test suite for backend API (`test_solver_backend_api.c`)
 - Comprehensive test suite for modular libraries (`test_modular_libraries.c`)
+
+### Changed
+
+- Modular library architecture now uses dispatcher pattern with `cfd_api` library
+- GNU linker groups resolve circular dependencies on Linux static builds
+- Shared library builds recompile sources for proper symbol export
+- OpenMP library always built (provides stubs when OpenMP unavailable)
+- ROADMAP updated to document linker group solution for circular dependencies
+
+### Fixed
+
+- Removed duplicate `bc_impl_omp` symbol definition causing linker errors
+- Fixed `cfd_registry_list_by_backend()` to properly handle discovery mode (`names == NULL`)
+- OpenMP source files conditionally compiled based on availability (prevents `<omp.h>` errors)
+- CI GPU symbol check now works with INTERFACE libraries (checks `libcfd_api.a` fallback)
+- Cross-backend symbol dependencies resolved via `cfd_api` dispatcher library
 
 ## [0.1.5] - 2025-12-26
 
