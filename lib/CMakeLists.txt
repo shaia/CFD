@@ -262,6 +262,10 @@ target_include_directories(cfd_scalar
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_link_libraries(cfd_scalar PUBLIC cfd_core)
+# Note: cfd_scalar calls poisson_solve() which is defined in cfd_api (a dispatcher).
+# We can't make cfd_scalar depend on cfd_api at build time (circular dependency),
+# but we need the symbols at link time. CMake handles this automatically when
+# linking the final executable/library, so no special handling needed here.
 apply_compiler_options(cfd_scalar)
 add_library(CFD::Scalar ALIAS cfd_scalar)
 
@@ -386,6 +390,17 @@ target_include_directories(cfd_api
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_link_libraries(cfd_api PUBLIC ${CFD_API_DEPS})
+# Handle circular dependency: cfd_scalar/cfd_simd call poisson_solve() from cfd_api
+# On Linux/GCC, use --start-group/--end-group to allow circular symbol resolution
+if(UNIX AND NOT APPLE)
+    target_link_options(cfd_api INTERFACE
+        "LINKER:--start-group"
+        "$<TARGET_FILE:cfd_api>"
+        "$<TARGET_FILE:cfd_scalar>"
+        "$<TARGET_FILE:cfd_simd>"
+        "LINKER:--end-group"
+    )
+endif()
 apply_compiler_options(cfd_api)
 if(CFD_HAS_OMP)
     apply_omp_options(cfd_api)
