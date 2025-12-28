@@ -371,21 +371,25 @@ Find eigenvalues/eigenvectors for stability analysis.
 - [x] Define public/private header boundaries per library
 - [x] Add CMake aliases for clean target references
 - [x] Add comprehensive test suite (`test_modular_libraries.c`)
+- [x] Support shared library builds (both static and shared supported)
 - [ ] Update examples/tests to link against specific backends (optional)
-- [ ] Support shared library builds (currently static only)
 - [ ] Plugin loading system for dynamic backend selection
-- [ ] Refactor for true modular linking (see Known Limitations below)
 
 **Known Limitations:**
 
-Currently, the modular libraries have cross-backend symbol dependencies that prevent
-truly independent linking. For example:
+The modular libraries have circular dependencies that are handled via linker groups:
 
-- `solver_registry.c` (in Core) references SIMD and OMP solver implementations
-- `boundary_conditions.c` (in Scalar) references SIMD and OMP backend tables
-- `linear_solver.c` (in Scalar) references SIMD and OMP solver factories
+- `cfd_scalar`/`cfd_simd` call `poisson_solve()` (defined in `cfd_api`)
+- `cfd_api` links against `cfd_scalar`/`cfd_simd`
 
-To achieve true modular linking, these need to be refactored using:
+**Current Solution:**
+- On Linux: GNU linker groups (`-Wl,--start-group` ... `-Wl,--end-group`) resolve circular references
+- On Windows/macOS: Linker automatically handles multiple passes
+- Shared builds: Recompile sources into unified shared library
+- Static builds: INTERFACE library linking modular libraries
+
+**Future Improvements:**
+To eliminate circular dependencies entirely, consider refactoring using:
 
 - Weak symbols (platform-specific)
 - Conditional registration at runtime
