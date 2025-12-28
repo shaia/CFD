@@ -391,15 +391,12 @@ target_include_directories(cfd_api
 )
 target_link_libraries(cfd_api PUBLIC ${CFD_API_DEPS})
 # Handle circular dependency: cfd_scalar/cfd_simd call poisson_solve() from cfd_api
-# On Linux/GCC, use --start-group/--end-group to allow circular symbol resolution
+# Solution: List the backend libraries again as INTERFACE dependencies to allow
+# the linker to make multiple passes and resolve circular references
 if(UNIX AND NOT APPLE)
-    target_link_options(cfd_api INTERFACE
-        "LINKER:--start-group"
-        "$<TARGET_FILE:cfd_api>"
-        "$<TARGET_FILE:cfd_scalar>"
-        "$<TARGET_FILE:cfd_simd>"
-        "LINKER:--end-group"
-    )
+    # Repeat backend libraries to resolve circular symbol references
+    # Link order becomes: app -> cfd_api -> backends -> cfd_api (interface) -> backends (again)
+    target_link_libraries(cfd_api INTERFACE ${CFD_API_DEPS})
 endif()
 apply_compiler_options(cfd_api)
 if(CFD_HAS_OMP)
