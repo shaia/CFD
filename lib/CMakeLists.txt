@@ -391,13 +391,10 @@ target_include_directories(cfd_api
 )
 target_link_libraries(cfd_api PUBLIC ${CFD_API_DEPS})
 # Handle circular dependency: cfd_scalar/cfd_simd call poisson_solve() from cfd_api
-# Solution: List the backend libraries again as INTERFACE dependencies to allow
-# the linker to make multiple passes and resolve circular references
-if(UNIX AND NOT APPLE)
-    # Repeat backend libraries to resolve circular symbol references
-    # Link order becomes: app -> cfd_api -> backends -> cfd_api (interface) -> backends (again)
-    target_link_libraries(cfd_api INTERFACE ${CFD_API_DEPS})
-endif()
+# On Linux/GCC, we need to use linker groups. Add custom link flags to wrap all the
+# modular libraries in --start-group/--end-group.
+# This is handled at the cfd_library (unified) level, not here.
+# The circular reference: cfd_scalar/simd -> poisson_solve (in cfd_api) -> cfd_scalar/simd
 apply_compiler_options(cfd_api)
 if(CFD_HAS_OMP)
     apply_omp_options(cfd_api)
@@ -485,7 +482,28 @@ else()
     # Static build: use INTERFACE library to aggregate modular libraries
     # This ensures consistency between modular and unified builds and reduces build time
     add_library(cfd_library INTERFACE)
-    target_link_libraries(cfd_library INTERFACE ${CFD_MODULAR_LIBS})
+
+    # On Linux, wrap modular libraries in linker group to resolve circular dependencies
+    # (cfd_scalar/cfd_simd call poisson_solve from cfd_api)
+    if(UNIX AND NOT APPLE)
+        # Explicitly list all backend libraries for the linker group
+        set(LINKER_GROUP_LIBS cfd_api cfd_core cfd_scalar cfd_simd)
+        if(CFD_HAS_OMP)
+            list(APPEND LINKER_GROUP_LIBS cfd_omp)
+        endif()
+        if(CFD_HAS_CUDA)
+            list(APPEND LINKER_GROUP_LIBS cfd_cuda)
+        endif()
+
+        target_link_libraries(cfd_library INTERFACE
+            "-Wl,--start-group"
+            ${LINKER_GROUP_LIBS}
+            "-Wl,--end-group"
+        )
+    else()
+        target_link_libraries(cfd_library INTERFACE ${CFD_MODULAR_LIBS})
+    endif()
+
     target_include_directories(cfd_library INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
