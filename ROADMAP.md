@@ -33,6 +33,43 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [ ] Limited linear solvers (no BiCGSTAB/multigrid)
 - [ ] No restart/checkpoint capability
 
+### Known Issues
+
+#### Stretched Grid Formula Bug (P1)
+
+**File:** `lib/src/core/grid.c:78-91` (`grid_initialize_stretched`)
+
+**Issue:** The hyperbolic cosine stretching formula is mathematically incorrect. Both endpoints (i=0 and i=n-1) map to `xmin`, and the maximum coordinate is at the center index. The grid does not span from `xmin` to `xmax`.
+
+**Current behavior:**
+- Grid clusters points toward the **center** of the domain (not boundaries)
+- Both endpoints map to `xmin` (grid never reaches `xmax`)
+- Maximum coordinate value is at the center index
+- Higher beta = more clustering toward center
+
+**Current formula:**
+```c
+x[i] = xmin + (xmax - xmin) * (1.0 - cosh(beta * (1.0 - 2.0 * xi)) / cosh(beta))
+```
+
+**Problem:** When `xi=0` or `xi=1`, `cosh(beta*±1)/cosh(beta) = 1`, so `x = xmin + 0 = xmin` for both endpoints.
+
+**Correct formula (tanh stretching for boundary clustering):**
+```c
+// Cluster points near both boundaries (good for boundary layers)
+x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta)) / 2.0
+```
+
+**Expected behavior after fix:**
+- Grid spans full domain from `xmin` to `xmax`
+- Points cluster near **boundaries** (useful for boundary layer resolution)
+- Higher beta = more clustering near boundaries
+
+**TODO:**
+- [ ] Fix the stretching formula to span full domain `[xmin, xmax]`
+- [ ] Update Python tests in `cfd-python/tests/test_cpu_features.py` to verify correct behavior
+- [ ] Document stretching parameter `beta` (higher = more clustering near boundaries)
+
 ---
 
 ## Phase 0: Architecture & Robustness (P0 - Critical)
