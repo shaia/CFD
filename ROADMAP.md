@@ -2,7 +2,7 @@
 
 This document outlines the development roadmap for achieving a commercial-grade, open-source CFD library.
 
-## Current State (v0.1.5)
+## Current State (v0.1.6)
 
 ### What We Have
 
@@ -14,7 +14,6 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] CI/CD with GitHub Actions
 - [x] Unity test framework integration
 - [x] VTK and CSV output with timestamped directories
-- [x] Python bindings infrastructure (cfd-python)
 - [x] Visualization library (cfd-visualization)
 - [x] Thread-safe library initialization
 - [x] SIMD Poisson solvers (Jacobi and Red-Black SOR with AVX2)
@@ -35,40 +34,30 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 ### Known Issues
 
-#### Stretched Grid Formula Bug (P1)
+*No critical known issues at this time.*
 
-**File:** `lib/src/core/grid.c:78-91` (`grid_initialize_stretched`)
+#### ~~Stretched Grid Formula Bug~~ (FIXED in v0.1.7)
 
-**Issue:** The hyperbolic cosine stretching formula is mathematically incorrect. Both endpoints (i=0 and i=n-1) map to `xmin`, and the maximum coordinate is at the center index. The grid does not span from `xmin` to `xmax`.
+**File:** `lib/src/core/grid.c` (`grid_initialize_stretched`)
 
-**Current behavior:**
-- Grid clusters points toward the **center** of the domain (not boundaries)
-- Both endpoints map to `xmin` (grid never reaches `xmax`)
-- Maximum coordinate value is at the center index
-- Higher beta = more clustering toward center
-
-**Current formula:**
+**Resolution:** Fixed the hyperbolic stretching formula using tanh-based stretching:
 ```c
-x[i] = xmin + (xmax - xmin) * (1.0 - cosh(beta * (1.0 - 2.0 * xi)) / cosh(beta))
-```
-
-**Problem:** When `xi=0` or `xi=1`, `cosh(beta*±1)/cosh(beta) = 1`, so `x = xmin + 0 = xmin` for both endpoints.
-
-**Correct formula (tanh stretching for boundary clustering):**
-```c
-// Cluster points near both boundaries (good for boundary layers)
 x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta)) / 2.0
 ```
 
-**Expected behavior after fix:**
+**Fixed behavior:**
+
 - Grid spans full domain from `xmin` to `xmax`
 - Points cluster near **boundaries** (useful for boundary layer resolution)
 - Higher beta = more clustering near boundaries
+- Edge case: beta=0 falls back to uniform grid
 
-**TODO:**
-- [ ] Fix the stretching formula to span full domain `[xmin, xmax]`
-- [ ] Update Python tests in `cfd-python/tests/test_cpu_features.py` to verify correct behavior
-- [ ] Document stretching parameter `beta` (higher = more clustering near boundaries)
+**Tests added:** `tests/core/test_grid.c` with 16 unit tests covering:
+
+- Uniform grid spans full domain, equal spacing, non-unit domains
+- Stretched grid spans full domain, clusters near boundaries, higher beta = more clustering
+- beta=0 equals uniform, non-unit domains, monotonically increasing coordinates
+- Error handling for invalid inputs
 
 ---
 
@@ -844,28 +833,308 @@ ctest -R validation --timeout 3600
 - [ ] Heat transfer examples
 - [ ] Turbulent flow examples
 - [ ] Parallel computing examples (MPI)
-- [ ] Python interface examples
 
 ---
 
-## Phase 7: Python Integration
+## Phase 7: ML Inference Engine
 
-**Goal:** First-class Python support.
+**Goal:** Enable fast inference of pre-trained neural network surrogate models in pure C, without Python dependencies.
 
-### 7.1 Python Bindings (P1)
+**Priority:** P3 - Future enhancement
 
-- [ ] Complete C extension module
-- [ ] NumPy array integration
-- [ ] Pythonic API design
-- [ ] Type hints and stubs
-- [ ] Pre-built wheels (manylinux, macOS, Windows)
+### Rationale
 
-### 7.2 High-level Python API (P1)
+Train models in Python (PyTorch/JAX), deploy inference in C for:
 
-- [ ] Problem definition classes
-- [ ] Mesh generation helpers
-- [ ] Post-processing utilities
-- [ ] Jupyter notebook integration
+- ~1000× speedup over traditional CFD for inference
+- No external dependencies at runtime
+- SIMD-optimized matrix operations
+- Embedded systems / HPC integration
+
+### 7.1 Weight Format & Loader (P3)
+
+- [ ] Define binary weight format (.cfdnn)
+  ```c
+  typedef struct {
+      uint32_t magic;           // "CFDN"
+      uint32_t version;
+      uint32_t num_layers;
+      uint32_t input_dim;
+      uint32_t output_dim;
+      // Layer descriptors follow
+  } cfdnn_header_t;
+  ```
+
+- [ ] JSON metadata support for model info
+- [ ] Weight loading API
+  ```c
+  cfdnn_model_t* cfdnn_load(const char* path);
+  void cfdnn_free(cfdnn_model_t* model);
+  ```
+
+### 7.2 Layer Implementations (P3)
+
+- [ ] Dense (fully connected) layer
+  ```c
+  void cfdnn_dense_forward(
+      const double* input, size_t in_features,
+      const double* weights, const double* bias,
+      double* output, size_t out_features
+  );
+  ```
+
+- [ ] Activation functions
+  - [ ] ReLU, Leaky ReLU
+  - [ ] Tanh, Sigmoid
+  - [ ] GELU (for transformers)
+  - [ ] Swish/SiLU
+
+- [ ] Batch normalization
+- [ ] Layer normalization
+- [ ] Dropout (inference mode = identity)
+
+### 7.3 SIMD-Optimized Kernels (P3)
+
+- [ ] AVX2 matrix-vector multiply
+- [ ] AVX2 matrix-matrix multiply (for batched inference)
+- [ ] NEON equivalents for ARM
+- [ ] Cache-optimized tiling for large layers
+
+```c
+// Example: SIMD dense layer
+void cfdnn_dense_forward_avx2(
+    const double* input, size_t in_features,
+    const double* weights, const double* bias,
+    double* output, size_t out_features
+);
+```
+
+### 7.4 Model Architectures (P3)
+
+| Architecture | Status | Notes |
+|--------------|--------|-------|
+| Fully Connected (MLP) | Planned | Priority - most common for PINNs |
+| Convolutional (Conv2D) | Future | For grid-based models |
+| Fourier Neural Operator | Future | State-of-the-art for PDEs |
+
+### 7.5 Inference API (P3)
+
+```c
+// High-level inference API
+typedef struct {
+    size_t nx, ny;
+    double Re;
+    double* boundary_conditions;  // Flattened BC values
+} cfdnn_input_t;
+
+typedef struct {
+    double* u;   // Velocity x-component (nx * ny)
+    double* v;   // Velocity y-component (nx * ny)
+    double* p;   // Pressure field (nx * ny)
+} cfdnn_output_t;
+
+cfd_status_t cfdnn_predict(
+    const cfdnn_model_t* model,
+    const cfdnn_input_t* input,
+    cfdnn_output_t* output
+);
+
+// Batch inference for parameter sweeps
+cfd_status_t cfdnn_predict_batch(
+    const cfdnn_model_t* model,
+    const cfdnn_input_t* inputs, size_t batch_size,
+    cfdnn_output_t* outputs
+);
+```
+
+### 7.6 Hybrid Solver Integration (P3)
+
+- [ ] Use ML prediction as initial guess for iterative solver
+  ```c
+  // ML-accelerated projection method
+  cfd_status_t ns_solve_projection_ml_init(
+      const cfdnn_model_t* surrogate,
+      ns_solver_t* solver,
+      // ... other params
+  );
+  ```
+
+- [ ] Adaptive switching: ML for steady-state estimate, CFD for accuracy
+- [ ] Uncertainty quantification (ensemble models)
+
+### 7.7 Benchmarking & Validation (P3)
+
+- [ ] Inference time benchmarks vs Python
+- [ ] Accuracy comparison with CFD solver
+- [ ] Memory usage profiling
+- [ ] Example: Cavity flow surrogate
+
+### Success Criteria
+
+- Load and run inference on exported PyTorch models
+- <1ms inference time for 64×64 grid
+- <5% L2 error compared to CFD solver (Re < 200)
+- SIMD kernels show >2× speedup over scalar
+
+### References
+
+- [GGML](https://github.com/ggerganov/ggml) - Lightweight C tensor library
+- [ONNX Runtime C API](https://onnxruntime.ai/) - Alternative: use ONNX format
+- [TensorFlow Lite Micro](https://www.tensorflow.org/lite/microcontrollers) - Embedded ML reference
+
+---
+
+## Phase 8: Hybrid ML Integration (Optional)
+
+**Goal:** Provide C-level building blocks for ML workflows while Python handles training and high-level orchestration.
+
+**Priority:** P3 - Optional/Alternative to Phase 7
+
+### Rationale
+
+Alternative to full C inference (Phase 7). Best of both worlds:
+
+- Python handles training, model management, and orchestration
+- C provides optimized compute kernels callable from Python
+- Lower implementation effort than full C inference engine
+- Easier to support new architectures (just add kernels)
+
+### 8.1 Optimized Compute Kernels (P3)
+
+Expose SIMD-optimized operations for ML workloads via Python bindings:
+
+```c
+// Matrix operations optimized for neural network inference
+cfd_status_t cfd_matmul(
+    const double* A, size_t A_rows, size_t A_cols,
+    const double* B, size_t B_cols,
+    double* C  // Output: A_rows x B_cols
+);
+
+cfd_status_t cfd_matmul_add_bias(
+    const double* A, size_t A_rows, size_t A_cols,
+    const double* B, size_t B_cols,
+    const double* bias,  // B_cols
+    double* C
+);
+
+// Activation functions (in-place)
+cfd_status_t cfd_relu(double* data, size_t n);
+cfd_status_t cfd_tanh(double* data, size_t n);
+cfd_status_t cfd_gelu(double* data, size_t n);
+```
+
+### 8.2 Python-Callable Kernels (P3)
+
+Expose kernels to Python via bindings:
+
+```python
+from cfd_kernels import matmul, relu, gelu
+
+# Use C kernels in custom PyTorch module
+class CFDAcceleratedLayer(torch.nn.Module):
+    def forward(self, x):
+        # Offload to SIMD-optimized C kernel
+        out = matmul(x.numpy(), self.weight.numpy())
+        return torch.from_numpy(relu(out))
+```
+
+### 8.3 Physics Residual Kernels (P3)
+
+Optimized physics loss computation for PINN training:
+
+```c
+// Compute Navier-Stokes residuals efficiently
+cfd_status_t cfd_ns_residual(
+    const double* u, const double* v, const double* p,
+    size_t nx, size_t ny, double dx, double dy, double Re,
+    double* continuity_residual,
+    double* momentum_x_residual,
+    double* momentum_y_residual
+);
+
+// Finite difference operators (2nd order central)
+cfd_status_t cfd_gradient_x(const double* f, size_t nx, size_t ny, double dx, double* df_dx);
+cfd_status_t cfd_gradient_y(const double* f, size_t nx, size_t ny, double dy, double* df_dy);
+cfd_status_t cfd_laplacian(const double* f, size_t nx, size_t ny, double dx, double dy, double* lap_f);
+```
+
+Python usage:
+
+```python
+from cfd_kernels import ns_residual
+
+# Fast physics loss for PINN training
+def physics_loss(model, coords, Re):
+    u, v, p = model(coords)
+    cont, mom_x, mom_y = ns_residual(u, v, p, nx, ny, dx, dy, Re)
+    return (cont**2 + mom_x**2 + mom_y**2).mean()
+```
+
+### 8.4 Data Generation Acceleration (P3)
+
+Fast CFD simulation for training data generation:
+
+```c
+// Batch simulation for dataset generation
+cfd_status_t cfd_generate_samples(
+    const cfd_sample_params_t* params, size_t n_samples,
+    cfd_sample_result_t* results,
+    int n_threads  // OpenMP parallelization
+);
+```
+
+```python
+from cfd_ml import generate_training_data
+
+# Generate 1000 cavity flow samples in parallel
+samples = generate_training_data(
+    problem="cavity",
+    Re_range=(10, 200),
+    n_samples=1000,
+    n_threads=8  # Uses OpenMP in C
+)
+```
+
+### 8.5 Memory-Mapped Data Sharing (P3)
+
+Zero-copy data sharing between C and Python/NumPy:
+
+```c
+// Create memory-mapped buffer accessible from Python
+cfd_buffer_t* cfd_create_shared_buffer(size_t size);
+double* cfd_buffer_data(cfd_buffer_t* buf);
+void cfd_buffer_free(cfd_buffer_t* buf);
+```
+
+```python
+from cfd_memory import SharedBuffer
+
+# Zero-copy data sharing
+buf = SharedBuffer(shape=(128, 128))
+arr = buf.as_numpy()  # No copy, direct memory access
+
+# Pass to C functions without copying
+cfd.run_simulation(output_buffer=buf)
+```
+
+### Comparison: Phase 7 vs Phase 8
+
+| Aspect | Phase 7 (Full C Inference) | Phase 8 (Hybrid) |
+|--------|---------------------------|------------------|
+| Implementation effort | High | Medium |
+| Python dependency | None at runtime | Required |
+| New architecture support | Requires C changes | Just Python |
+| Deployment | Embedded/HPC friendly | Python environment |
+| Performance | Highest | High (kernel-level) |
+| Flexibility | Fixed architectures | Any PyTorch model |
+
+### Phase 8 Success Criteria
+
+- Kernels provide >2x speedup over NumPy equivalents
+- Zero-copy memory sharing works with NumPy arrays
+- Physics residual kernel matches Python implementation to 1e-10
+- Dataset generation scales linearly with thread count
 
 ---
 
@@ -895,12 +1164,25 @@ ctest -R validation --timeout 3600
 - [x] Per-architecture Ghia validation tests
 - [x] Basic documentation (OMP solvers, API constants)
 
-### v0.1.5 - Current Release
+### v0.1.5
 
 - [x] OpenMP solver variants documented (explicit_euler_omp, projection_omp)
 - [x] Updated solver type constants with NS_SOLVER_TYPE_ prefix
 - [x] Doxyfile version synchronized with VERSION file
 - [x] Ghia validation tests use appropriate step counts for Euler solvers
+
+### v0.1.6
+
+- [x] CI: Doxygen API documentation generation in release workflow
+- [x] CI: macOS OpenMP support via Homebrew libomp
+- [x] CI: Improved CUDA toolkit configuration for Windows builds
+- [x] CI: Fixed library path detection for modular builds
+
+### v0.1.7 - Current Release
+
+- [x] Fix stretched grid formula to correctly span domain [xmin, xmax]
+- [x] Add tanh-based stretching for boundary layer clustering
+- [x] Add 16 unit tests for grid initialization functions
 
 ### v0.2.0 - 3D Support
 
@@ -938,7 +1220,6 @@ ctest -R validation --timeout 3600
 - [ ] Comprehensive validation suite
 - [ ] Complete documentation
 - [ ] Stable API
-- [ ] Python bindings complete
 - [ ] Performance optimized
 
 ---
