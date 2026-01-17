@@ -53,9 +53,22 @@ CFD_LIBRARY_EXPORT void grid_destroy(grid* grid);
 CFD_LIBRARY_EXPORT void grid_initialize_uniform(grid* grid);
 
 /**
- * Initialize grid with stretched spacing
+ * Initialize grid with stretched spacing using tanh stretching.
  *
- * @param beta Stretching parameter (larger = more stretching)
+ * Uses the formula: x[i] = xmin + L * (1 + tanh(beta * (2*xi - 1)) / tanh(beta)) / 2
+ * where xi = i / (nx-1) ranges from 0 to 1, and L = xmax - xmin.
+ *
+ * This clusters grid points near both boundaries, which is useful for
+ * resolving boundary layers in viscous flow simulations.
+ *
+ * @param grid Pointer to grid structure
+ * @param beta Stretching parameter controlling point clustering:
+ *             - beta = 0: Uniform spacing (falls back to grid_initialize_uniform)
+ *             - beta = 1.0: Mild clustering near boundaries
+ *             - beta = 2.0: Moderate clustering (recommended for most cases)
+ *             - beta = 3.0+: Strong clustering near boundaries
+ *             Higher beta values produce smaller cells near boundaries and
+ *             larger cells in the domain center.
  */
 CFD_LIBRARY_EXPORT void grid_initialize_stretched(grid* grid, double beta);
 

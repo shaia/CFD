@@ -76,18 +76,37 @@ void grid_initialize_uniform(grid* grid) {
 }
 
 void grid_initialize_stretched(grid* grid, double beta) {
+    // Tanh stretching: clusters points near both boundaries
+    // Higher beta = more clustering near boundaries (useful for boundary layers)
+    //
+    // Formula: x[i] = xmin + (xmax - xmin) * (1 + tanh(beta * (2*xi - 1)) / tanh(beta)) / 2
+    // where xi = i / (n-1) goes from 0 to 1
+    //
+    // At xi=0: tanh(-beta)/tanh(beta) = -1, so x = xmin
+    // At xi=1: tanh(+beta)/tanh(beta) = +1, so x = xmax
+    // At xi=0.5: tanh(0)/tanh(beta) = 0, so x = (xmin + xmax) / 2
+
+    // Handle beta = 0 or very small beta: fall back to uniform grid
+    // (avoids division by zero since tanh(0) = 0)
+    if (fabs(beta) < 1e-10) {
+        grid_initialize_uniform(grid);
+        return;
+    }
+
+    double tanh_beta = tanh(beta);
+
     // Initialize x-direction with stretching
     for (size_t i = 0; i < grid->nx; i++) {
         double xi = (double)i / (grid->nx - 1);
-        grid->x[i] = grid->xmin + ((grid->xmax - grid->xmin) *
-                                   (1.0 - cosh(beta * (1.0 - 2.0 * xi)) / cosh(beta)));
+        grid->x[i] = grid->xmin + (grid->xmax - grid->xmin) *
+                     (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh_beta) / 2.0;
     }
 
     // Initialize y-direction with stretching
     for (size_t j = 0; j < grid->ny; j++) {
         double eta = (double)j / (grid->ny - 1);
-        grid->y[j] = grid->ymin + ((grid->ymax - grid->ymin) *
-                                   (1.0 - cosh(beta * (1.0 - 2.0 * eta)) / cosh(beta)));
+        grid->y[j] = grid->ymin + (grid->ymax - grid->ymin) *
+                     (1.0 + tanh(beta * (2.0 * eta - 1.0)) / tanh_beta) / 2.0;
     }
 
     // Calculate cell sizes
