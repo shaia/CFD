@@ -52,7 +52,7 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 - Higher beta = more clustering near boundaries
 - Edge case: beta=0 falls back to uniform grid
 
-**Tests added:** `tests/core/test_grid.c` with 11 unit tests covering:
+**Tests added:** `tests/core/test_grid.c` with 16 unit tests covering:
 
 - Uniform grid spans full domain, equal spacing, non-unit domains
 - Stretched grid spans full domain, clusters near boundaries, higher beta = more clustering
