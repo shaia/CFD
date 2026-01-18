@@ -214,6 +214,9 @@ if(BUILD_TESTS)
     add_executable(test_ghia_projection_omp tests/validation/test_ghia_projection_omp.c)
     add_executable(test_ghia_projection_gpu tests/validation/test_ghia_projection_gpu.c)
 
+    # Taylor-Green vortex validation test
+    add_executable(test_taylor_green_vortex tests/validation/test_taylor_green_vortex.c)
+
     # Cross-architecture consistency tests
     add_executable(test_solver_architecture tests/validation/test_solver_architecture.c)
 
@@ -277,6 +280,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_ghia_projection_avx2 PRIVATE CFD::Library unity)
     target_link_libraries(test_ghia_projection_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_ghia_projection_gpu PRIVATE CFD::Library unity)
+    target_link_libraries(test_taylor_green_vortex PRIVATE CFD::Library unity)
     target_link_libraries(test_solver_architecture PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
@@ -330,6 +334,9 @@ if(BUILD_TESTS)
     add_test(NAME GhiaProjectionOmpTest COMMAND test_ghia_projection_omp)
     add_test(NAME GhiaProjectionGpuTest COMMAND test_ghia_projection_gpu)
 
+    # Taylor-Green vortex validation test
+    add_test(NAME TaylorGreenVortexTest COMMAND test_taylor_green_vortex)
+
     # Label long-running validation tests to exclude from sanitizer job
     # These tests validate physics accuracy, not memory safety
     set_tests_properties(
@@ -342,6 +349,7 @@ if(BUILD_TESTS)
         GhiaProjectionAvx2Test
         GhiaProjectionOmpTest
         GhiaProjectionGpuTest
+        TaylorGreenVortexTest
         PROPERTIES LABELS "validation"
     )
 
