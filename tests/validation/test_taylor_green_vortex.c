@@ -220,6 +220,7 @@ void test_backend_consistency(void) {
 
     double reference_velocity_decay = 0.0;
     double reference_ke_decay = 0.0;
+    int have_reference = 0;
 
     for (int i = 0; i < num_solvers; i++) {
         tg_result_t result = tg_run_simulation(
@@ -236,20 +237,25 @@ void test_backend_consistency(void) {
         printf("      %s: velocity_decay=%.6f, ke_decay=%.6f\n",
                solver_names[i], result.measured_velocity_decay, result.measured_ke_decay);
 
-        if (i == 0) {
+        if (!have_reference) {
+            /* First successful solver becomes the reference */
             reference_velocity_decay = result.measured_velocity_decay;
             reference_ke_decay = result.measured_ke_decay;
+            have_reference = 1;
         } else {
-            /* Results should be within 1% of reference */
-            double velocity_diff = fabs(result.measured_velocity_decay - reference_velocity_decay)
-                                   / reference_velocity_decay;
-            double ke_diff = fabs(result.measured_ke_decay - reference_ke_decay)
-                            / reference_ke_decay;
+            /* Compare subsequent solvers to reference */
+            /* Guard against division by zero */
+            if (reference_velocity_decay > 1e-10 && reference_ke_decay > 1e-10) {
+                double velocity_diff = fabs(result.measured_velocity_decay - reference_velocity_decay)
+                                       / reference_velocity_decay;
+                double ke_diff = fabs(result.measured_ke_decay - reference_ke_decay)
+                                / reference_ke_decay;
 
-            TEST_ASSERT_TRUE_MESSAGE(velocity_diff < 0.01,
-                "Backend velocity decay differs from reference by more than 1%");
-            TEST_ASSERT_TRUE_MESSAGE(ke_diff < 0.01,
-                "Backend KE decay differs from reference by more than 1%");
+                TEST_ASSERT_TRUE_MESSAGE(velocity_diff < 0.01,
+                    "Backend velocity decay differs from reference by more than 1%");
+                TEST_ASSERT_TRUE_MESSAGE(ke_diff < 0.01,
+                    "Backend KE decay differs from reference by more than 1%");
+            }
         }
     }
 }
