@@ -162,7 +162,7 @@ void test_grid_convergence(void) {
                                  result.l2_error_v * result.l2_error_v);
         printf("      %zux%zu: L2 error = %.6f", n, n, total_error);
 
-        if (i > 0) {
+        if (i > 0 && total_error > 1e-15 && prev_error > 1e-15) {
             double convergence_rate = log(prev_error / total_error) / log(2.0);
             printf(" (rate: %.2f)", convergence_rate);
             /* Error should decrease with refinement */

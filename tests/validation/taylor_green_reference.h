@@ -489,15 +489,25 @@ static inline void tg_print_result(const tg_result_t* result, const char* solver
     printf("\n    %s Taylor-Green Vortex Validation:\n", solver_name);
     printf("      Steps: %d, Final time: %.4f\n", result->steps_completed, result->final_time);
     printf("\n      Velocity decay:\n");
-    printf("        Measured: %.6f, Expected: %.6f (error: %.2f%%)\n",
-           result->measured_velocity_decay, result->expected_velocity_decay,
-           100.0 * fabs(result->measured_velocity_decay - result->expected_velocity_decay) /
-               result->expected_velocity_decay);
+    if (result->expected_velocity_decay > 1e-15) {
+        printf("        Measured: %.6f, Expected: %.6f (error: %.2f%%)\n",
+               result->measured_velocity_decay, result->expected_velocity_decay,
+               100.0 * fabs(result->measured_velocity_decay - result->expected_velocity_decay) /
+                   result->expected_velocity_decay);
+    } else {
+        printf("        Measured: %.6f, Expected: %.6f\n",
+               result->measured_velocity_decay, result->expected_velocity_decay);
+    }
     printf("\n      Kinetic energy decay:\n");
-    printf("        Measured: %.6f, Expected: %.6f (error: %.2f%%)\n",
-           result->measured_ke_decay, result->expected_ke_decay,
-           100.0 * fabs(result->measured_ke_decay - result->expected_ke_decay) /
-               result->expected_ke_decay);
+    if (result->expected_ke_decay > 1e-15) {
+        printf("        Measured: %.6f, Expected: %.6f (error: %.2f%%)\n",
+               result->measured_ke_decay, result->expected_ke_decay,
+               100.0 * fabs(result->measured_ke_decay - result->expected_ke_decay) /
+                   result->expected_ke_decay);
+    } else {
+        printf("        Measured: %.6f, Expected: %.6f\n",
+               result->measured_ke_decay, result->expected_ke_decay);
+    }
     printf("\n      L2 errors:\n");
     printf("        u: %.6f, v: %.6f\n", result->l2_error_u, result->l2_error_v);
     printf("\n      Max divergence: %.2e\n", result->max_divergence);
