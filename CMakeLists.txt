@@ -217,6 +217,9 @@ if(BUILD_TESTS)
     # Taylor-Green vortex validation test
     add_executable(test_taylor_green_vortex tests/validation/test_taylor_green_vortex.c)
 
+    # Mathematical accuracy tests
+    add_executable(test_finite_differences tests/math/test_finite_differences.c)
+
     # Cross-architecture consistency tests
     add_executable(test_solver_architecture tests/validation/test_solver_architecture.c)
 
@@ -281,6 +284,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_ghia_projection_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_ghia_projection_gpu PRIVATE CFD::Library unity)
     target_link_libraries(test_taylor_green_vortex PRIVATE CFD::Library unity)
+    target_link_libraries(test_finite_differences PRIVATE unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_solver_architecture PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
@@ -336,6 +340,9 @@ if(BUILD_TESTS)
 
     # Taylor-Green vortex validation test
     add_test(NAME TaylorGreenVortexTest COMMAND test_taylor_green_vortex)
+
+    # Mathematical accuracy tests
+    add_test(NAME FiniteDifferencesTest COMMAND test_finite_differences)
 
     # Label long-running validation tests to exclude from sanitizer job
     # These tests validate physics accuracy, not memory safety
