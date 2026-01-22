@@ -258,6 +258,10 @@ void test_backend_consistency(void) {
             }
         }
     }
+
+    /* Ensure at least one solver was tested */
+    TEST_ASSERT_TRUE_MESSAGE(have_reference,
+        "At least one solver backend must be available for consistency testing");
 }
 
 /* ============================================================================
