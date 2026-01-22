@@ -23,6 +23,15 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+/* Helper macro to check malloc and fail test gracefully */
+#define CHECK_ALLOC(ptr) \
+    do { \
+        if ((ptr) == NULL) { \
+            TEST_FAIL_MESSAGE("Memory allocation failed"); \
+            return; \
+        } \
+    } while (0)
+
 /* ============================================================================
  * TEST PARAMETERS
  * ============================================================================ */
@@ -235,6 +244,8 @@ void test_first_derivative_x_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
+        CHECK_ALLOC(numerical);
+        CHECK_ALLOC(analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -299,6 +310,8 @@ void test_first_derivative_y_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
+        CHECK_ALLOC(numerical);
+        CHECK_ALLOC(analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -362,6 +375,8 @@ void test_second_derivative_x_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
+        CHECK_ALLOC(numerical);
+        CHECK_ALLOC(analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -422,6 +437,8 @@ void test_second_derivative_y_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
+        CHECK_ALLOC(numerical);
+        CHECK_ALLOC(analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -486,6 +503,8 @@ void test_laplacian_5point_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
+        CHECK_ALLOC(numerical);
+        CHECK_ALLOC(analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -546,6 +565,8 @@ void test_laplacian_nonsquare_grid(void) {
     size_t interior_count = (nx - 2) * (ny - 2);
     double* numerical = malloc(interior_count * sizeof(double));
     double* analytical = malloc(interior_count * sizeof(double));
+    CHECK_ALLOC(numerical);
+    CHECK_ALLOC(analytical);
 
     size_t idx = 0;
     for (size_t j = 1; j < ny - 1; j++) {
@@ -656,6 +677,8 @@ void test_divergence_nonzero_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
+        CHECK_ALLOC(numerical);
+        CHECK_ALLOC(analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -674,7 +697,7 @@ void test_divergence_nonzero_accuracy(void) {
                 double dv_dy = fd_first_deriv_y(v_jp1, v_jm1, dy);
 
                 numerical[idx] = du_dx + dv_dy;
-                analytical[idx] = test_divergence_nonzero(x, y);  /* 2x + 2y */
+                analytical[idx] = test_divergence_nonzero(x, y);
 
                 idx++;
             }
@@ -728,6 +751,10 @@ void test_gradient_accuracy(void) {
         double* num_grad_y = malloc(interior_count * sizeof(double));
         double* ana_grad_x = malloc(interior_count * sizeof(double));
         double* ana_grad_y = malloc(interior_count * sizeof(double));
+        CHECK_ALLOC(num_grad_x);
+        CHECK_ALLOC(num_grad_y);
+        CHECK_ALLOC(ana_grad_x);
+        CHECK_ALLOC(ana_grad_y);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
