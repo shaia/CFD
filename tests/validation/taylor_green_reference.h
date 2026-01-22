@@ -117,8 +117,17 @@ static inline double tg_velocity_decay_factor(double t, double nu) {
 
 /**
  * Compute expected pressure decay factor at time t
+ * Note: Pressure decays as exp(-4νt) = [exp(-2νt)]²
  */
 static inline double tg_pressure_decay_factor(double t, double nu) {
+    return exp(-4.0 * nu * t);
+}
+
+/**
+ * Compute expected kinetic energy decay factor at time t
+ * Note: KE decays as exp(-4νt), same rate as pressure since KE ∝ u²
+ */
+static inline double tg_ke_decay_factor(double t, double nu) {
     return exp(-4.0 * nu * t);
 }
 
@@ -470,7 +479,7 @@ static inline tg_result_t tg_run_simulation(
     } else {
         result.measured_ke_decay = 0.0;
     }
-    result.expected_ke_decay = tg_pressure_decay_factor(result.final_time, nu);  /* same as KE */
+    result.expected_ke_decay = tg_ke_decay_factor(result.final_time, nu);
 
     result.success = 1;
 
