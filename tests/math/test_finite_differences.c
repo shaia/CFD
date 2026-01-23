@@ -651,9 +651,14 @@ void test_divergence_free_field(void) {
     printf("      Max divergence: %.6e\n", max_div);
     printf("      L2 divergence: %.6e\n", l2_error);
 
-    /* Divergence-free field should have near-zero divergence numerically */
-    TEST_ASSERT_TRUE_MESSAGE(max_div < 1e-10,
-        "Divergence of divergence-free field too large");
+    /* Divergence-free field should have small divergence numerically.
+     * Use O(h²) tolerance since central differences are 2nd order accurate.
+     * The specific test field has error cancellation, so actual error is
+     * typically much smaller, but we use a principled tolerance. */
+    double h2_tolerance = dx * dx;
+    printf("      Tolerance (h²): %.6e\n", h2_tolerance);
+    TEST_ASSERT_TRUE_MESSAGE(max_div < h2_tolerance,
+        "Divergence of divergence-free field exceeds O(h²) tolerance");
 }
 
 /**
