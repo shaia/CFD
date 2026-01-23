@@ -2,7 +2,7 @@
 
 This document outlines the development roadmap for achieving a commercial-grade, open-source CFD library.
 
-## Current State (v0.1.6)
+## Current State (v0.1.7)
 
 ### What We Have
 
@@ -21,12 +21,12 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] Neumann and Periodic boundary conditions (all backends)
 - [x] GPU boundary condition kernels (CUDA)
 - [x] Comprehensive test suite (core, solvers, simulation, I/O)
-- [x] 11 example programs demonstrating various features
+- [x] 12 example programs demonstrating various features
 
 ### Critical Gaps
 
 - [ ] Only 2D (no 3D support)
-- [ ] Limited boundary conditions (no outlets, symmetry planes)
+- [ ] Limited boundary conditions (no symmetry planes)
 - [ ] Only structured grids
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no BiCGSTAB/multigrid)
@@ -87,6 +87,24 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 - [x] Symbol visibility control (hide private symbols) & export headers
 - [x] Library initialization/shutdown functions
 
+### 0.4 API & Robustness Testing
+
+**Implemented:**
+
+- [x] Core functionality tests (`tests/core/`)
+- [x] Input validation tests (`test_input_validation.c`)
+- [x] Error handling tests (`test_error_handling.c`)
+- [x] Re-entrancy/thread-safety tests (`test_reentrancy.c`)
+- [x] Solver tests organized by architecture (CPU, SIMD, OMP, GPU)
+- [x] Simulation API tests (`tests/simulation/`)
+- [x] I/O tests (VTK, CSV, output paths)
+- [x] Physics validation tests (`test_physics_validation.c`)
+
+**Still needed:**
+
+- [ ] Negative testing suite (more edge cases)
+- [ ] Memory leak checks (Valgrind/ASan integration in CI)
+
 ---
 
 ## Phase 1: Core Solver Improvements
@@ -107,7 +125,7 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 - [x] Inlet velocity specification (uniform, parabolic, custom profiles)
 - [x] Outlet (zero-gradient/convective)
 - [ ] Symmetry planes
-- [ ] Moving wall boundaries
+- [x] Moving wall boundaries (via Dirichlet BCs, see lid-driven cavity example)
 - [ ] Time-varying boundary conditions
 
 **Implemented files:**
@@ -193,12 +211,108 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 
 **Note:** Current SIMD Poisson solvers produce valid results but may not converge to strict tolerance (1e-6) on challenging problems like sinusoidal RHS within iteration limits. They converge properly on simpler problems (zero RHS, uniform RHS). See `docs/simd-optimization-analysis.md` for details.
 
+#### 1.2.1 Poisson Solver Accuracy Tests
+
+- [ ] Zero RHS test (solution should remain constant)
+- [ ] Uniform RHS test (quadratic solution)
+- [ ] Sinusoidal RHS test with analytical solution comparison
+- [ ] Convergence rate verification for all Poisson variants (SOR, Jacobi, Red-Black)
+- [ ] Residual convergence tracking
+
+#### 1.2.2 Laplacian Operator Validation
+
+**Test the discrete Laplacian against manufactured solutions:**
+
+- [ ] Manufactured solution: p = sin(πx)sin(πy) → ∇²p = -2π²p
+- [ ] Verify 2nd-order accuracy O(dx²) with grid refinement
+- [ ] Compare CPU, AVX2, and CG implementations
+
+**Files:** `lib/src/solvers/linear/cpu/linear_solver_cg.c` - `apply_laplacian()`
+
+#### 1.2.3 Linear Solver Convergence Validation
+
+**Verify convergence rates match theory:**
+
+- [ ] Jacobi: spectral radius ρ < 1
+- [ ] SOR: optimal ω ≈ 2/(1 + sin(πh)) for Poisson
+- [ ] Red-Black SOR: same convergence as SOR, parallelizable
+- [ ] CG: convergence in ≤ n iterations for n×n system
+
+**Files to create:**
+
+- `tests/math/test_poisson_accuracy.c`
+- `tests/math/test_linear_solver_convergence.c`
+- `src/solvers/linear/bicgstab.c`
+- `src/solvers/linear/multigrid.c`
+- `src/solvers/linear/preconditioners.c`
+
 ### 1.3 Numerical Schemes (P1)
 
 - [ ] Upwind differencing (1st order) for stability
 - [ ] Central differencing with delayed correction
 - [ ] High-resolution TVD schemes (Van Leer, Superbee)
 - [ ] Gradient limiters (Barth-Jespersen, Venkatakrishnan)
+
+#### 1.3.1 Finite Difference Stencil Tests ✅
+
+Unit tests for individual stencil operations:
+
+- [x] First derivative (central difference) - verify O(h²) accuracy
+- [x] Second derivative - verify O(h²) accuracy
+- [x] 2D Laplacian (5-point stencil) - verify O(h²) accuracy
+- [x] Divergence operator - verify O(h²) accuracy
+- [x] Gradient operator - verify O(h²) accuracy
+
+**Test approach:** Use smooth analytical functions (e.g., `sin(kx)*sin(ky)`), compute numerical derivatives using shared stencil implementations, compare to analytical derivatives, verify error scaling.
+
+**Files created:**
+
+- `lib/include/cfd/math/stencils.h` - Shared stencil implementations (header-only)
+- `tests/math/test_finite_differences.c` - 9 tests verifying O(h²) convergence
+
+**Future work:**
+
+- [ ] Migrate solver code to use `cfd/math/stencils.h` (currently inline implementations)
+  - `solver_explicit_euler.c`, `solver_projection.c`, `linear_solver_jacobi.c`, etc.
+  - This ensures tests exercise the exact production code paths
+
+#### 1.3.2 Convergence Order Verification
+
+- [ ] Spatial convergence tests (h-refinement: 16→32→64→128)
+- [ ] Temporal convergence tests (dt-refinement)
+- [ ] Automated order-of-accuracy computation
+- [ ] Verify 2nd order spatial, 1st order temporal (Euler)
+
+**Success criteria:** Measured convergence rate within 10% of expected order.
+
+#### 1.3.3 Method of Manufactured Solutions (MMS)
+
+- [ ] Define manufactured velocity/pressure fields with known derivatives
+- [ ] Compute analytical source terms from Navier-Stokes substitution
+- [ ] Run solver with manufactured source terms
+- [ ] Compare numerical to manufactured solution
+- [ ] Verify convergence order
+
+**Example manufactured solution:**
+
+```c
+u(x,y,t) = sin(πx) * cos(πy) * exp(-2νπ²t)
+v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
+```
+
+#### 1.3.4 Divergence-Free Constraint Validation
+
+**Verify projection method enforces incompressibility:**
+
+- [ ] Measure max|∇·u| after projection step (should be < tolerance)
+- [ ] Test with various initial velocity fields
+- [ ] Verify all projection backends (CPU, AVX2, OMP, GPU)
+
+**Files to create:**
+
+- `tests/math/test_convergence_order.c`
+- `tests/math/test_mms.c`
+- `tests/math/manufactured_solutions.h`
 
 ### 1.4 Steady-State Solver (P1)
 
@@ -209,11 +323,10 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 
 **Files to create:**
 
-- `include/cfd/solvers/linear_solvers.h`
-- `src/solvers/linear/cg.c`
-- `src/solvers/linear/bicgstab.c`
-- `src/solvers/linear/multigrid.c`
-- `src/solvers/linear/preconditioners.c`
+- `include/cfd/solvers/steady_state.h`
+- `src/solvers/steady/simple.c`
+- `src/solvers/steady/simplec.c`
+- `src/solvers/steady/piso.c`
 
 ### 1.5 Time Integration (P1)
 
@@ -451,7 +564,7 @@ target_link_libraries(my_app PRIVATE CFD::Library)
 - [ ] GPU-aware MPI
 - [ ] Red-Black SOR GPU kernel (CPU SIMD version available in `poisson_redblack_simd.c`)
 
-### 4.3 Performance Tools (P2)
+### 4.4 Performance Tools (P2)
 
 - [ ] Built-in profiling
 - [ ] Memory usage tracking
@@ -509,125 +622,15 @@ target_link_libraries(my_app PRIVATE CFD::Library)
 
 ---
 
-## Phase 6: Validation & Documentation
+## Phase 6: Benchmark Validation & Documentation
 
-**Goal:** Prove correctness, usability, and robustness.
+**Goal:** Validate against reference solutions and provide comprehensive documentation.
 
-### 6.0 API & Robustness Testing (P0 - Critical)
+**Note:** API/robustness testing is in Phase 0.4. Mathematical accuracy validation (stencils, convergence, MMS) is in Phase 1.3. Linear solver validation is in Phase 1.2.
 
-**Implemented:**
+### 6.1 Benchmark Validation (P0 - Critical)
 
-- [x] Core functionality tests (`tests/core/`)
-- [x] Input validation tests (`test_input_validation.c`)
-- [x] Error handling tests (`test_error_handling.c`)
-- [x] Re-entrancy/thread-safety tests (`test_reentrancy.c`)
-- [x] Solver tests organized by architecture (CPU, SIMD, OMP, GPU)
-- [x] Simulation API tests (`tests/simulation/`)
-- [x] I/O tests (VTK, CSV, output paths)
-- [x] Physics validation tests (`test_physics_validation.c`)
-
-**Still needed:**
-
-- [ ] Negative testing suite (more edge cases)
-- [ ] Memory leak checks (Valgrind/ASan integration in CI)
-
-### 6.1 Mathematical Accuracy Validation (P0 - Critical)
-
-**Goal:** Verify numerical correctness of all math-oriented computations.
-
-#### 6.1.1 Finite Difference Stencil Tests
-
-Unit tests for individual stencil operations:
-
-- [x] First derivative (central difference) - verify O(h²) accuracy
-- [x] Second derivative - verify O(h²) accuracy
-- [x] 2D Laplacian (5-point stencil) - verify O(h²) accuracy
-- [x] Divergence operator - verify O(h²) accuracy
-- [x] Gradient operator - verify O(h²) accuracy
-
-**Test approach:** Use smooth analytical functions (e.g., `sin(kx)*sin(ky)`), compute numerical derivatives using shared stencil implementations, compare to analytical derivatives, verify error scaling.
-
-**Files created:**
-
-- `lib/include/cfd/math/stencils.h` - Shared stencil implementations (header-only)
-- `tests/math/test_finite_differences.c` - 9 tests verifying O(h²) convergence
-
-**Future work:**
-
-- [ ] Migrate solver code to use `cfd/math/stencils.h` (currently inline implementations)
-  - `solver_explicit_euler.c`, `solver_projection.c`, `linear_solver_jacobi.c`, etc.
-  - This ensures tests exercise the exact production code paths
-
-#### 6.1.2 Convergence Order Verification
-
-- [ ] Spatial convergence tests (h-refinement: 16→32→64→128)
-- [ ] Temporal convergence tests (dt-refinement)
-- [ ] Automated order-of-accuracy computation
-- [ ] Verify 2nd order spatial, 1st order temporal (Euler)
-
-**Success criteria:** Measured convergence rate within 10% of expected order.
-
-#### 6.1.3 Method of Manufactured Solutions (MMS)
-
-- [ ] Define manufactured velocity/pressure fields with known derivatives
-- [ ] Compute analytical source terms from Navier-Stokes substitution
-- [ ] Run solver with manufactured source terms
-- [ ] Compare numerical to manufactured solution
-- [ ] Verify convergence order
-
-**Example manufactured solution:**
-
-```c
-u(x,y,t) = sin(πx) * cos(πy) * exp(-2νπ²t)
-v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
-```
-
-#### 6.1.4 Poisson Solver Accuracy
-
-- [ ] Zero RHS test (solution should remain constant)
-- [ ] Uniform RHS test (quadratic solution)
-- [ ] Sinusoidal RHS test with analytical solution comparison
-- [ ] Convergence rate verification for all Poisson variants (SOR, Jacobi, Red-Black)
-- [ ] Residual convergence tracking
-
-#### 6.1.5 Laplacian Operator Validation
-
-**Test the discrete Laplacian against manufactured solutions:**
-
-- [ ] Manufactured solution: p = sin(πx)sin(πy) → ∇²p = -2π²p
-- [ ] Verify 2nd-order accuracy O(dx²) with grid refinement
-- [ ] Compare CPU, AVX2, and CG implementations
-
-**Files:** `lib/src/solvers/linear/cpu/linear_solver_cg.c` - `apply_laplacian()`
-
-#### 6.1.6 Divergence-Free Constraint Validation
-
-**Verify projection method enforces incompressibility:**
-
-- [ ] Measure max|∇·u| after projection step (should be < tolerance)
-- [ ] Test with various initial velocity fields
-- [ ] Verify all projection backends (CPU, AVX2, OMP, GPU)
-
-#### 6.1.7 Linear Solver Convergence Validation
-
-**Verify convergence rates match theory:**
-
-- [ ] Jacobi: spectral radius ρ < 1
-- [ ] SOR: optimal ω ≈ 2/(1 + sin(πh)) for Poisson
-- [ ] Red-Black SOR: same convergence as SOR, parallelizable
-- [ ] CG: convergence in ≤ n iterations for n×n system
-
-**Files to create:**
-
-- `tests/math/test_finite_differences.c`
-- `tests/math/test_convergence_order.c`
-- `tests/math/test_mms.c`
-- `tests/math/test_linear_solver_convergence.c`
-- `tests/math/manufactured_solutions.h`
-
-### 6.2 Benchmark Validation (P0 - Critical)
-
-#### 6.2.1 Lid-Driven Cavity Validation
+#### 6.1.1 Lid-Driven Cavity Validation
 
 **Status:** Tests implemented, solver NOT meeting scientific tolerance (RMS ~0.38, target < 0.10)
 
@@ -675,7 +678,7 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 - Grid convergence: error decreases monotonically with refinement
 - Tests run in parallel to complete in < 60 seconds
 
-#### 6.2.1.1 Grid Convergence Validation (P1)
+#### 6.1.1.1 Grid Convergence Validation (P1)
 
 **Issue:** Current grid convergence tests use relaxed tolerance (`prev_error + 0.08`) because RMS error does not strictly decrease with grid refinement when using the scalar Red-Black SOR Poisson solver.
 
@@ -708,7 +711,7 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 - RMS error strictly decreases with each grid refinement level
 - Convergence order approaches O(h²) asymptotically
 
-#### 6.2.2 Taylor-Green Vortex Validation (P0) ✅
+#### 6.1.2 Taylor-Green Vortex Validation (P0) ✅
 
 **Analytical solution with known decay rate - ideal for full NS validation:**
 
@@ -734,7 +737,7 @@ p(x,y,t) = -0.25 * (cos(2x) + cos(2y)) * exp(-4νt)
 - `tests/validation/test_taylor_green_vortex.c` - 9 validation tests
 - `tests/validation/taylor_green_reference.h` - Analytical solutions and test utilities
 
-#### 6.2.3 Poiseuille Flow Validation (P1)
+#### 6.1.3 Poiseuille Flow Validation (P1)
 
 **Analytical parabolic profile for channel flow:**
 
@@ -751,12 +754,12 @@ u(y) = 4 * U_max * y * (H - y) / H²
 **Files to create:**
 - `tests/validation/test_poiseuille_flow.c`
 
-#### 6.2.4 Other Benchmarks (P2)
+#### 6.1.4 Other Benchmarks (P2)
 
 - [ ] Backward-facing step - compare to Armaly et al. (1983)
 - [ ] Flow over cylinder - compare to Williamson (1996)
 
-#### 6.2.5 Release Validation Workflow (P1)
+#### 6.1.5 Release Validation Workflow (P1)
 
 **Goal:** Full-length validation tests that run during releases (too slow for CI).
 
@@ -772,7 +775,7 @@ u(y) = 4 * U_max * y * (H - y) / H²
 | Reynolds Dependency | 17×17, 400 steps | 33×33, 5000 steps |
 | Ghia Validation | 33×33, 5000 steps | 129×129, 50000 steps |
 | Grid Convergence | 17→25→33 | 33→65→129 |
-| Taylor-Green Vortex | 32×32, 1000 steps | 128×128, 10000 steps |
+| Taylor-Green Vortex | 32×32, 200 steps | 128×128, 10000 steps |
 
 **Release Validation Tests to Implement:**
 
@@ -810,14 +813,14 @@ ctest -R validation --timeout 3600
 - All solver backends produce identical results (within floating-point tolerance)
 - Total runtime < 30 minutes on release CI runner
 
-### 6.3 Convergence Studies (P1)
+### 6.2 Convergence Studies (P1)
 
 - [ ] Grid independence studies for benchmark cases
 - [ ] Time step independence studies
 - [ ] Richardson extrapolation for error estimation
 - [ ] Automated convergence reporting
 
-### 6.4 Documentation (P1)
+### 6.3 Documentation (P1)
 
 - [ ] Doxygen API documentation
 - [ ] Theory/mathematics guide
@@ -827,7 +830,7 @@ ctest -R validation --timeout 3600
 - [ ] Performance tuning guide
 - [ ] Developer guide
 
-### 6.5 Examples (P1)
+### 6.4 Examples (P1)
 
 **Implemented (12 examples):**
 
