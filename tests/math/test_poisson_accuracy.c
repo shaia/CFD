@@ -82,17 +82,6 @@ static double* create_field_constant(size_t nx, size_t ny, double value) {
 }
 
 /**
- * Compute the L2 norm of a field
- */
-static double compute_l2_norm(const double* field, size_t n) {
-    double sum_sq = 0.0;
-    for (size_t i = 0; i < n; i++) {
-        sum_sq += field[i] * field[i];
-    }
-    return sqrt(sum_sq / n);
-}
-
-/**
  * Compute the L2 error between numerical and analytical solutions
  */
 static double compute_l2_error(const double* numerical, const double* analytical,
@@ -126,22 +115,6 @@ static double compute_max_error(const double* numerical, const double* analytica
         }
     }
     return max_err;
-}
-
-/**
- * Apply Neumann (zero gradient) boundary conditions
- */
-static void apply_neumann_bc(double* p, size_t nx, size_t ny) {
-    /* Left and right boundaries */
-    for (size_t j = 0; j < ny; j++) {
-        p[j * nx + 0] = p[j * nx + 1];              /* Left: p[0,j] = p[1,j] */
-        p[j * nx + (nx-1)] = p[j * nx + (nx-2)];    /* Right: p[nx-1,j] = p[nx-2,j] */
-    }
-    /* Bottom and top boundaries */
-    for (size_t i = 0; i < nx; i++) {
-        p[0 * nx + i] = p[1 * nx + i];              /* Bottom: p[i,0] = p[i,1] */
-        p[(ny-1) * nx + i] = p[(ny-2) * nx + i];    /* Top: p[i,ny-1] = p[i,ny-2] */
-    }
 }
 
 /**
@@ -224,6 +197,65 @@ static void apply_sinusoidal_bc(double* p, size_t nx, size_t ny,
         double x = DOMAIN_XMIN + i * dx;
         p[0 * nx + i] = sinusoidal_solution(x, DOMAIN_YMIN);
         p[(ny-1) * nx + i] = sinusoidal_solution(x, DOMAIN_YMAX);
+    }
+}
+
+/**
+ * Quadratic solution for uniform RHS test: p = (x² + y²) / 4
+ * Then: ∇²p = (2 + 2) / 4 = 1
+ * So RHS f = 1 (uniform)
+ *
+ * This tests that the solver correctly handles constant source terms
+ * and produces the expected quadratic profile.
+ */
+static double quadratic_solution(double x, double y) {
+    return (x * x + y * y) / 4.0;
+}
+
+static double uniform_rhs_value(void) {
+    return 1.0;  /* ∇²p = 1 for p = (x² + y²) / 4 */
+}
+
+/**
+ * Initialize field with quadratic analytical solution
+ */
+static void init_quadratic_analytical(double* p, size_t nx, size_t ny,
+                                       double dx, double dy) {
+    for (size_t j = 0; j < ny; j++) {
+        double y = DOMAIN_YMIN + j * dy;
+        for (size_t i = 0; i < nx; i++) {
+            double x = DOMAIN_XMIN + i * dx;
+            p[j * nx + i] = quadratic_solution(x, y);
+        }
+    }
+}
+
+/**
+ * Initialize uniform RHS
+ */
+static void init_uniform_rhs(double* rhs, size_t nx, size_t ny) {
+    double val = uniform_rhs_value();
+    for (size_t i = 0; i < nx * ny; i++) {
+        rhs[i] = val;
+    }
+}
+
+/**
+ * Apply Dirichlet BCs using quadratic analytical solution
+ */
+static void apply_quadratic_bc(double* p, size_t nx, size_t ny,
+                                double dx, double dy) {
+    /* Left and right boundaries */
+    for (size_t j = 0; j < ny; j++) {
+        double y = DOMAIN_YMIN + j * dy;
+        p[j * nx + 0] = quadratic_solution(DOMAIN_XMIN, y);
+        p[j * nx + (nx-1)] = quadratic_solution(DOMAIN_XMAX, y);
+    }
+    /* Bottom and top boundaries */
+    for (size_t i = 0; i < nx; i++) {
+        double x = DOMAIN_XMIN + i * dx;
+        p[0 * nx + i] = quadratic_solution(x, DOMAIN_YMIN);
+        p[(ny-1) * nx + i] = quadratic_solution(x, DOMAIN_YMAX);
     }
 }
 
@@ -386,6 +418,184 @@ void test_zero_rhs_redblack(void) {
     poisson_solver_destroy(solver);
     cfd_free(p);
     cfd_free(rhs);
+}
+
+/* ============================================================================
+ * UNIFORM RHS TESTS (Quadratic Solution)
+ * ============================================================================
+ *
+ * Manufactured solution: p = (x² + y²) / 4
+ * RHS: f = 1 (uniform)
+ *
+ * This verifies that the solver correctly handles constant source terms
+ * and produces the expected quadratic profile.
+ *
+ * Use Dirichlet BCs (enforce analytical solution on boundary).
+ */
+
+/**
+ * Custom solver loop for quadratic solution with Dirichlet BCs
+ */
+static int solve_quadratic_with_dirichlet_bc(poisson_solver_t* solver,
+                                              double* p, double* p_temp, const double* rhs,
+                                              size_t nx, size_t ny, double dx, double dy,
+                                              int max_iters, double tol) {
+    double residual = 0.0;
+
+    for (int iter = 0; iter < max_iters; iter++) {
+        cfd_status_t status = poisson_solver_iterate(solver, p, p_temp, rhs, &residual);
+        if (status != CFD_SUCCESS) return -1;
+
+        apply_quadratic_bc(p, nx, ny, dx, dy);
+
+        if (residual < tol) {
+            return iter + 1;
+        }
+    }
+    return max_iters;
+}
+
+void test_uniform_rhs_jacobi(void) {
+    printf("\n    Testing uniform RHS (quadratic solution) with Jacobi solver...\n");
+
+    size_t nx = 33, ny = 33;
+    double dx = (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
+    double dy = (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
+
+    double* p = create_field(nx, ny);
+    double* p_temp = create_field(nx, ny);
+    double* rhs = create_field(nx, ny);
+    double* analytical = create_field(nx, ny);
+
+    TEST_ASSERT_NOT_NULL(p);
+    TEST_ASSERT_NOT_NULL(p_temp);
+    TEST_ASSERT_NOT_NULL(rhs);
+    TEST_ASSERT_NOT_NULL(analytical);
+
+    init_uniform_rhs(rhs, nx, ny);
+    init_quadratic_analytical(analytical, nx, ny, dx, dy);
+    apply_quadratic_bc(p, nx, ny, dx, dy);
+
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance = 1e-10;
+    params.max_iterations = 10000;
+
+    poisson_solver_init(solver, nx, ny, dx, dy, &params);
+
+    int iters = solve_quadratic_with_dirichlet_bc(solver, p, p_temp, rhs,
+                                                   nx, ny, dx, dy, 10000, 1e-10);
+    printf("      Iterations: %d\n", iters);
+
+    double l2_error = compute_l2_error(p, analytical, nx, ny);
+    double max_error = compute_max_error(p, analytical, nx, ny);
+    printf("      L2 error: %.6e, Max error: %.6e\n", l2_error, max_error);
+
+    TEST_ASSERT_TRUE_MESSAGE(l2_error < UNIFORM_RHS_TOL,
+        "Uniform RHS L2 error exceeds tolerance");
+
+    poisson_solver_destroy(solver);
+    cfd_free(p);
+    cfd_free(p_temp);
+    cfd_free(rhs);
+    cfd_free(analytical);
+}
+
+void test_uniform_rhs_sor(void) {
+    printf("\n    Testing uniform RHS (quadratic solution) with SOR solver...\n");
+
+    size_t nx = 33, ny = 33;
+    double dx = (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
+    double dy = (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
+
+    double* p = create_field(nx, ny);
+    double* rhs = create_field(nx, ny);
+    double* analytical = create_field(nx, ny);
+
+    TEST_ASSERT_NOT_NULL(p);
+    TEST_ASSERT_NOT_NULL(rhs);
+    TEST_ASSERT_NOT_NULL(analytical);
+
+    init_uniform_rhs(rhs, nx, ny);
+    init_quadratic_analytical(analytical, nx, ny, dx, dy);
+    apply_quadratic_bc(p, nx, ny, dx, dy);
+
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance = 1e-10;
+    params.max_iterations = 10000;
+    params.omega = 1.7;
+
+    poisson_solver_init(solver, nx, ny, dx, dy, &params);
+
+    int iters = solve_quadratic_with_dirichlet_bc(solver, p, NULL, rhs,
+                                                   nx, ny, dx, dy, 10000, 1e-10);
+    printf("      Iterations: %d\n", iters);
+
+    double l2_error = compute_l2_error(p, analytical, nx, ny);
+    double max_error = compute_max_error(p, analytical, nx, ny);
+    printf("      L2 error: %.6e, Max error: %.6e\n", l2_error, max_error);
+
+    TEST_ASSERT_TRUE_MESSAGE(l2_error < UNIFORM_RHS_TOL,
+        "Uniform RHS L2 error exceeds tolerance");
+
+    poisson_solver_destroy(solver);
+    cfd_free(p);
+    cfd_free(rhs);
+    cfd_free(analytical);
+}
+
+void test_uniform_rhs_redblack(void) {
+    printf("\n    Testing uniform RHS (quadratic solution) with Red-Black SOR solver...\n");
+
+    size_t nx = 33, ny = 33;
+    double dx = (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
+    double dy = (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
+
+    double* p = create_field(nx, ny);
+    double* rhs = create_field(nx, ny);
+    double* analytical = create_field(nx, ny);
+
+    TEST_ASSERT_NOT_NULL(p);
+    TEST_ASSERT_NOT_NULL(rhs);
+    TEST_ASSERT_NOT_NULL(analytical);
+
+    init_uniform_rhs(rhs, nx, ny);
+    init_quadratic_analytical(analytical, nx, ny, dx, dy);
+    apply_quadratic_bc(p, nx, ny, dx, dy);
+
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance = 1e-10;
+    params.max_iterations = 10000;
+    params.omega = 1.7;
+
+    poisson_solver_init(solver, nx, ny, dx, dy, &params);
+
+    int iters = solve_quadratic_with_dirichlet_bc(solver, p, NULL, rhs,
+                                                   nx, ny, dx, dy, 10000, 1e-10);
+    printf("      Iterations: %d\n", iters);
+
+    double l2_error = compute_l2_error(p, analytical, nx, ny);
+    double max_error = compute_max_error(p, analytical, nx, ny);
+    printf("      L2 error: %.6e, Max error: %.6e\n", l2_error, max_error);
+
+    TEST_ASSERT_TRUE_MESSAGE(l2_error < UNIFORM_RHS_TOL,
+        "Uniform RHS L2 error exceeds tolerance");
+
+    poisson_solver_destroy(solver);
+    cfd_free(p);
+    cfd_free(rhs);
+    cfd_free(analytical);
 }
 
 /* ============================================================================
@@ -712,6 +922,67 @@ void test_grid_convergence_sor(void) {
     }
 }
 
+void test_grid_convergence_redblack(void) {
+    printf("\n    Testing grid convergence with Red-Black SOR solver...\n");
+
+    size_t sizes[] = {17, 33, 65};
+    int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
+    double errors[3];
+    double spacings[3];
+
+    for (int s = 0; s < num_sizes; s++) {
+        size_t n = sizes[s];
+        double dx = (DOMAIN_XMAX - DOMAIN_XMIN) / (n - 1);
+        double dy = (DOMAIN_YMAX - DOMAIN_YMIN) / (n - 1);
+        spacings[s] = dx;
+
+        double* p = create_field(n, n);
+        double* rhs = create_field(n, n);
+        double* analytical = create_field(n, n);
+
+        if (!p || !rhs || !analytical) {
+            cfd_free(p);
+            cfd_free(rhs);
+            cfd_free(analytical);
+            TEST_FAIL_MESSAGE("Memory allocation failed");
+            return;
+        }
+
+        init_sinusoidal_rhs(rhs, n, n, dx, dy);
+        init_sinusoidal_analytical(analytical, n, n, dx, dy);
+        apply_sinusoidal_bc(p, n, n, dx, dy);
+
+        poisson_solver_t* solver = poisson_solver_create(
+            POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR);
+
+        poisson_solver_params_t params = poisson_solver_params_default();
+        params.tolerance = 1e-10;
+        params.max_iterations = 10000;
+        params.omega = 1.7;
+
+        poisson_solver_init(solver, n, n, dx, dy, &params);
+        solve_with_dirichlet_bc(solver, p, NULL, rhs, n, n, dx, dy, 10000, 1e-10);
+
+        errors[s] = compute_l2_error(p, analytical, n, n);
+        printf("      %zux%zu: L2 error = %.6e\n", n, n, errors[s]);
+
+        poisson_solver_destroy(solver);
+        cfd_free(p);
+        cfd_free(rhs);
+        cfd_free(analytical);
+    }
+
+    for (int s = 1; s < num_sizes; s++) {
+        double rate = compute_convergence_rate(errors[s-1], errors[s],
+                                                spacings[s-1], spacings[s]);
+        printf("      Convergence rate %zu->%zu: %.2f (expected ~2.0)\n",
+               sizes[s-1], sizes[s], rate);
+
+        TEST_ASSERT_TRUE_MESSAGE(rate > 2.0 - CONVERGENCE_RATE_TOL,
+            "Grid convergence rate below O(h²)");
+    }
+}
+
 /* ============================================================================
  * RESIDUAL CONVERGENCE TESTS
  * ============================================================================
@@ -939,6 +1210,12 @@ int main(void) {
     RUN_TEST(test_zero_rhs_sor);
     RUN_TEST(test_zero_rhs_redblack);
 
+    /* Uniform RHS tests (quadratic solution) */
+    printf("\n--- Uniform RHS Tests (Quadratic Solution) ---\n");
+    RUN_TEST(test_uniform_rhs_jacobi);
+    RUN_TEST(test_uniform_rhs_sor);
+    RUN_TEST(test_uniform_rhs_redblack);
+
     /* Sinusoidal RHS tests */
     printf("\n--- Sinusoidal RHS Tests ---\n");
     RUN_TEST(test_sinusoidal_rhs_jacobi);
@@ -949,6 +1226,7 @@ int main(void) {
     printf("\n--- Grid Convergence Tests ---\n");
     RUN_TEST(test_grid_convergence_jacobi);
     RUN_TEST(test_grid_convergence_sor);
+    RUN_TEST(test_grid_convergence_redblack);
 
     /* Residual convergence tests */
     printf("\n--- Residual Convergence Tests ---\n");
