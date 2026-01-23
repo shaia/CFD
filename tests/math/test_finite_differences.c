@@ -23,10 +23,25 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-/* Helper macro to check malloc and fail test gracefully */
-#define CHECK_ALLOC(ptr) \
+/* Helper macro to check two allocations and free both if either fails */
+#define CHECK_ALLOC2(ptr1, ptr2) \
     do { \
-        if ((ptr) == NULL) { \
+        if ((ptr1) == NULL || (ptr2) == NULL) { \
+            free(ptr1); \
+            free(ptr2); \
+            TEST_FAIL_MESSAGE("Memory allocation failed"); \
+            return; \
+        } \
+    } while (0)
+
+/* Helper macro to check four allocations and free all if any fails */
+#define CHECK_ALLOC4(ptr1, ptr2, ptr3, ptr4) \
+    do { \
+        if ((ptr1) == NULL || (ptr2) == NULL || (ptr3) == NULL || (ptr4) == NULL) { \
+            free(ptr1); \
+            free(ptr2); \
+            free(ptr3); \
+            free(ptr4); \
             TEST_FAIL_MESSAGE("Memory allocation failed"); \
             return; \
         } \
@@ -244,8 +259,7 @@ void test_first_derivative_x_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
-        CHECK_ALLOC(numerical);
-        CHECK_ALLOC(analytical);
+        CHECK_ALLOC2(numerical, analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -310,8 +324,7 @@ void test_first_derivative_y_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
-        CHECK_ALLOC(numerical);
-        CHECK_ALLOC(analytical);
+        CHECK_ALLOC2(numerical, analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -375,8 +388,7 @@ void test_second_derivative_x_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
-        CHECK_ALLOC(numerical);
-        CHECK_ALLOC(analytical);
+        CHECK_ALLOC2(numerical, analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -437,8 +449,7 @@ void test_second_derivative_y_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
-        CHECK_ALLOC(numerical);
-        CHECK_ALLOC(analytical);
+        CHECK_ALLOC2(numerical, analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -503,8 +514,7 @@ void test_laplacian_5point_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
-        CHECK_ALLOC(numerical);
-        CHECK_ALLOC(analytical);
+        CHECK_ALLOC2(numerical, analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -565,8 +575,7 @@ void test_laplacian_nonsquare_grid(void) {
     size_t interior_count = (nx - 2) * (ny - 2);
     double* numerical = malloc(interior_count * sizeof(double));
     double* analytical = malloc(interior_count * sizeof(double));
-    CHECK_ALLOC(numerical);
-    CHECK_ALLOC(analytical);
+    CHECK_ALLOC2(numerical, analytical);
 
     size_t idx = 0;
     for (size_t j = 1; j < ny - 1; j++) {
@@ -682,8 +691,7 @@ void test_divergence_nonzero_accuracy(void) {
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
         double* analytical = malloc(interior_count * sizeof(double));
-        CHECK_ALLOC(numerical);
-        CHECK_ALLOC(analytical);
+        CHECK_ALLOC2(numerical, analytical);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
@@ -756,10 +764,7 @@ void test_gradient_accuracy(void) {
         double* num_grad_y = malloc(interior_count * sizeof(double));
         double* ana_grad_x = malloc(interior_count * sizeof(double));
         double* ana_grad_y = malloc(interior_count * sizeof(double));
-        CHECK_ALLOC(num_grad_x);
-        CHECK_ALLOC(num_grad_y);
-        CHECK_ALLOC(ana_grad_x);
-        CHECK_ALLOC(ana_grad_y);
+        CHECK_ALLOC4(num_grad_x, num_grad_y, ana_grad_x, ana_grad_y);
 
         size_t idx = 0;
         for (size_t j = 1; j < n - 1; j++) {
