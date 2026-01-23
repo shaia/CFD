@@ -195,7 +195,8 @@ static inline double fd_laplacian(double f_ip1, double f_im1, double f_jp1, doub
 /**
  * Compute L2 error norm over interior points
  */
-static double compute_l2_error(double* numerical, double* analytical, size_t n) {
+static double compute_l2_error(const double* numerical, const double* analytical, size_t n) {
+    if (n == 0) return 0.0;
     double sum_sq = 0.0;
     for (size_t i = 0; i < n; i++) {
         double err = numerical[i] - analytical[i];
@@ -207,7 +208,8 @@ static double compute_l2_error(double* numerical, double* analytical, size_t n) 
 /**
  * Compute max (L-infinity) error
  */
-static double compute_max_error(double* numerical, double* analytical, size_t n) {
+static double compute_max_error(const double* numerical, const double* analytical, size_t n) {
+    if (n == 0) return 0.0;
     double max_err = 0.0;
     for (size_t i = 0; i < n; i++) {
         double err = fabs(numerical[i] - analytical[i]);
