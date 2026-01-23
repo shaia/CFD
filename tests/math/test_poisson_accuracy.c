@@ -484,7 +484,8 @@ void test_uniform_rhs_jacobi(void) {
     params.tolerance = 1e-10;
     params.max_iterations = 10000;
 
-    poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    cfd_status_t status = poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
 
     int iters = solve_quadratic_with_dirichlet_bc(solver, p, p_temp, rhs,
                                                    nx, ny, dx, dy, 10000, 1e-10);
@@ -532,7 +533,8 @@ void test_uniform_rhs_sor(void) {
     params.max_iterations = 10000;
     params.omega = 1.7;
 
-    poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    cfd_status_t status = poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
 
     int iters = solve_quadratic_with_dirichlet_bc(solver, p, NULL, rhs,
                                                    nx, ny, dx, dy, 10000, 1e-10);
@@ -579,7 +581,8 @@ void test_uniform_rhs_redblack(void) {
     params.max_iterations = 10000;
     params.omega = 1.7;
 
-    poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    cfd_status_t status = poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
 
     int iters = solve_quadratic_with_dirichlet_bc(solver, p, NULL, rhs,
                                                    nx, ny, dx, dy, 10000, 1e-10);
@@ -835,7 +838,8 @@ void test_grid_convergence_jacobi(void) {
         params.tolerance = 1e-10;
         params.max_iterations = 10000;
 
-        poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
         solve_with_dirichlet_bc(solver, p, p_temp, rhs, n, n, dx, dy, 10000, 1e-10);
 
         errors[s] = compute_l2_error(p, analytical, n, n);
@@ -899,7 +903,8 @@ void test_grid_convergence_sor(void) {
         params.max_iterations = 10000;
         params.omega = 1.7;
 
-        poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
         solve_with_dirichlet_bc(solver, p, NULL, rhs, n, n, dx, dy, 10000, 1e-10);
 
         errors[s] = compute_l2_error(p, analytical, n, n);
@@ -960,7 +965,8 @@ void test_grid_convergence_redblack(void) {
         params.max_iterations = 10000;
         params.omega = 1.7;
 
-        poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
         solve_with_dirichlet_bc(solver, p, NULL, rhs, n, n, dx, dy, 10000, 1e-10);
 
         errors[s] = compute_l2_error(p, analytical, n, n);
@@ -1022,7 +1028,8 @@ void test_residual_convergence_jacobi(void) {
     params.tolerance = 1e-8;
     params.max_iterations = 200;
 
-    poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    cfd_status_t init_status = poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, init_status);
 
     /* Run solver and track residual reduction */
     poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -1077,7 +1084,8 @@ void test_residual_convergence_sor(void) {
     params.max_iterations = 200;
     params.omega = 1.5;
 
-    poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    cfd_status_t init_status = poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, init_status);
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
     cfd_status_t status = poisson_solver_solve(solver, p, NULL, rhs, &stats);
@@ -1166,7 +1174,8 @@ void test_solver_comparison(void) {
         params.max_iterations = 10000;
         params.omega = 1.7;
 
-        poisson_solver_init(solver, nx, ny, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, nx, ny, dx, dy, &params);
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
         int iterations = solve_with_dirichlet_bc(solver, p, p_temp, rhs,
                                                   nx, ny, dx, dy, 10000, 1e-10);
 
