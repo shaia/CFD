@@ -545,11 +545,18 @@ Unit tests for individual stencil operations:
 - [x] Divergence operator - verify O(h²) accuracy
 - [x] Gradient operator - verify O(h²) accuracy
 
-**Test approach:** Use smooth analytical functions (e.g., `sin(kx)*sin(ky)`), compute numerical derivatives, compare to analytical derivatives, verify error scaling.
+**Test approach:** Use smooth analytical functions (e.g., `sin(kx)*sin(ky)`), compute numerical derivatives using shared stencil implementations, compare to analytical derivatives, verify error scaling.
 
 **Files created:**
 
+- `lib/include/cfd/math/stencils.h` - Shared stencil implementations (header-only)
 - `tests/math/test_finite_differences.c` - 9 tests verifying O(h²) convergence
+
+**Future work:**
+
+- [ ] Migrate solver code to use `cfd/math/stencils.h` (currently inline implementations)
+  - `solver_explicit_euler.c`, `solver_projection.c`, `linear_solver_jacobi.c`, etc.
+  - This ensures tests exercise the exact production code paths
 
 #### 6.1.2 Convergence Order Verification
 

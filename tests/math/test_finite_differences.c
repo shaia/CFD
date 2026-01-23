@@ -2,7 +2,11 @@
  * @file test_finite_differences.c
  * @brief Unit tests for finite difference stencil accuracy
  *
- * Tests verify O(h^2) accuracy for:
+ * Tests verify O(h^2) accuracy for the shared stencil implementations in
+ * cfd/math/stencils.h. This ensures the production stencil code paths
+ * are exercised by the test suite.
+ *
+ * Tests cover:
  *   - First derivative (central difference)
  *   - Second derivative (central difference)
  *   - 2D Laplacian (5-point stencil)
@@ -10,11 +14,12 @@
  *   - Gradient operator
  *
  * Test approach: Use smooth analytical functions (e.g., sin(kx)*sin(ky)),
- * compute numerical derivatives, compare to analytical derivatives,
- * verify error scaling.
+ * compute numerical derivatives using shared stencils, compare to analytical
+ * derivatives, verify error scaling.
  */
 
 #include "unity.h"
+#include "cfd/math/stencils.h"
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -148,45 +153,17 @@ static inline double test_divergence_nonzero(double x, double y) {
 }
 
 /* ============================================================================
- * NUMERICAL STENCIL FUNCTIONS
- * ============================================================================ */
-
-/**
- * Central difference first derivative in x: (f[i+1] - f[i-1]) / (2*dx)
+ * STENCIL FUNCTION ALIASES
+ * ============================================================================
+ * Use the shared stencil implementations from cfd/math/stencils.h
+ * These aliases maintain backward compatibility with existing test code.
  */
-static inline double fd_first_deriv_x(double f_ip1, double f_im1, double dx) {
-    return (f_ip1 - f_im1) / (2.0 * dx);
-}
 
-/**
- * Central difference first derivative in y: (f[j+1] - f[j-1]) / (2*dy)
- */
-static inline double fd_first_deriv_y(double f_jp1, double f_jm1, double dy) {
-    return (f_jp1 - f_jm1) / (2.0 * dy);
-}
-
-/**
- * Central difference second derivative in x: (f[i+1] - 2*f[i] + f[i-1]) / dx^2
- */
-static inline double fd_second_deriv_x(double f_ip1, double f_i, double f_im1, double dx) {
-    return (f_ip1 - 2.0 * f_i + f_im1) / (dx * dx);
-}
-
-/**
- * Central difference second derivative in y: (f[j+1] - 2*f[j] + f[j-1]) / dy^2
- */
-static inline double fd_second_deriv_y(double f_jp1, double f_j, double f_jm1, double dy) {
-    return (f_jp1 - 2.0 * f_j + f_jm1) / (dy * dy);
-}
-
-/**
- * 5-point Laplacian stencil
- */
-static inline double fd_laplacian(double f_ip1, double f_im1, double f_jp1, double f_jm1,
-                                   double f_ij, double dx, double dy) {
-    return (f_ip1 - 2.0 * f_ij + f_im1) / (dx * dx) +
-           (f_jp1 - 2.0 * f_ij + f_jm1) / (dy * dy);
-}
+#define fd_first_deriv_x  stencil_first_deriv_x
+#define fd_first_deriv_y  stencil_first_deriv_y
+#define fd_second_deriv_x stencil_second_deriv_x
+#define fd_second_deriv_y stencil_second_deriv_y
+#define fd_laplacian      stencil_laplacian_2d
 
 /* ============================================================================
  * HELPER FUNCTIONS

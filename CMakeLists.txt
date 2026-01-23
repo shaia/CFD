@@ -285,6 +285,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_ghia_projection_gpu PRIVATE CFD::Library unity)
     target_link_libraries(test_taylor_green_vortex PRIVATE CFD::Library unity)
     target_link_libraries(test_finite_differences PRIVATE unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
+    target_include_directories(test_finite_differences PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/include)
     target_link_libraries(test_solver_architecture PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
