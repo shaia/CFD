@@ -19,8 +19,8 @@
  *   - Condition number: κ ≈ 4/(π²h²) = 4(n-1)²/π²
  *
  * Test methodology:
- *   We use the solver's native Neumann BCs with uniform RHS, measuring
- *   residual reduction per iteration to verify theoretical convergence rates.
+ *   We use the solver's native Neumann BCs with sinusoidal RHS (Neumann-compatible),
+ *   measuring residual reduction per iteration to verify theoretical convergence rates.
  */
 
 #include "unity.h"
@@ -45,8 +45,7 @@
 #define DOMAIN_YMAX 1.0
 
 /* Tolerances */
-#define SPECTRAL_RADIUS_TOL     0.10   /* Allow 10% deviation from theory */
-#define OMEGA_OPTIMALITY_TOL    0.25   /* Allow 25% slower than optimal */
+#define SPECTRAL_RADIUS_TOL     0.01   /* Allow 1% deviation from theory */
 #define CG_ITERATION_MARGIN     3.0    /* CG should converge in < 3*sqrt(kappa) iters */
 
 /* ============================================================================
@@ -206,7 +205,7 @@ void test_jacobi_spectral_radius(void) {
             return;
         }
 
-        /* Use non-trivial initial guess with uniform RHS */
+        /* Use non-trivial initial guess with sinusoidal RHS */
         init_nontrivial_guess(p, n, n);
         init_sinusoidal_rhs(rhs, n, n, dx, dy);
 
@@ -243,7 +242,16 @@ void test_jacobi_spectral_radius(void) {
         int iters = 0;
         for (int iter = 0; iter < 200; iter++) {
             double residual = 0.0;
-            poisson_solver_iterate(solver, p, p_temp, rhs, &residual);
+            cfd_status_t iter_status = poisson_solver_iterate(solver, p, p_temp, rhs, &residual);
+            if (iter_status != CFD_SUCCESS) {
+                free(residuals);
+                poisson_solver_destroy(solver);
+                cfd_free(p);
+                cfd_free(p_temp);
+                cfd_free(rhs);
+                TEST_FAIL_MESSAGE("poisson_solver_iterate failed");
+                return;
+            }
             residuals[iter] = residual;
             iters = iter + 1;
             if (residual < 1e-12) break;
@@ -271,11 +279,15 @@ void test_jacobi_spectral_radius(void) {
 }
 
 /* ============================================================================
- * TEST: SOR OPTIMAL OMEGA
+ * TEST: SOR OVER-RELAXATION BENEFIT
  * ============================================================================
  *
- * Verify that ω_opt = 2/(1 + sin(πh)) gives optimal or near-optimal convergence.
- * Test by comparing iteration counts at different omega values.
+ * Verify that over-relaxation (ω > 1) improves SOR convergence over
+ * Gauss-Seidel (ω = 1). Tests several omega values and confirms that
+ * at least one over-relaxed variant converges faster.
+ *
+ * Note: Theoretical ω_opt = 2/(1+sin(πh)) applies to Dirichlet BCs.
+ * With Neumann BCs used by these solvers, optimal omega is typically lower.
  */
 
 void test_sor_optimal_omega(void) {
@@ -287,10 +299,7 @@ void test_sor_optimal_omega(void) {
 
     printf("      Grid %zux%zu\n", n, n);
 
-    /* Test omega values: Gauss-Seidel (ω=1) vs over-relaxed (ω>1)
-     * Note: Theoretical ω_opt = 2/(1+sin(πh)) applies to Dirichlet BCs.
-     * With Neumann BCs used by solvers, optimal omega is typically lower.
-     */
+    /* Test omega values: Gauss-Seidel (ω=1) vs over-relaxed (ω>1) */
     double omegas[] = {1.0, 1.3, 1.5, 1.7};
     const char* labels[] = {"ω=1.0 (GS)", "ω=1.3", "ω=1.5", "ω=1.7"};
     int num_omegas = sizeof(omegas) / sizeof(omegas[0]);
@@ -332,10 +341,12 @@ void test_sor_optimal_omega(void) {
         params.omega = omega;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
-        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver init failed");
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
-        poisson_solver_solve(solver, p, NULL, rhs, &stats);
+        status = poisson_solver_solve(solver, p, NULL, rhs, &stats);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver solve failed");
+        TEST_ASSERT_EQUAL_INT_MESSAGE(POISSON_CONVERGED, stats.status, "SOR solver did not converge");
         iterations[w] = stats.iterations;
 
         if (w == 0) gauss_seidel_iters = stats.iterations;
@@ -383,20 +394,28 @@ void test_sor_vs_jacobi_speedup(void) {
         double* p_temp = create_field(n, n);
         double* rhs = create_field(n, n);
 
+        TEST_ASSERT_NOT_NULL_MESSAGE(p, "Memory allocation failed for p");
+        TEST_ASSERT_NOT_NULL_MESSAGE(p_temp, "Memory allocation failed for p_temp");
+        TEST_ASSERT_NOT_NULL_MESSAGE(rhs, "Memory allocation failed for rhs");
+
         init_nontrivial_guess(p, n, n);
         init_sinusoidal_rhs(rhs, n, n, dx, dy);
 
         poisson_solver_t* solver = poisson_solver_create(
             POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
+        TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Could not create Jacobi solver");
 
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-6;
         params.max_iterations = 5000;
 
-        poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "Jacobi solver init failed");
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
-        poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+        status = poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "Jacobi solver solve failed");
+        TEST_ASSERT_EQUAL_INT_MESSAGE(POISSON_CONVERGED, stats.status, "Jacobi solver did not converge");
         jacobi_iters = stats.iterations;
 
         poisson_solver_destroy(solver);
@@ -410,21 +429,28 @@ void test_sor_vs_jacobi_speedup(void) {
         double* p = create_field(n, n);
         double* rhs = create_field(n, n);
 
+        TEST_ASSERT_NOT_NULL_MESSAGE(p, "Memory allocation failed for p");
+        TEST_ASSERT_NOT_NULL_MESSAGE(rhs, "Memory allocation failed for rhs");
+
         init_nontrivial_guess(p, n, n);
         init_sinusoidal_rhs(rhs, n, n, dx, dy);
 
         poisson_solver_t* solver = poisson_solver_create(
             POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+        TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Could not create SOR solver");
 
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-6;
         params.max_iterations = 5000;
         params.omega = omega;
 
-        poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver init failed");
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
-        poisson_solver_solve(solver, p, NULL, rhs, &stats);
+        status = poisson_solver_solve(solver, p, NULL, rhs, &stats);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver solve failed");
+        TEST_ASSERT_EQUAL_INT_MESSAGE(POISSON_CONVERGED, stats.status, "SOR solver did not converge");
         sor_iters = stats.iterations;
 
         poisson_solver_destroy(solver);
@@ -437,9 +463,11 @@ void test_sor_vs_jacobi_speedup(void) {
     printf("      SOR (ω=%.1f): %d iterations\n", omega, sor_iters);
     printf("      Speedup: %.1fx\n", speedup);
 
-    /* SOR should be significantly faster than Jacobi */
-    TEST_ASSERT_TRUE_MESSAGE(speedup > 1.5,
-        "SOR should converge faster than Jacobi");
+    /* SOR should be significantly faster than Jacobi.
+     * Theory predicts O(n) vs O(n²) scaling, so expect substantial speedup.
+     * At n=33 with ω=1.5, typical speedup is ~17x. Use 5x as conservative bound. */
+    TEST_ASSERT_TRUE_MESSAGE(speedup > 5.0,
+        "SOR should converge significantly faster than Jacobi (expected >5x speedup)");
 }
 
 /* ============================================================================
@@ -465,21 +493,28 @@ void test_redblack_sor_equivalence(void) {
         double* p = create_field(n, n);
         double* rhs = create_field(n, n);
 
+        TEST_ASSERT_NOT_NULL_MESSAGE(p, "Memory allocation failed for p");
+        TEST_ASSERT_NOT_NULL_MESSAGE(rhs, "Memory allocation failed for rhs");
+
         init_nontrivial_guess(p, n, n);
         init_sinusoidal_rhs(rhs, n, n, dx, dy);
 
         poisson_solver_t* solver = poisson_solver_create(
             POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+        TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Could not create SOR solver");
 
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-6;
         params.max_iterations = 2000;
         params.omega = omega;
 
-        poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver init failed");
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
-        poisson_solver_solve(solver, p, NULL, rhs, &stats);
+        status = poisson_solver_solve(solver, p, NULL, rhs, &stats);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver solve failed");
+        TEST_ASSERT_EQUAL_INT_MESSAGE(POISSON_CONVERGED, stats.status, "SOR solver did not converge");
         iters_sor = stats.iterations;
 
         poisson_solver_destroy(solver);
@@ -492,21 +527,28 @@ void test_redblack_sor_equivalence(void) {
         double* p = create_field(n, n);
         double* rhs = create_field(n, n);
 
+        TEST_ASSERT_NOT_NULL_MESSAGE(p, "Memory allocation failed for p");
+        TEST_ASSERT_NOT_NULL_MESSAGE(rhs, "Memory allocation failed for rhs");
+
         init_nontrivial_guess(p, n, n);
         init_sinusoidal_rhs(rhs, n, n, dx, dy);
 
         poisson_solver_t* solver = poisson_solver_create(
             POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR);
+        TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Could not create Red-Black SOR solver");
 
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-6;
         params.max_iterations = 2000;
         params.omega = omega;
 
-        poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "Red-Black SOR solver init failed");
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
-        poisson_solver_solve(solver, p, NULL, rhs, &stats);
+        status = poisson_solver_solve(solver, p, NULL, rhs, &stats);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "Red-Black SOR solver solve failed");
+        TEST_ASSERT_EQUAL_INT_MESSAGE(POISSON_CONVERGED, stats.status, "Red-Black SOR solver did not converge");
         iters_rb = stats.iterations;
 
         poisson_solver_destroy(solver);
@@ -539,6 +581,7 @@ void test_cg_iteration_bound(void) {
 
     size_t sizes[] = {17, 33, 65};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
+    int sizes_tested = 0;
 
     for (int s = 0; s < num_sizes; s++) {
         size_t n = sizes[s];
@@ -572,8 +615,8 @@ void test_cg_iteration_bound(void) {
             cfd_free(p);
             cfd_free(p_temp);
             cfd_free(rhs);
-            printf("      CG solver not available, skipping\n");
-            return;
+            printf("      %3zux%-3zu: CG solver not available\n", n, n);
+            continue;
         }
 
         poisson_solver_params_t params = poisson_solver_params_default();
@@ -586,12 +629,14 @@ void test_cg_iteration_bound(void) {
             cfd_free(p);
             cfd_free(p_temp);
             cfd_free(rhs);
-            printf("      CG solver init failed, skipping\n");
-            return;
+            printf("      %3zux%-3zu: CG solver init failed\n", n, n);
+            continue;
         }
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
-        poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+        status = poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "CG solver solve failed");
+        TEST_ASSERT_EQUAL_INT_MESSAGE(POISSON_CONVERGED, stats.status, "CG solver did not converge");
 
         printf("      %3zux%-3zu: κ=%.0f, √κ=%.1f, bound=%d, actual=%d\n",
                n, n, kappa, sqrt_kappa, expected_bound, stats.iterations);
@@ -609,7 +654,12 @@ void test_cg_iteration_bound(void) {
         cfd_free(p);
         cfd_free(p_temp);
         cfd_free(rhs);
+        sizes_tested++;
     }
+
+    /* Ensure at least one size was actually tested */
+    TEST_ASSERT_TRUE_MESSAGE(sizes_tested > 0,
+        "CG solver not available - no sizes could be tested");
 }
 
 /* ============================================================================
@@ -686,7 +736,26 @@ void test_solver_comparison(void) {
         }
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
-        poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+        cfd_status_t solve_status = poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+
+        if (solve_status != CFD_SUCCESS) {
+            printf("      %-15s: solve failed\n", solvers[i].name);
+            poisson_solver_destroy(solver);
+            cfd_free(p);
+            cfd_free(p_temp);
+            cfd_free(rhs);
+            continue;
+        }
+
+        if (stats.status != POISSON_CONVERGED) {
+            printf("      %-15s: did not converge (%d iterations)\n",
+                   solvers[i].name, stats.iterations);
+            poisson_solver_destroy(solver);
+            cfd_free(p);
+            cfd_free(p_temp);
+            cfd_free(rhs);
+            continue;
+        }
 
         if (i == 0) jacobi_iters = stats.iterations;
 
@@ -701,7 +770,7 @@ void test_solver_comparison(void) {
         cfd_free(rhs);
     }
 
-    /* Informational test - no assertion */
+    /* Informational test - verifies all solvers complete without crashes */
 }
 
 /* ============================================================================
