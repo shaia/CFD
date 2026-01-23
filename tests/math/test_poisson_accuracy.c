@@ -1154,7 +1154,8 @@ void test_solver_comparison(void) {
         if (!p || (solvers[i].needs_temp && !p_temp)) {
             cfd_free(p);
             cfd_free(p_temp);
-            continue;
+            TEST_FAIL_MESSAGE("Memory allocation failed");
+            return;
         }
 
         apply_sinusoidal_bc(p, nx, ny, dx, dy);
