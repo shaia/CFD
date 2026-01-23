@@ -40,7 +40,7 @@
 #define DOMAIN_YMAX 1.0
 
 /* Tolerances */
-#define CONVERGENCE_RATE_TOL    0.3    /* Allow rate between 1.7 and 2.3 */
+#define CONVERGENCE_RATE_TOL    0.3    /* Minimum expected rate is 2.0 - 0.3 = 1.7 */
 #define ABSOLUTE_ERROR_TOL      1e-3   /* Max error at finest grid */
 #define BACKEND_COMPARISON_TOL  1e-10  /* Backends should match to machine precision */
 
@@ -460,16 +460,18 @@ void test_laplacian_symmetry(void) {
     TEST_ASSERT_NOT_NULL(v);
 
     /* Both functions are zero on all boundaries of [0,1]²:
-     * u = sin(πx)sin(πy)
-     * v = sin(πx)sin(2πy)
-     * These are NOT orthogonal, so inner products are non-zero.
+     * u = sin(πx)sin(πy)           - smooth eigenfunction
+     * v = x(1-x)y(1-y)             - polynomial, not an eigenfunction
+     *
+     * These are NOT orthogonal, so <u, v>, <∇²u, v>, and <u, ∇²v>
+     * are all non-zero, making this a meaningful symmetry test.
      */
     for (size_t j = 0; j < ny; j++) {
         double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * dx;
             u[j * nx + i] = sin(M_PI * x) * sin(M_PI * y);
-            v[j * nx + i] = sin(M_PI * x) * sin(2.0 * M_PI * y);
+            v[j * nx + i] = x * (1.0 - x) * y * (1.0 - y);
         }
     }
 
@@ -484,13 +486,13 @@ void test_laplacian_symmetry(void) {
             /* Laplacian of u at (i,j) */
             double lap_u = stencil_laplacian_2d(
                 u[ij + 1], u[ij - 1],
-                u[ij + nx], u[ij - (int)nx],
+                u[ij + nx], u[ij - nx],
                 u[ij], dx, dy);
 
             /* Laplacian of v at (i,j) */
             double lap_v = stencil_laplacian_2d(
                 v[ij + 1], v[ij - 1],
-                v[ij + nx], v[ij - (int)nx],
+                v[ij + nx], v[ij - nx],
                 v[ij], dx, dy);
 
             inner_lapu_v += lap_u * v[ij];
