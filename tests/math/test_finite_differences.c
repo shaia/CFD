@@ -2,9 +2,15 @@
  * @file test_finite_differences.c
  * @brief Unit tests for finite difference stencil accuracy
  *
- * Tests verify O(h^2) accuracy for the shared stencil implementations in
- * cfd/math/stencils.h. This ensures the production stencil code paths
- * are exercised by the test suite.
+ * These tests verify O(h^2) accuracy for the standard central difference
+ * stencils defined in cfd/math/stencils.h. This validates the mathematical
+ * correctness of the stencil formulas.
+ *
+ * NOTE: These are standalone mathematical validation tests. The production
+ * solver code (solver_explicit_euler.c, solver_projection.c, etc.) currently
+ * implements stencils inline and does NOT use cfd/math/stencils.h. For tests
+ * that exercise actual production code paths, see the Taylor-Green vortex
+ * validation tests which run the full solver.
  *
  * Tests cover:
  *   - First derivative (central difference)
@@ -14,8 +20,8 @@
  *   - Gradient operator
  *
  * Test approach: Use smooth analytical functions (e.g., sin(kx)*sin(ky)),
- * compute numerical derivatives using shared stencils, compare to analytical
- * derivatives, verify error scaling.
+ * compute numerical derivatives using the stencil functions, compare to
+ * analytical derivatives, verify O(h^2) error scaling.
  */
 
 #include "unity.h"
