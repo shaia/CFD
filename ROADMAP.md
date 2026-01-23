@@ -223,15 +223,20 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 
 - `tests/math/test_poisson_accuracy.c` - 15 tests covering all accuracy requirements
 
-#### 1.2.2 Laplacian Operator Validation
+#### 1.2.2 Laplacian Operator Validation ✅
 
 **Test the discrete Laplacian against manufactured solutions:**
 
-- [ ] Manufactured solution: p = sin(πx)sin(πy) → ∇²p = -2π²p
-- [ ] Verify 2nd-order accuracy O(dx²) with grid refinement
-- [ ] Compare CPU, AVX2, and CG implementations
+- [x] Manufactured solution: p = sin(πx)sin(πy) → ∇²p = -2π²p
+- [x] Verify 2nd-order accuracy O(dx²) with grid refinement
+- [x] Compare CPU and CG implementations (SIMD compared when available)
+- [x] Verify stencil symmetry (self-adjoint property)
 
-**Files:** `lib/src/solvers/linear/cpu/linear_solver_cg.c` - `apply_laplacian()`
+**Files created:**
+
+- `tests/math/test_laplacian_accuracy.c` - 4 tests covering all accuracy requirements
+
+**Files tested:** `lib/src/solvers/linear/cpu/linear_solver_cg.c` - `apply_laplacian()`
 
 #### 1.2.3 Linear Solver Convergence Validation
 
@@ -245,6 +250,7 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 **Files to create:**
 
 - ~~`tests/math/test_poisson_accuracy.c`~~ ✅ Created
+- ~~`tests/math/test_laplacian_accuracy.c`~~ ✅ Created
 - `tests/math/test_linear_solver_convergence.c`
 - `src/solvers/linear/bicgstab.c`
 - `src/solvers/linear/multigrid.c`
