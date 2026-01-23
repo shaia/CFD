@@ -220,6 +220,7 @@ if(BUILD_TESTS)
     # Mathematical accuracy tests
     add_executable(test_finite_differences tests/math/test_finite_differences.c)
     add_executable(test_poisson_accuracy tests/math/test_poisson_accuracy.c)
+    add_executable(test_laplacian_accuracy tests/math/test_laplacian_accuracy.c)
 
     # Cross-architecture consistency tests
     add_executable(test_solver_architecture tests/validation/test_solver_architecture.c)
@@ -288,6 +289,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_finite_differences PRIVATE unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_include_directories(test_finite_differences PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/include)
     target_link_libraries(test_poisson_accuracy PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
+    target_link_libraries(test_laplacian_accuracy PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_solver_architecture PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
@@ -347,6 +349,7 @@ if(BUILD_TESTS)
     # Mathematical accuracy tests
     add_test(NAME FiniteDifferencesTest COMMAND test_finite_differences)
     add_test(NAME PoissonAccuracyTest COMMAND test_poisson_accuracy)
+    add_test(NAME LaplacianAccuracyTest COMMAND test_laplacian_accuracy)
 
     # Label long-running validation tests to exclude from sanitizer job
     # These tests validate physics accuracy, not memory safety
