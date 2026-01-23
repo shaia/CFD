@@ -196,12 +196,20 @@ static double compute_max_error(const double* numerical, const double* analytica
 }
 
 /**
- * Compute convergence rate from two error values
- * rate = log(e1/e2) / log(h1/h2) = log(e1/e2) / log(2) for halving h
+ * Compute convergence rate from two error values and grid spacings
+ * rate = log(e_coarse/e_fine) / log(h_coarse/h_fine)
+ *
+ * @param e_coarse  Error on coarser grid
+ * @param e_fine    Error on finer grid
+ * @param h_coarse  Grid spacing on coarser grid
+ * @param h_fine    Grid spacing on finer grid
+ * @return Estimated convergence order
  */
-static double compute_convergence_rate(double e_coarse, double e_fine) {
+static double compute_convergence_rate(double e_coarse, double e_fine,
+                                       double h_coarse, double h_fine) {
     if (e_fine < 1e-15 || e_coarse < 1e-15) return 0.0;
-    return log(e_coarse / e_fine) / log(2.0);
+    if (h_fine < 1e-15 || h_coarse < 1e-15) return 0.0;
+    return log(e_coarse / e_fine) / log(h_coarse / h_fine);
 }
 
 /* ============================================================================
@@ -228,11 +236,13 @@ void test_first_derivative_x_accuracy(void) {
     size_t sizes[] = {17, 33, 65};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     double errors[3];
+    double spacings[3];
 
     for (int s = 0; s < num_sizes; s++) {
         size_t n = sizes[s];
         double dx = (xmax - xmin) / (n - 1);
         double dy = (ymax - ymin) / (n - 1);
+        spacings[s] = dx;
 
         /* Allocate arrays for interior points */
         size_t interior_count = (n - 2) * (n - 2);
@@ -269,7 +279,8 @@ void test_first_derivative_x_accuracy(void) {
 
     /* Verify O(h^2) convergence */
     for (int s = 1; s < num_sizes; s++) {
-        double rate = compute_convergence_rate(errors[s - 1], errors[s]);
+        double rate = compute_convergence_rate(errors[s - 1], errors[s],
+                                               spacings[s - 1], spacings[s]);
         printf("      Convergence rate %zu->%zu: %.2f (expected ~2.0)\n",
                sizes[s - 1], sizes[s], rate);
         TEST_ASSERT_TRUE_MESSAGE(rate > 2.0 - CONVERGENCE_RATE_TOL,
@@ -294,11 +305,13 @@ void test_first_derivative_y_accuracy(void) {
     size_t sizes[] = {17, 33, 65};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     double errors[3];
+    double spacings[3];
 
     for (int s = 0; s < num_sizes; s++) {
         size_t n = sizes[s];
         double dx = (xmax - xmin) / (n - 1);
         double dy = (ymax - ymin) / (n - 1);
+        spacings[s] = dy;
 
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
@@ -330,7 +343,8 @@ void test_first_derivative_y_accuracy(void) {
 
     /* Verify O(h^2) convergence */
     for (int s = 1; s < num_sizes; s++) {
-        double rate = compute_convergence_rate(errors[s - 1], errors[s]);
+        double rate = compute_convergence_rate(errors[s - 1], errors[s],
+                                               spacings[s - 1], spacings[s]);
         printf("      Convergence rate %zu->%zu: %.2f (expected ~2.0)\n",
                sizes[s - 1], sizes[s], rate);
         TEST_ASSERT_TRUE_MESSAGE(rate > 2.0 - CONVERGENCE_RATE_TOL,
@@ -358,11 +372,13 @@ void test_second_derivative_x_accuracy(void) {
     size_t sizes[] = {17, 33, 65};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     double errors[3];
+    double spacings[3];
 
     for (int s = 0; s < num_sizes; s++) {
         size_t n = sizes[s];
         double dx = (xmax - xmin) / (n - 1);
         double dy = (ymax - ymin) / (n - 1);
+        spacings[s] = dx;
 
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
@@ -395,7 +411,8 @@ void test_second_derivative_x_accuracy(void) {
 
     /* Verify O(h^2) convergence */
     for (int s = 1; s < num_sizes; s++) {
-        double rate = compute_convergence_rate(errors[s - 1], errors[s]);
+        double rate = compute_convergence_rate(errors[s - 1], errors[s],
+                                               spacings[s - 1], spacings[s]);
         printf("      Convergence rate %zu->%zu: %.2f (expected ~2.0)\n",
                sizes[s - 1], sizes[s], rate);
         TEST_ASSERT_TRUE_MESSAGE(rate > 2.0 - CONVERGENCE_RATE_TOL,
@@ -419,11 +436,13 @@ void test_second_derivative_y_accuracy(void) {
     size_t sizes[] = {17, 33, 65};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     double errors[3];
+    double spacings[3];
 
     for (int s = 0; s < num_sizes; s++) {
         size_t n = sizes[s];
         double dx = (xmax - xmin) / (n - 1);
         double dy = (ymax - ymin) / (n - 1);
+        spacings[s] = dy;
 
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
@@ -456,7 +475,8 @@ void test_second_derivative_y_accuracy(void) {
 
     /* Verify O(h^2) convergence */
     for (int s = 1; s < num_sizes; s++) {
-        double rate = compute_convergence_rate(errors[s - 1], errors[s]);
+        double rate = compute_convergence_rate(errors[s - 1], errors[s],
+                                               spacings[s - 1], spacings[s]);
         printf("      Convergence rate %zu->%zu: %.2f (expected ~2.0)\n",
                sizes[s - 1], sizes[s], rate);
         TEST_ASSERT_TRUE_MESSAGE(rate > 2.0 - CONVERGENCE_RATE_TOL,
@@ -484,11 +504,13 @@ void test_laplacian_5point_accuracy(void) {
     size_t sizes[] = {17, 33, 65};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     double errors[3];
+    double spacings[3];
 
     for (int s = 0; s < num_sizes; s++) {
         size_t n = sizes[s];
         double dx = (xmax - xmin) / (n - 1);
         double dy = (ymax - ymin) / (n - 1);
+        spacings[s] = (dx > dy) ? dx : dy;  /* Use max(dx, dy) for 2D stencils */
 
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
@@ -523,7 +545,8 @@ void test_laplacian_5point_accuracy(void) {
 
     /* Verify O(h^2) convergence */
     for (int s = 1; s < num_sizes; s++) {
-        double rate = compute_convergence_rate(errors[s - 1], errors[s]);
+        double rate = compute_convergence_rate(errors[s - 1], errors[s],
+                                               spacings[s - 1], spacings[s]);
         printf("      Convergence rate %zu->%zu: %.2f (expected ~2.0)\n",
                sizes[s - 1], sizes[s], rate);
         TEST_ASSERT_TRUE_MESSAGE(rate > 2.0 - CONVERGENCE_RATE_TOL,
@@ -661,11 +684,13 @@ void test_divergence_nonzero_accuracy(void) {
     size_t sizes[] = {17, 33, 65};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     double errors[3];
+    double spacings[3];
 
     for (int s = 0; s < num_sizes; s++) {
         size_t n = sizes[s];
         double dx = (xmax - xmin) / (n - 1);
         double dy = (ymax - ymin) / (n - 1);
+        spacings[s] = (dx > dy) ? dx : dy;
 
         size_t interior_count = (n - 2) * (n - 2);
         double* numerical = malloc(interior_count * sizeof(double));
@@ -704,7 +729,8 @@ void test_divergence_nonzero_accuracy(void) {
 
     /* Verify O(h^2) convergence */
     for (int s = 1; s < num_sizes; s++) {
-        double rate = compute_convergence_rate(errors[s - 1], errors[s]);
+        double rate = compute_convergence_rate(errors[s - 1], errors[s],
+                                               spacings[s - 1], spacings[s]);
         printf("      Convergence rate %zu->%zu: %.2f (expected ~2.0)\n",
                sizes[s - 1], sizes[s], rate);
         TEST_ASSERT_TRUE_MESSAGE(rate > 2.0 - CONVERGENCE_RATE_TOL,
@@ -732,11 +758,14 @@ void test_gradient_accuracy(void) {
     size_t sizes[] = {17, 33, 65};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     double errors_x[3], errors_y[3];
+    double spacings_x[3], spacings_y[3];
 
     for (int s = 0; s < num_sizes; s++) {
         size_t n = sizes[s];
         double dx = (xmax - xmin) / (n - 1);
         double dy = (ymax - ymin) / (n - 1);
+        spacings_x[s] = dx;
+        spacings_y[s] = dy;
 
         size_t interior_count = (n - 2) * (n - 2);
         double* num_grad_x = malloc(interior_count * sizeof(double));
@@ -780,8 +809,10 @@ void test_gradient_accuracy(void) {
 
     /* Verify O(h^2) convergence for both components */
     for (int s = 1; s < num_sizes; s++) {
-        double rate_x = compute_convergence_rate(errors_x[s - 1], errors_x[s]);
-        double rate_y = compute_convergence_rate(errors_y[s - 1], errors_y[s]);
+        double rate_x = compute_convergence_rate(errors_x[s - 1], errors_x[s],
+                                                 spacings_x[s - 1], spacings_x[s]);
+        double rate_y = compute_convergence_rate(errors_y[s - 1], errors_y[s],
+                                                 spacings_y[s - 1], spacings_y[s]);
         printf("      Convergence rate %zu->%zu: grad_x=%.2f, grad_y=%.2f\n",
                sizes[s - 1], sizes[s], rate_x, rate_y);
 
