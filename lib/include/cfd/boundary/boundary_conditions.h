@@ -916,8 +916,8 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_time_cpu(
     const bc_time_context_t* time_ctx);
 
 /**
- * Apply time-varying inlet using SIMD + OpenMP implementation.
- * Returns CFD_ERROR_UNSUPPORTED if SIMD or OpenMP not available.
+ * Apply time-varying inlet using SIMD implementation.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD not available.
  */
 CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_time_simd(
     double* u, double* v, size_t nx, size_t ny,
