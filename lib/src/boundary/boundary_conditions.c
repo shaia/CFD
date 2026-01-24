@@ -622,6 +622,23 @@ bc_inlet_config_t bc_inlet_config_time_ramp(
     double t_start, double t_end,
     double value_start, double value_end) {
     bc_inlet_config_t config = bc_inlet_config_uniform(u_velocity, v_velocity);
+    
+    // Validate that t_end > t_start to prevent division by zero
+    if (t_end <= t_start) {
+        // Swap values if they are in wrong order
+        double temp = t_start;
+        t_start = t_end;
+        t_end = temp;
+        
+        // Also swap corresponding values to maintain the intended behavior
+        temp = value_start;
+        value_start = value_end;
+        value_end = temp;
+        
+        bc_report_error(BC_ERROR_INVALID, "bc_inlet_config_time_ramp", 
+                       "t_start >= t_end: parameters have been swapped to ensure t_end > t_start");
+    }
+    
     config.time_config.profile = BC_TIME_PROFILE_RAMP;
     config.time_config.params.ramp.t_start = t_start;
     config.time_config.params.ramp.t_end = t_end;

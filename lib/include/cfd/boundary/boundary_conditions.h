@@ -350,7 +350,8 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity(double* u, double* v, size_t n
 typedef enum {
     BC_ERROR_NONE = 0,
     BC_ERROR_NO_SIMD_BACKEND,    /**< SIMD backend called but no SIMD available */
-    BC_ERROR_INTERNAL            /**< Internal library error */
+    BC_ERROR_INTERNAL,           /**< Internal library error */
+    BC_ERROR_INVALID             /**< Invalid argument/parameter */
 } bc_error_code_t;
 
 /**
