@@ -126,7 +126,7 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 - [x] Outlet (zero-gradient/convective)
 - [ ] Symmetry planes
 - [x] Moving wall boundaries (via Dirichlet BCs, see lid-driven cavity example)
-- [ ] Time-varying boundary conditions
+- [x] Time-varying boundary conditions
 
 **Implemented files:**
 
@@ -148,6 +148,8 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 - `lib/src/boundary/boundary_conditions_internal.h` - Internal declarations
 - `lib/src/boundary/boundary_conditions_inlet_common.h` - Shared inlet BC helpers
 - `lib/src/boundary/boundary_conditions_outlet_common.h` - Shared outlet BC helpers
+- `lib/src/boundary/boundary_conditions_time.h` - Time modulation helpers
+- `lib/src/boundary/cpu/boundary_conditions_inlet_time_scalar.c` - Time-varying inlet scalar implementation
 
 #### 1.1.1 Boundary Conditions Code Refactoring (P2)
 

@@ -112,6 +112,7 @@ set(CFD_SCALAR_SOURCES
     # Boundary conditions - scalar implementations only
     src/boundary/cpu/boundary_conditions_scalar.c
     src/boundary/cpu/boundary_conditions_inlet_scalar.c
+    src/boundary/cpu/boundary_conditions_inlet_time_scalar.c
     src/boundary/cpu/boundary_conditions_outlet_scalar.c
     # Navier-Stokes solvers - scalar
     src/solvers/navier_stokes/cpu/solver_explicit_euler.c
