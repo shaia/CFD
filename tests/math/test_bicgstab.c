@@ -108,20 +108,6 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
     }
 }
 
-/**
- * Compute L2 norm of field (interior points only)
- */
-static double compute_l2_norm(const double* field, size_t nx, size_t ny) {
-    double sum = 0.0;
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            double val = field[j * nx + i];
-            sum += val * val;
-        }
-    }
-    return sqrt(sum);
-}
-
 /* ============================================================================
  * BASIC TESTS
  * ============================================================================ */
