@@ -97,6 +97,100 @@ typedef enum {
     BC_EDGE_TOP    = 0x08    // y=Ly boundary (row ny-1)
 } bc_edge_t;
 
+/* ============================================================================
+ * Time-Varying Boundary Condition Types
+ *
+ * Support for boundary conditions that vary with simulation time.
+ * Enables pulsatile flow, ramp-up transients, and oscillating boundaries.
+ * ============================================================================ */
+
+/**
+ * Time Profile Types
+ *
+ * Defines how a boundary condition varies with time.
+ */
+typedef enum {
+    BC_TIME_PROFILE_CONSTANT,     // No time variation (default)
+    BC_TIME_PROFILE_SINUSOIDAL,   // Sinusoidal: offset + amplitude * sin(2*pi*freq*t + phase)
+    BC_TIME_PROFILE_RAMP,         // Linear ramp between two times
+    BC_TIME_PROFILE_STEP,         // Step change at specified time
+    BC_TIME_PROFILE_CUSTOM        // User-defined time function
+} bc_time_profile_t;
+
+/**
+ * Time Context
+ *
+ * Provides current simulation time information to time-varying BC functions.
+ */
+typedef struct {
+    double time;    // Current simulation time
+    double dt;      // Current time step size
+} bc_time_context_t;
+
+/**
+ * Sinusoidal Time Profile Configuration
+ *
+ * Produces: offset + amplitude * sin(2*pi*frequency*t + phase)
+ */
+typedef struct {
+    double frequency;   // Frequency in Hz
+    double amplitude;   // Amplitude (multiplier)
+    double phase;       // Phase offset in radians
+    double offset;      // DC offset (1.0 = no attenuation at mean)
+} bc_time_sinusoidal_t;
+
+/**
+ * Ramp Time Profile Configuration
+ *
+ * Linear interpolation from value_start to value_end over [t_start, t_end].
+ */
+typedef struct {
+    double t_start;      // Ramp start time
+    double t_end;        // Ramp end time
+    double value_start;  // Multiplier at t_start
+    double value_end;    // Multiplier at t_end
+} bc_time_ramp_t;
+
+/**
+ * Step Time Profile Configuration
+ *
+ * Instantaneous change from value_before to value_after at t_step.
+ */
+typedef struct {
+    double t_step;        // Time of step change
+    double value_before;  // Multiplier before t_step
+    double value_after;   // Multiplier after t_step
+} bc_time_step_t;
+
+/**
+ * Custom time modulation callback function type.
+ *
+ * @param time       Current simulation time
+ * @param dt         Current time step size
+ * @param user_data  User-provided context pointer
+ * @return           Modulation factor to multiply base velocity by
+ */
+typedef double (*bc_time_custom_fn)(double time, double dt, void* user_data);
+
+/**
+ * Time Profile Configuration
+ *
+ * Unified structure for all time profile types.
+ */
+typedef struct {
+    bc_time_profile_t profile;    // Which time profile to use
+
+    union {
+        bc_time_sinusoidal_t sinusoidal;
+        bc_time_ramp_t ramp;
+        bc_time_step_t step;
+    } params;
+
+    // Custom callback (used when profile == BC_TIME_PROFILE_CUSTOM)
+    bc_time_custom_fn custom_fn;
+    void* custom_user_data;
+} bc_time_config_t;
+
 /**
  * Custom inlet profile callback function type.
  *
@@ -109,6 +203,21 @@ typedef enum {
  * Position 0.0 is at the start of the boundary, 1.0 is at the end.
  */
 typedef void (*bc_inlet_profile_fn)(double position, double* u_out, double* v_out, void* user_data);
+
+/**
+ * Time-varying inlet profile callback function type.
+ *
+ * Extended callback that receives both spatial position and time information.
+ *
+ * @param position   Normalized position along the inlet (0.0 to 1.0)
+ * @param time       Current simulation time
+ * @param dt         Current time step size
+ * @param u_out      Output: x-velocity component at this position and time
+ * @param v_out      Output: y-velocity component at this position and time
+ * @param user_data  User-provided context pointer
+ */
+typedef void (*bc_inlet_profile_time_fn)(double position, double time, double dt,
+                                          double* u_out, double* v_out, void* user_data);
 
 /**
  * Inlet Boundary Condition Configuration
@@ -143,6 +252,13 @@ typedef struct {
     // Custom profile callback (only used when profile == BC_INLET_PROFILE_CUSTOM)
     bc_inlet_profile_fn custom_profile;
     void* custom_profile_user_data;
+
+    // Time variation configuration (optional, zero-initialized = no time variation)
+    bc_time_config_t time_config;
+
+    // Time-varying custom profile (overrides custom_profile when set)
+    bc_inlet_profile_time_fn custom_profile_time;
+    void* custom_profile_time_user_data;
 } bc_inlet_config_t;
 
 /**
@@ -591,6 +707,114 @@ CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_mass_flow(double mass_flow_
  */
 CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_custom(bc_inlet_profile_fn callback, void* user_data);
 
+/* ============================================================================
+ * Time-Varying Inlet Configuration Builders
+ * ============================================================================ */
+
+/**
+ * Create a sinusoidal time-varying inlet.
+ *
+ * Velocity = (u,v) * (offset + amplitude * sin(2*pi*frequency*t + phase))
+ *
+ * @param u_velocity   Base x-velocity component
+ * @param v_velocity   Base y-velocity component
+ * @param frequency    Oscillation frequency in Hz
+ * @param amplitude    Oscillation amplitude (multiplier)
+ * @param phase        Phase offset in radians
+ * @param offset       DC offset (1.0 = oscillates around base velocity)
+ * @return Configured inlet structure
+ */
+CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_time_sinusoidal(
+    double u_velocity, double v_velocity,
+    double frequency, double amplitude, double phase, double offset);
+
+/**
+ * Create a ramp inlet (smooth start-up).
+ *
+ * Velocity ramps linearly from value_start to value_end over [t_start, t_end].
+ * Before t_start: velocity = (u,v) * value_start
+ * After t_end: velocity = (u,v) * value_end
+ *
+ * @param u_velocity   Target x-velocity component (at value_end=1.0)
+ * @param v_velocity   Target y-velocity component (at value_end=1.0)
+ * @param t_start      Ramp start time
+ * @param t_end        Ramp end time
+ * @param value_start  Initial velocity multiplier (typically 0.0)
+ * @param value_end    Final velocity multiplier (typically 1.0)
+ * @return Configured inlet structure
+ */
+CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_time_ramp(
+    double u_velocity, double v_velocity,
+    double t_start, double t_end,
+    double value_start, double value_end);
+
+/**
+ * Create a step inlet (sudden change).
+ *
+ * Velocity changes instantaneously at t_step.
+ * Before t_step: velocity = (u,v) * value_before
+ * After t_step: velocity = (u,v) * value_after
+ *
+ * @param u_velocity    Base x-velocity component
+ * @param v_velocity    Base y-velocity component
+ * @param t_step        Time of step change
+ * @param value_before  Velocity multiplier before step
+ * @param value_after   Velocity multiplier after step
+ * @return Configured inlet structure
+ */
+CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_time_step(
+    double u_velocity, double v_velocity,
+    double t_step, double value_before, double value_after);
+
+/**
+ * Create an inlet with custom time+space callback.
+ *
+ * @param callback   Function called for each grid point with position and time
+ * @param user_data  User-provided context pointer passed to callback
+ * @return Configured inlet structure
+ */
+CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_time_custom(
+    bc_inlet_profile_time_fn callback, void* user_data);
+
+/**
+ * Set sinusoidal time variation on an existing inlet configuration.
+ *
+ * @param config     Pointer to inlet configuration to modify
+ * @param frequency  Oscillation frequency in Hz
+ * @param amplitude  Oscillation amplitude
+ * @param phase      Phase offset in radians
+ * @param offset     DC offset
+ */
+CFD_LIBRARY_EXPORT void bc_inlet_set_time_sinusoidal(
+    bc_inlet_config_t* config,
+    double frequency, double amplitude, double phase, double offset);
+
+/**
+ * Set ramp time variation on an existing inlet configuration.
+ *
+ * @param config       Pointer to inlet configuration to modify
+ * @param t_start      Ramp start time
+ * @param t_end        Ramp end time
+ * @param value_start  Initial multiplier
+ * @param value_end    Final multiplier
+ */
+CFD_LIBRARY_EXPORT void bc_inlet_set_time_ramp(
+    bc_inlet_config_t* config,
+    double t_start, double t_end,
+    double value_start, double value_end);
+
+/**
+ * Set step time variation on an existing inlet configuration.
+ *
+ * @param config        Pointer to inlet configuration to modify
+ * @param t_step        Time of step change
+ * @param value_before  Multiplier before step
+ * @param value_after   Multiplier after step
+ */
+CFD_LIBRARY_EXPORT void bc_inlet_set_time_step(
+    bc_inlet_config_t* config,
+    double t_step, double value_before, double value_after);
+
 /**
  * Set the boundary edge for an inlet configuration.
  *
@@ -657,6 +881,62 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_simd(double* u, double* v, size_t
  */
 CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_omp(double* u, double* v, size_t nx, size_t ny,
                                                     const bc_inlet_config_t* config);
+
+/* ============================================================================
+ * Time-Varying Inlet Application API
+ * ============================================================================ */
+
+/**
+ * Apply time-varying inlet velocity boundary condition.
+ *
+ * Applies the configured inlet velocity modulated by the time profile.
+ * If no time variation is configured, delegates to bc_apply_inlet().
+ * Uses the currently selected backend (see bc_set_backend()).
+ *
+ * @param u         Pointer to x-velocity array (size nx*ny)
+ * @param v         Pointer to y-velocity array (size nx*ny)
+ * @param nx        Number of grid points in x-direction
+ * @param ny        Number of grid points in y-direction
+ * @param config    Pointer to inlet configuration
+ * @param time_ctx  Pointer to time context with current time and dt
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_time(
+    double* u, double* v, size_t nx, size_t ny,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx);
+
+/**
+ * Apply time-varying inlet using scalar implementation.
+ * Always available.
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_time_cpu(
+    double* u, double* v, size_t nx, size_t ny,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx);
+
+/**
+ * Apply time-varying inlet using SIMD + OpenMP implementation.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD or OpenMP not available.
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_time_simd(
+    double* u, double* v, size_t nx, size_t ny,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx);
+
+/**
+ * Apply time-varying inlet using OpenMP implementation.
+ * Returns CFD_ERROR_UNSUPPORTED if OpenMP not available.
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_time_omp(
+    double* u, double* v, size_t nx, size_t ny,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx);
+
+/**
+ * Helper macro to create a time context.
+ */
+#define BC_TIME_CONTEXT(t, delta_t) ((bc_time_context_t){.time = (t), .dt = (delta_t)})
 
 /* ============================================================================
  * Outlet Boundary Conditions API

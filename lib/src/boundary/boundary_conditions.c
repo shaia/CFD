@@ -600,6 +600,136 @@ cfd_status_t bc_apply_inlet_omp(double* u, double* v, size_t nx, size_t ny,
 }
 
 /* ============================================================================
+ * Public API - Time-Varying Inlet Boundary Conditions
+ * ============================================================================ */
+
+/* Time-varying inlet configuration factory functions */
+
+bc_inlet_config_t bc_inlet_config_time_sinusoidal(
+    double u_velocity, double v_velocity,
+    double frequency, double amplitude, double phase, double offset) {
+    bc_inlet_config_t config = bc_inlet_config_uniform(u_velocity, v_velocity);
+    config.time_config.profile = BC_TIME_PROFILE_SINUSOIDAL;
+    config.time_config.params.sinusoidal.frequency = frequency;
+    config.time_config.params.sinusoidal.amplitude = amplitude;
+    config.time_config.params.sinusoidal.phase = phase;
+    config.time_config.params.sinusoidal.offset = offset;
+    return config;
+}
+
+bc_inlet_config_t bc_inlet_config_time_ramp(
+    double u_velocity, double v_velocity,
+    double t_start, double t_end,
+    double value_start, double value_end) {
+    bc_inlet_config_t config = bc_inlet_config_uniform(u_velocity, v_velocity);
+    config.time_config.profile = BC_TIME_PROFILE_RAMP;
+    config.time_config.params.ramp.t_start = t_start;
+    config.time_config.params.ramp.t_end = t_end;
+    config.time_config.params.ramp.value_start = value_start;
+    config.time_config.params.ramp.value_end = value_end;
+    return config;
+}
+
+bc_inlet_config_t bc_inlet_config_time_step(
+    double u_velocity, double v_velocity,
+    double t_step, double value_before, double value_after) {
+    bc_inlet_config_t config = bc_inlet_config_uniform(u_velocity, v_velocity);
+    config.time_config.profile = BC_TIME_PROFILE_STEP;
+    config.time_config.params.step.t_step = t_step;
+    config.time_config.params.step.value_before = value_before;
+    config.time_config.params.step.value_after = value_after;
+    return config;
+}
+
+bc_inlet_config_t bc_inlet_config_time_custom(
+    bc_inlet_profile_time_fn callback, void* user_data) {
+    bc_inlet_config_t config = {0};
+    config.edge = BC_EDGE_LEFT;
+    config.profile = BC_INLET_PROFILE_UNIFORM;
+    config.spec_type = BC_INLET_SPEC_VELOCITY;
+    config.spec.velocity.u = 1.0;  /* Default base velocity */
+    config.spec.velocity.v = 0.0;
+    config.custom_profile_time = callback;
+    config.custom_profile_time_user_data = user_data;
+    return config;
+}
+
+void bc_inlet_set_time_sinusoidal(
+    bc_inlet_config_t* config,
+    double frequency, double amplitude, double phase, double offset) {
+    if (config != NULL) {
+        config->time_config.profile = BC_TIME_PROFILE_SINUSOIDAL;
+        config->time_config.params.sinusoidal.frequency = frequency;
+        config->time_config.params.sinusoidal.amplitude = amplitude;
+        config->time_config.params.sinusoidal.phase = phase;
+        config->time_config.params.sinusoidal.offset = offset;
+    }
+}
+
+void bc_inlet_set_time_ramp(
+    bc_inlet_config_t* config,
+    double t_start, double t_end,
+    double value_start, double value_end) {
+    if (config != NULL) {
+        config->time_config.profile = BC_TIME_PROFILE_RAMP;
+        config->time_config.params.ramp.t_start = t_start;
+        config->time_config.params.ramp.t_end = t_end;
+        config->time_config.params.ramp.value_start = value_start;
+        config->time_config.params.ramp.value_end = value_end;
+    }
+}
+
+void bc_inlet_set_time_step(
+    bc_inlet_config_t* config,
+    double t_step, double value_before, double value_after) {
+    if (config != NULL) {
+        config->time_config.profile = BC_TIME_PROFILE_STEP;
+        config->time_config.params.step.t_step = t_step;
+        config->time_config.params.step.value_before = value_before;
+        config->time_config.params.step.value_after = value_after;
+    }
+}
+
+/* Time-varying inlet application functions */
+
+cfd_status_t bc_apply_inlet_time(
+    double* u, double* v, size_t nx, size_t ny,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    /* If no time variation, delegate to standard inlet function */
+    if (config->time_config.profile == BC_TIME_PROFILE_CONSTANT &&
+        config->custom_profile_time == NULL) {
+        return bc_apply_inlet(u, v, nx, ny, config);
+    }
+    /* For now, use scalar implementation for time-varying BCs */
+    return bc_apply_inlet_time_cpu(u, v, nx, ny, config, time_ctx);
+}
+
+cfd_status_t bc_apply_inlet_time_cpu(
+    double* u, double* v, size_t nx, size_t ny,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx);
+
+cfd_status_t bc_apply_inlet_time_simd(
+    double* u, double* v, size_t nx, size_t ny,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx) {
+    /* SIMD implementation not yet available, fall back to CPU */
+    return bc_apply_inlet_time_cpu(u, v, nx, ny, config, time_ctx);
+}
+
+cfd_status_t bc_apply_inlet_time_omp(
+    double* u, double* v, size_t nx, size_t ny,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx) {
+    /* OpenMP implementation not yet available, fall back to CPU */
+    return bc_apply_inlet_time_cpu(u, v, nx, ny, config, time_ctx);
+}
+
+/* ============================================================================
  * Public API - Outlet Boundary Conditions
  *
  * Outlet conditions specify conditions at outflow boundaries.
