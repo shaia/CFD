@@ -9,6 +9,7 @@
  * Tests cover:
  *   - Convergence on zero RHS (trivial solution)
  *   - Convergence on sinusoidal RHS (Neumann compatible)
+ *   - Convergence on Dirichlet problem with known solution
  *   - Comparison with CG solver (max-norm and L2-norm metrics)
  *   - Error handling (NULL inputs, small grids)
  */
@@ -121,6 +122,61 @@ static double compute_l2_error(const double* a, const double* b,
         }
     }
     return sqrt(sum / ((nx - 2) * (ny - 2)));  /* RMS error */
+}
+
+/**
+ * Initialize RHS for Dirichlet manufactured solution test.
+ *
+ * For p = sin(πx)sin(πy), we have:
+ *   ∇²p = -2π²sin(πx)sin(πy)
+ *
+ * The solver solves: Laplacian(p) = rhs, so rhs = ∇²p = -2π²sin(πx)sin(πy).
+ */
+static void init_dirichlet_rhs(double* rhs, size_t nx, size_t ny,
+                                double dx, double dy) {
+    (void)dx; (void)dy;  /* Grid spacing not needed for analytical RHS */
+    double coeff = -2.0 * M_PI * M_PI;
+    for (size_t j = 0; j < ny; j++) {
+        double y = DOMAIN_YMIN + j * (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
+        for (size_t i = 0; i < nx; i++) {
+            double x = DOMAIN_XMIN + i * (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
+            rhs[j * nx + i] = coeff * sin(M_PI * x) * sin(M_PI * y);
+        }
+    }
+}
+
+/**
+ * Compute exact solution p = sin(πx)sin(πy)
+ */
+static void compute_exact_solution(double* exact, size_t nx, size_t ny) {
+    for (size_t j = 0; j < ny; j++) {
+        double y = DOMAIN_YMIN + j * (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
+        for (size_t i = 0; i < nx; i++) {
+            double x = DOMAIN_XMIN + i * (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
+            exact[j * nx + i] = sin(M_PI * x) * sin(M_PI * y);
+        }
+    }
+}
+
+/**
+ * Remove mean from interior points
+ */
+static double remove_interior_mean(double* field, size_t nx, size_t ny) {
+    double sum = 0.0;
+    size_t count = 0;
+    for (size_t j = 1; j < ny - 1; j++) {
+        for (size_t i = 1; i < nx - 1; i++) {
+            sum += field[j * nx + i];
+            count++;
+        }
+    }
+    double mean = sum / count;
+    for (size_t j = 1; j < ny - 1; j++) {
+        for (size_t i = 1; i < nx - 1; i++) {
+            field[j * nx + i] -= mean;
+        }
+    }
+    return mean;
 }
 
 /* ============================================================================
@@ -410,6 +466,73 @@ void test_bicgstab_l2_error(void) {
     cfd_free(rhs);
 }
 
+/**
+ * Test BiCGSTAB with manufactured Dirichlet solution.
+ *
+ * Uses the manufactured solution p = sin(πx)sin(πy), which:
+ * - Is zero on all boundaries of [0,1]² (natural Dirichlet BC)
+ * - Has Laplacian ∇²p = -2π²sin(πx)sin(πy)
+ *
+ * Note: BiCGSTAB applies Neumann BCs internally, so the computed solution
+ * may differ from the exact Dirichlet solution by a constant. We compare
+ * after removing the mean from both solutions.
+ *
+ * Expected accuracy: O(h²) ≈ (1/32)² ≈ 0.001 for 33x33 grid.
+ */
+void test_bicgstab_dirichlet(void) {
+    size_t nx = NX_MEDIUM, ny = NY_MEDIUM;
+    double dx = (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
+    double dy = (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
+
+    double* p = create_field(nx, ny);
+    double* rhs = create_field(nx, ny);
+    double* exact = create_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(p);
+    TEST_ASSERT_NOT_NULL(rhs);
+    TEST_ASSERT_NOT_NULL(exact);
+
+    /* Set up RHS for manufactured solution */
+    init_dirichlet_rhs(rhs, nx, ny, dx, dy);
+
+    /* Compute exact solution for comparison */
+    compute_exact_solution(exact, nx, ny);
+
+    /* Solve with BiCGSTAB */
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance = TOLERANCE;
+    params.max_iterations = MAX_ITERATIONS;
+
+    cfd_status_t status = poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    status = poisson_solver_solve(solver, p, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats.status);
+
+    /* Remove means from both solutions (Neumann allows constant offset) */
+    remove_interior_mean(p, nx, ny);
+    remove_interior_mean(exact, nx, ny);
+
+    /* Compute L2 error between computed and exact solutions */
+    double l2_error = compute_l2_error(p, exact, nx, ny);
+
+    /* Error should be within second-order discretization bounds.
+     * For 33x33 grid: h ≈ 1/32, so O(h²) ≈ 0.001.
+     * Allow some margin for iterative solver tolerance. */
+    TEST_ASSERT_TRUE(l2_error < 0.01);
+
+    poisson_solver_destroy(solver);
+    cfd_free(p);
+    cfd_free(rhs);
+    cfd_free(exact);
+}
+
 /* ============================================================================
  * ERROR HANDLING TESTS
  * ============================================================================ */
@@ -453,6 +576,7 @@ int main(void) {
     RUN_TEST(test_bicgstab_sinusoidal_rhs);
     RUN_TEST(test_bicgstab_vs_cg);
     RUN_TEST(test_bicgstab_l2_error);
+    RUN_TEST(test_bicgstab_dirichlet);
 
     /* Error handling tests */
     RUN_TEST(test_bicgstab_unsupported_backend);
