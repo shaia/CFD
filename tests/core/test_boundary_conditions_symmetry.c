@@ -507,62 +507,46 @@ void test_symmetry_no_edges(void) {
 
 /* ============================================================================
  * Backend Consistency Tests
+ *
+ * These tests verify that different backends produce identical results.
+ * The OMP and SIMD backends may not have symmetry implementations, in which
+ * case they fall back to scalar or return UNSUPPORTED.
  * ============================================================================ */
 
 void test_symmetry_omp_consistency(void) {
+    /* Check if OMP backend is available at all */
     if (!bc_backend_available(BC_BACKEND_OMP)) {
         TEST_IGNORE_MESSAGE("OpenMP backend not available");
         return;
     }
 
+    /* OMP symmetry is not implemented - it returns UNSUPPORTED */
     size_t nx = TEST_NX, ny = TEST_NY;
-    double* u_scalar = create_test_field(nx, ny);
-    double* v_scalar = create_test_field(nx, ny);
-    double* u_omp = create_test_field(nx, ny);
-    double* v_omp = create_test_field(nx, ny);
-    TEST_ASSERT_NOT_NULL(u_scalar);
-    TEST_ASSERT_NOT_NULL(v_scalar);
-    TEST_ASSERT_NOT_NULL(u_omp);
-    TEST_ASSERT_NOT_NULL(v_omp);
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
 
-    init_velocity_fields(u_scalar, v_scalar, nx, ny);
-    init_velocity_fields(u_omp, v_omp, nx, ny);
+    init_velocity_fields(u, v, nx, ny);
 
-    bc_symmetry_config_t config = { .edges = BC_EDGE_LEFT | BC_EDGE_RIGHT | BC_EDGE_TOP | BC_EDGE_BOTTOM };
+    bc_symmetry_config_t config = { .edges = BC_EDGE_LEFT };
+    cfd_status_t status = bc_apply_symmetry_omp(u, v, nx, ny, &config);
 
-    cfd_status_t status_scalar = bc_apply_symmetry_cpu(u_scalar, v_scalar, nx, ny, &config);
-    cfd_status_t status_omp = bc_apply_symmetry_omp(u_omp, v_omp, nx, ny, &config);
+    /* OMP symmetry returns UNSUPPORTED since it's not implemented */
+    TEST_ASSERT_EQUAL(CFD_ERROR_UNSUPPORTED, status);
 
-    /* OMP may return UNSUPPORTED if not implemented, which is acceptable */
-    TEST_ASSERT_EQUAL(CFD_SUCCESS, status_scalar);
-    if (status_omp == CFD_ERROR_UNSUPPORTED) {
-        TEST_IGNORE_MESSAGE("OMP symmetry not implemented (falls back to scalar)");
-        cfd_free(u_scalar);
-        cfd_free(v_scalar);
-        cfd_free(u_omp);
-        cfd_free(v_omp);
-        return;
-    }
-    TEST_ASSERT_EQUAL(CFD_SUCCESS, status_omp);
-
-    /* Compare all field values */
-    for (size_t idx = 0; idx < nx * ny; idx++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_scalar[idx], u_omp[idx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_scalar[idx], v_omp[idx]);
-    }
-
-    cfd_free(u_scalar);
-    cfd_free(v_scalar);
-    cfd_free(u_omp);
-    cfd_free(v_omp);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 void test_symmetry_simd_consistency(void) {
+    /* Check if SIMD backend is available at all */
     if (!bc_backend_available(BC_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
     }
 
+    /* SIMD symmetry falls back to scalar internally, so it should work */
     size_t nx = TEST_NX, ny = TEST_NY;
     double* u_scalar = create_test_field(nx, ny);
     double* v_scalar = create_test_field(nx, ny);
@@ -581,19 +565,11 @@ void test_symmetry_simd_consistency(void) {
     cfd_status_t status_scalar = bc_apply_symmetry_cpu(u_scalar, v_scalar, nx, ny, &config);
     cfd_status_t status_simd = bc_apply_symmetry_simd(u_simd, v_simd, nx, ny, &config);
 
-    /* SIMD may return UNSUPPORTED if not implemented, which is acceptable */
+    /* Both should succeed - SIMD falls back to scalar internally */
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status_scalar);
-    if (status_simd == CFD_ERROR_UNSUPPORTED) {
-        TEST_IGNORE_MESSAGE("SIMD symmetry not implemented (falls back to scalar)");
-        cfd_free(u_scalar);
-        cfd_free(v_scalar);
-        cfd_free(u_simd);
-        cfd_free(v_simd);
-        return;
-    }
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status_simd);
 
-    /* Compare all field values */
+    /* Compare all field values - should be identical */
     for (size_t idx = 0; idx < nx * ny; idx++) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_scalar[idx], u_simd[idx]);
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_scalar[idx], v_simd[idx]);
