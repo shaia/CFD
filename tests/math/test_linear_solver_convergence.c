@@ -78,19 +78,99 @@ static void init_nontrivial_guess(double* p, size_t nx, size_t ny) {
     }
 }
 
+/* ============================================================================
+ * DIRICHLET BC HELPERS (for spectral radius test)
+ * ============================================================================
+ *
+ * For the Jacobi spectral radius test, we use Dirichlet BCs because:
+ * - With Neumann BCs, the discrete Laplacian has a constant null space
+ * - This gives an eigenvalue of 1, so spectral radius >= 1
+ * - The formula ρ = cos(πh) applies only to the Dirichlet problem
+ *
+ * We use p = sin(πx)sin(πy) which is zero on boundaries of [0,1]².
+ * The RHS is: ∇²p = -2π²sin(πx)sin(πy)
+ */
+
+/**
+ * Initialize RHS for Dirichlet test: f = -2π²sin(πx)sin(πy)
+ */
+static void init_dirichlet_rhs(double* rhs, size_t nx, size_t ny,
+                                double dx, double dy) {
+    double coeff = -2.0 * M_PI * M_PI;
+    for (size_t j = 0; j < ny; j++) {
+        double y = DOMAIN_YMIN + j * dy;
+        for (size_t i = 0; i < nx; i++) {
+            double x = DOMAIN_XMIN + i * dx;
+            rhs[j * nx + i] = coeff * sin(M_PI * x) * sin(M_PI * y);
+        }
+    }
+}
+
+/**
+ * Apply Dirichlet BCs: p = 0 on all boundaries
+ * (sin(πx)sin(πy) = 0 when x or y is 0 or 1)
+ */
+static void apply_dirichlet_bc(double* p, size_t nx, size_t ny) {
+    /* Bottom and top rows */
+    for (size_t i = 0; i < nx; i++) {
+        p[i] = 0.0;                      /* j = 0 */
+        p[(ny - 1) * nx + i] = 0.0;      /* j = ny-1 */
+    }
+    /* Left and right columns */
+    for (size_t j = 1; j < ny - 1; j++) {
+        p[j * nx] = 0.0;                 /* i = 0 */
+        p[j * nx + (nx - 1)] = 0.0;      /* i = nx-1 */
+    }
+}
+
 /**
  * Initialize sinusoidal RHS that is compatible with Neumann BCs
- * f(x,y) = cos(2πx)cos(2πy) has zero integral over [0,1]²
- * Solution: p(x,y) = -cos(2πx)cos(2πy) / (8π²)
+ * f(x,y) = cos(2πx)cos(2πy) has zero integral analytically over [0,1]²
+ *
+ * However, the discrete sum over interior grid points is not exactly zero
+ * due to discretization. We subtract the interior mean to enforce the
+ * discrete Neumann compatibility condition (sum of RHS over interior = 0),
+ * ensuring the system is solvable.
  */
 static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
                                  double dx, double dy) {
+    /* First pass: initialize sinusoidal values */
     for (size_t j = 0; j < ny; j++) {
-        double y = j * dy;
+        double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
-            double x = i * dx;
+            double x = DOMAIN_XMIN + i * dx;
             rhs[j * nx + i] = cos(2.0 * M_PI * x) * cos(2.0 * M_PI * y);
         }
+    }
+
+    /* Second pass: compute interior mean and subtract to enforce discrete compatibility */
+    double interior_sum = 0.0;
+    size_t interior_count = 0;
+    for (size_t j = 1; j < ny - 1; j++) {
+        for (size_t i = 1; i < nx - 1; i++) {
+            interior_sum += rhs[j * nx + i];
+            interior_count++;
+        }
+    }
+
+    /* Adjust interior nodes to have zero sum (discrete Neumann compatibility) */
+    if (interior_count > 0) {
+        double interior_mean = interior_sum / (double)interior_count;
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                rhs[j * nx + i] -= interior_mean;
+            }
+        }
+    }
+
+    /* Set boundary RHS to 0 (unused by solver, avoids confusion) */
+    for (size_t i = 0; i < nx; i++) {
+        rhs[i] = 0.0;                      /* Bottom row (j=0) */
+        rhs[(ny - 1) * nx + i] = 0.0;      /* Top row (j=ny-1) */
+    }
+    for (size_t j = 1; j < ny - 1; j++) {
+        rhs[j * nx] = 0.0;                 /* Left column (i=0) */
+        rhs[j * nx + (nx - 1)] = 0.0;      /* Right column (i=nx-1) */
     }
 }
 
@@ -143,7 +223,14 @@ static double estimate_spectral_radius(const double* residuals, int num_iters) {
  * ============================================================================
  *
  * Verify that Jacobi iteration has spectral radius ρ ≈ cos(πh).
- * We measure residual reduction rate and compare to theory.
+ *
+ * IMPORTANT: We use Dirichlet BCs (p=0 on boundary) for this test because:
+ * - With Neumann BCs, the discrete Laplacian has a constant null space
+ * - This gives an eigenvalue of 1, so spectral radius >= 1
+ * - The formula ρ = cos(πh) applies only to the Dirichlet problem
+ *
+ * We use the manufactured solution p = sin(πx)sin(πy), which is zero on
+ * all boundaries of [0,1]², and apply Dirichlet BCs after each iteration.
  */
 
 void test_jacobi_spectral_radius(void) {
@@ -170,9 +257,10 @@ void test_jacobi_spectral_radius(void) {
             return;
         }
 
-        /* Use non-trivial initial guess with sinusoidal RHS */
+        /* Use Dirichlet-compatible RHS and apply BCs to initial guess */
         init_nontrivial_guess(p, n, n);
-        init_sinusoidal_rhs(rhs, n, n, dx, dy);
+        apply_dirichlet_bc(p, n, n);
+        init_dirichlet_rhs(rhs, n, n, dx, dy);
 
         poisson_solver_t* solver = poisson_solver_create(
             POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
@@ -203,7 +291,7 @@ void test_jacobi_spectral_radius(void) {
             return;
         }
 
-        /* Run iterations and record residuals */
+        /* Run iterations with Dirichlet BCs and record residuals */
         int iters = 0;
         for (int iter = 0; iter < 200; iter++) {
             double residual = 0.0;
@@ -217,6 +305,8 @@ void test_jacobi_spectral_radius(void) {
                 TEST_FAIL_MESSAGE("poisson_solver_iterate failed");
                 return;
             }
+            /* Apply Dirichlet BCs after each iteration */
+            apply_dirichlet_bc(p, n, n);
             residuals[iter] = residual;
             iters = iter + 1;
             if (residual < 1e-12) break;
@@ -269,7 +359,6 @@ void test_sor_optimal_omega(void) {
     const char* labels[] = {"ω=1.0 (GS)", "ω=1.3", "ω=1.5", "ω=1.7"};
     int num_omegas = sizeof(omegas) / sizeof(omegas[0]);
 
-    int iterations[4];
     int gauss_seidel_iters = 0;
     int min_iters = 999999;
     int best_idx = -1;
@@ -312,7 +401,6 @@ void test_sor_optimal_omega(void) {
         status = poisson_solver_solve(solver, p, NULL, rhs, &stats);
         TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver solve failed");
         TEST_ASSERT_EQUAL_INT_MESSAGE(POISSON_CONVERGED, stats.status, "SOR solver did not converge");
-        iterations[w] = stats.iterations;
 
         if (w == 0) gauss_seidel_iters = stats.iterations;
 
