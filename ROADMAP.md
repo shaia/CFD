@@ -242,7 +242,7 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 
 **Verify convergence rates match theory:**
 
-- [x] Jacobi: spectral radius ρ = cos(πh) verified to <1% accuracy
+- [x] Jacobi: spectral radius ρ = cos(πh) verified to <1% accuracy (Dirichlet BCs)
 - [x] SOR: over-relaxation (ω > 1) converges faster than Gauss-Seidel
 - [x] Red-Black SOR: comparable convergence to standard SOR (ratio 0.5-2.0)
 - [x] CG: convergence in O(√κ) iterations verified
@@ -251,7 +251,7 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 
 - `tests/math/test_linear_solver_convergence.c` - 6 tests covering convergence properties
 
-**Note:** The theoretical optimal ω = 2/(1 + sin(πh)) applies to Dirichlet BCs. With Neumann BCs (used by solvers internally), optimal ω is typically lower (1.5-1.7).
+**Note:** The Jacobi spectral radius test uses Dirichlet BCs (p=0 on boundary) because the ρ = cos(πh) formula applies only to the Dirichlet problem. With Neumann BCs, the discrete Laplacian has a constant null space giving eigenvalue 1. The SOR optimal ω = 2/(1 + sin(πh)) also applies to Dirichlet BCs; with Neumann BCs optimal ω is typically lower (1.5-1.7).
 
 **Files still to create (future work):**
 
