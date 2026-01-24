@@ -10,10 +10,10 @@
  */
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/memory.h"
 #include "unity.h"
 
 #include <math.h>
-#include <stdlib.h>
 #include <string.h>
 
 /* Test grid sizes */
@@ -39,7 +39,7 @@ void tearDown(void) {
  * ============================================================================ */
 
 static double* create_test_field(size_t nx, size_t ny) {
-    double* field = (double*)malloc(nx * ny * sizeof(double));
+    double* field = (double*)cfd_malloc(nx * ny * sizeof(double));
     if (!field) return NULL;
     for (size_t i = 0; i < nx * ny; i++) {
         field[i] = 999.0;
@@ -193,8 +193,8 @@ void test_inlet_time_sinusoidal_at_t_zero(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.0, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 void test_inlet_time_sinusoidal_at_quarter_period(void) {
@@ -224,8 +224,8 @@ void test_inlet_time_sinusoidal_at_quarter_period(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 void test_inlet_time_sinusoidal_at_half_period(void) {
@@ -254,8 +254,8 @@ void test_inlet_time_sinusoidal_at_half_period(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.0, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 void test_inlet_time_sinusoidal_at_three_quarter_period(void) {
@@ -285,8 +285,8 @@ void test_inlet_time_sinusoidal_at_three_quarter_period(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 /* ============================================================================
@@ -317,8 +317,8 @@ void test_inlet_time_ramp_before_start(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 void test_inlet_time_ramp_at_midpoint(void) {
@@ -346,8 +346,8 @@ void test_inlet_time_ramp_at_midpoint(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 void test_inlet_time_ramp_after_end(void) {
@@ -374,8 +374,8 @@ void test_inlet_time_ramp_after_end(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.0, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 /* ============================================================================
@@ -406,8 +406,8 @@ void test_inlet_time_step_before(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 void test_inlet_time_step_after(void) {
@@ -434,8 +434,8 @@ void test_inlet_time_step_after(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.0, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 void test_inlet_time_step_at_transition(void) {
@@ -463,8 +463,8 @@ void test_inlet_time_step_at_transition(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.0, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 /* ============================================================================
@@ -496,8 +496,8 @@ void test_inlet_time_custom_callback(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 /* ============================================================================
@@ -537,10 +537,10 @@ void test_inlet_time_constant_profile_matches_standard(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_standard[j * nx], v_time[j * nx]);
     }
 
-    free(u_standard);
-    free(v_standard);
-    free(u_time);
-    free(v_time);
+    cfd_free(u_standard);
+    cfd_free(v_standard);
+    cfd_free(u_time);
+    cfd_free(v_time);
 }
 
 void test_inlet_time_dispatch_constant_delegates_to_standard(void) {
@@ -563,8 +563,8 @@ void test_inlet_time_dispatch_constant_delegates_to_standard(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.0, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 /* ============================================================================
@@ -596,8 +596,8 @@ void test_inlet_time_parabolic_with_sinusoidal(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 /* ============================================================================
@@ -624,8 +624,8 @@ void test_inlet_time_null_time_context(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.0, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 void test_inlet_time_null_fields(void) {
@@ -647,8 +647,8 @@ void test_inlet_time_null_config(void) {
     cfd_status_t status = bc_apply_inlet_time_cpu(u, v, nx, ny, NULL, &ctx);
     TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 void test_inlet_time_too_small_grid(void) {
@@ -663,8 +663,8 @@ void test_inlet_time_too_small_grid(void) {
     cfd_status_t status = bc_apply_inlet_time_cpu(u, v, 2, 2, &config, &ctx);
     TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 /* ============================================================================
@@ -692,8 +692,8 @@ void test_inlet_time_main_dispatch(void) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, u[j * nx]);
     }
 
-    free(u);
-    free(v);
+    cfd_free(u);
+    cfd_free(v);
 }
 
 /* ============================================================================
