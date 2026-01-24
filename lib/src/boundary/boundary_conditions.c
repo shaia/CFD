@@ -708,11 +708,6 @@ cfd_status_t bc_apply_inlet_time(
     return bc_apply_inlet_time_cpu(u, v, nx, ny, config, time_ctx);
 }
 
-cfd_status_t bc_apply_inlet_time_cpu(
-    double* u, double* v, size_t nx, size_t ny,
-    const bc_inlet_config_t* config,
-    const bc_time_context_t* time_ctx);
-
 cfd_status_t bc_apply_inlet_time_simd(
     double* u, double* v, size_t nx, size_t ny,
     const bc_inlet_config_t* config,
