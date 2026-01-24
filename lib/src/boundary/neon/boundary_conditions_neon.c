@@ -199,7 +199,8 @@ const bc_backend_impl_t bc_impl_neon = {
     .apply_periodic = bc_apply_periodic_neon_impl,
     .apply_dirichlet = bc_apply_dirichlet_neon_impl,
     .apply_inlet = bc_apply_inlet_neon_impl,
-    .apply_outlet = bc_apply_outlet_neon_impl
+    .apply_outlet = bc_apply_outlet_neon_impl,
+    .apply_symmetry = NULL  /* Falls back to scalar */
 };
 
 #else /* !BC_HAS_NEON */
@@ -210,7 +211,8 @@ const bc_backend_impl_t bc_impl_neon = {
     .apply_periodic = NULL,
     .apply_dirichlet = NULL,
     .apply_inlet = NULL,
-    .apply_outlet = NULL
+    .apply_outlet = NULL,
+    .apply_symmetry = NULL
 };
 
 #endif /* BC_HAS_NEON */
