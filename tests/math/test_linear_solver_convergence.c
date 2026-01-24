@@ -641,6 +641,10 @@ void test_solver_comparison(void) {
     double dx = (DOMAIN_XMAX - DOMAIN_XMIN) / (n - 1);
     double dy = (DOMAIN_YMAX - DOMAIN_YMIN) / (n - 1);
 
+    /* Solver indices for assertions */
+    #define SOLVER_JACOBI 0
+    #define SOLVER_CG     4
+
     struct {
         const char* name;
         poisson_solver_method_t method;
@@ -656,6 +660,9 @@ void test_solver_comparison(void) {
     int num_solvers = sizeof(solvers) / sizeof(solvers[0]);
 
     int jacobi_iters = 0;
+    int cg_iters = 0;
+    int jacobi_converged = 0;
+    int cg_converged = 0;
 
     for (int i = 0; i < num_solvers; i++) {
         double* p = create_field(n, n);
@@ -722,7 +729,15 @@ void test_solver_comparison(void) {
             continue;
         }
 
-        if (i == 0) jacobi_iters = stats.iterations;
+        /* Track key solver results for assertions */
+        if (i == SOLVER_JACOBI) {
+            jacobi_iters = stats.iterations;
+            jacobi_converged = 1;
+        }
+        if (i == SOLVER_CG) {
+            cg_iters = stats.iterations;
+            cg_converged = 1;
+        }
 
         double speedup = (jacobi_iters > 0 && stats.iterations > 0)
                          ? (double)jacobi_iters / stats.iterations : 0.0;
@@ -735,7 +750,20 @@ void test_solver_comparison(void) {
         cfd_free(rhs);
     }
 
-    /* Informational test - verifies all solvers complete without crashes */
+    /* Verify Jacobi converged (baseline solver) */
+    TEST_ASSERT_TRUE_MESSAGE(jacobi_converged,
+        "Jacobi solver must converge as baseline for comparison");
+
+    /* Verify CG converged */
+    TEST_ASSERT_TRUE_MESSAGE(cg_converged,
+        "CG solver must converge for comparison test");
+
+    /* Verify CG is significantly faster than Jacobi (different complexity class) */
+    TEST_ASSERT_TRUE_MESSAGE(jacobi_iters > 0 && cg_iters > 0,
+        "Both Jacobi and CG must have valid iteration counts");
+    double cg_speedup = (double)jacobi_iters / (double)cg_iters;
+    TEST_ASSERT_TRUE_MESSAGE(cg_speedup > 10.0,
+        "CG should converge >10x faster than Jacobi (O(sqrt(kappa)) vs O(kappa))");
 }
 
 /* ============================================================================
