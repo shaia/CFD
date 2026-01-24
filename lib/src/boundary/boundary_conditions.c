@@ -884,17 +884,14 @@ cfd_status_t bc_apply_outlet_velocity_omp(double* u, double* v, size_t nx, size_
  * Symmetry Boundary Condition API
  * ============================================================================ */
 
-/**
- * Helper to apply symmetry BC using a specific backend.
- */
+/** Helper: apply symmetry BC with specified backend */
 static cfd_status_t apply_symmetry_with_backend(double* u, double* v, size_t nx, size_t ny,
                                                  const bc_symmetry_config_t* config,
                                                  const bc_backend_impl_t* impl) {
-    if (impl->apply_symmetry != NULL) {
-        return impl->apply_symmetry(u, v, nx, ny, config);
+    if (impl == NULL || impl->apply_symmetry == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
     }
-    /* Fall back to scalar implementation */
-    return bc_apply_symmetry_scalar_impl(u, v, nx, ny, config);
+    return impl->apply_symmetry(u, v, nx, ny, config);
 }
 
 cfd_status_t bc_apply_symmetry(double* u, double* v, size_t nx, size_t ny,
@@ -906,7 +903,11 @@ cfd_status_t bc_apply_symmetry(double* u, double* v, size_t nx, size_t ny,
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_symmetry_with_backend(u, v, nx, ny, config, impl);
+    /* If selected backend doesn't support symmetry, fall back to scalar */
+    if (impl->apply_symmetry == NULL) {
+        return bc_apply_symmetry_scalar_impl(u, v, nx, ny, config);
+    }
+    return impl->apply_symmetry(u, v, nx, ny, config);
 }
 
 cfd_status_t bc_apply_symmetry_cpu(double* u, double* v, size_t nx, size_t ny,

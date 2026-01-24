@@ -26,7 +26,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 ### Critical Gaps
 
 - [ ] Only 2D (no 3D support)
-- [ ] Limited boundary conditions (no symmetry planes)
+- [x] ~~Limited boundary conditions (no symmetry planes)~~ Symmetry planes now supported
 - [ ] Only structured grids
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no BiCGSTAB/multigrid)

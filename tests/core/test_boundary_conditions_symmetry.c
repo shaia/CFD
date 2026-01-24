@@ -335,6 +335,72 @@ void test_symmetry_all_edges(void) {
     cfd_free(v);
 }
 
+void test_symmetry_corner_points(void) {
+    size_t nx = TEST_NX, ny = TEST_NY;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    init_velocity_fields(u, v, nx, ny);
+
+    /* Apply all edges - corners should have both u=0 and v=0 */
+    bc_symmetry_config_t config = { .edges = BC_EDGE_LEFT | BC_EDGE_RIGHT | BC_EDGE_TOP | BC_EDGE_BOTTOM };
+    cfd_status_t status = bc_apply_symmetry_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Bottom-left corner (0,0): u=0 from LEFT, v=0 from BOTTOM */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[0]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[0]);
+
+    /* Bottom-right corner (nx-1,0): u=0 from RIGHT, v=0 from BOTTOM */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[nx - 1]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[nx - 1]);
+
+    /* Top-left corner (0,ny-1): u=0 from LEFT, v=0 from TOP */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[(ny - 1) * nx]);
+
+    /* Top-right corner (nx-1,ny-1): u=0 from RIGHT, v=0 from TOP */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx + (nx - 1)]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[(ny - 1) * nx + (nx - 1)]);
+
+    cfd_free(u);
+    cfd_free(v);
+}
+
+void test_symmetry_perpendicular_edges(void) {
+    size_t nx = TEST_NX, ny = TEST_NY;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    init_velocity_fields(u, v, nx, ny);
+
+    /* Apply only left and bottom edges - test one corner */
+    bc_symmetry_config_t config = { .edges = BC_EDGE_LEFT | BC_EDGE_BOTTOM };
+    cfd_status_t status = bc_apply_symmetry_cpu(u, v, nx, ny, &config);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    /* Bottom-left corner (0,0): u=0 from LEFT, v=0 from BOTTOM */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[0]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[0]);
+
+    /* Bottom-right corner should only have v=0 (no right edge applied) */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[nx - 1]);
+    /* u at bottom-right should be copied from interior (Neumann from BOTTOM) */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u[nx + (nx - 1)], u[nx - 1]);
+
+    /* Top-left corner should only have u=0 (no top edge applied) */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx]);
+    /* v at top-left should be copied from interior (Neumann from LEFT) */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v[(ny - 1) * nx + 1], v[(ny - 1) * nx]);
+
+    cfd_free(u);
+    cfd_free(v);
+}
+
 /* ============================================================================
  * Dispatcher Tests
  * ============================================================================ */
@@ -440,6 +506,106 @@ void test_symmetry_no_edges(void) {
 }
 
 /* ============================================================================
+ * Backend Consistency Tests
+ * ============================================================================ */
+
+void test_symmetry_omp_consistency(void) {
+    if (!bc_backend_available(BC_BACKEND_OMP)) {
+        TEST_IGNORE_MESSAGE("OpenMP backend not available");
+        return;
+    }
+
+    size_t nx = TEST_NX, ny = TEST_NY;
+    double* u_scalar = create_test_field(nx, ny);
+    double* v_scalar = create_test_field(nx, ny);
+    double* u_omp = create_test_field(nx, ny);
+    double* v_omp = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u_scalar);
+    TEST_ASSERT_NOT_NULL(v_scalar);
+    TEST_ASSERT_NOT_NULL(u_omp);
+    TEST_ASSERT_NOT_NULL(v_omp);
+
+    init_velocity_fields(u_scalar, v_scalar, nx, ny);
+    init_velocity_fields(u_omp, v_omp, nx, ny);
+
+    bc_symmetry_config_t config = { .edges = BC_EDGE_LEFT | BC_EDGE_RIGHT | BC_EDGE_TOP | BC_EDGE_BOTTOM };
+
+    cfd_status_t status_scalar = bc_apply_symmetry_cpu(u_scalar, v_scalar, nx, ny, &config);
+    cfd_status_t status_omp = bc_apply_symmetry_omp(u_omp, v_omp, nx, ny, &config);
+
+    /* OMP may return UNSUPPORTED if not implemented, which is acceptable */
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status_scalar);
+    if (status_omp == CFD_ERROR_UNSUPPORTED) {
+        TEST_IGNORE_MESSAGE("OMP symmetry not implemented (falls back to scalar)");
+        cfd_free(u_scalar);
+        cfd_free(v_scalar);
+        cfd_free(u_omp);
+        cfd_free(v_omp);
+        return;
+    }
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status_omp);
+
+    /* Compare all field values */
+    for (size_t idx = 0; idx < nx * ny; idx++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_scalar[idx], u_omp[idx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_scalar[idx], v_omp[idx]);
+    }
+
+    cfd_free(u_scalar);
+    cfd_free(v_scalar);
+    cfd_free(u_omp);
+    cfd_free(v_omp);
+}
+
+void test_symmetry_simd_consistency(void) {
+    if (!bc_backend_available(BC_BACKEND_SIMD)) {
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
+        return;
+    }
+
+    size_t nx = TEST_NX, ny = TEST_NY;
+    double* u_scalar = create_test_field(nx, ny);
+    double* v_scalar = create_test_field(nx, ny);
+    double* u_simd = create_test_field(nx, ny);
+    double* v_simd = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u_scalar);
+    TEST_ASSERT_NOT_NULL(v_scalar);
+    TEST_ASSERT_NOT_NULL(u_simd);
+    TEST_ASSERT_NOT_NULL(v_simd);
+
+    init_velocity_fields(u_scalar, v_scalar, nx, ny);
+    init_velocity_fields(u_simd, v_simd, nx, ny);
+
+    bc_symmetry_config_t config = { .edges = BC_EDGE_LEFT | BC_EDGE_RIGHT | BC_EDGE_TOP | BC_EDGE_BOTTOM };
+
+    cfd_status_t status_scalar = bc_apply_symmetry_cpu(u_scalar, v_scalar, nx, ny, &config);
+    cfd_status_t status_simd = bc_apply_symmetry_simd(u_simd, v_simd, nx, ny, &config);
+
+    /* SIMD may return UNSUPPORTED if not implemented, which is acceptable */
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status_scalar);
+    if (status_simd == CFD_ERROR_UNSUPPORTED) {
+        TEST_IGNORE_MESSAGE("SIMD symmetry not implemented (falls back to scalar)");
+        cfd_free(u_scalar);
+        cfd_free(v_scalar);
+        cfd_free(u_simd);
+        cfd_free(v_simd);
+        return;
+    }
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status_simd);
+
+    /* Compare all field values */
+    for (size_t idx = 0; idx < nx * ny; idx++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_scalar[idx], u_simd[idx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_scalar[idx], v_simd[idx]);
+    }
+
+    cfd_free(u_scalar);
+    cfd_free(v_scalar);
+    cfd_free(u_simd);
+    cfd_free(v_simd);
+}
+
+/* ============================================================================
  * Convenience Macro Test
  * ============================================================================ */
 
@@ -500,9 +666,15 @@ int main(void) {
     RUN_TEST(test_symmetry_left_right_edges);
     RUN_TEST(test_symmetry_top_bottom_edges);
     RUN_TEST(test_symmetry_all_edges);
+    RUN_TEST(test_symmetry_corner_points);
+    RUN_TEST(test_symmetry_perpendicular_edges);
 
     /* Dispatcher tests */
     RUN_TEST(test_symmetry_main_dispatcher);
+
+    /* Backend consistency tests */
+    RUN_TEST(test_symmetry_omp_consistency);
+    RUN_TEST(test_symmetry_simd_consistency);
 
     /* Error handling tests */
     RUN_TEST(test_symmetry_null_u);
