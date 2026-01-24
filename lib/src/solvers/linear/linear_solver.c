@@ -198,6 +198,12 @@ poisson_solver_t* poisson_solver_create(
             }
 
         case POISSON_METHOD_BICGSTAB:
+            /* BiCGSTAB for non-symmetric systems - currently only scalar backend */
+            if (backend == POISSON_BACKEND_SCALAR) {
+                return create_bicgstab_scalar_solver();
+            }
+            return NULL;  /* SIMD/OMP/GPU not yet implemented for BiCGSTAB */
+
         case POISSON_METHOD_MULTIGRID:
             /* Not yet implemented */
             return NULL;

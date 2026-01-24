@@ -373,6 +373,7 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
 #define POISSON_SOLVER_TYPE_REDBLACK_SIMD     "redblack_simd"
 #define POISSON_SOLVER_TYPE_CG_SCALAR         "cg_scalar"
 #define POISSON_SOLVER_TYPE_CG_SIMD           "cg_simd"
+#define POISSON_SOLVER_TYPE_BICGSTAB_SCALAR   "bicgstab_scalar"
 
 /* ============================================================================
  * CONVENIENCE API

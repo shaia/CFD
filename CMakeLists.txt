@@ -224,6 +224,7 @@ if(BUILD_TESTS)
     add_executable(test_poisson_accuracy tests/math/test_poisson_accuracy.c)
     add_executable(test_laplacian_accuracy tests/math/test_laplacian_accuracy.c)
     add_executable(test_linear_solver_convergence tests/math/test_linear_solver_convergence.c)
+    add_executable(test_bicgstab tests/math/test_bicgstab.c)
 
     # Cross-architecture consistency tests
     add_executable(test_solver_architecture tests/validation/test_solver_architecture.c)
@@ -296,6 +297,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_poisson_accuracy PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_laplacian_accuracy PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_linear_solver_convergence PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
+    target_link_libraries(test_bicgstab PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_solver_architecture PRIVATE CFD::Library unity)
 
     # Enable CTest support (optional)
@@ -359,6 +361,7 @@ if(BUILD_TESTS)
     add_test(NAME PoissonAccuracyTest COMMAND test_poisson_accuracy)
     add_test(NAME LaplacianAccuracyTest COMMAND test_laplacian_accuracy)
     add_test(NAME LinearSolverConvergenceTest COMMAND test_linear_solver_convergence)
+    add_test(NAME BiCGSTABTest COMMAND test_bicgstab)
 
     # Label long-running validation tests to exclude from sanitizer job
     # These tests validate physics accuracy, not memory safety

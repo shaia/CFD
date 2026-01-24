@@ -29,7 +29,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] ~~Limited boundary conditions (no symmetry planes)~~ Symmetry planes now supported
 - [ ] Only structured grids
 - [ ] No turbulence models
-- [ ] Limited linear solvers (no BiCGSTAB/multigrid)
+- [ ] Limited linear solvers (no multigrid)
 - [ ] No restart/checkpoint capability
 
 ### Known Issues
@@ -205,7 +205,7 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 
 - [x] Solver abstraction interface
 - [x] Conjugate Gradient (CG) for SPD systems (scalar, AVX2, NEON backends)
-- [ ] BiCGSTAB for non-symmetric systems
+- [x] BiCGSTAB for non-symmetric systems (scalar backend)
 - [ ] Preconditioners (Jacobi, ILU)
 - [ ] Geometric multigrid
 - [ ] Algebraic multigrid (AMG)
