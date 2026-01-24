@@ -53,7 +53,7 @@
  * ============================================================================ */
 
 /**
- * Create an aligned field initialized to zero
+ * Create a field initialized to zero
  */
 static double* create_field(size_t nx, size_t ny) {
     double* field = (double*)cfd_malloc(nx * ny * sizeof(double));
