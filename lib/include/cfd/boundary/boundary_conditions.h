@@ -737,11 +737,13 @@ CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_time_sinusoidal(
  *
  * @param u_velocity   Target x-velocity component (at value_end=1.0)
  * @param v_velocity   Target y-velocity component (at value_end=1.0)
- * @param t_start      Ramp start time
- * @param t_end        Ramp end time
+ * @param t_start      Ramp start time (must be less than t_end)
+ * @param t_end        Ramp end time (must be greater than t_start)
  * @param value_start  Initial velocity multiplier (typically 0.0)
  * @param value_end    Final velocity multiplier (typically 1.0)
  * @return Configured inlet structure
+ *
+ * @note Precondition: t_start < t_end. If violated, behavior defaults to value_end.
  */
 CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_time_ramp(
     double u_velocity, double v_velocity,
@@ -793,10 +795,12 @@ CFD_LIBRARY_EXPORT void bc_inlet_set_time_sinusoidal(
  * Set ramp time variation on an existing inlet configuration.
  *
  * @param config       Pointer to inlet configuration to modify
- * @param t_start      Ramp start time
- * @param t_end        Ramp end time
+ * @param t_start      Ramp start time (must be less than t_end)
+ * @param t_end        Ramp end time (must be greater than t_start)
  * @param value_start  Initial multiplier
  * @param value_end    Final multiplier
+ *
+ * @note Precondition: t_start < t_end. If violated, behavior defaults to value_end.
  */
 CFD_LIBRARY_EXPORT void bc_inlet_set_time_ramp(
     bc_inlet_config_t* config,

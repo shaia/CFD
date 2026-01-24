@@ -33,12 +33,19 @@ static inline double bc_time_sinusoidal_value(const bc_time_sinusoidal_t* cfg, d
  * @param cfg  Ramp configuration
  * @param t    Current time
  * @return     Modulation factor: linear interpolation between value_start and value_end
+ *
+ * @note If t_end <= t_start (invalid configuration), returns value_end to avoid
+ *       division by zero. Callers should ensure t_start < t_end.
  */
 static inline double bc_time_ramp_value(const bc_time_ramp_t* cfg, double t) {
     if (t <= cfg->t_start) {
         return cfg->value_start;
     }
     if (t >= cfg->t_end) {
+        return cfg->value_end;
+    }
+    /* Guard against division by zero from invalid configuration */
+    if (cfg->t_end <= cfg->t_start) {
         return cfg->value_end;
     }
     /* Linear interpolation */
