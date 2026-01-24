@@ -197,6 +197,19 @@ static cfd_status_t bc_simd_outlet(double* field, size_t nx, size_t ny,
     return bc_apply_outlet_scalar_impl(field, nx, ny, config);
 }
 
+static cfd_status_t bc_simd_symmetry(double* u, double* v, size_t nx, size_t ny,
+                                      const bc_symmetry_config_t* config) {
+    /* Symmetry BCs operate on 1D boundaries - SIMD provides limited benefit.
+     * Delegate to the architecture-specific backend if available, otherwise
+     * fall back to scalar implementation. */
+    const bc_backend_impl_t* impl = get_simd_backend();
+    if (impl != NULL && impl->apply_symmetry != NULL) {
+        return impl->apply_symmetry(u, v, nx, ny, config);
+    }
+    /* Fall back to scalar implementation for symmetry */
+    return bc_apply_symmetry_scalar_impl(u, v, nx, ny, config);
+}
+
 /* ============================================================================
  * Check if SIMD backend is available at runtime
  * ============================================================================ */
@@ -241,7 +254,8 @@ const bc_backend_impl_t bc_impl_simd = {
     .apply_periodic = bc_simd_periodic,
     .apply_dirichlet = bc_simd_dirichlet,
     .apply_inlet = bc_simd_inlet,
-    .apply_outlet = bc_simd_outlet
+    .apply_outlet = bc_simd_outlet,
+    .apply_symmetry = bc_simd_symmetry
 };
 
 /**

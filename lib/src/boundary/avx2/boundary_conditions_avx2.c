@@ -198,7 +198,8 @@ const bc_backend_impl_t bc_impl_avx2 = {
     .apply_periodic = bc_apply_periodic_avx2_impl,
     .apply_dirichlet = bc_apply_dirichlet_avx2_impl,
     .apply_inlet = bc_apply_inlet_avx2_impl,
-    .apply_outlet = bc_apply_outlet_avx2_impl
+    .apply_outlet = bc_apply_outlet_avx2_impl,
+    .apply_symmetry = NULL  /* Falls back to scalar */
 };
 
 #else /* !BC_HAS_AVX2 */
@@ -209,7 +210,8 @@ const bc_backend_impl_t bc_impl_avx2 = {
     .apply_periodic = NULL,
     .apply_dirichlet = NULL,
     .apply_inlet = NULL,
-    .apply_outlet = NULL
+    .apply_outlet = NULL,
+    .apply_symmetry = NULL
 };
 
 #endif /* BC_HAS_AVX2 */

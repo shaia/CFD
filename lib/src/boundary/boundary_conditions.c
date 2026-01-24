@@ -879,3 +879,65 @@ cfd_status_t bc_apply_outlet_velocity_omp(double* u, double* v, size_t nx, size_
     }
     return apply_outlet_with_backend(v, nx, ny, config, impl);
 }
+
+/* ============================================================================
+ * Symmetry Boundary Condition API
+ * ============================================================================ */
+
+/** Helper: apply symmetry BC with specified backend */
+static cfd_status_t apply_symmetry_with_backend(double* u, double* v, size_t nx, size_t ny,
+                                                 const bc_symmetry_config_t* config,
+                                                 const bc_backend_impl_t* impl) {
+    if (impl == NULL || impl->apply_symmetry == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return impl->apply_symmetry(u, v, nx, ny, config);
+}
+
+cfd_status_t bc_apply_symmetry(double* u, double* v, size_t nx, size_t ny,
+                                const bc_symmetry_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    /* If selected backend doesn't support symmetry, fall back to scalar */
+    if (impl->apply_symmetry == NULL) {
+        return bc_apply_symmetry_scalar_impl(u, v, nx, ny, config);
+    }
+    return impl->apply_symmetry(u, v, nx, ny, config);
+}
+
+cfd_status_t bc_apply_symmetry_cpu(double* u, double* v, size_t nx, size_t ny,
+                                    const bc_symmetry_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    return bc_apply_symmetry_scalar_impl(u, v, nx, ny, config);
+}
+
+cfd_status_t bc_apply_symmetry_simd(double* u, double* v, size_t nx, size_t ny,
+                                     const bc_symmetry_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return apply_symmetry_with_backend(u, v, nx, ny, config, impl);
+}
+
+cfd_status_t bc_apply_symmetry_omp(double* u, double* v, size_t nx, size_t ny,
+                                    const bc_symmetry_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return apply_symmetry_with_backend(u, v, nx, ny, config, impl);
+}

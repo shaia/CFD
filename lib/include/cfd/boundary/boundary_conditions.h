@@ -22,7 +22,8 @@ typedef enum {
     BC_TYPE_DIRICHLET,  // Fixed value: boundary = specified constant value
     BC_TYPE_NOSLIP,     // No-slip wall: velocity = 0 at all boundaries
     BC_TYPE_INLET,      // Inlet velocity specification (placeholder for future)
-    BC_TYPE_OUTLET      // Outlet/convective (placeholder for future)
+    BC_TYPE_OUTLET,     // Outlet/convective (placeholder for future)
+    BC_TYPE_SYMMETRY    // Symmetry plane: zero normal velocity, zero tangential gradient
 } bc_type_t;
 
 /**
@@ -275,6 +276,21 @@ typedef struct {
     double advection_velocity;   // Advection velocity for convective outlet (m/s)
                                  // Typically the mean outflow velocity
 } bc_outlet_config_t;
+
+/**
+ * Symmetry Boundary Condition Configuration
+ *
+ * Specifies which edges have symmetry boundary conditions.
+ * Symmetry planes enforce:
+ *   - Zero normal velocity component (no flow through symmetry plane)
+ *   - Zero gradient of tangential velocity (no shear stress)
+ *
+ * For X-symmetry plane (left/right edge): u = 0, dv/dx = 0
+ * For Y-symmetry plane (top/bottom edge): v = 0, du/dy = 0
+ */
+typedef struct {
+    bc_edge_t edges;    // Bitmask of edges with symmetry BC (can combine with |)
+} bc_symmetry_config_t;
 
 /**
  * Apply boundary conditions to a scalar field (raw array)
@@ -1107,6 +1123,82 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_omp(double* u, double* 
 #define bc_apply_outlet(field, nx, ny) \
     bc_apply_outlet_scalar((field), (nx), (ny), \
         &(bc_outlet_config_t){.edge = BC_EDGE_RIGHT, .type = BC_OUTLET_ZERO_GRADIENT})
+
+/* ============================================================================
+ * Symmetry Boundary Condition API
+ *
+ * Symmetry planes enforce:
+ *   - Zero normal velocity component (no flow through symmetry plane)
+ *   - Zero gradient of tangential velocity (no shear stress at plane)
+ *
+ * For X-symmetry plane (left/right edge): u = 0, dv/dx = 0 (v copied from interior)
+ * For Y-symmetry plane (top/bottom edge): v = 0, du/dy = 0 (u copied from interior)
+ * ============================================================================ */
+
+/**
+ * Apply symmetry boundary conditions to velocity fields.
+ *
+ * This is the main dispatcher function that selects the appropriate backend
+ * based on the current backend setting (see bc_set_backend()).
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to symmetry configuration specifying which edges
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_symmetry(double* u, double* v, size_t nx, size_t ny,
+                                                   const bc_symmetry_config_t* config);
+
+/**
+ * Apply symmetry boundary conditions using CPU (scalar) implementation.
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to symmetry configuration specifying which edges
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_symmetry_cpu(double* u, double* v, size_t nx, size_t ny,
+                                                       const bc_symmetry_config_t* config);
+
+/**
+ * Apply symmetry boundary conditions using SIMD implementation.
+ * Automatically selects AVX2 (x86-64) or NEON (ARM64) at runtime.
+ * Returns CFD_ERROR_UNSUPPORTED if SIMD not available.
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to symmetry configuration specifying which edges
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_symmetry_simd(double* u, double* v, size_t nx, size_t ny,
+                                                        const bc_symmetry_config_t* config);
+
+/**
+ * Apply symmetry boundary conditions using OpenMP implementation.
+ * Returns CFD_ERROR_UNSUPPORTED if OpenMP not available.
+ *
+ * @param u       Pointer to x-velocity array (size nx*ny)
+ * @param v       Pointer to y-velocity array (size nx*ny)
+ * @param nx      Number of grid points in x-direction
+ * @param ny      Number of grid points in y-direction
+ * @param config  Pointer to symmetry configuration specifying which edges
+ * @return CFD_SUCCESS on success, error code on failure
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_symmetry_omp(double* u, double* v, size_t nx, size_t ny,
+                                                       const bc_symmetry_config_t* config);
+
+/**
+ * Convenience macro for applying symmetry BC to all boundaries.
+ */
+#define bc_apply_symmetry_all(u, v, nx, ny) \
+    bc_apply_symmetry((u), (v), (nx), (ny), \
+        &(bc_symmetry_config_t){.edges = BC_EDGE_LEFT | BC_EDGE_RIGHT | BC_EDGE_TOP | BC_EDGE_BOTTOM})
 
 #ifdef __cplusplus
 }
