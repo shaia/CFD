@@ -79,15 +79,6 @@ static void init_nontrivial_guess(double* p, size_t nx, size_t ny) {
 }
 
 /**
- * Initialize uniform RHS (for reference, but may not converge with Neumann BCs)
- */
-static void init_uniform_rhs(double* rhs, size_t nx, size_t ny, double value) {
-    for (size_t i = 0; i < nx * ny; i++) {
-        rhs[i] = value;
-    }
-}
-
-/**
  * Initialize sinusoidal RHS that is compatible with Neumann BCs
  * f(x,y) = cos(2πx)cos(2πy) has zero integral over [0,1]²
  * Solution: p(x,y) = -cos(2πx)cos(2πy) / (8π²)
@@ -109,23 +100,6 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
  */
 static double theoretical_jacobi_spectral_radius(double h) {
     return cos(M_PI * h);
-}
-
-/**
- * Compute theoretical optimal SOR parameter for 2D Poisson
- * ω_opt = 2 / (1 + sin(πh))
- */
-static double theoretical_optimal_omega(double h) {
-    return 2.0 / (1.0 + sin(M_PI * h));
-}
-
-/**
- * Compute theoretical SOR spectral radius at optimal omega
- * ρ_SOR = ω_opt - 1
- */
-static double theoretical_sor_spectral_radius(double h) {
-    double omega_opt = theoretical_optimal_omega(h);
-    return omega_opt - 1.0;
 }
 
 /**
@@ -162,15 +136,6 @@ static double estimate_spectral_radius(const double* residuals, int num_iters) {
     }
 
     return (count > 5) ? sum_ratio / count : 1.0;
-}
-
-/**
- * Estimate iterations needed to reduce residual by factor
- * Based on spectral radius: iters ≈ log(factor) / log(ρ)
- */
-static int theoretical_iterations(double spectral_radius, double reduction_factor) {
-    if (spectral_radius >= 1.0 || spectral_radius <= 0.0) return 99999;
-    return (int)ceil(log(reduction_factor) / log(spectral_radius));
 }
 
 /* ============================================================================
