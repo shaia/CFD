@@ -9,7 +9,7 @@
  * Tests cover:
  *   - Convergence on zero RHS (trivial solution)
  *   - Convergence on sinusoidal RHS (Neumann compatible)
- *   - Comparison with CG solver (should produce similar results for SPD)
+ *   - Comparison with CG solver (max-norm and L2-norm metrics)
  *   - Error handling (NULL inputs, small grids)
  */
 
@@ -106,6 +106,21 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
             rhs[j * nx + i] -= interior_mean;
         }
     }
+}
+
+/**
+ * Compute L2 norm of difference between two fields (interior points only)
+ */
+static double compute_l2_error(const double* a, const double* b,
+                                size_t nx, size_t ny) {
+    double sum = 0.0;
+    for (size_t j = 1; j < ny - 1; j++) {
+        for (size_t i = 1; i < nx - 1; i++) {
+            double diff = a[j * nx + i] - b[j * nx + i];
+            sum += diff * diff;
+        }
+    }
+    return sqrt(sum / ((nx - 2) * (ny - 2)));  /* RMS error */
 }
 
 /* ============================================================================
@@ -322,6 +337,79 @@ void test_bicgstab_vs_cg(void) {
     cfd_free(rhs);
 }
 
+/**
+ * Test BiCGSTAB vs CG using L2 error metric
+ *
+ * Verifies that both solvers produce solutions with small RMS difference.
+ * Uses mean-shifted solutions since Neumann BCs allow constant offsets.
+ */
+void test_bicgstab_l2_error(void) {
+    size_t nx = NX_MEDIUM, ny = NY_MEDIUM;
+    double dx = (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
+    double dy = (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
+
+    double* p_bicgstab = create_field(nx, ny);
+    double* p_cg = create_field(nx, ny);
+    double* rhs = create_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(p_bicgstab);
+    TEST_ASSERT_NOT_NULL(p_cg);
+    TEST_ASSERT_NOT_NULL(rhs);
+
+    init_sinusoidal_rhs(rhs, nx, ny, dx, dy);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance = TOLERANCE;
+    params.max_iterations = MAX_ITERATIONS;
+
+    /* Solve with BiCGSTAB */
+    poisson_solver_t* bicgstab = poisson_solver_create(
+        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(bicgstab);
+    poisson_solver_init(bicgstab, nx, ny, dx, dy, &params);
+    poisson_solver_stats_t stats_bicgstab = poisson_solver_stats_default();
+    poisson_solver_solve(bicgstab, p_bicgstab, NULL, rhs, &stats_bicgstab);
+
+    /* Solve with CG */
+    poisson_solver_t* cg = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(cg);
+    poisson_solver_init(cg, nx, ny, dx, dy, &params);
+    poisson_solver_stats_t stats_cg = poisson_solver_stats_default();
+    poisson_solver_solve(cg, p_cg, NULL, rhs, &stats_cg);
+
+    /* Remove means to handle Neumann BC constant offset */
+    double mean_bicgstab = 0.0, mean_cg = 0.0;
+    size_t count = (nx - 2) * (ny - 2);
+    for (size_t j = 1; j < ny - 1; j++) {
+        for (size_t i = 1; i < nx - 1; i++) {
+            mean_bicgstab += p_bicgstab[j * nx + i];
+            mean_cg += p_cg[j * nx + i];
+        }
+    }
+    mean_bicgstab /= count;
+    mean_cg /= count;
+
+    /* Shift solutions to zero mean */
+    for (size_t j = 1; j < ny - 1; j++) {
+        for (size_t i = 1; i < nx - 1; i++) {
+            p_bicgstab[j * nx + i] -= mean_bicgstab;
+            p_cg[j * nx + i] -= mean_cg;
+        }
+    }
+
+    /* Compute L2 (RMS) error between solutions */
+    double l2_error = compute_l2_error(p_bicgstab, p_cg, nx, ny);
+
+    /* L2 error should be small - both methods solve the same system */
+    TEST_ASSERT_TRUE(l2_error < 1e-5);
+
+    poisson_solver_destroy(bicgstab);
+    poisson_solver_destroy(cg);
+    cfd_free(p_bicgstab);
+    cfd_free(p_cg);
+    cfd_free(rhs);
+}
+
 /* ============================================================================
  * ERROR HANDLING TESTS
  * ============================================================================ */
@@ -364,6 +452,7 @@ int main(void) {
     RUN_TEST(test_bicgstab_zero_rhs);
     RUN_TEST(test_bicgstab_sinusoidal_rhs);
     RUN_TEST(test_bicgstab_vs_cg);
+    RUN_TEST(test_bicgstab_l2_error);
 
     /* Error handling tests */
     RUN_TEST(test_bicgstab_unsupported_backend);
