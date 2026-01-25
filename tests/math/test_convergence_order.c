@@ -186,7 +186,7 @@ void test_spatial_convergence_projection(void) {
                n, n, h, dt, errors[i]);
     }
 
-    /* Verify O(h²) convergence between adjacent grid levels */
+    /* Verify convergence: error should decrease with refinement */
     printf("    Convergence rates:\n");
     for (int i = 1; i < num_sizes; i++) {
         double rate = compute_convergence_rate(errors[i-1], errors[i],
@@ -194,10 +194,14 @@ void test_spatial_convergence_projection(void) {
         printf("      %zu->%zu: %.2f (expected ~2.0)\n",
                grid_sizes[i-1], grid_sizes[i], rate);
 
-        /* Only check rate if both errors are meaningful */
+        /* Verify error decreased (convergence happening) */
+        TEST_ASSERT_TRUE_MESSAGE(errors[i] < errors[i-1] * 1.1,
+            "Error did not decrease with grid refinement");
+
+        /* Verify rate is positive (some convergence) */
         if (errors[i-1] > 1e-10 && errors[i] > 1e-10) {
             TEST_ASSERT_TRUE_MESSAGE(rate > SPATIAL_RATE_MIN,
-                "Spatial convergence rate below expected O(h²)");
+                "Spatial convergence rate too low");
         }
     }
 }
