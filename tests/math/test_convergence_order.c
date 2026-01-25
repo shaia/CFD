@@ -121,7 +121,8 @@ void test_spatial_convergence_euler(void) {
 
         /* Scale dt proportionally to h to maintain constant CFL */
         double dt = SPATIAL_BASE_DT * (h / h_ref);
-        int steps = (int)(SPATIAL_FINAL_TIME / dt) + 1;
+        /* Round to nearest step count for consistent final_time = steps * dt */
+        int steps = (int)round(SPATIAL_FINAL_TIME / dt);
 
         tg_result_t result = tg_run_simulation(
             NS_SOLVER_TYPE_EXPLICIT_EULER, n, n, CONV_NU, dt, steps);
@@ -175,7 +176,8 @@ void test_spatial_convergence_projection(void) {
 
         /* Scale dt proportionally to h to maintain constant CFL */
         double dt = SPATIAL_BASE_DT * (h / h_ref);
-        int steps = (int)(SPATIAL_FINAL_TIME / dt) + 1;
+        /* Round to nearest step count for consistent final_time = steps * dt */
+        int steps = (int)round(SPATIAL_FINAL_TIME / dt);
 
         tg_result_t result = tg_run_simulation(
             NS_SOLVER_TYPE_PROJECTION, n, n, CONV_NU, dt, steps);
