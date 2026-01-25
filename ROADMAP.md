@@ -292,14 +292,18 @@ Unit tests for individual stencil operations:
   - `solver_explicit_euler.c`, `solver_projection.c`, `linear_solver_jacobi.c`, etc.
   - This ensures tests exercise the exact production code paths
 
-#### 1.3.2 Convergence Order Verification
+#### 1.3.2 Convergence Order Verification ✅
 
-- [ ] Spatial convergence tests (h-refinement: 16→32→64→128)
-- [ ] Temporal convergence tests (dt-refinement)
-- [ ] Automated order-of-accuracy computation
-- [ ] Verify 2nd order spatial, 1st order temporal (Euler)
+- [x] Spatial convergence tests (h-refinement: 16→32→64→128)
+- [x] Temporal convergence tests (dt-refinement)
+- [x] Automated order-of-accuracy computation
+- [x] Verify 2nd order spatial, 1st order temporal (Euler)
 
 **Success criteria:** Measured convergence rate within 10% of expected order.
+
+**Files created:**
+
+- `tests/math/test_convergence_order.c`
 
 #### 1.3.3 Method of Manufactured Solutions (MMS)
 
@@ -326,7 +330,6 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 **Files to create:**
 
-- `tests/math/test_convergence_order.c`
 - `tests/math/test_mms.c`
 - `tests/math/manufactured_solutions.h`
 
