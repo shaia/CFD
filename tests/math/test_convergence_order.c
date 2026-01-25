@@ -111,17 +111,16 @@ void test_spatial_convergence_euler(void) {
     double errors[4];
     double spacings[4];
 
-    /* Reference grid for dt scaling */
-    size_t n_ref = 128;
+    /* Reference grid spacing for dt scaling */
+    double h_ref = (TG_DOMAIN_XMAX - TG_DOMAIN_XMIN) / (128 - 1);
 
     for (int i = 0; i < num_sizes; i++) {
         size_t n = grid_sizes[i];
         double h = (TG_DOMAIN_XMAX - TG_DOMAIN_XMIN) / (n - 1);
         spacings[i] = h;
 
-        /* Scale dt with grid size to maintain constant CFL
-         * dt = base_dt * (n_ref / n) so finer grid uses smaller dt */
-        double dt = SPATIAL_BASE_DT * ((double)n_ref / (double)n);
+        /* Scale dt proportionally to h to maintain constant CFL */
+        double dt = SPATIAL_BASE_DT * (h / h_ref);
         int steps = (int)(SPATIAL_FINAL_TIME / dt) + 1;
 
         tg_result_t result = tg_run_simulation(
@@ -166,16 +165,16 @@ void test_spatial_convergence_projection(void) {
     double errors[4];
     double spacings[4];
 
-    /* Reference grid for dt scaling */
-    size_t n_ref = 128;
+    /* Reference grid spacing for dt scaling */
+    double h_ref = (TG_DOMAIN_XMAX - TG_DOMAIN_XMIN) / (128 - 1);
 
     for (int i = 0; i < num_sizes; i++) {
         size_t n = grid_sizes[i];
         double h = (TG_DOMAIN_XMAX - TG_DOMAIN_XMIN) / (n - 1);
         spacings[i] = h;
 
-        /* Scale dt with grid size to maintain constant CFL */
-        double dt = SPATIAL_BASE_DT * ((double)n_ref / (double)n);
+        /* Scale dt proportionally to h to maintain constant CFL */
+        double dt = SPATIAL_BASE_DT * (h / h_ref);
         int steps = (int)(SPATIAL_FINAL_TIME / dt) + 1;
 
         tg_result_t result = tg_run_simulation(
