@@ -2,21 +2,21 @@
  * @file test_convergence_order.c
  * @brief Convergence order verification tests (ROADMAP 1.3.2)
  *
- * These tests verify that the numerical solvers achieve expected accuracy orders:
- *   - Spatial: O(h²) - second-order central differences
- *   - Temporal: O(dt) - first-order forward Euler
- *
- * Tests use the Taylor-Green vortex benchmark which has an analytical solution.
- * By running simulations at multiple grid sizes or timesteps and measuring
- * the error reduction, we verify the convergence order.
+ * These tests verify that the numerical solvers converge with grid/timestep
+ * refinement using the Taylor-Green vortex benchmark (has analytical solution).
  *
  * Methodology:
  *   1. Spatial convergence: Fix dt (very small), vary grid size 16→32→64→128
  *   2. Temporal convergence: Fix grid (fine), vary dt→dt/2→dt/4→dt/8
  *   3. Compute convergence rate: rate = log(e_coarse/e_fine) / log(h_coarse/h_fine)
  *
- * Success criteria: Measured rate within 10% of expected (rate > 1.8 for O(h²),
- * rate > 0.9 for O(dt)).
+ * Expected vs Achieved:
+ *   - Spatial: O(h²) theoretical, ~O(h^1.5) achieved (BC-limited)
+ *   - Temporal: O(dt) theoretical, difficult to isolate (spatial error dominates)
+ *
+ * Success criteria:
+ *   - Spatial: rate > 1.4 (super-linear, confirms convergence)
+ *   - Temporal: error decreases with refinement (rate check relaxed)
  */
 
 #include "unity.h"
@@ -29,12 +29,15 @@
  * ============================================================================ */
 
 /* Convergence rate tolerances
- * Note: Practical CFD codes often achieve sub-optimal convergence rates due to
- * boundary treatment, time-stepping coupling, and numerical dissipation.
- * We verify the solver IS converging (rate > 1.0 for spatial), not that it
- * achieves theoretical optimum. */
-#define SPATIAL_RATE_MIN    1.0     /* Verify convergence (any positive rate) */
-#define TEMPORAL_RATE_MIN   0.0     /* Temporal often masked by spatial error */
+ *
+ * Spatial: Theoretical O(h²) is limited by first-order accurate boundary
+ * conditions to ~O(h^1.5). We verify rate > 1.4 (super-linear convergence).
+ *
+ * Temporal: O(dt) convergence is difficult to isolate because spatial error
+ * dominates even on fine grids. We verify error decreases with dt refinement
+ * but don't enforce a specific rate (temporal error often masked). */
+#define SPATIAL_RATE_MIN    1.4     /* Super-linear convergence (BC-limited) */
+#define TEMPORAL_RATE_MIN   0.0     /* Verify improvement, rate often masked */
 
 /* Physical parameters */
 #define CONV_NU             0.01    /* Kinematic viscosity */
@@ -42,14 +45,14 @@
 /* Spatial convergence test parameters
  * Use dt proportional to h to maintain constant CFL, running same physical time.
  * This keeps temporal error proportional to spatial error so rate is preserved. */
-#define SPATIAL_FINAL_TIME  0.2     /* Physical time to simulate */
-#define SPATIAL_BASE_DT     0.001   /* Base dt for finest grid (128) */
+#define SPATIAL_FINAL_TIME  0.1     /* Physical time to simulate */
+#define SPATIAL_BASE_DT     0.0005  /* Base dt for finest grid (128) - small to minimize temporal error */
 
 /* Temporal convergence test parameters
- * Use coarse grid so temporal error dominates, with large timesteps. */
-#define TEMPORAL_GRID_SIZE  32      /* Coarse grid to make spatial error small relative to temporal */
-#define TEMPORAL_FINAL_TIME 0.1     /* Short time, fewer steps accumulate error */
-#define TEMPORAL_DT_BASE    0.02    /* Large base timestep to see temporal error */
+ * Use fine grid so spatial error is negligible compared to temporal error. */
+#define TEMPORAL_GRID_SIZE  128     /* Fine grid to minimize spatial error */
+#define TEMPORAL_FINAL_TIME 0.05    /* Short time to limit error accumulation */
+#define TEMPORAL_DT_BASE    0.01    /* Base timestep - large enough to see temporal error */
 
 /* ============================================================================
  * TEST FIXTURES
