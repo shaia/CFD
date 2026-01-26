@@ -151,20 +151,6 @@ static void init_vortex_pair(flow_field* field, const grid* g) {
 }
 
 /**
- * Check if all values in flow field are finite
- */
-static int flow_field_is_valid(const flow_field* field) {
-    size_t n = field->nx * field->ny;
-    for (size_t i = 0; i < n; i++) {
-        if (!isfinite(field->u[i]) || !isfinite(field->v[i]) ||
-            !isfinite(field->p[i]) || !isfinite(field->rho[i])) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-/**
  * Run projection solver and measure divergence
  * Returns max|∇·u| after num_steps projection steps
  */
@@ -208,7 +194,7 @@ static double run_projection_test(
 
     for (int step = 0; step < num_steps; step++) {
         solver_step(slv, field, g, &params, &stats);
-        TEST_ASSERT_TRUE_MESSAGE(flow_field_is_valid(field),
+        TEST_ASSERT_TRUE_MESSAGE(test_flow_field_is_valid(field),
             "Flow field became invalid during projection");
     }
 
