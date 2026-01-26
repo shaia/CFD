@@ -26,6 +26,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "../solvers/navier_stokes/test_solver_helpers.h"
 #include <math.h>
 #include <stdio.h>
 
@@ -50,10 +51,6 @@
 #define TEST_MU      0.01
 #define TEST_STEPS   10      /* Steps to reach quasi-steady divergence */
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 /* ============================================================================
  * TEST FIXTURES
  * ============================================================================ */
@@ -69,57 +66,6 @@ void tearDown(void) {
 /* ============================================================================
  * HELPER FUNCTIONS
  * ============================================================================ */
-
-/**
- * Compute L-infinity norm of divergence (max|∇·u|)
- */
-static double compute_divergence_linf(const flow_field* field, const grid* g) {
-    size_t nx = field->nx;
-    size_t ny = field->ny;
-    double dx = g->dx[0];
-    double dy = g->dy[0];
-    double max_div = 0.0;
-
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
-
-            double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * dx);
-            double dv_dy = (field->v[idx + nx] - field->v[idx - nx]) / (2.0 * dy);
-            double div = fabs(du_dx + dv_dy);
-
-            if (div > max_div) {
-                max_div = div;
-            }
-        }
-    }
-    return max_div;
-}
-
-/**
- * Compute L2 norm of divergence (RMS)
- */
-static double compute_divergence_l2(const flow_field* field, const grid* g) {
-    size_t nx = field->nx;
-    size_t ny = field->ny;
-    double dx = g->dx[0];
-    double dy = g->dy[0];
-    double sum = 0.0;
-    int count = 0;
-
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
-
-            double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * dx);
-            double dv_dy = (field->v[idx + nx] - field->v[idx - nx]) / (2.0 * dy);
-            double div = du_dx + dv_dy;
-            sum += div * div;
-            count++;
-        }
-    }
-    return sqrt(sum / count);
-}
 
 /**
  * Initialize with non-divergence-free sinusoidal field
@@ -238,7 +184,7 @@ static double run_projection_test(
     grid_initialize_uniform(g);
     init_field(field, g);
 
-    double initial_div = compute_divergence_linf(field, g);
+    double initial_div = test_compute_divergence_linf(field, g);
     if (initial_div_out) *initial_div_out = initial_div;
 
     ns_solver_registry_t* registry = cfd_registry_create();
@@ -266,8 +212,8 @@ static double run_projection_test(
             "Flow field became invalid during projection");
     }
 
-    double final_div_linf = compute_divergence_linf(field, g);
-    double final_div_l2 = compute_divergence_l2(field, g);
+    double final_div_linf = test_compute_divergence_linf(field, g);
+    double final_div_l2 = test_compute_divergence_l2(field, g);
     if (final_div_l2_out) *final_div_l2_out = final_div_l2;
 
     solver_destroy(slv);
