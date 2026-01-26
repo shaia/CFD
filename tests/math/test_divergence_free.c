@@ -553,6 +553,12 @@ void test_divergence_bounded_all_grids(void) {
 /**
  * Test that all available backends produce consistent divergence levels
  * They should all be bounded and within reasonable range of each other
+ *
+ * Note: GPU backend is excluded from this consistency test because it uses
+ * Jacobi iteration (NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU) while the other
+ * backends use Red-Black SOR. Different algorithms may produce different
+ * divergence levels while still being correct. GPU is tested separately
+ * for bounded divergence in test_projection_gpu_bounded().
  */
 void test_backend_consistency(void) {
     printf("\n  Testing backend consistency:\n");
