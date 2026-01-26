@@ -522,9 +522,9 @@ void test_projection_gpu_bounded(void) {
 void test_divergence_bounded_all_grids(void) {
     printf("\n  Testing divergence bounded on various grids:\n");
 
-    size_t grid_sizes[] = {32, 64};
+    size_t grid_sizes[] = {GRID_COARSE, GRID_MEDIUM, GRID_FINE};
     int num_sizes = sizeof(grid_sizes) / sizeof(grid_sizes[0]);
-    double divergences[2];
+    double divergences[3];
 
     for (int i = 0; i < num_sizes; i++) {
         size_t n = grid_sizes[i];
