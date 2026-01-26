@@ -38,7 +38,6 @@
  * which does not achieve tight divergence-free constraints. The tolerances here
  * reflect realistic solver behavior, not theoretical ideal (O(1e-10)). */
 #define DIV_TOLERANCE_BOUNDED  10.0    /* Solver should keep divergence bounded */
-#define DIV_TOLERANCE_RELAXED  1.0     /* For divergent initial fields */
 #define DIV_TOLERANCE_INITIAL  0.1     /* For initially div-free fields */
 
 /* Test grid sizes */
