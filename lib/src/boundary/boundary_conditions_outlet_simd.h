@@ -107,3 +107,10 @@ cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
 
     return CFD_SUCCESS;
 }
+
+#undef BC_SIMD_STORE
+#undef BC_SIMD_LOAD
+#undef BC_SIMD_WIDTH
+#undef BC_SIMD_MASK
+#undef BC_SIMD_THRESHOLD
+#undef BC_OUTLET_FUNC_NAME

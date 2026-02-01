@@ -150,3 +150,11 @@ static void BC_SIMD_FN(dirichlet)(double* field, size_t nx, size_t ny,
 #undef BC_SIMD_PASTE2
 #undef BC_SIMD_PASTE
 #undef BC_SIMD_FN
+#undef BC_SIMD_STORE
+#undef BC_SIMD_LOAD
+#undef BC_SIMD_BROADCAST
+#undef BC_SIMD_VEC_TYPE
+#undef BC_SIMD_WIDTH
+#undef BC_SIMD_MASK
+#undef BC_SIMD_THRESHOLD
+#undef BC_SIMD_FUNC_PREFIX
