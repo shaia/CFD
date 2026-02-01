@@ -18,7 +18,7 @@ static inline int bc_outlet_simd_size_to_int(size_t sz) {
     return (sz > (size_t)INT_MAX) ? INT_MAX : (int)sz;
 }
 
-static cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
+cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
                                          const bc_outlet_config_t* config) {
     if (!field || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
