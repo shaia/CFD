@@ -13,6 +13,7 @@
  */
 
 #include "boundary_conditions_internal.h"
+#include <limits.h>
 
 /* Token pasting helpers */
 #define BC_CORE_PASTE2(a, b) a##b
@@ -22,7 +23,7 @@
 /* Loop variable type and cast for OMP compatibility */
 #if BC_CORE_USE_OMP
 #define BC_LOOP_VAR int
-#define BC_LOOP_LIMIT(n) (int)(n)
+#define BC_LOOP_LIMIT(n) ((n) > (size_t)INT_MAX ? INT_MAX : (int)(n))
 #define BC_OMP_FOR _Pragma("omp parallel for schedule(static)")
 #else
 #define BC_LOOP_VAR size_t
