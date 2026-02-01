@@ -192,13 +192,13 @@ static void bc_apply_dirichlet_neon_impl(double* field, size_t nx, size_t ny,
 }
 
 /* NEON backend implementation table
- * Note: bc_apply_inlet_neon_impl is defined in boundary_conditions_inlet_neon.c
+ * Note: Inlet delegates to scalar (no SIMD benefit for 1D boundary loops)
  * Note: bc_apply_outlet_neon_impl is defined in boundary_conditions_outlet_neon.c */
 const bc_backend_impl_t bc_impl_neon = {
     .apply_neumann = bc_apply_neumann_neon_impl,
     .apply_periodic = bc_apply_periodic_neon_impl,
     .apply_dirichlet = bc_apply_dirichlet_neon_impl,
-    .apply_inlet = bc_apply_inlet_neon_impl,
+    .apply_inlet = bc_apply_inlet_scalar_impl,
     .apply_outlet = bc_apply_outlet_neon_impl,
     .apply_symmetry = NULL  /* Falls back to scalar */
 };

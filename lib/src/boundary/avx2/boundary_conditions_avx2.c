@@ -191,13 +191,13 @@ static void bc_apply_dirichlet_avx2_impl(double* field, size_t nx, size_t ny,
 }
 
 /* AVX2 + OpenMP backend implementation table
- * Note: bc_apply_inlet_avx2_impl is defined in boundary_conditions_inlet_avx2.c
+ * Note: Inlet delegates to scalar (no SIMD benefit for 1D boundary loops)
  * Note: bc_apply_outlet_avx2_impl is defined in boundary_conditions_outlet_avx2.c */
 const bc_backend_impl_t bc_impl_avx2 = {
     .apply_neumann = bc_apply_neumann_avx2_impl,
     .apply_periodic = bc_apply_periodic_avx2_impl,
     .apply_dirichlet = bc_apply_dirichlet_avx2_impl,
-    .apply_inlet = bc_apply_inlet_avx2_impl,
+    .apply_inlet = bc_apply_inlet_scalar_impl,
     .apply_outlet = bc_apply_outlet_avx2_impl,
     .apply_symmetry = NULL  /* Falls back to scalar */
 };

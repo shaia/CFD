@@ -93,13 +93,13 @@ static void bc_apply_dirichlet_omp_impl(double* field, size_t nx, size_t ny,
 }
 
 /* OpenMP backend implementation table
- * Note: bc_apply_inlet_omp_impl is defined in boundary_conditions_inlet_omp.c
+ * Note: Inlet delegates to scalar (no SIMD benefit for 1D boundary loops)
  * Note: bc_apply_outlet_omp_impl is defined in boundary_conditions_outlet_omp.c */
 const bc_backend_impl_t bc_impl_omp = {
     .apply_neumann = bc_apply_neumann_omp_impl,
     .apply_periodic = bc_apply_periodic_omp_impl,
     .apply_dirichlet = bc_apply_dirichlet_omp_impl,
-    .apply_inlet = bc_apply_inlet_omp_impl,
+    .apply_inlet = bc_apply_inlet_scalar_impl,
     .apply_outlet = bc_apply_outlet_omp_impl,
     .apply_symmetry = NULL  /* Falls back to scalar */
 };

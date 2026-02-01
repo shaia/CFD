@@ -121,18 +121,6 @@ void bc_apply_dirichlet_scalar_impl(double* field, size_t nx, size_t ny,
 cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, size_t nx, size_t ny,
                                          const bc_inlet_config_t* config);
 
-/* OpenMP inlet implementation - defined in omp/boundary_conditions_inlet_omp.c */
-cfd_status_t bc_apply_inlet_omp_impl(double* u, double* v, size_t nx, size_t ny,
-                                      const bc_inlet_config_t* config);
-
-/* AVX2 inlet implementation - defined in avx2/boundary_conditions_inlet_avx2.c */
-cfd_status_t bc_apply_inlet_avx2_impl(double* u, double* v, size_t nx, size_t ny,
-                                       const bc_inlet_config_t* config);
-
-/* NEON inlet implementation - defined in neon/boundary_conditions_inlet_neon.c */
-cfd_status_t bc_apply_inlet_neon_impl(double* u, double* v, size_t nx, size_t ny,
-                                       const bc_inlet_config_t* config);
-
 /* Outlet implementations */
 cfd_status_t bc_apply_outlet_scalar_impl(double* field, size_t nx, size_t ny,
                                           const bc_outlet_config_t* config);

@@ -130,10 +130,8 @@ set(CFD_SIMD_SOURCES
     # Boundary conditions - SIMD
     src/boundary/simd/boundary_conditions_simd_dispatch.c
     src/boundary/avx2/boundary_conditions_avx2.c
-    src/boundary/avx2/boundary_conditions_inlet_avx2.c
     src/boundary/avx2/boundary_conditions_outlet_avx2.c
     src/boundary/neon/boundary_conditions_neon.c
-    src/boundary/neon/boundary_conditions_inlet_neon.c
     src/boundary/neon/boundary_conditions_outlet_neon.c
     # Navier-Stokes solvers - SIMD
     src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c
@@ -152,7 +150,6 @@ set(CFD_SIMD_SOURCES
 set(CFD_OMP_SOURCES
     # Boundary conditions - OMP
     src/boundary/omp/boundary_conditions_omp.c
-    src/boundary/omp/boundary_conditions_inlet_omp.c
     src/boundary/omp/boundary_conditions_outlet_omp.c
     # Navier-Stokes solvers - OMP
     src/solvers/navier_stokes/omp/solver_explicit_euler_omp.c
@@ -307,7 +304,6 @@ else()
     # Solver files require omp.h and can't be compiled without OpenMP
     set(CFD_OMP_BUILD_SOURCES
         src/boundary/omp/boundary_conditions_omp.c
-        src/boundary/omp/boundary_conditions_inlet_omp.c
         src/boundary/omp/boundary_conditions_outlet_omp.c
     )
     set(CFD_HAS_OMP FALSE)
