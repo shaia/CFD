@@ -6,7 +6,7 @@
  *   BC_SIMD_STORE(dst, val)  - store SIMD vector to memory
  *   BC_SIMD_LOAD(src)        - load SIMD vector from memory
  *   BC_SIMD_WIDTH            - number of doubles per SIMD vector (4 or 2)
- *   BC_SIMD_MASK             - alignment mask (~3 for AVX2, ~1 for NEON)
+ *   BC_SIMD_MASK             - low-bit mask for rounding down (3 for AVX2, 1 for NEON)
  *   BC_SIMD_THRESHOLD        - min width for OMP on SIMD loops
  *   BC_OUTLET_FUNC_NAME      - function name to define
  */

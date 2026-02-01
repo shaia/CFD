@@ -8,7 +8,7 @@
  *   BC_SIMD_BROADCAST(val)   - broadcast scalar to SIMD vector
  *   BC_SIMD_VEC_TYPE          - SIMD vector type (e.g., __m256d, float64x2_t)
  *   BC_SIMD_WIDTH             - number of doubles per SIMD vector (4 or 2)
- *   BC_SIMD_MASK              - alignment mask (3 for AVX2, 1 for NEON)
+ *   BC_SIMD_MASK              - low-bit mask for rounding down (3 for AVX2, 1 for NEON)
  *   BC_SIMD_THRESHOLD         - min width for OMP on SIMD loops
  *   BC_SIMD_FUNC_PREFIX       - function name prefix (e.g., avx2, neon)
  */
