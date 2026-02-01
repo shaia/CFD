@@ -4,82 +4,14 @@
  * Baseline scalar implementations of boundary conditions.
  * No SIMD, no OpenMP - pure C loops.
  *
- * Inlet boundary conditions are implemented in boundary_conditions_inlet_scalar.c
+ * Neumann, Periodic, and Dirichlet are generated from the shared template.
+ * Inlet is in boundary_conditions_inlet_scalar.c.
+ * Outlet is in boundary_conditions_outlet_scalar.c.
  */
 
-#include "../boundary_conditions_internal.h"
-
-/* ============================================================================
- * Scalar Implementations
- * ============================================================================ */
-
-void bc_apply_neumann_scalar_impl(double* field, size_t nx, size_t ny) {
-    size_t j, i;
-
-    /* Left and right boundaries */
-    for (j = 0; j < ny; j++) {
-        field[(j * nx) + 0] = field[(j * nx) + 1];
-        field[(j * nx) + nx - 1] = field[(j * nx) + nx - 2];
-    }
-
-    /* Top and bottom boundaries */
-    double* bottom_dst = field;
-    double* bottom_src = field + nx;
-    double* top_dst = field + ((ny - 1) * nx);
-    double* top_src = field + ((ny - 2) * nx);
-
-    for (i = 0; i < nx; i++) {
-        bottom_dst[i] = bottom_src[i];
-        top_dst[i] = top_src[i];
-    }
-}
-
-void bc_apply_periodic_scalar_impl(double* field, size_t nx, size_t ny) {
-    size_t j, i;
-
-    /* Left and right boundaries (periodic in x) */
-    for (j = 0; j < ny; j++) {
-        field[(j * nx) + 0] = field[(j * nx) + nx - 2];
-        field[(j * nx) + nx - 1] = field[(j * nx) + 1];
-    }
-
-    /* Top and bottom boundaries (periodic in y) */
-    double* bottom_dst = field;
-    double* bottom_src = field + ((ny - 2) * nx);
-    double* top_dst = field + ((ny - 1) * nx);
-    double* top_src = field + nx;
-
-    for (i = 0; i < nx; i++) {
-        bottom_dst[i] = bottom_src[i];
-        top_dst[i] = top_src[i];
-    }
-}
-
-void bc_apply_dirichlet_scalar_impl(double* field, size_t nx, size_t ny,
-                                     const bc_dirichlet_values_t* values) {
-    size_t j, i;
-
-    /* Left boundary (column 0) */
-    for (j = 0; j < ny; j++) {
-        field[j * nx] = values->left;
-    }
-
-    /* Right boundary (column nx-1) */
-    for (j = 0; j < ny; j++) {
-        field[j * nx + (nx - 1)] = values->right;
-    }
-
-    /* Bottom boundary (row 0) */
-    for (i = 0; i < nx; i++) {
-        field[i] = values->bottom;
-    }
-
-    /* Top boundary (row ny-1) */
-    double* top_row = field + ((ny - 1) * nx);
-    for (i = 0; i < nx; i++) {
-        top_row[i] = values->top;
-    }
-}
+#define BC_CORE_FUNC_PREFIX scalar
+#define BC_CORE_USE_OMP 0
+#include "../boundary_conditions_core_impl.h"
 
 cfd_status_t bc_apply_symmetry_scalar_impl(double* u, double* v, size_t nx, size_t ny,
                                             const bc_symmetry_config_t* config) {
