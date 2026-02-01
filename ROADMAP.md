@@ -152,44 +152,42 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 - `lib/src/boundary/cpu/boundary_conditions_inlet_time_scalar.c` - Time-varying inlet scalar implementation
 - `tests/core/test_boundary_conditions_symmetry.c` - Symmetry BC unit tests
 
-#### 1.1.1 Boundary Conditions Code Refactoring (P2)
+#### 1.1.1 Boundary Conditions Code Refactoring (P2) ✅
 
-**Current State:** Moderate to high code duplication across backends (CPU, OMP, AVX2, NEON).
-
-| BC Type | Duplication Level | Notes |
-|---------|-------------------|-------|
-| **Inlet** | **98%** | 4 nearly identical implementations (~42 lines each) - no SIMD benefit for 1D boundaries |
-| **Outlet** | **70-95%** | AVX2/NEON have similar edge dispatch logic (~80 lines duplicated) |
-| **Neumann/Periodic/Dirichlet** | **60-85%** | OMP just adds pragmas; AVX2/NEON differ only in intrinsics |
-
-**What's Done Well:**
-- Common headers (`boundary_conditions_inlet_common.h`, `boundary_conditions_outlet_common.h`) extract shared logic
-- Table-driven dispatch design reduces branching
-- Clear separation between dispatcher and backend implementations
-
-**Refactoring Opportunities:**
+**Refactoring Complete.** Reduced ~500 lines of duplicated code across BC backends using parameterized header templates.
 
 1. **Consolidate Inlet BC Implementations (Priority 1)**
-   - [ ] Extract single `bc_apply_inlet_impl()` that all backends use
-   - [ ] Inlet BCs operate on 1D boundaries - no SIMD benefit justifies 4 copies
-   - **Estimated savings:** ~126 lines of redundant code
+   - [x] Deleted 3 redundant inlet files (OMP/AVX2/NEON) — all delegate to scalar
+   - **Savings:** 196 lines removed
 
-2. **Extract Common Outlet Dispatch Logic (Priority 2)**
-   - [ ] Create edge-specific helper functions for AVX2/NEON
-   - [ ] Unify edge-switch patterns (LEFT, RIGHT, BOTTOM, TOP)
-   - **Estimated savings:** ~80 lines
+2. **Extract Common Outlet SIMD Template (Priority 2)**
+   - [x] Created `boundary_conditions_outlet_simd.h` parameterized by SIMD intrinsics
+   - [x] AVX2/NEON outlet files reduced from ~135 lines each to ~33 lines
+   - **Savings:** 99 lines removed
 
 3. **Templatize OMP vs Scalar (Priority 3)**
-   - [ ] Use conditional macros for OMP pragmas instead of duplicate functions
-   - [ ] Example: `OMP_PRAGMA(pragma omp parallel for)` wrapper
-   - **Estimated savings:** ~50-60 lines
+   - [x] Created `boundary_conditions_core_impl.h` with token-pasting macros
+   - [x] Scalar and OMP files include shared template with `BC_CORE_USE_OMP` flag
+   - **Savings:** 29 lines removed
 
 4. **Unify AVX2 and NEON (Priority 4)**
-   - [ ] Use preprocessor or code generation for SIMD backends
-   - [ ] Only differences: intrinsic set and vector width (4 vs 2 doubles)
-   - **Benefit:** Easier to add new SIMD backends (e.g., AVX-512)
+   - [x] Created `boundary_conditions_simd_impl.h` parameterized by STORE/LOAD/BROADCAST/VEC_TYPE/WIDTH/MASK
+   - [x] AVX2/NEON main BC files reduced from ~218 lines each to ~55 lines
+   - **Savings:** 181 lines removed
 
-**Total Estimated Savings:** ~150-200 lines of redundant code
+**Files created:**
+
+- `lib/src/boundary/boundary_conditions_core_impl.h`
+- `lib/src/boundary/boundary_conditions_outlet_simd.h`
+- `lib/src/boundary/boundary_conditions_simd_impl.h`
+
+**Files deleted:**
+
+- `lib/src/boundary/omp/boundary_conditions_inlet_omp.c`
+- `lib/src/boundary/avx2/boundary_conditions_inlet_avx2.c`
+- `lib/src/boundary/neon/boundary_conditions_inlet_neon.c`
+
+**Total savings:** ~505 lines removed across 4 priorities
 
 ### 1.2 Linear Solvers (P0 - Critical)
 
