@@ -59,9 +59,9 @@ cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
                     double* src = field + nx;
                     size_t simd_end = nx & ~(size_t)BC_SIMD_MASK;
 
-                    if (nx >= BC_SIMD_THRESHOLD) {
+                    if (nx >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
                         #pragma omp parallel for schedule(static)
-                        for (i = 0; i < bc_outlet_simd_size_to_int(simd_end); i += BC_SIMD_WIDTH) {
+                        for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                             BC_SIMD_STORE(dst + i, BC_SIMD_LOAD(src + i));
                         }
                     } else {
@@ -80,9 +80,9 @@ cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
                     double* src = field + ((ny - 2) * nx);
                     size_t simd_end = nx & ~(size_t)BC_SIMD_MASK;
 
-                    if (nx >= BC_SIMD_THRESHOLD) {
+                    if (nx >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
                         #pragma omp parallel for schedule(static)
-                        for (i = 0; i < bc_outlet_simd_size_to_int(simd_end); i += BC_SIMD_WIDTH) {
+                        for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                             BC_SIMD_STORE(dst + i, BC_SIMD_LOAD(src + i));
                         }
                     } else {

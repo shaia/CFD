@@ -44,9 +44,9 @@ static void BC_SIMD_FN(neumann)(double* field, size_t nx, size_t ny) {
 
     size_t simd_end = nx & ~(size_t)BC_SIMD_MASK;
 
-    if (nx >= BC_SIMD_THRESHOLD) {
+    if (nx >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < bc_simd_size_to_int(simd_end); i += BC_SIMD_WIDTH) {
+        for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
             BC_SIMD_STORE(bottom_dst + i, BC_SIMD_LOAD(bottom_src + i));
             BC_SIMD_STORE(top_dst + i, BC_SIMD_LOAD(top_src + i));
         }
@@ -83,9 +83,9 @@ static void BC_SIMD_FN(periodic)(double* field, size_t nx, size_t ny) {
 
     size_t simd_end = nx & ~(size_t)BC_SIMD_MASK;
 
-    if (nx >= BC_SIMD_THRESHOLD) {
+    if (nx >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < bc_simd_size_to_int(simd_end); i += BC_SIMD_WIDTH) {
+        for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
             BC_SIMD_STORE(bottom_dst + i, BC_SIMD_LOAD(bottom_src + i));
             BC_SIMD_STORE(top_dst + i, BC_SIMD_LOAD(top_src + i));
         }
@@ -128,9 +128,9 @@ static void BC_SIMD_FN(dirichlet)(double* field, size_t nx, size_t ny,
     BC_SIMD_VEC_TYPE top_broadcast = BC_SIMD_BROADCAST(val_top);
     size_t simd_end = nx & ~(size_t)BC_SIMD_MASK;
 
-    if (nx >= BC_SIMD_THRESHOLD) {
+    if (nx >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
         #pragma omp parallel for schedule(static)
-        for (i = 0; i < bc_simd_size_to_int(simd_end); i += BC_SIMD_WIDTH) {
+        for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
             BC_SIMD_STORE(bottom_row + i, bottom_broadcast);
             BC_SIMD_STORE(top_row + i, top_broadcast);
         }
