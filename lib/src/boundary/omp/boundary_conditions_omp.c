@@ -14,7 +14,7 @@
 #include "../boundary_conditions_core_impl.h"
 
 /* OpenMP backend implementation table
- * Note: Inlet delegates to scalar (no SIMD benefit for 1D boundary loops)
+ * Note: Inlet delegates to scalar (limited parallelism benefit for 1D boundary loops)
  * Note: bc_apply_outlet_omp_impl is defined in boundary_conditions_outlet_omp.c */
 const bc_backend_impl_t bc_impl_omp = {
     .apply_neumann = bc_apply_neumann_omp_impl,
