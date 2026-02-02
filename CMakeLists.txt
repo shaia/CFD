@@ -219,6 +219,9 @@ if(BUILD_TESTS)
     # Taylor-Green vortex validation test
     add_executable(test_taylor_green_vortex tests/validation/test_taylor_green_vortex.c)
 
+    # Poiseuille flow validation test
+    add_executable(test_poiseuille_flow tests/validation/test_poiseuille_flow.c)
+
     # Mathematical accuracy tests
     add_executable(test_finite_differences tests/math/test_finite_differences.c)
     add_executable(test_poisson_accuracy tests/math/test_poisson_accuracy.c)
@@ -294,6 +297,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_ghia_projection_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_ghia_projection_gpu PRIVATE CFD::Library unity)
     target_link_libraries(test_taylor_green_vortex PRIVATE CFD::Library unity)
+    target_link_libraries(test_poiseuille_flow PRIVATE CFD::Library unity)
     target_link_libraries(test_finite_differences PRIVATE unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_include_directories(test_finite_differences PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/include)
     target_link_libraries(test_poisson_accuracy PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
@@ -360,6 +364,9 @@ if(BUILD_TESTS)
     # Taylor-Green vortex validation test
     add_test(NAME TaylorGreenVortexTest COMMAND test_taylor_green_vortex)
 
+    # Poiseuille flow validation test
+    add_test(NAME PoiseuilleFlowTest COMMAND test_poiseuille_flow)
+
     # Mathematical accuracy tests
     add_test(NAME FiniteDifferencesTest COMMAND test_finite_differences)
     add_test(NAME PoissonAccuracyTest COMMAND test_poisson_accuracy)
@@ -382,6 +389,7 @@ if(BUILD_TESTS)
         GhiaProjectionOmpTest
         GhiaProjectionGpuTest
         TaylorGreenVortexTest
+        PoiseuilleFlowTest
         ConvergenceOrderTest
         PROPERTIES LABELS "validation"
     )
