@@ -38,10 +38,6 @@
  * CONSTANTS
  * ============================================================================ */
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 /* Domain */
 #define POIS_DOMAIN_LENGTH  4.0
 #define POIS_CHANNEL_HEIGHT 1.0
