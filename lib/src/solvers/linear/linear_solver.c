@@ -40,6 +40,7 @@ poisson_solver_params_t poisson_solver_params_default(void) {
     params.omega = 1.5;
     params.check_interval = 1;
     params.verbose = false;
+    params.preconditioner = POISSON_PRECOND_NONE;
     return params;
 }
 

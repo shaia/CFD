@@ -82,6 +82,14 @@ typedef enum {
     POISSON_ERROR = -1       /**< Error occurred */
 } poisson_solver_status_t;
 
+/**
+ * Preconditioner types for iterative solvers
+ */
+typedef enum {
+    POISSON_PRECOND_NONE = 0,   /**< No preconditioning (default) */
+    POISSON_PRECOND_JACOBI = 1  /**< Diagonal (Jacobi) preconditioning */
+} poisson_precond_type_t;
+
 /* ============================================================================
  * PARAMETERS AND STATISTICS
  * ============================================================================ */
@@ -96,6 +104,7 @@ typedef struct {
     double omega;              /**< SOR relaxation parameter (default: 1.5, range: 1.0-2.0) */
     int check_interval;        /**< Check convergence every N iterations (default: 1) */
     bool verbose;              /**< Print iteration progress (default: false) */
+    poisson_precond_type_t preconditioner; /**< Preconditioner type (default: NONE) */
 } poisson_solver_params_t;
 
 /**

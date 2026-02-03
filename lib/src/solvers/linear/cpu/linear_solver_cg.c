@@ -40,12 +40,15 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
+    double diag_inv;   /* Jacobi preconditioner: 1/(2/dx2 + 2/dy2) */
 
     /* CG working vectors (allocated during init) */
     double* r;         /* Residual vector */
+    double* z;         /* Preconditioned residual (NULL if no precond) */
     double* p;         /* Search direction */
     double* Ap;        /* A * p (Laplacian applied to p) */
 
+    int use_precond;   /* Flag: is preconditioner enabled? */
     int initialized;
 } cg_context_t;
 
@@ -147,6 +150,22 @@ static void copy_vector(const double* src, double* dst,
     }
 }
 
+/**
+ * Apply Jacobi preconditioner: z = M^{-1} * r
+ * For the negative Laplacian -nabla^2, the diagonal is (2/dx^2 + 2/dy^2),
+ * so M^{-1} = 1/(2/dx^2 + 2/dy^2) = diag_inv.
+ */
+static void apply_jacobi_precond(const double* r, double* z,
+                                  size_t nx, size_t ny,
+                                  double diag_inv) {
+    for (size_t j = 1; j < ny - 1; j++) {
+        for (size_t i = 1; i < nx - 1; i++) {
+            size_t idx = j * nx + i;
+            z[idx] = diag_inv * r[idx];
+        }
+    }
+}
+
 /* ============================================================================
  * CG SCALAR IMPLEMENTATION
  * ============================================================================ */
@@ -157,8 +176,6 @@ static cfd_status_t cg_scalar_init(
     double dx, double dy,
     const poisson_solver_params_t* params)
 {
-    (void)params;
-
     cg_context_t* ctx = (cg_context_t*)cfd_calloc(1, sizeof(cg_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
@@ -167,11 +184,18 @@ static cfd_status_t cg_scalar_init(
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
 
+    /* Compute Jacobi preconditioner diagonal inverse */
+    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2);
+
+    /* Check if preconditioner is enabled */
+    ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
+
     /* Allocate working vectors */
     size_t n = nx * ny;
     ctx->r = (double*)cfd_calloc(n, sizeof(double));
     ctx->p = (double*)cfd_calloc(n, sizeof(double));
     ctx->Ap = (double*)cfd_calloc(n, sizeof(double));
+    ctx->z = NULL;
 
     if (!ctx->r || !ctx->p || !ctx->Ap) {
         cfd_free(ctx->r);
@@ -179,6 +203,18 @@ static cfd_status_t cg_scalar_init(
         cfd_free(ctx->Ap);
         cfd_free(ctx);
         return CFD_ERROR_NOMEM;
+    }
+
+    /* Allocate preconditioner vector if needed */
+    if (ctx->use_precond) {
+        ctx->z = (double*)cfd_calloc(n, sizeof(double));
+        if (!ctx->z) {
+            cfd_free(ctx->r);
+            cfd_free(ctx->p);
+            cfd_free(ctx->Ap);
+            cfd_free(ctx);
+            return CFD_ERROR_NOMEM;
+        }
     }
 
     ctx->initialized = 1;
@@ -190,6 +226,7 @@ static void cg_scalar_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
         cg_context_t* ctx = (cg_context_t*)solver->context;
         cfd_free(ctx->r);
+        cfd_free(ctx->z);
         cfd_free(ctx->p);
         cfd_free(ctx->Ap);
         cfd_free(ctx);
@@ -198,12 +235,29 @@ static void cg_scalar_destroy(poisson_solver_t* solver) {
 }
 
 /**
- * CG solve function
+ * CG solve function (supports both standard CG and preconditioned CG)
  *
  * CG uses its own solve loop (not the common one) because:
  * 1. The iterate function doesn't fit the standard pattern
- * 2. CG maintains state across iterations (r_dot_r)
+ * 2. CG maintains state across iterations (rho)
  * 3. Convergence is measured by residual norm, not separate residual computation
+ *
+ * Standard CG:                    Preconditioned CG (PCG):
+ * r = b - Ax                      r = b - Ax
+ * p = r                           z = M^{-1}r
+ *                                 p = z
+ * rho = (r,r)                     rho = (r,z)
+ *
+ * loop:                           loop:
+ *   Ap = A*p                        Ap = A*p
+ *   alpha = rho / (p,Ap)            alpha = rho / (p,Ap)
+ *   x += alpha*p                    x += alpha*p
+ *   r -= alpha*Ap                   r -= alpha*Ap
+ *   rho_new = (r,r)                 z = M^{-1}r
+ *   beta = rho_new/rho              rho_new = (r,z)
+ *   p = r + beta*p                  beta = rho_new/rho
+ *   rho = rho_new                   p = z + beta*p
+ *                                   rho = rho_new
  */
 static cfd_status_t cg_scalar_solve(
     poisson_solver_t* solver,
@@ -221,8 +275,11 @@ static cfd_status_t cg_scalar_solve(
     double dy2 = ctx->dy2;
 
     double* r = ctx->r;
+    double* z = ctx->z;
     double* p = ctx->p;
     double* Ap = ctx->Ap;
+    int use_precond = ctx->use_precond;
+    double diag_inv = ctx->diag_inv;
 
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
@@ -233,12 +290,23 @@ static cfd_status_t cg_scalar_solve(
     /* Compute initial residual: r_0 = b - A*x_0 */
     compute_residual(x, rhs, r, nx, ny, dx2, dy2);
 
-    /* Initial search direction: p_0 = r_0 */
-    copy_vector(r, p, nx, ny);
+    /* Initialize search direction and rho */
+    double rho;
+    if (use_precond) {
+        /* z_0 = M^{-1} r_0 */
+        apply_jacobi_precond(r, z, nx, ny, diag_inv);
+        /* p_0 = z_0 */
+        copy_vector(z, p, nx, ny);
+        /* rho_0 = (r_0, z_0) */
+        rho = dot_product(r, z, nx, ny);
+    } else {
+        /* p_0 = r_0 */
+        copy_vector(r, p, nx, ny);
+        /* rho_0 = (r_0, r_0) */
+        rho = dot_product(r, r, nx, ny);
+    }
 
-    /* Compute initial r_dot_r = (r_0, r_0) */
-    double r_dot_r = dot_product(r, r, nx, ny);
-    double initial_res = sqrt(r_dot_r);
+    double initial_res = sqrt(dot_product(r, r, nx, ny));
 
     if (stats) {
         stats->initial_residual = initial_res;
@@ -268,13 +336,13 @@ static cfd_status_t cg_scalar_solve(
         /* Compute Ap = A * p */
         apply_laplacian(p, Ap, nx, ny, dx2, dy2);
 
-        /* alpha = (r, r) / (p, Ap) */
+        /* alpha = rho / (p, Ap) */
         double p_dot_Ap = dot_product(p, Ap, nx, ny);
 
         /* Check for breakdown (p_dot_Ap should be positive for SPD) */
         CG_CHECK_BREAKDOWN(p_dot_Ap, stats, iter, res_norm, start_time);
 
-        double alpha = r_dot_r / p_dot_Ap;
+        double alpha = rho / p_dot_Ap;
 
         /* x_{k+1} = x_k + alpha * p */
         axpy(alpha, p, x, nx, ny);
@@ -282,9 +350,19 @@ static cfd_status_t cg_scalar_solve(
         /* r_{k+1} = r_k - alpha * Ap */
         axpy(-alpha, Ap, r, nx, ny);
 
-        /* Compute new r_dot_r */
-        double r_dot_r_new = dot_product(r, r, nx, ny);
-        res_norm = sqrt(r_dot_r_new);
+        /* Compute rho_new and update search direction */
+        double rho_new;
+        if (use_precond) {
+            /* z_{k+1} = M^{-1} r_{k+1} */
+            apply_jacobi_precond(r, z, nx, ny, diag_inv);
+            /* rho_new = (r_{k+1}, z_{k+1}) */
+            rho_new = dot_product(r, z, nx, ny);
+        } else {
+            /* rho_new = (r_{k+1}, r_{k+1}) */
+            rho_new = dot_product(r, r, nx, ny);
+        }
+
+        res_norm = sqrt(dot_product(r, r, nx, ny));
 
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {
@@ -298,21 +376,30 @@ static cfd_status_t cg_scalar_solve(
             }
         }
 
-        /* Check for breakdown in r_dot_r before computing beta */
-        CG_CHECK_BREAKDOWN(r_dot_r, stats, iter, res_norm, start_time);
+        /* Check for breakdown in rho before computing beta */
+        CG_CHECK_BREAKDOWN(rho, stats, iter, res_norm, start_time);
 
-        /* beta = (r_{k+1}, r_{k+1}) / (r_k, r_k) */
-        double beta = r_dot_r_new / r_dot_r;
+        /* beta = rho_new / rho */
+        double beta = rho_new / rho;
 
-        /* p_{k+1} = r_{k+1} + beta * p_k */
-        for (size_t j = 1; j < ny - 1; j++) {
-            for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = j * nx + i;
-                p[idx] = r[idx] + beta * p[idx];
+        /* p_{k+1} = (z or r)_{k+1} + beta * p_k */
+        if (use_precond) {
+            for (size_t j = 1; j < ny - 1; j++) {
+                for (size_t i = 1; i < nx - 1; i++) {
+                    size_t idx = j * nx + i;
+                    p[idx] = z[idx] + beta * p[idx];
+                }
+            }
+        } else {
+            for (size_t j = 1; j < ny - 1; j++) {
+                for (size_t i = 1; i < nx - 1; i++) {
+                    size_t idx = j * nx + i;
+                    p[idx] = r[idx] + beta * p[idx];
+                }
             }
         }
 
-        r_dot_r = r_dot_r_new;
+        rho = rho_new;
     }
 
     /* Final convergence check (in case we converged between check intervals) */

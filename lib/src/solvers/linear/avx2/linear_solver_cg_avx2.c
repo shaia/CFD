@@ -41,17 +41,21 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
+    double diag_inv;   /* Jacobi preconditioner: 1/(2/dx2 + 2/dy2) */
 
     /* Precomputed SIMD vectors */
     __m256d dx2_inv_vec;
     __m256d dy2_inv_vec;
     __m256d two_vec;
+    __m256d diag_inv_vec;
 
     /* CG working vectors (allocated during init) */
     double* r;         /* Residual vector */
+    double* z;         /* Preconditioned residual (NULL if no precond) */
     double* p;         /* Search direction */
     double* Ap;        /* A * p (Laplacian applied to p) */
 
+    int use_precond;   /* Flag: is preconditioner enabled? */
     int initialized;
 } cg_avx2_context_t;
 
@@ -269,9 +273,10 @@ static void copy_vector(const double* src, double* dst,
 }
 
 /**
- * Update p = r + beta * p using AVX2 with OpenMP
+ * Update p = src + beta * p using AVX2 with OpenMP
+ * src can be r (standard CG) or z (preconditioned CG)
  */
-static void update_search_direction_avx2(const double* r, double* p,
+static void update_search_direction_avx2(const double* src, double* p,
                                               double beta, size_t nx, size_t ny) {
     __m256d beta_vec = _mm256_set1_pd(beta);
     int ny_int = size_to_int(ny);
@@ -285,17 +290,49 @@ static void update_search_direction_avx2(const double* r, double* p,
         /* SIMD loop */
         for (; i + 4 <= nx - 1; i += 4) {
             size_t idx = row_start + i;
-            __m256d vr = _mm256_loadu_pd(&r[idx]);
+            __m256d vs = _mm256_loadu_pd(&src[idx]);
             __m256d vp = _mm256_loadu_pd(&p[idx]);
-            /* p = r + beta * p */
-            vp = _mm256_fmadd_pd(beta_vec, vp, vr);
+            /* p = src + beta * p */
+            vp = _mm256_fmadd_pd(beta_vec, vp, vs);
             _mm256_storeu_pd(&p[idx], vp);
         }
 
         /* Scalar remainder */
         for (; i < nx - 1; i++) {
             size_t idx = row_start + i;
-            p[idx] = r[idx] + beta * p[idx];
+            p[idx] = src[idx] + beta * p[idx];
+        }
+    }
+}
+
+/**
+ * Apply Jacobi preconditioner: z = M^{-1} * r using AVX2 with OpenMP
+ * For the negative Laplacian -nabla^2, the diagonal is (2/dx^2 + 2/dy^2),
+ * so M^{-1} = 1/(2/dx^2 + 2/dy^2) = diag_inv.
+ */
+static void apply_jacobi_precond_avx2(const double* r, double* z,
+                                           size_t nx, size_t ny,
+                                           __m256d diag_inv_vec, double diag_inv) {
+    int ny_int = size_to_int(ny);
+    int j;
+
+    #pragma omp parallel for schedule(static)
+    for (j = 1; j < ny_int - 1; j++) {
+        size_t i = 1;
+        size_t row_start = (size_t)j * nx;
+
+        /* SIMD loop */
+        for (; i + 4 <= nx - 1; i += 4) {
+            size_t idx = row_start + i;
+            __m256d vr = _mm256_loadu_pd(&r[idx]);
+            __m256d vz = _mm256_mul_pd(diag_inv_vec, vr);
+            _mm256_storeu_pd(&z[idx], vz);
+        }
+
+        /* Scalar remainder */
+        for (; i < nx - 1; i++) {
+            size_t idx = row_start + i;
+            z[idx] = diag_inv * r[idx];
         }
     }
 }
@@ -310,8 +347,6 @@ static cfd_status_t cg_avx2_init(
     double dx, double dy,
     const poisson_solver_params_t* params)
 {
-    (void)params;
-
     /* Use aligned allocation for SIMD context */
     cg_avx2_context_t* ctx = (cg_avx2_context_t*)cfd_aligned_calloc(
         1, sizeof(cg_avx2_context_t));
@@ -322,16 +357,24 @@ static cfd_status_t cg_avx2_init(
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
 
+    /* Compute Jacobi preconditioner diagonal inverse */
+    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2);
+
+    /* Check if preconditioner is enabled */
+    ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
+
     /* Precompute SIMD vectors */
     ctx->dx2_inv_vec = _mm256_set1_pd(1.0 / ctx->dx2);
     ctx->dy2_inv_vec = _mm256_set1_pd(1.0 / ctx->dy2);
     ctx->two_vec = _mm256_set1_pd(2.0);
+    ctx->diag_inv_vec = _mm256_set1_pd(ctx->diag_inv);
 
     /* Allocate working vectors (aligned for SIMD) */
     size_t n = nx * ny;
     ctx->r = (double*)cfd_aligned_calloc(n, sizeof(double));
     ctx->p = (double*)cfd_aligned_calloc(n, sizeof(double));
     ctx->Ap = (double*)cfd_aligned_calloc(n, sizeof(double));
+    ctx->z = NULL;
 
     if (!ctx->r || !ctx->p || !ctx->Ap) {
         cfd_aligned_free(ctx->r);
@@ -339,6 +382,18 @@ static cfd_status_t cg_avx2_init(
         cfd_aligned_free(ctx->Ap);
         cfd_aligned_free(ctx);
         return CFD_ERROR_NOMEM;
+    }
+
+    /* Allocate preconditioner vector if needed */
+    if (ctx->use_precond) {
+        ctx->z = (double*)cfd_aligned_calloc(n, sizeof(double));
+        if (!ctx->z) {
+            cfd_aligned_free(ctx->r);
+            cfd_aligned_free(ctx->p);
+            cfd_aligned_free(ctx->Ap);
+            cfd_aligned_free(ctx);
+            return CFD_ERROR_NOMEM;
+        }
     }
 
     ctx->initialized = 1;
@@ -350,6 +405,7 @@ static void cg_avx2_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
         cg_avx2_context_t* ctx = (cg_avx2_context_t*)solver->context;
         cfd_aligned_free(ctx->r);
+        cfd_aligned_free(ctx->z);
         cfd_aligned_free(ctx->p);
         cfd_aligned_free(ctx->Ap);
         cfd_aligned_free(ctx);
@@ -357,6 +413,26 @@ static void cg_avx2_destroy(poisson_solver_t* solver) {
     }
 }
 
+/**
+ * CG AVX2 solve function (supports both standard CG and preconditioned CG)
+ *
+ * Standard CG:                    Preconditioned CG (PCG):
+ * r = b - Ax                      r = b - Ax
+ * p = r                           z = M^{-1}r
+ *                                 p = z
+ * rho = (r,r)                     rho = (r,z)
+ *
+ * loop:                           loop:
+ *   Ap = A*p                        Ap = A*p
+ *   alpha = rho / (p,Ap)            alpha = rho / (p,Ap)
+ *   x += alpha*p                    x += alpha*p
+ *   r -= alpha*Ap                   r -= alpha*Ap
+ *   rho_new = (r,r)                 z = M^{-1}r
+ *   beta = rho_new/rho              rho_new = (r,z)
+ *   p = r + beta*p                  beta = rho_new/rho
+ *   rho = rho_new                   p = z + beta*p
+ *                                   rho = rho_new
+ */
 static cfd_status_t cg_avx2_solve(
     poisson_solver_t* solver,
     double* x,
@@ -371,8 +447,11 @@ static cfd_status_t cg_avx2_solve(
     size_t ny = solver->ny;
 
     double* r = ctx->r;
+    double* z = ctx->z;
     double* p = ctx->p;
     double* Ap = ctx->Ap;
+    int use_precond = ctx->use_precond;
+    double diag_inv = ctx->diag_inv;
 
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
@@ -384,12 +463,23 @@ static cfd_status_t cg_avx2_solve(
     compute_residual_avx2(x, rhs, r, nx, ny,
                               ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->two_vec);
 
-    /* Initial search direction: p_0 = r_0 */
-    copy_vector(r, p, nx, ny);
+    /* Initialize search direction and rho */
+    double rho;
+    if (use_precond) {
+        /* z_0 = M^{-1} r_0 */
+        apply_jacobi_precond_avx2(r, z, nx, ny, ctx->diag_inv_vec, diag_inv);
+        /* p_0 = z_0 */
+        copy_vector(z, p, nx, ny);
+        /* rho_0 = (r_0, z_0) */
+        rho = dot_product_avx2(r, z, nx, ny);
+    } else {
+        /* p_0 = r_0 */
+        copy_vector(r, p, nx, ny);
+        /* rho_0 = (r_0, r_0) */
+        rho = dot_product_avx2(r, r, nx, ny);
+    }
 
-    /* Compute initial r_dot_r */
-    double r_dot_r = dot_product_avx2(r, r, nx, ny);
-    double initial_res = sqrt(r_dot_r);
+    double initial_res = sqrt(dot_product_avx2(r, r, nx, ny));
 
     if (stats) {
         stats->initial_residual = initial_res;
@@ -420,13 +510,13 @@ static cfd_status_t cg_avx2_solve(
         apply_laplacian_avx2(p, Ap, nx, ny,
                                   ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->two_vec);
 
-        /* alpha = (r, r) / (p, Ap) */
+        /* alpha = rho / (p, Ap) */
         double p_dot_Ap = dot_product_avx2(p, Ap, nx, ny);
 
         /* Check for breakdown (p_dot_Ap should be positive for SPD) */
         CG_CHECK_BREAKDOWN(p_dot_Ap, stats, iter, res_norm, start_time);
 
-        double alpha = r_dot_r / p_dot_Ap;
+        double alpha = rho / p_dot_Ap;
 
         /* x_{k+1} = x_k + alpha * p */
         axpy_avx2(alpha, p, x, nx, ny);
@@ -434,9 +524,19 @@ static cfd_status_t cg_avx2_solve(
         /* r_{k+1} = r_k - alpha * Ap */
         axpy_avx2(-alpha, Ap, r, nx, ny);
 
-        /* Compute new r_dot_r */
-        double r_dot_r_new = dot_product_avx2(r, r, nx, ny);
-        res_norm = sqrt(r_dot_r_new);
+        /* Compute rho_new and update search direction */
+        double rho_new;
+        if (use_precond) {
+            /* z_{k+1} = M^{-1} r_{k+1} */
+            apply_jacobi_precond_avx2(r, z, nx, ny, ctx->diag_inv_vec, diag_inv);
+            /* rho_new = (r_{k+1}, z_{k+1}) */
+            rho_new = dot_product_avx2(r, z, nx, ny);
+        } else {
+            /* rho_new = (r_{k+1}, r_{k+1}) */
+            rho_new = dot_product_avx2(r, r, nx, ny);
+        }
+
+        res_norm = sqrt(dot_product_avx2(r, r, nx, ny));
 
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {
@@ -450,16 +550,20 @@ static cfd_status_t cg_avx2_solve(
             }
         }
 
-        /* Check for breakdown in r_dot_r before computing beta */
-        CG_CHECK_BREAKDOWN(r_dot_r, stats, iter, res_norm, start_time);
+        /* Check for breakdown in rho before computing beta */
+        CG_CHECK_BREAKDOWN(rho, stats, iter, res_norm, start_time);
 
-        /* beta = (r_{k+1}, r_{k+1}) / (r_k, r_k) */
-        double beta = r_dot_r_new / r_dot_r;
+        /* beta = rho_new / rho */
+        double beta = rho_new / rho;
 
-        /* p_{k+1} = r_{k+1} + beta * p_k */
-        update_search_direction_avx2(r, p, beta, nx, ny);
+        /* p_{k+1} = (z or r)_{k+1} + beta * p_k */
+        if (use_precond) {
+            update_search_direction_avx2(z, p, beta, nx, ny);
+        } else {
+            update_search_direction_avx2(r, p, beta, nx, ny);
+        }
 
-        r_dot_r = r_dot_r_new;
+        rho = rho_new;
     }
 
     /* Final convergence check (in case we converged between check intervals) */
