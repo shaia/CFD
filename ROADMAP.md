@@ -23,6 +23,21 @@ This document outlines the development roadmap for achieving a commercial-grade,
 - [x] Comprehensive test suite (core, solvers, simulation, I/O)
 - [x] 12 example programs demonstrating various features
 
+### Backend Coverage Summary
+
+Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
+
+| Category            | Algorithm      | CPU  | AVX2     | NEON     | OMP      | GPU  |
+| ------------------- | -------------- | ---- | -------- | -------- | -------- | ---- |
+| **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | —    |
+|                     | Projection     | done | done     | —        | done     | done |
+|                     | RK2 (Heun)    | done | **TODO** | —        | **TODO** | —    |
+| **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
+|                     | SOR            | done | **TODO** | **TODO** | —        | —    |
+|                     | Red-Black SOR  | done | done     | done     | done     | —    |
+|                     | CG / PCG       | done | done     | done     | —        | —    |
+|                     | BiCGSTAB       | done | **TODO** | **TODO** | **TODO** | —    |
+
 ### Critical Gaps
 
 - [ ] Only 2D (no 3D support)
@@ -203,8 +218,14 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 
 - [x] Solver abstraction interface
 - [x] Conjugate Gradient (CG) for SPD systems (scalar, AVX2, NEON backends)
-- [x] BiCGSTAB for non-symmetric systems (scalar backend)
+- [x] BiCGSTAB for non-symmetric systems — scalar
+  - [ ] BiCGSTAB AVX2
+  - [ ] BiCGSTAB NEON
+  - [ ] BiCGSTAB OMP
 - [x] Jacobi (diagonal) preconditioner for CG (scalar, AVX2, NEON backends)
+- [ ] SOR SIMD variants (currently CPU-only)
+  - [ ] SOR AVX2
+  - [ ] SOR NEON
 - [ ] ILU preconditioner
 - [ ] Geometric multigrid
 - [ ] Algebraic multigrid (AMG)
@@ -388,8 +409,19 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 ### 1.5 Time Integration (P1)
 
-- [x] RK2 (Heun's method)
-- [ ] RK4 (classical Runge-Kutta)
+Each time integrator requires a scalar (CPU) reference implementation first, then backend variants.
+See `/add-ns-time-integrator` command for the cross-backend workflow.
+
+**Algorithms:**
+
+- [x] RK2 (Heun's method) — scalar
+  - [ ] RK2 AVX2+OMP (`rk2_optimized`)
+  - [ ] RK2 OpenMP (`rk2_omp`)
+  - [ ] RK2 CUDA (`rk2_gpu`)
+- [ ] RK4 (classical Runge-Kutta) — scalar
+  - [ ] RK4 AVX2+OMP (`rk4_optimized`)
+  - [ ] RK4 OpenMP (`rk4_omp`)
+  - [ ] RK4 CUDA (`rk4_gpu`)
 - [ ] Implicit Euler (backward Euler)
 - [ ] Crank-Nicolson (2nd order implicit)
 - [ ] BDF2 (backward differentiation)
