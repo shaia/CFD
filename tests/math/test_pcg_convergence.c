@@ -4,7 +4,7 @@
  *
  * These tests verify that the Jacobi-preconditioned CG (PCG) solver:
  *   - Converges correctly to the same solution as standard CG
- *   - Requires fewer iterations than unpreconditioned CG
+ *   - Requires the same or fewer iterations than unpreconditioned CG (depending on problem structure)
  *   - Works consistently across scalar and SIMD backends
  *   - Behaves identically to standard CG when preconditioner is disabled
  *
@@ -12,8 +12,10 @@
  *   M = diag(A) = 2/dx² + 2/dy²
  *   M⁻¹ = 1 / (2/dx² + 2/dy²)
  *
- * PCG typically reduces iterations by 30-50% compared to standard CG
- * for the 2D Poisson equation.
+ * For uniform-grid Laplacian with constant coefficients, the Jacobi diagonal
+ * is constant (2/dx² + 2/dy² = 4/h²), so preconditioning does not reduce
+ * iterations. Iteration reduction occurs with variable coefficients or
+ * non-uniform grids where the diagonal varies spatially.
  */
 
 #include "unity.h"
