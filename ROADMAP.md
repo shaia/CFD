@@ -388,12 +388,30 @@ v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
 
 ### 1.5 Time Integration (P1)
 
-- [ ] RK2 (Heun's method)
+- [x] RK2 (Heun's method)
 - [ ] RK4 (classical Runge-Kutta)
 - [ ] Implicit Euler (backward Euler)
 - [ ] Crank-Nicolson (2nd order implicit)
 - [ ] BDF2 (backward differentiation)
 - [ ] Adaptive time stepping with error control
+
+**RK2 Implementation:**
+
+- O(dt²) temporal accuracy verified via self-convergence test (ratio ≈ 4.0)
+- Uses periodic stencil indexing in RHS evaluation to avoid ghost-cell order reduction
+- BCs applied only after full RK2 step (not between stages)
+
+**Files created:**
+
+- `lib/src/solvers/navier_stokes/cpu/solver_rk2.c`
+- `tests/solvers/navier_stokes/cpu/test_solver_rk2.c`
+
+**Files modified:**
+
+- `lib/include/cfd/solvers/navier_stokes_solver.h` — added `NS_SOLVER_TYPE_RK2`
+- `lib/src/api/solver_registry.c` — registered RK2 factory
+- `lib/CMakeLists.txt` — added source file
+- `CMakeLists.txt` — added test entries
 
 ### 1.6 Restart/Checkpoint (P1)
 

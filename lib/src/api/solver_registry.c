@@ -21,6 +21,7 @@
 // Forward declarations for internal solver implementations
 // These are not part of the public API
 cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params);
+cfd_status_t rk2_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params);
 void explicit_euler_optimized_impl(flow_field* field, const grid* grid,
                                    const ns_solver_params_t* params);
 #ifdef CFD_ENABLE_OPENMP
@@ -76,6 +77,7 @@ struct NSSolverRegistry {
 
 // Forward declarations for built-in solver factories
 static ns_solver_t* create_explicit_euler_solver(void);
+static ns_solver_t* create_rk2_solver(void);
 static ns_solver_t* create_explicit_euler_optimized_solver(void);
 static ns_solver_t* create_projection_solver(void);
 static ns_solver_t* create_projection_optimized_solver(void);
@@ -135,6 +137,7 @@ void cfd_registry_register_defaults(ns_solver_registry_t* registry) {
 
     // Register built-in solvers
     cfd_registry_register(registry, NS_SOLVER_TYPE_EXPLICIT_EULER, create_explicit_euler_solver);
+    cfd_registry_register(registry, NS_SOLVER_TYPE_RK2, create_rk2_solver);
     cfd_registry_register(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
                           create_explicit_euler_optimized_solver);
 
@@ -565,6 +568,87 @@ static ns_solver_t* create_explicit_euler_solver(void) {
     return s;
 }
 
+/**
+ * Built-in solver: RK2 (Heun's Method)
+ * Second-order Runge-Kutta time integration
+ */
+
+static cfd_status_t rk2_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                              const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    (void)solver;
+
+    if (field->nx < 3 || field->ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+
+    ns_solver_params_t step_params = *params;
+    step_params.max_iter = 1;
+
+    cfd_status_t status = rk2_impl(field, grid, &step_params);
+
+    if (stats) {
+        stats->iterations = 1;
+        double max_vel = 0.0;
+        double max_p = 0.0;
+        for (size_t i = 0; i < field->nx * field->ny; i++) {
+            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
+            if (vel > max_vel) max_vel = vel;
+            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+        }
+        stats->max_velocity = max_vel;
+        stats->max_pressure = max_p;
+    }
+
+    return status;
+}
+
+static cfd_status_t rk2_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                               const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    (void)solver;
+
+    if (field->nx < 3 || field->ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+
+    cfd_status_t status = rk2_impl(field, grid, params);
+
+    if (stats) {
+        stats->iterations = params->max_iter;
+        double max_vel = 0.0;
+        double max_p = 0.0;
+        for (size_t i = 0; i < field->nx * field->ny; i++) {
+            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
+            if (vel > max_vel) max_vel = vel;
+            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
+        }
+        stats->max_velocity = max_vel;
+        stats->max_pressure = max_p;
+    }
+
+    return status;
+}
+
+static ns_solver_t* create_rk2_solver(void) {
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
+    if (!s) {
+        return NULL;
+    }
+
+    s->name = NS_SOLVER_TYPE_RK2;
+    s->description = "RK2 (Heun's method) - 2nd order explicit time integration";
+    s->version = "1.0.0";
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT;
+    s->backend = NS_SOLVER_BACKEND_SCALAR;
+
+    s->init = explicit_euler_init;
+    s->destroy = explicit_euler_destroy;
+    s->step = rk2_step;
+    s->solve = rk2_solve;
+    s->apply_boundary = NULL;
+    s->compute_dt = NULL;
+
+    return s;
+}
 
 static cfd_status_t explicit_euler_simd_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                               const ns_solver_params_t* params, ns_solver_stats_t* stats) {
