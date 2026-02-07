@@ -12,8 +12,6 @@
 #include "cavity_reference_data.h"
 #include "lid_driven_cavity_common.h"
 
-#include <string.h>
-
 /* ============================================================================
  * GHIA VALIDATION RESULT STRUCTURE
  * ============================================================================ */
@@ -26,6 +24,7 @@ typedef struct {
     double u_min;
     double max_velocity;
     int success;
+    int solver_unavailable;  /* 1 if solver/backend not compiled in, 0 otherwise */
     char error_msg[256];
 } ghia_result_t;
 
@@ -85,7 +84,8 @@ static inline ghia_result_t run_ghia_validation(const char* solver_type,
         solver_type, nx, ny, reynolds, lid_vel, max_steps, dt, &ctx);
 
     if (!sim.success) {
-        strncpy(result.error_msg, sim.error_msg, sizeof(result.error_msg) - 1);
+        result.solver_unavailable = sim.solver_unavailable;
+        snprintf(result.error_msg, sizeof(result.error_msg), "%s", sim.error_msg);
         return result;
     }
 

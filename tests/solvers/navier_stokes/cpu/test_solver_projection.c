@@ -383,6 +383,10 @@ void test_projection_consistency_with_optimized(void) {
         NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
         32, 32, &params, 10, 0.05);  // 5% relative tolerance
 
+    if (result.solver_unavailable) {
+        TEST_IGNORE_MESSAGE("SIMD Poisson solver not available (AVX2 not compiled)");
+    }
+
     printf("L2 difference in u: %.6e (relative: %.2e)\n",
            result.error_l2, result.relative_error);
     printf("L2 difference in v: %.6e\n", result.error_l2_secondary);

@@ -19,9 +19,8 @@
  *
  * CURRENT STATUS:
  * ===============
- * The solver currently produces RMS ~0.12 with POISSON_SOLVER_REDBLACK_SCALAR.
- * These tests use GHIA_TOLERANCE_CURRENT (0.13) to pass CI while tracking
- * regression, but print warnings when above the scientific target (0.10).
+ * Scalar CPU uses CG Poisson solver, achieving RMS < 0.10.
+ * SIMD backends achieve RMS < 0.05.
  */
 
 #include "cavity_reference_data.h"
@@ -279,9 +278,8 @@ void test_grid_convergence(void) {
         }
         printf("\n");
 
-        /* Error should decrease or stay similar with refinement.
-         * Allow some tolerance due to scalar Poisson solver limitations. */
-        TEST_ASSERT_TRUE_MESSAGE(errors[i] <= prev_error + 0.08,
+        /* Error should decrease or stay similar with refinement */
+        TEST_ASSERT_TRUE_MESSAGE(errors[i] <= prev_error + 0.02,
             "Error increased significantly with grid refinement");
         prev_error = errors[i];
 
@@ -289,14 +287,9 @@ void test_grid_convergence(void) {
         cavity_context_destroy(ctx);
     }
 
-    /* Ideally finest grid should have lowest error, but scalar Poisson solver
-     * has accuracy limitations. Log warning instead of failing.
-     * See ROADMAP.md section 6.2.1.1 for the fix plan. */
-    if (errors[2] > errors[0]) {
-        printf("      [WARNING] 33x33 RMS (%.4f) > 17x17 RMS (%.4f)\n",
-               errors[2], errors[0]);
-        printf("      Grid convergence not achieved - see ROADMAP.md 6.2.1.1\n");
-    }
+    /* Finest grid should have lowest error */
+    TEST_ASSERT_TRUE_MESSAGE(errors[2] <= errors[0] + 0.02,
+        "Grid convergence: finest grid should have lower or similar error");
 }
 
 /* ============================================================================

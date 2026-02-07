@@ -399,7 +399,9 @@ typedef enum {
     POISSON_SOLVER_JACOBI_SIMD = 1,    /**< Jacobi method with SIMD backend (runtime detection) */
     POISSON_SOLVER_REDBLACK_SIMD = 2,  /**< Red-Black SOR with SIMD backend (runtime detection) */
     POISSON_SOLVER_REDBLACK_OMP = 3,   /**< Red-Black SOR with OpenMP backend */
-    POISSON_SOLVER_REDBLACK_SCALAR = 4 /**< Red-Black SOR with scalar backend (always available) */
+    POISSON_SOLVER_REDBLACK_SCALAR = 4, /**< Red-Black SOR with scalar backend (always available) */
+    POISSON_SOLVER_CG_SCALAR = 5,      /**< Conjugate Gradient with scalar backend (always available) */
+    POISSON_SOLVER_CG_SIMD = 6         /**< Conjugate Gradient with SIMD backend (runtime detection) */
 } poisson_solver_type;
 
 /** Default Poisson solver - uses runtime SIMD detection */

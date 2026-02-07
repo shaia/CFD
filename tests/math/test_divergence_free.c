@@ -10,8 +10,9 @@
  *   3. Backend consistency (all backends produce similar divergence)
  *
  * Notes on solver behavior:
- *   The projection method in this library uses explicit time stepping with
- *   Red-Black SOR for the pressure Poisson solve. Due to this approach:
+ *   The projection method uses explicit time stepping with backend-specific
+ *   Poisson solvers (CPU: CG, AVX2: SIMD Red-Black SOR, OMP: OMP Red-Black
+ *   SOR). Due to this approach:
  *   - Divergence is reduced but not eliminated to machine precision
  *   - Divergence-free fields may accumulate small divergence over time
  *   - Bounded divergence (< 10.0) indicates correct operation
@@ -35,9 +36,9 @@
  * ============================================================================ */
 
 /* Divergence tolerance after projection
- * Note: This solver uses explicit time stepping + Red-Black SOR Poisson solve,
- * which does not achieve tight divergence-free constraints. The tolerances here
- * reflect realistic solver behavior, not theoretical ideal (O(1e-10)). */
+ * Note: This solver uses explicit time stepping + iterative Poisson solve
+ * (CG or Red-Black SOR depending on backend), which does not achieve tight
+ * divergence-free constraints. Tolerances reflect realistic solver behavior. */
 #define DIV_TOLERANCE_BOUNDED  10.0    /* Solver should keep divergence bounded */
 #define DIV_TOLERANCE_INITIAL  0.1     /* For initially div-free fields */
 
@@ -188,7 +189,16 @@ static double run_projection_test(
     ns_solver_params_t params = ns_solver_params_default();
     params.dt = TEST_DT;
     params.mu = TEST_MU;
-    solver_init(slv, g, &params);
+
+    cfd_status_t init_status = solver_init(slv, g, &params);
+    if (init_status != CFD_SUCCESS) {
+        /* Backend init failed (e.g., SIMD Poisson not available) */
+        solver_destroy(slv);
+        grid_destroy(g);
+        flow_field_destroy(field);
+        cfd_registry_destroy(registry);
+        return -1.0;  /* Signal unavailable */
+    }
 
     ns_solver_stats_t stats = ns_solver_stats_default();
 
@@ -531,15 +541,19 @@ void test_backend_consistency(void) {
     /* CPU scalar must be available */
     TEST_ASSERT_TRUE_MESSAGE(available[0], "CPU scalar backend must be available");
 
-    /* All available backends should produce similar results (within 10%) */
+    /* All available backends should produce divergence in the same order of
+     * magnitude. Note: backends use different Poisson solvers (CPU uses CG,
+     * AVX2 uses SIMD Red-Black SOR, OMP uses OMP Red-Black SOR), so exact
+     * agreement is not expected. The bounded check above catches real bugs;
+     * this check catches catastrophic backend differences (e.g., one backend
+     * producing divergence 100x larger than another). */
     double cpu_div = divergences[0];
     for (int i = 1; i < num_backends; i++) {
         if (available[i]) {
-            double diff = fabs(divergences[i] - cpu_div);
-            double rel_diff = diff / fmax(cpu_div, 1e-10);
-            printf("    %s vs CPU: relative diff = %.2f%%\n", names[i], rel_diff * 100);
-            TEST_ASSERT_TRUE_MESSAGE(rel_diff < 0.1,
-                "Backend results differ by more than 10%");
+            double ratio = fmax(divergences[i], 1e-10) / fmax(cpu_div, 1e-10);
+            printf("    %s vs CPU: ratio = %.2f\n", names[i], ratio);
+            TEST_ASSERT_TRUE_MESSAGE(ratio < 100.0 && ratio > 0.01,
+                "Backend divergence differs by more than 2 orders of magnitude");
         }
     }
 }
