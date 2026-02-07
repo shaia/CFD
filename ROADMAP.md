@@ -706,6 +706,69 @@ target_link_libraries(my_app PRIVATE CFD::Library)
 - [ ] Roofline analysis integration
 - [ ] Scaling benchmarks
 
+### 4.5 Structured Logging & Diagnostics (P2)
+
+**Status:** Partial - `cfd_set_log_callback()` API exists but not used consistently
+
+**Current Issues:**
+
+- Raw `fprintf(stderr, ...)` and `snprintf()` scattered throughout codebase
+- No log levels (can't filter INFO vs WARNING vs ERROR)
+- No redirection (always stderr, can't send to file/syslog/GUI)
+- No timestamps or structured metadata
+- Not thread-safe (garbled output from multiple threads)
+- Mixed purposes (diagnostics vs error messages)
+
+**Proposed Structured Logging API:**
+
+```c
+// Log levels
+typedef enum {
+    CFD_LOG_DEBUG = 0,
+    CFD_LOG_INFO = 1,
+    CFD_LOG_WARNING = 2,
+    CFD_LOG_ERROR = 3
+} cfd_log_level_t;
+
+// Logging function with structured metadata
+void cfd_log(cfd_log_level_t level, const char* component,
+             const char* format, ...);
+
+// Example usage
+cfd_log(CFD_LOG_WARNING, "poisson_solver",
+        "Failed to converge (grid %zux%zu, dt=%.4e)",
+        nx, ny, dt);
+```
+
+**Implementation Tasks:**
+
+- [ ] Define `cfd_log()` API with log levels and component tags
+- [ ] Implement default console handler (with timestamps, colored output)
+- [ ] Add thread-safe logging (mutex-protected or per-thread buffers)
+- [ ] Replace all `fprintf(stderr, ...)` calls with `cfd_log()`
+- [ ] Replace diagnostic `snprintf()` with `cfd_log()` where appropriate
+- [ ] Add log filtering by level (suppress DEBUG in production)
+- [ ] Add log filtering by component (e.g., only show "boundary" logs)
+- [ ] Support custom log handlers via callback
+- [ ] Add structured data API for metrics (convergence stats, timings)
+
+**Benefits:**
+
+- Users can redirect logs to files, syslog, or application UI
+- Fine-grained control (enable DEBUG for specific components)
+- Better debugging (timestamps, thread IDs, component context)
+- Thread-safe by design
+- Statistics aggregation ("Poisson failed 15 times this run")
+- Can mute logs entirely for embedded/production use
+
+**Files to Modify:**
+
+- `lib/src/solvers/linear/cpu/linear_solver_*.c` - Replace fprintf
+- `lib/src/solvers/navier_stokes/cpu/solver_*.c` - Replace fprintf
+- `lib/src/solvers/navier_stokes/omp/solver_*.c` - Replace fprintf
+- `lib/src/solvers/navier_stokes/avx2/solver_*.c` - Replace fprintf
+- `tests/validation/lid_driven_cavity_common.h` - Replace snprintf for diagnostics
+
 ---
 
 ## Phase 5: I/O & Post-processing
