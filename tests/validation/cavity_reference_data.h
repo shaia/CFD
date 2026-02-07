@@ -148,12 +148,11 @@ static const cavity_reference_t REF_RE100_33x33_FULL = {
 #define GHIA_TOLERANCE_MEDIUM  0.10  /* For 25-33x grids */
 #define GHIA_TOLERANCE_FINE    0.05  /* For grids > 64x64 */
 
-/* Current solver achieves RMS ~0.12 with POISSON_SOLVER_REDBLACK_SCALAR
- * which is used for cross-architecture consistency. Using SIMD backends
- * achieves RMS < 0.05. The scalar baseline is slightly above the 0.10
- * scientific target but acceptable for regression testing.
- * Using 0.13 to provide margin for platform/compiler variations. */
-#define GHIA_TOLERANCE_CURRENT 0.13  /* Scalar backend baseline */
+/* All backends now achieve the scientific target (RMS < 0.10).
+ * Scalar CPU uses CG Poisson solver for reliable convergence.
+ * SIMD backends achieve RMS < 0.05.
+ * Using 0.10 to match the scientific target (GHIA_TOLERANCE_MEDIUM). */
+#define GHIA_TOLERANCE_CURRENT 0.10  /* Matches scientific target */
 
 /* Tolerance for regression testing (should be very tight) */
 #define REGRESSION_TOLERANCE   0.01  /* 1% relative difference */
