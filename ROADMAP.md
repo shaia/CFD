@@ -49,7 +49,34 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 
 ### Known Issues
 
-*No critical known issues at this time.*
+#### OMP Red-Black SOR Poisson Solver Convergence (P1)
+
+**Status:** Workaround implemented (switched OMP projection to CG)
+
+**Issue:** The OMP Red-Black SOR Poisson solver fails to converge on certain problem configurations (e.g., 33×33 grids with dt=5e-4), hitting max iterations (1000) without reaching tolerance (1e-6).
+
+**Impact:**
+
+- OMP projection solver switched to CG as workaround (commit be356a3)
+- Red-Black SOR remains available but unreliable for production use with OMP backend
+- CG provides reliable convergence (O(√κ) vs SOR's O(n))
+
+**Root Cause:** Unknown - requires investigation of:
+
+- Omega parameter tuning for Neumann BCs (currently uses default 1.5)
+- Parallel race conditions in red/black sweeps
+- Boundary condition application in OMP implementation
+- Comparison with working AVX2 Red-Black SOR implementation
+
+**Action Items:**
+
+- [ ] Profile OMP Red-Black SOR to identify convergence bottleneck
+- [ ] Compare OMP vs AVX2 Red-Black implementations for differences
+- [ ] Test omega parameter sweep (1.0 to 1.9) for optimal convergence
+- [ ] Add convergence diagnostics (residual history logging)
+- [ ] Consider switch to Chebyshev acceleration or SSOR
+
+**Workaround:** Use CG or switch to AVX2/CPU backends for production
 
 #### ~~Stretched Grid Formula Bug~~ (FIXED in v0.1.7)
 
