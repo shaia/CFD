@@ -126,9 +126,10 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
         if (poisson_iters < 0) {
             static int warned = 0;
             if (!warned) {
-                fprintf(stderr, "WARNING: Poisson solver failed to converge at step %d "
-                        "(grid %zux%zu, dt=%.4e). Pressure field may be inaccurate.\n",
-                        iter, nx, ny, dt);
+                fprintf(stderr, "WARNING: Poisson solver failed to converge "
+                        "(grid %zux%zu, dt=%.4e, projection iteration %d). "
+                        "Pressure field may be inaccurate.\n",
+                        nx, ny, dt, iter);
                 warned = 1;
             }
         }
