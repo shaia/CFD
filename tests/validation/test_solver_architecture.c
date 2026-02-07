@@ -16,11 +16,6 @@
 #include "cavity_reference_data.h"
 #include "lid_driven_cavity_common.h"
 
-/* Helper: check if solver result indicates unavailability */
-static int solver_not_available(const solver_result_t* r) {
-    return !r->success;
-}
-
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -57,6 +52,14 @@ void tearDown(void) {}
  */
 
 typedef cavity_sim_result_t solver_result_t;
+
+/* Helper: check if solver result indicates the backend is not compiled in.
+ * Only returns true for genuine unavailability (SIMD/OMP/GPU not enabled).
+ * Runtime failures (divergence, invalid setup) return false so they
+ * properly fail the test instead of being silently skipped. */
+static int solver_not_available(const solver_result_t* r) {
+    return r->solver_unavailable;
+}
 
 /* ============================================================================
  * Run simulation with specific solver

@@ -171,6 +171,7 @@ typedef struct {
 typedef struct {
     /* Status */
     int success;
+    int solver_unavailable;  /* 1 if solver/backend not compiled in, 0 otherwise */
     char error_msg[256];
 
     /* Center point values */
@@ -274,6 +275,7 @@ static inline cavity_sim_result_t cavity_run_with_solver(
 
     ns_solver_t* solver = cfd_solver_create(registry, solver_type);
     if (!solver) {
+        result.solver_unavailable = 1;
         snprintf(result.error_msg, sizeof(result.error_msg),
                  "Solver '%s' not available", solver_type);
         cfd_registry_destroy(registry);
@@ -283,6 +285,7 @@ static inline cavity_sim_result_t cavity_run_with_solver(
 
     cfd_status_t init_status = solver_init(solver, ctx->g, &params);
     if (init_status != CFD_SUCCESS) {
+        result.solver_unavailable = 1;
         snprintf(result.error_msg, sizeof(result.error_msg),
                  "Solver '%s' init failed: not available", solver_type);
         solver_destroy(solver);
@@ -408,6 +411,7 @@ static inline cavity_sim_result_t cavity_run_with_solver_ctx(
 
     ns_solver_t* solver = cfd_solver_create(registry, solver_type);
     if (!solver) {
+        result.solver_unavailable = 1;
         snprintf(result.error_msg, sizeof(result.error_msg),
                  "Solver '%s' not available", solver_type);
         cfd_registry_destroy(registry);
@@ -417,6 +421,7 @@ static inline cavity_sim_result_t cavity_run_with_solver_ctx(
 
     cfd_status_t init_status = solver_init(solver, ctx->g, &params);
     if (init_status != CFD_SUCCESS) {
+        result.solver_unavailable = 1;
         snprintf(result.error_msg, sizeof(result.error_msg),
                  "Solver '%s' init failed: not available", solver_type);
         solver_destroy(solver);
