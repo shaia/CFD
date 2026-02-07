@@ -183,6 +183,14 @@ void test_simd_projection_solver_conditional(void) {
     ns_solver_params_t params = ns_solver_params_default();
 
     cfd_status_t status = solver_init(solver, g, &params);
+    if (status == CFD_ERROR_UNSUPPORTED) {
+        /* SIMD Poisson solver not compiled (CFD_ENABLE_AVX2=OFF) */
+        solver_destroy(solver);
+        flow_field_destroy(field);
+        grid_destroy(g);
+        cfd_registry_destroy(registry);
+        TEST_IGNORE_MESSAGE("SIMD Poisson solver not available (AVX2 not compiled)");
+    }
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     ns_solver_stats_t stats = ns_solver_stats_default();
@@ -214,6 +222,14 @@ void test_simd_multiple_steps_conditional(void) {
     ns_solver_params_t params = ns_solver_params_default();
 
     cfd_status_t status = solver_init(solver, g, &params);
+    if (status == CFD_ERROR_UNSUPPORTED) {
+        /* SIMD Poisson solver not compiled (CFD_ENABLE_AVX2=OFF) */
+        solver_destroy(solver);
+        flow_field_destroy(field);
+        grid_destroy(g);
+        cfd_registry_destroy(registry);
+        TEST_IGNORE_MESSAGE("SIMD Poisson solver not available (AVX2 not compiled)");
+    }
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     // Run multiple steps to verify stability

@@ -270,7 +270,14 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
                                        POISSON_SOLVER_REDBLACK_SIMD);
 
     if (poisson_iters < 0) {
-        return CFD_ERROR_UNSUPPORTED;
+        static int warned = 0;
+        if (!warned) {
+            fprintf(stderr, "WARNING: Poisson solver failed to converge "
+                    "(grid %zux%zu, dt=%.4e). "
+                    "Pressure field may be inaccurate.\n",
+                    nx, ny, dt);
+            warned = 1;
+        }
     }
 
     // ============================================================
