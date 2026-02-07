@@ -466,6 +466,8 @@ static poisson_solver_t* g_cached_cg_scalar = NULL;
 static poisson_solver_t* g_cached_cg_simd = NULL;
 static size_t g_cached_nx = 0;
 static size_t g_cached_ny = 0;
+static double g_cached_dx = 0.0;
+static double g_cached_dy = 0.0;
 
 /**
  * Cleanup cached solvers (called at program exit)
@@ -501,6 +503,8 @@ static void cleanup_cached_solvers(void) {
     }
     g_cached_nx = 0;
     g_cached_ny = 0;
+    g_cached_dx = 0.0;
+    g_cached_dy = 0.0;
 }
 
 int poisson_solve(
@@ -560,8 +564,9 @@ int poisson_solve(
             return -1;
     }
 
-    /* Recreate solver if grid size changed */
-    if (*solver_ptr == NULL || g_cached_nx != nx || g_cached_ny != ny) {
+    /* Recreate solver if grid dimensions or spacing changed */
+    if (*solver_ptr == NULL || g_cached_nx != nx || g_cached_ny != ny
+        || g_cached_dx != dx || g_cached_dy != dy) {
         /* Register cleanup on first use */
         static int cleanup_registered = 0;
         if (!cleanup_registered) {
@@ -582,6 +587,8 @@ int poisson_solve(
             poisson_solver_init(*solver_ptr, nx, ny, dx, dy, NULL);
             g_cached_nx = nx;
             g_cached_ny = ny;
+            g_cached_dx = dx;
+            g_cached_dy = dy;
         }
     }
 
