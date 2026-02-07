@@ -24,7 +24,7 @@ void test_projection_omp_ghia_re100(void) {
     );
 
     /* Skip test if OMP solver is not available (not compiled with OpenMP) */
-    if (!result.success && strstr(result.error_msg, "not available") != NULL) {
+    if (result.solver_unavailable) {
         TEST_IGNORE_MESSAGE("OpenMP solver not available (OpenMP not enabled)");
     }
 
