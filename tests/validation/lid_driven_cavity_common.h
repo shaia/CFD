@@ -285,9 +285,14 @@ static inline cavity_sim_result_t cavity_run_with_solver(
 
     cfd_status_t init_status = solver_init(solver, ctx->g, &params);
     if (init_status != CFD_SUCCESS) {
-        result.solver_unavailable = 1;
-        snprintf(result.error_msg, sizeof(result.error_msg),
-                 "Solver '%s' init failed: not available", solver_type);
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
+            result.solver_unavailable = 1;
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Solver '%s' backend not available (not compiled)", solver_type);
+        } else {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Solver '%s' init failed with status %d", solver_type, init_status);
+        }
         solver_destroy(solver);
         cfd_registry_destroy(registry);
         cavity_context_destroy(ctx);
@@ -421,9 +426,14 @@ static inline cavity_sim_result_t cavity_run_with_solver_ctx(
 
     cfd_status_t init_status = solver_init(solver, ctx->g, &params);
     if (init_status != CFD_SUCCESS) {
-        result.solver_unavailable = 1;
-        snprintf(result.error_msg, sizeof(result.error_msg),
-                 "Solver '%s' init failed: not available", solver_type);
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
+            result.solver_unavailable = 1;
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Solver '%s' backend not available (not compiled)", solver_type);
+        } else {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Solver '%s' init failed with status %d", solver_type, init_status);
+        }
         solver_destroy(solver);
         cfd_registry_destroy(registry);
         cavity_context_destroy(ctx);
