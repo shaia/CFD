@@ -422,6 +422,12 @@ static inline test_result test_run_stability(
                      "Solver init returned UNSUPPORTED (backend not compiled)");
             goto cleanup;
         }
+        if (init_status != CFD_SUCCESS) {
+            result.passed = 0;
+            snprintf(result.message, sizeof(result.message),
+                     "Solver init failed with status %d (not UNSUPPORTED)", init_status);
+            goto cleanup;
+        }
     }
 
     {
@@ -505,6 +511,12 @@ static inline test_result test_run_energy_decay(
             result.solver_unavailable = 1;
             snprintf(result.message, sizeof(result.message),
                      "Solver init returned UNSUPPORTED (backend not compiled)");
+            goto cleanup;
+        }
+        if (init_status != CFD_SUCCESS) {
+            result.passed = 0;
+            snprintf(result.message, sizeof(result.message),
+                     "Solver init failed with status %d (not UNSUPPORTED)", init_status);
             goto cleanup;
         }
     }
@@ -611,6 +623,12 @@ static inline test_result test_run_consistency(
             result.solver_unavailable = 1;
             snprintf(result.message, sizeof(result.message),
                      "Solver init returned UNSUPPORTED (backend not compiled)");
+            goto cleanup;
+        }
+        if (init_a != CFD_SUCCESS || init_b != CFD_SUCCESS) {
+            result.passed = 0;
+            snprintf(result.message, sizeof(result.message),
+                     "Solver init failed (status_a=%d, status_b=%d)", init_a, init_b);
             goto cleanup;
         }
     }
@@ -738,6 +756,12 @@ static inline test_result test_run_divergence_free(
             result.solver_unavailable = 1;
             snprintf(result.message, sizeof(result.message),
                      "Solver init returned UNSUPPORTED (backend not compiled)");
+            goto cleanup;
+        }
+        if (init_status != CFD_SUCCESS) {
+            result.passed = 0;
+            snprintf(result.message, sizeof(result.message),
+                     "Solver init failed with status %d (not UNSUPPORTED)", init_status);
             goto cleanup;
         }
     }
