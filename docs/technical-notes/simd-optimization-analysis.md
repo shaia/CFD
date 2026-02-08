@@ -16,8 +16,8 @@ The projection method (Chorin's method) consists of three main steps:
 
 | Step | Vectorized | Reason |
 |------|------------|--------|
-| Predictor | ⚠️ Partial | Scalar due to complex stencil access pattern |
-| RHS Computation | ✅ Yes | Independent divergence calculation |
+| Predictor | ❌ No | Scalar due to complex stencil access pattern |
+| RHS Computation | ❌ No | Scalar divergence calculation (simple, not performance-critical) |
 | **Poisson Solve** | ✅ Yes | Uses CG SIMD solver (Conjugate Gradient) |
 | Corrector | ✅ Yes | Independent gradient subtraction (AVX2) |
 
