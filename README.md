@@ -1,8 +1,6 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/shaia/CFD/master/assets/cfd-logo-nbg.png" alt="CFD Logo" width="200">
-</p>
-
 # CFD Framework
+
+![CFD Logo](https://raw.githubusercontent.com/shaia/CFD/master/assets/cfd-logo-nbg.png)
 
 A production-grade computational fluid dynamics (CFD) library in C for solving 2D incompressible Navier-Stokes equations.
 
