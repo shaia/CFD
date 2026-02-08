@@ -371,12 +371,23 @@ The Poisson equation must be solved accurately at each time step.
 #### B. Convergence Tolerance
 
 ```c
-poisson_solver_params_t params = {
-    .method = POISSON_CG,
-    .tolerance = 1e-6,      // Absolute residual
-    .max_iterations = 5000,
-    .backend = BACKEND_SIMD  // Use AVX2/NEON if available
-};
+// Create solver with CG method and SIMD backend (AVX2/NEON runtime detection)
+poisson_solver_t* solver = poisson_solver_create(
+    POISSON_METHOD_CG,
+    POISSON_BACKEND_SIMD
+);
+
+// Configure solver parameters
+poisson_solver_params_t params = poisson_solver_params_default();
+params.tolerance = 1e-6;         // Absolute residual
+params.max_iterations = 5000;
+params.preconditioner = POISSON_PRECOND_JACOBI;  // Diagonal preconditioning
+
+// Initialize and solve
+poisson_solver_init(solver, nx, ny, dx, dy, &params);
+poisson_solver_stats_t stats = poisson_solver_stats_default();
+poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+poisson_solver_destroy(solver);
 ```
 
 **Important:** Pressure tolerance should be 100× tighter than target velocity accuracy. For RMS < 0.10 velocity error, use pressure tolerance ≤ 1e-6.
