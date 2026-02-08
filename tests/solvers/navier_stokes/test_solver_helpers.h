@@ -424,8 +424,15 @@ static inline test_result test_run_stability(
         }
         if (init_status != CFD_SUCCESS) {
             result.passed = 0;
-            snprintf(result.message, sizeof(result.message),
-                     "Solver init failed with status %d (not UNSUPPORTED)", init_status);
+            const char* err_str = cfd_get_error_string(init_status);
+            const char* detail = cfd_get_last_error();
+            if (detail && detail[0]) {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d) - %s", err_str, init_status, detail);
+            } else {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d)", err_str, init_status);
+            }
             goto cleanup;
         }
     }
@@ -515,8 +522,15 @@ static inline test_result test_run_energy_decay(
         }
         if (init_status != CFD_SUCCESS) {
             result.passed = 0;
-            snprintf(result.message, sizeof(result.message),
-                     "Solver init failed with status %d (not UNSUPPORTED)", init_status);
+            const char* err_str = cfd_get_error_string(init_status);
+            const char* detail = cfd_get_last_error();
+            if (detail && detail[0]) {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d) - %s", err_str, init_status, detail);
+            } else {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d)", err_str, init_status);
+            }
             goto cleanup;
         }
     }
@@ -627,8 +641,11 @@ static inline test_result test_run_consistency(
         }
         if (init_a != CFD_SUCCESS || init_b != CFD_SUCCESS) {
             result.passed = 0;
+            const char* err_a = cfd_get_error_string(init_a);
+            const char* err_b = cfd_get_error_string(init_b);
             snprintf(result.message, sizeof(result.message),
-                     "Solver init failed (status_a=%d, status_b=%d)", init_a, init_b);
+                     "Solver init failed: A=%s (%d), B=%s (%d)",
+                     err_a, init_a, err_b, init_b);
             goto cleanup;
         }
     }
@@ -760,8 +777,15 @@ static inline test_result test_run_divergence_free(
         }
         if (init_status != CFD_SUCCESS) {
             result.passed = 0;
-            snprintf(result.message, sizeof(result.message),
-                     "Solver init failed with status %d (not UNSUPPORTED)", init_status);
+            const char* err_str = cfd_get_error_string(init_status);
+            const char* detail = cfd_get_last_error();
+            if (detail && detail[0]) {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d) - %s", err_str, init_status, detail);
+            } else {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d)", err_str, init_status);
+            }
             goto cleanup;
         }
     }
