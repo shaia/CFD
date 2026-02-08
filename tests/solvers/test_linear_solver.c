@@ -86,6 +86,7 @@ void test_params_default(void) {
     TEST_ASSERT_EQUAL_DOUBLE(1.5, params.omega);
     TEST_ASSERT_EQUAL_INT(1, params.check_interval);
     TEST_ASSERT_FALSE(params.verbose);
+    TEST_ASSERT_EQUAL_INT(POISSON_PRECOND_NONE, params.preconditioner);
 }
 
 void test_stats_default(void) {
