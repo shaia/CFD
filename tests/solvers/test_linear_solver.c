@@ -880,7 +880,8 @@ void test_redblack_simd_scalar_consistency(void) {
         if (diff > max_diff) max_diff = diff;
     }
 
-    TEST_ASSERT_LESS_THAN(1e-10, max_diff);
+    /* For zero RHS, both should produce identical zeros (max_diff should be exactly 0) */
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 0.0, max_diff);
 
     cfd_free(x_scalar);
     cfd_free(x_simd);
