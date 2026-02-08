@@ -35,7 +35,6 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 |----------|-------------|----------|
 | [Validation](validation/) | Benchmark results and validation | Researchers |
 | [SIMD Optimization](technical-notes/simd-optimization-analysis.md) | AVX2/NEON implementation details | Performance engineers |
-| [Boundary Conditions](boundary-conditions-design.md) | BC implementation and design | Advanced users |
 
 ## Documentation by Role
 
@@ -238,8 +237,7 @@ Current documentation corresponds to:
 7. [Validation/](validation/) - Benchmark validation
    - [Lid-Driven Cavity](validation/lid-driven-cavity.md)
 8. [SIMD Optimization Analysis](technical-notes/simd-optimization-analysis.md)
-9. [Boundary Conditions Design](boundary-conditions-design.md)
-10. [AVX2 Alignment Bug Fix](technical-notes/avx2-alignment-bug-fix.md)
+9. [AVX2 Alignment Bug Fix](technical-notes/avx2-alignment-bug-fix.md)
 
 ### Development Documentation
 
