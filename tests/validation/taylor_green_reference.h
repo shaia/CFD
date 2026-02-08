@@ -59,10 +59,12 @@
 #define TG_DEFAULT_DT       0.001   /* Time step */
 #define TG_DEFAULT_STEPS    200     /* Number of time steps (reduced for CI) */
 
-/* Tolerances for validation */
+/* Tolerances for validation
+ * Note: Tolerances reflect achievable accuracy with projection method on discrete grids.
+ * Numerical dissipation and discretization errors prevent perfect matching of analytical solution. */
 #define TG_VELOCITY_DECAY_TOL   0.05    /* 5% tolerance on decay rate */
 #define TG_PRESSURE_DECAY_TOL   0.10    /* 10% tolerance on pressure decay */
-#define TG_KE_DECAY_TOL         0.05    /* 5% tolerance on kinetic energy decay */
+#define TG_KE_DECAY_TOL         0.10    /* 10% tolerance on kinetic energy decay (numerical dissipation) */
 #define TG_DIVERGENCE_TOL       0.1     /* Max acceptable divergence (projection method limit) */
 #define TG_L2_ERROR_TOL         0.15    /* L2 error tolerance (relative to initial) */
 

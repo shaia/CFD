@@ -36,7 +36,7 @@ poisson_solver_params_t poisson_solver_params_default(void) {
     poisson_solver_params_t params;
     params.tolerance = 1e-6;
     params.absolute_tolerance = 1e-10;
-    params.max_iterations = 1000;
+    params.max_iterations = 5000;  /* Increased from 1000 for CG on fine grids */
     params.omega = 1.5;
     params.check_interval = 1;
     params.verbose = false;
