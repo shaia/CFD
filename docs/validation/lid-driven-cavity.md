@@ -160,7 +160,7 @@ The current projection solver with CG Poisson achieves:
 - Grid: 33×33 (current CI tests)
 - Time steps: ~3000-4000 iterations
 - dt = 0.0005
-- Poisson: `POISSON_SOLVER_CG_SCALAR` or `POISSON_SOLVER_CG_SIMD`
+- Poisson: CG method (`POISSON_METHOD_CG`) with scalar or SIMD backend (`POISSON_BACKEND_SCALAR` / `POISSON_BACKEND_SIMD`)
 
 ### Path to Excellence (RMS < 0.05)
 
