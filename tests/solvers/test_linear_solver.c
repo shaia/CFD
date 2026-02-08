@@ -82,7 +82,7 @@ void test_params_default(void) {
 
     TEST_ASSERT_EQUAL_DOUBLE(1e-6, params.tolerance);
     TEST_ASSERT_EQUAL_DOUBLE(1e-10, params.absolute_tolerance);
-    TEST_ASSERT_EQUAL_INT(1000, params.max_iterations);
+    TEST_ASSERT_EQUAL_INT(5000, params.max_iterations);  /* Increased from 1000 for CG on fine grids */
     TEST_ASSERT_EQUAL_DOUBLE(1.5, params.omega);
     TEST_ASSERT_EQUAL_INT(1, params.check_interval);
     TEST_ASSERT_FALSE(params.verbose);
