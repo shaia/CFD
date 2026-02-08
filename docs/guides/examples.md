@@ -252,16 +252,33 @@ cd build/Release
 
 **Expected Output:**
 ```
-Benchmark: euler_cpu (100x50, 50 steps)
-  Time: 0.003 seconds (0.053 ms/step)
+==================================================
+Grid Size: 100x50 (5000 total cells)
+==================================================
 
-Benchmark: euler_avx2 (100x50, 50 steps)
-  Time: 0.001 seconds (0.018 ms/step)
-  Speedup: 2.9x
+=== Basic NSSolver Benchmark ===
+Grid size: 100x50, Iterations: 100
+Execution time: 0.042 seconds
+Performance: 11904762 cell-updates/second
+Memory usage: 0.19 MB
 
-Benchmark: projection_optimized (100x50, 50 steps)
-  Time: 0.005 seconds (0.106 ms/step)
-  Speedup: 3.6x vs projection
+=== Optimized NSSolver Benchmark ===
+Grid size: 100x50, Iterations: 100
+Execution time: 0.015 seconds
+Performance: 33333333 cell-updates/second
+Memory usage: 0.19 MB
+
+=== Projection NSSolver Benchmark ===
+Grid size: 100x50, Iterations: 100
+Execution time: 0.245 seconds
+Performance: 2040816 cell-updates/second
+Memory usage: 0.19 MB
+
+=== Projection Optimized Benchmark ===
+Grid size: 100x50, Iterations: 100
+Execution time: 0.068 seconds
+Performance: 7352941 cell-updates/second
+Memory usage: 0.19 MB
 ```
 
 ---
