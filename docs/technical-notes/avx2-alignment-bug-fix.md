@@ -6,8 +6,8 @@ SIMD solver tests (Jacobi, Red-Black SOR, Projection) segfaulted on Linux CI whe
 
 ## Affected Components
 
-- `lib/src/solvers/linear/simd/linear_solver_jacobi_simd.c`
-- `lib/src/solvers/linear/simd/linear_solver_redblack_simd.c`
+- `lib/src/solvers/linear/avx2/linear_solver_jacobi_avx2.c`
+- `lib/src/solvers/linear/avx2/linear_solver_redblack_avx2.c`
 
 ## Symptoms
 
