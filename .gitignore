@@ -73,6 +73,7 @@ CMakeUserPresets.json
 build/**/*
 build-ninja/
 build_release/
+build_noomp/
 
 
 
@@ -87,18 +88,9 @@ test/test_runner
 output/
 visualization/visualization_output/
 
-# Generated documentation
-docs/
-
 
 #vscode
 .vscode/
-
-
-
-
-
-
 
 # Python
 __pycache__/

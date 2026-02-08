@@ -776,6 +776,238 @@ cfd_log(CFD_LOG_WARNING, "poisson_solver",
 - `lib/src/solvers/navier_stokes/avx2/solver_*.c` - Replace fprintf
 - `tests/validation/lid_driven_cavity_common.h` - Replace snprintf for diagnostics
 
+### 4.6 Derived Fields Optimization (P2)
+
+**Status:** OpenMP implemented, SIMD and CUDA pending
+
+**Current Implementation:**
+
+Located in `lib/src/core/derived_fields.c`:
+
+- [x] OpenMP parallelization for velocity magnitude computation
+- [x] OpenMP parallel reduction for field statistics (min/max/avg)
+- [x] Threshold-based parallelization (OMP_THRESHOLD = 1000 cells)
+- [x] Fallback to sequential for small grids
+
+**Still needed:**
+
+#### SIMD Optimization (AVX2/NEON)
+
+Best for: All grid sizes, especially when combined with OpenMP
+
+**Implementation approach:**
+
+```c
+// Velocity magnitude with AVX2 (4 doubles per iteration)
+for (size_t i = 0; i < n; i += 4) {
+    __m256d u = _mm256_loadu_pd(&field->u[i]);
+    __m256d v = _mm256_loadu_pd(&field->v[i]);
+    __m256d u2 = _mm256_mul_pd(u, u);
+    __m256d v2 = _mm256_mul_pd(v, v);
+    __m256d sum = _mm256_add_pd(u2, v2);
+    __m256d mag = _mm256_sqrt_pd(sum);
+    _mm256_storeu_pd(&vel_mag[i], mag);
+}
+// Handle remainder elements
+```
+
+**Tasks:**
+
+- [ ] Add AVX2 implementation for velocity magnitude
+- [ ] Add NEON implementation for velocity magnitude (ARM64)
+- [ ] Combine with OpenMP (`#pragma omp simd` or manual intrinsics)
+- [ ] Add SIMD horizontal reduction for statistics
+- [ ] Add runtime CPU feature detection
+- [ ] Benchmark against scalar+OpenMP version
+
+**Benefits:**
+
+- No thread overhead (works on small grids)
+- Combines well with OpenMP for multi-core
+- Reference: existing SIMD solvers in `lib/src/solvers/linear/avx2/`
+
+**Challenges:**
+
+- Architecture-specific code paths needed
+- Remainder handling for non-aligned sizes
+- Statistics reductions more complex with SIMD
+
+#### CUDA GPU Acceleration
+
+Best for: Very large grids (100k+ cells), GPU available
+
+**Implementation approach:**
+
+```cuda
+__global__ void compute_velocity_magnitude_kernel(
+    double* __restrict__ vel_mag,
+    const double* __restrict__ u,
+    const double* __restrict__ v,
+    size_t n)
+{
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        vel_mag[i] = sqrt(u[i] * u[i] + v[i] * v[i]);
+    }
+}
+```
+
+**Tasks:**
+
+- [ ] Add CUDA kernel for velocity magnitude
+- [ ] Add parallel reduction for statistics (use CUB library or custom)
+- [ ] Share GPU memory with CUDA solvers (avoid CPU<->GPU transfers)
+- [ ] Add threshold logic (only use GPU for large grids)
+- [ ] Benchmark transfer overhead vs compute benefit
+
+**Benefits:**
+
+- Massive parallelism for large grids
+- Can share GPU memory with CUDA solvers
+- Reference: existing CUDA infrastructure in `lib/src/solvers/gpu/`
+
+**Challenges:**
+
+- GPU memory transfer overhead for small grids
+- More complex reduction implementation
+- Only beneficial if data already on GPU
+
+**Performance Thresholds (Approximate):**
+
+| Grid Size        | Recommended Approach                         |
+|------------------|----------------------------------------------|
+| < 1,000 cells    | Sequential (overhead not worth it)           |
+| 1,000 - 10,000   | OpenMP (2-4 threads) ✅ Implemented          |
+| 10,000 - 100,000 | OpenMP + SIMD                                |
+| > 100,000        | CUDA (if GPU available) or OpenMP + SIMD     |
+
+**Note:** These operations are memory-bound, not compute-bound:
+
+- Velocity magnitude: Read 2 arrays, write 1 array
+- Statistics: Read 1 array, compute 3 values
+
+For memory-bound operations:
+
+- SIMD helps with cache line utilization
+- OpenMP helps with memory bandwidth aggregation across cores
+- CUDA helps only if data is already on GPU
+
+**Files to Modify:**
+
+- `lib/src/core/derived_fields.c` - Add SIMD/CUDA variants
+- `lib/src/core/derived_fields_simd.c` - New file for SIMD implementation
+- `lib/src/core/derived_fields_gpu.cu` - New file for CUDA kernels
+- `tests/io/test_csv_output.c` - Verify correctness after optimization
+
+### 4.7 SIMD Projection Solver Optimization (P2)
+
+**Status:** SIMD Poisson integration completed (December 2024), further optimizations pending
+
+**Current State:**
+
+- [x] SIMD Poisson solvers implemented (Jacobi and Red-Black SOR with AVX2)
+- [x] SIMD Poisson integrated into projection solver (`solver_projection_simd.c`)
+- [x] Full projection method with SIMD corrector step
+- [x] All tests pass with results matching scalar implementation
+- [x] `u_new` buffer reused as temp for Poisson solver (in-place Red-Black SOR)
+
+**Reference:** See [docs/technical-notes/simd-optimization-analysis.md](docs/technical-notes/simd-optimization-analysis.md) for detailed technical analysis.
+
+**Performance Analysis:**
+
+Current SIMD implementation provides ~1.3-1.5x speedup with Poisson solver being 70-80% of total runtime. Speedup limited by Amdahl's law:
+
+- Parallelizable fraction: ~80% (Poisson + Corrector)
+- SIMD speedup: 1.5-2x (Red-Black has gather/scatter overhead)
+- Expected overall: 1.3-1.5x (matches observations)
+
+#### High Priority
+
+##### 1. Improve Poisson Convergence for Non-Trivial Problems
+
+SIMD Poisson solvers don't fully converge to 1e-6 tolerance on challenging problems (e.g., sinusoidal RHS) within current iteration limits.
+
+**Tasks:**
+
+- [ ] Increase `POISSON_MAX_ITER` from current 1000/2000 to higher values
+- [ ] Implement adaptive tolerance based on problem scale
+- [ ] Add optional multigrid preconditioner for faster convergence
+- [ ] Investigate Red-Black omega parameter tuning for specific problem classes
+
+##### 2. Performance Benchmarking in Release Mode
+
+Current tests run in Debug mode where SIMD may be slower than scalar due to lack of compiler optimizations.
+
+**Tasks:**
+
+- [ ] Create Release mode benchmark suite
+- [ ] Measure actual speedup vs scalar implementation
+- [ ] Profile to identify remaining bottlenecks
+- [ ] Compare against theoretical Amdahl's law predictions
+- [ ] Document performance characteristics for different grid sizes
+
+#### Medium Priority
+
+##### 3. OpenMP + SIMD Hybrid
+
+Combine thread parallelism with SIMD vectorization for maximum CPU utilization.
+
+**Current State:** Separate OMP and SIMD backends exist, but no hybrid implementation.
+
+**Tasks:**
+
+- [ ] Implement hybrid projection solver using OpenMP across rows + SIMD within rows
+- [ ] Use `#pragma omp parallel for` on outer loop with SIMD intrinsics in inner loop
+- [ ] Benchmark scaling efficiency (measure speedup vs threads)
+- [ ] Compare against pure OMP and pure SIMD implementations
+- [ ] Handle load balancing for Red-Black coloring with OpenMP
+
+**Benefits:**
+
+- Jacobi allows full parallelization across rows
+- Red-Black allows parallelization within each color
+- Could achieve 4-8x speedup on modern multi-core CPUs
+
+**Reference Files:**
+
+- `lib/src/solvers/navier_stokes/omp/solver_projection_omp.c` - OMP implementation
+- `lib/src/solvers/navier_stokes/avx2/solver_projection_avx2.c` - SIMD implementation
+- `lib/src/solvers/linear/avx2/` - SIMD Poisson solvers
+
+#### Low Priority
+
+##### 4. Multigrid SIMD Implementation
+
+Achieve O(N) complexity vs O(N²) for iterative methods.
+
+**Benefits:**
+
+- Multigrid offers O(N) complexity vs O(N²) for Jacobi/SOR
+- Natural parallelism at each grid level
+- Can use SIMD at each level for additional speedup
+- Essential for large-scale 3D simulations
+
+**Tasks:**
+
+- [ ] Implement multigrid V-cycle framework
+- [ ] Add restriction/prolongation operators
+- [ ] Use SIMD Jacobi/Red-Black as smoothers at each level
+- [ ] Benchmark convergence rate vs pure iterative methods
+- [ ] Validate against analytical solutions
+
+**Challenges:**
+
+- Complex implementation requiring careful design
+- Grid hierarchy management
+- Operator construction at multiple levels
+- Testing and validation complexity
+
+**Priority Justification:** Low priority because:
+
+- Current SIMD implementation adequate for 2D problems
+- Critical for 3D but 3D support itself is Phase 2
+- Better to implement multigrid after 3D infrastructure exists
+
 ---
 
 ## Phase 5: I/O & Post-processing
