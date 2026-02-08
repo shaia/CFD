@@ -428,7 +428,13 @@ static inline test_result test_run_stability(
         ns_solver_stats_t stats = ns_solver_stats_default();
 
         for (int step = 0; step < num_steps; step++) {
-            solver_step(slv, field, g, params, &stats);
+            cfd_status_t step_status = solver_step(slv, field, g, params, &stats);
+            if (step_status != CFD_SUCCESS) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Solver step failed at step %d with status %d", step, step_status);
+                break;
+            }
             result.steps_completed = step + 1;
 
             if (!test_flow_field_is_valid(field)) {
@@ -507,7 +513,13 @@ static inline test_result test_run_energy_decay(
         ns_solver_stats_t stats = ns_solver_stats_default();
 
         for (int step = 0; step < num_steps; step++) {
-            solver_step(slv, field, g, params, &stats);
+            cfd_status_t step_status = solver_step(slv, field, g, params, &stats);
+            if (step_status != CFD_SUCCESS) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Solver step failed at step %d with status %d", step, step_status);
+                break;
+            }
             result.steps_completed = step + 1;
 
             if (!test_flow_field_is_valid(field)) {
@@ -608,8 +620,15 @@ static inline test_result test_run_consistency(
         ns_solver_stats_t stats_b = ns_solver_stats_default();
 
         for (int step = 0; step < num_steps; step++) {
-            solver_step(slv_a, field_a, g_a, params, &stats_a);
-            solver_step(slv_b, field_b, g_b, params, &stats_b);
+            cfd_status_t status_a = solver_step(slv_a, field_a, g_a, params, &stats_a);
+            cfd_status_t status_b = solver_step(slv_b, field_b, g_b, params, &stats_b);
+            if (status_a != CFD_SUCCESS || status_b != CFD_SUCCESS) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Solver step failed at step %d (status_a=%d, status_b=%d)",
+                         step, status_a, status_b);
+                break;
+            }
             result.steps_completed = step + 1;
         }
 
@@ -727,7 +746,13 @@ static inline test_result test_run_divergence_free(
         ns_solver_stats_t stats = ns_solver_stats_default();
 
         for (int step = 0; step < num_steps; step++) {
-            solver_step(slv, field, g, params, &stats);
+            cfd_status_t step_status = solver_step(slv, field, g, params, &stats);
+            if (step_status != CFD_SUCCESS) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Solver step failed at step %d with status %d", step, step_status);
+                break;
+            }
             result.steps_completed = step + 1;
 
             if (!test_flow_field_is_valid(field)) {
