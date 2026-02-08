@@ -46,11 +46,17 @@ int main(void) {
     cfd_status_t status = cfd_init();
 
     // Create 100x50 grid from [0,1] x [0,0.5]
-    simulation* sim = simulation_create(100, 50, 0.0, 1.0, 0.0, 0.5);
+    simulation_data* sim = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
+    if (!sim) {
+        fprintf(stderr, "Failed to create simulation\n");
+        return 1;
+    }
+
+    sim->params.dt = 0.001;  // Set time step
 
     // Run 100 steps
     for (int step = 0; step < 100; step++) {
-        status = run_simulation_step(sim, 0.001);
+        status = run_simulation_step(sim);
         if (status != CFD_SUCCESS) {
             fprintf(stderr, "Step failed: %s\n", cfd_get_last_error());
             break;
@@ -61,12 +67,12 @@ int main(void) {
             char filename[256];
             snprintf(filename, sizeof(filename),
                      "output/step_%04d.vtk", step);
-            write_simulation_to_vtk(sim, filename);
+            write_vtk_file(filename, sim->field, sim->grid);
         }
     }
 
     // Cleanup
-    simulation_destroy(sim);
+    free_simulation(sim);
     cfd_cleanup();
 
     return 0;
@@ -105,19 +111,20 @@ python ../../visualization/simple_viz.py
 **Code Structure:**
 ```c
 // Setup phase
-simulation* setup_simulation(void) {
-    simulation* sim = simulation_create(200, 100, 0.0, 2.0, 0.0, 1.0);
+simulation_data* setup_simulation(void) {
+    simulation_data* sim = init_simulation(200, 100, 0.0, 2.0, 0.0, 1.0);
     if (!sim) {
         fprintf(stderr, "Failed to create simulation\n");
         return NULL;
     }
+    sim->params.dt = 0.001;  // Set time step
     return sim;
 }
 
 // Solve phase
-cfd_status_t run_simulation(simulation* sim, int max_steps) {
+cfd_status_t run_simulation(simulation_data* sim, int max_steps) {
     for (int step = 0; step < max_steps; step++) {
-        cfd_status_t status = run_simulation_step(sim, 0.001);
+        cfd_status_t status = run_simulation_step(sim);
         if (status != CFD_SUCCESS) {
             return status;
         }
@@ -222,7 +229,7 @@ clock_t start = clock();
 
 // Run simulation
 for (int step = 0; step < max_steps; step++) {
-    run_simulation_step(sim, dt);
+    run_simulation_step(sim);
 }
 
 clock_t end = clock();
@@ -432,7 +439,7 @@ FILE* fp = fopen("timeseries.csv", "w");
 fprintf(fp, "time,kinetic_energy,max_velocity\n");
 
 for (int step = 0; step < max_steps; step++) {
-    run_simulation_step(sim, dt);
+    run_simulation_step(sim);
 
     double ke = compute_kinetic_energy(field, grid);
     double u_max = compute_max_velocity(field, grid);
@@ -558,12 +565,12 @@ if (status != CFD_SUCCESS) {
 ### Resource Cleanup
 
 ```c
-simulation* sim = NULL;
+simulation_data* sim = NULL;
 grid_t* grid = NULL;
 flow_field* field = NULL;
 
 // Setup...
-sim = simulation_create(...);
+sim = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
 if (!sim) goto cleanup;
 
 grid = grid_create_uniform(...);
@@ -572,7 +579,7 @@ if (!grid) goto cleanup;
 // Use resources...
 
 cleanup:
-    if (sim) simulation_destroy(sim);
+    if (sim) free_simulation(sim);
     if (grid) grid_destroy(grid);
     if (field) flow_field_destroy(field);
 ```

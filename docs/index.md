@@ -134,13 +134,19 @@ cfd_status_t cfd_init(void);
 void cfd_cleanup(void);
 
 // Simulation
-simulation* simulation_create(size_t nx, size_t ny, ...);
-cfd_status_t run_simulation_step(simulation* sim, double dt);
-cfd_status_t run_simulation_solve(simulation* sim, double final_time, int* steps);
-void simulation_destroy(simulation* sim);
+simulation_data* init_simulation(size_t nx, size_t ny, double xmin, double xmax,
+                                 double ymin, double ymax);
+simulation_data* init_simulation_with_solver(size_t nx, size_t ny, double xmin,
+                                             double xmax, double ymin, double ymax,
+                                             const char* solver_type);
+cfd_status_t run_simulation_step(simulation_data* sim_data);
+cfd_status_t run_simulation_solve(simulation_data* sim_data);
+void free_simulation(simulation_data* sim_data);
 
 // Output
-cfd_status_t write_simulation_to_vtk(simulation* sim, const char* filename);
+void simulation_write_outputs(simulation_data* sim_data, int step);
+void simulation_register_output(simulation_data* sim_data, output_field_type field_type,
+                                int interval, const char* prefix);
 
 // Error handling
 const char* cfd_get_last_error(void);

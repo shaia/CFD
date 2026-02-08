@@ -88,45 +88,59 @@ if (status != CFD_SUCCESS) {
 #include "cfd/api/simulation_api.h"
 
 // Create simulation
-simulation* simulation_create(size_t nx, size_t ny,
-                              double xmin, double xmax,
-                              double ymin, double ymax);
+simulation_data* init_simulation(size_t nx, size_t ny,
+                                 double xmin, double xmax,
+                                 double ymin, double ymax);
 
-simulation* simulation_create_with_solver(size_t nx, size_t ny,
-                                          double xmin, double xmax,
-                                          double ymin, double ymax,
-                                          const char* solver_type);
+simulation_data* init_simulation_with_solver(size_t nx, size_t ny,
+                                             double xmin, double xmax,
+                                             double ymin, double ymax,
+                                             const char* solver_type);
 
-// Simulate
-cfd_status_t run_simulation_step(simulation* sim, double dt);
-cfd_status_t run_simulation_solve(simulation* sim, double final_time, int* steps_taken);
+// Simulate (dt is in sim_data->params.dt)
+cfd_status_t run_simulation_step(simulation_data* sim_data);
+cfd_status_t run_simulation_solve(simulation_data* sim_data);
 
-// Access fields
-flow_field* simulation_get_field(simulation* sim);
-grid_t* simulation_get_grid(simulation* sim);
+// Access fields (fields are accessible directly from sim_data)
+// sim_data->field - flow field
+// sim_data->grid - computational grid
+// sim_data->params - solver parameters
 
 // Output
-cfd_status_t write_simulation_to_vtk(simulation* sim, const char* filename);
+void simulation_write_outputs(simulation_data* sim_data, int step);
 
 // Cleanup
-void simulation_destroy(simulation* sim);
+void free_simulation(simulation_data* sim_data);
 ```
 
 **Example:**
 ```c
 // Create 100x50 simulation
-simulation* sim = simulation_create(100, 50, 0.0, 1.0, 0.0, 0.5);
-
-// Run to t=1.0
-int steps;
-cfd_status_t status = run_simulation_solve(sim, 1.0, &steps);
-if (status != CFD_SUCCESS) {
-    fprintf(stderr, "Simulation failed: %s\n", cfd_get_last_error());
+simulation_data* sim = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
+if (!sim) {
+    fprintf(stderr, "Failed to create simulation\n");
+    return 1;
 }
 
-printf("Completed %d steps\n", steps);
-write_simulation_to_vtk(sim, "output/result.vtk");
-simulation_destroy(sim);
+// Configure parameters
+sim->params.dt = 0.001;
+sim->params.mu = 0.01;  // Viscosity
+
+// Run simulation
+for (int step = 0; step < 1000; step++) {
+    cfd_status_t status = run_simulation_step(sim);
+    if (status != CFD_SUCCESS) {
+        fprintf(stderr, "Step failed: %s\n", cfd_get_last_error());
+        break;
+    }
+
+    // Output every 10 steps
+    if (step % 10 == 0) {
+        simulation_write_outputs(sim, step);
+    }
+}
+
+free_simulation(sim);
 ```
 
 ## Solver Registry API
