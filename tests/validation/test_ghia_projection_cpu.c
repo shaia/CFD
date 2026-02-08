@@ -24,8 +24,8 @@ void test_projection_cpu_ghia_re100(void) {
     TEST_ASSERT_TRUE_MESSAGE(result.success, result.error_msg);
     print_ghia_result(&result, "Projection CPU");
 
-    TEST_ASSERT_TRUE_MESSAGE(result.rms_u_error < GHIA_TOLERANCE_CURRENT,
-        "Must meet current baseline tolerance");
+    TEST_ASSERT_TRUE_MESSAGE(result.rms_u_error < GHIA_TOLERANCE_MEDIUM,
+        "Must meet scientific Ghia tolerance");
 }
 
 void test_projection_cpu_ghia_target(void) {
@@ -48,18 +48,12 @@ void test_projection_cpu_ghia_target(void) {
     printf("      v_center:  %.4f (Ghia:  0.05454, diff: %.4f)\n",
            result.v_at_center, fabs(result.v_at_center - 0.05454));
 
-    /* This test tracks progress toward the scientific target */
-    if (result.rms_u_error > GHIA_TOLERANCE_MEDIUM) {
-        printf("\n      [WARNING] Solver does NOT meet scientific target RMS < %.2f\n",
-               GHIA_TOLERANCE_MEDIUM);
-        printf("      [ACTION REQUIRED] Fix solver convergence before release\n");
-    } else {
+    if (result.rms_u_error <= GHIA_TOLERANCE_MEDIUM) {
         printf("\n      [SUCCESS] Solver meets scientific target!\n");
     }
 
-    /* Use current tolerance for CI, but the above warning makes the gap visible */
-    TEST_ASSERT_TRUE_MESSAGE(result.rms_u_error < GHIA_TOLERANCE_CURRENT,
-        "Must meet current baseline");
+    TEST_ASSERT_TRUE_MESSAGE(result.rms_u_error < GHIA_TOLERANCE_MEDIUM,
+        "Must meet scientific Ghia target (RMS < 0.10)");
 }
 
 void test_projection_cpu_grid_convergence(void) {
@@ -91,9 +85,8 @@ void test_projection_cpu_grid_convergence(void) {
         }
         printf("\n");
 
-        /* Error should decrease or stay similar with refinement.
-         * Allow some tolerance due to scalar Poisson solver limitations. */
-        TEST_ASSERT_TRUE_MESSAGE(result.rms_u_error <= prev_rms + 0.08,
+        /* Error should decrease or stay similar with refinement */
+        TEST_ASSERT_TRUE_MESSAGE(result.rms_u_error <= prev_rms + 0.02,
             "Error increased significantly with grid refinement");
         prev_rms = result.rms_u_error;
     }

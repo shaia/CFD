@@ -211,7 +211,8 @@ SimulationData* sim = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
 
 // Run simulation steps
 for (int step = 0; step < max_steps; step++) {
-    run_simulation_step(sim);
+    cfd_status_t status = run_simulation_step(sim);
+    if (status != CFD_SUCCESS) break;  // Handle error
 }
 
 // Output results
@@ -235,7 +236,8 @@ SimulationData* sim = init_simulation_with_solver(
 
 // Run simulation
 for (int step = 0; step < max_steps; step++) {
-    run_simulation_step(sim);
+    cfd_status_t status = run_simulation_step(sim);
+    if (status != CFD_SUCCESS) break;  // Handle error
 }
 
 free_simulation(sim);
@@ -251,7 +253,8 @@ SimulationData* sim = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
 
 // Run some steps with default solver
 for (int i = 0; i < 100; i++) {
-    run_simulation_step(sim);
+    cfd_status_t status = run_simulation_step(sim);
+    if (status != CFD_SUCCESS) break;  // Handle error
 }
 
 // Switch to a different solver at runtime
@@ -259,7 +262,8 @@ simulation_set_solver_by_name(sim, SOLVER_TYPE_PROJECTION);
 
 // Continue with new solver
 for (int i = 0; i < 100; i++) {
-    run_simulation_step(sim);
+    cfd_status_t status = run_simulation_step(sim);
+    if (status != CFD_SUCCESS) break;  // Handle error
 }
 
 free_simulation(sim);
@@ -727,8 +731,8 @@ SimulationData* init_simulation_with_solver(size_t nx, size_t ny,
                                             const char* solver_type);
 
 // Run simulation
-void run_simulation_step(SimulationData* sim);
-void run_simulation_solve(SimulationData* sim);
+cfd_status_t run_simulation_step(SimulationData* sim);
+cfd_status_t run_simulation_solve(SimulationData* sim);
 
 // Solver management
 int simulation_set_solver_by_name(SimulationData* sim, const char* solver_type);

@@ -74,11 +74,11 @@ CFD_LIBRARY_EXPORT int simulation_has_solver(const char* solver_type);
 //=============================================================================
 
 // Run a single simulation time step
-CFD_LIBRARY_EXPORT void run_simulation_step(simulation_data* sim_data);
+CFD_LIBRARY_EXPORT cfd_status_t run_simulation_step(simulation_data* sim_data);
 
 // Run simulation until convergence or max iterations
 // Uses the solver's solve() method instead of step()
-CFD_LIBRARY_EXPORT void run_simulation_solve(simulation_data* sim_data);
+CFD_LIBRARY_EXPORT cfd_status_t run_simulation_solve(simulation_data* sim_data);
 
 // Get statistics from last solve (iterations, residuals, etc.)
 CFD_LIBRARY_EXPORT const ns_solver_stats_t* simulation_get_stats(const simulation_data* sim_data);

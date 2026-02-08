@@ -173,34 +173,40 @@ const ns_solver_stats_t* simulation_get_stats(const simulation_data* sim_data) {
 }
 
 // Run simulation step
-void run_simulation_step(simulation_data* sim_data) {
+cfd_status_t run_simulation_step(simulation_data* sim_data) {
     if (!sim_data || !sim_data->solver) {
-        return;
+        return CFD_ERROR_INVALID;
     }
 
     // Use fixed time step for animation stability
     sim_data->params.dt = 0.005;
 
-    solver_step(sim_data->solver, sim_data->field, sim_data->grid, &sim_data->params,
-                &sim_data->last_stats);
+    cfd_status_t status = solver_step(sim_data->solver, sim_data->field, sim_data->grid,
+                                       &sim_data->params, &sim_data->last_stats);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     // Accumulate simulation time
     sim_data->current_time += sim_data->params.dt;
+    return CFD_SUCCESS;
 }
 
-void run_simulation_solve(simulation_data* sim_data) {
+cfd_status_t run_simulation_solve(simulation_data* sim_data) {
     if (!sim_data || !sim_data->solver) {
-        return;
+        return CFD_ERROR_INVALID;
     }
 
     // Use fixed time step for animation stability
     sim_data->params.dt = 0.005;
 
-    solver_solve(sim_data->solver, sim_data->field, sim_data->grid, &sim_data->params,
-                 &sim_data->last_stats);
+    cfd_status_t status = solver_solve(sim_data->solver, sim_data->field, sim_data->grid,
+                                        &sim_data->params, &sim_data->last_stats);
 
     // Accumulate simulation time based on iterations performed
     sim_data->current_time += sim_data->params.dt * sim_data->last_stats.iterations;
+
+    return status;
 }
 
 // Free simulation data

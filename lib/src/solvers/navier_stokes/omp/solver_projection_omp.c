@@ -119,17 +119,12 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             }
         }
 
-        // Use POISSON_SOLVER_REDBLACK_OMP for consistency with CPU/AVX2 backends
+        // Use CG for reliable convergence on all grid sizes
         int poisson_iters = poisson_solve(p_new, p_temp, rhs, nx, ny, dx, dy,
-                                          POISSON_SOLVER_REDBLACK_OMP);
+                                          POISSON_SOLVER_CG_SCALAR);
 
         if (poisson_iters < 0) {
-            // Poisson solver didn't converge - use simple pressure update as fallback
-            int k;
-#pragma omp parallel for schedule(static)
-            for (k = 0; k < (int)size; k++) {
-                p_new[k] = field->p[k] - (0.1 * dt * rhs[k]);
-            }
+            return CFD_ERROR_MAX_ITER;
         }
 
         // STEP 3: Corrector

@@ -741,7 +741,10 @@ static cfd_status_t projection_step(ns_solver_t* solver, flow_field* field, cons
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
-    solve_projection_method(field, grid, &step_params);
+    cfd_status_t status = solve_projection_method(field, grid, &step_params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     if (stats) {
         stats->iterations = 1;
@@ -770,7 +773,10 @@ static cfd_status_t projection_solve(ns_solver_t* solver, flow_field* field, con
         return CFD_ERROR_INVALID;
     }
 
-    solve_projection_method(field, grid, params);
+    cfd_status_t status = solve_projection_method(field, grid, params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     if (stats) {
         stats->iterations = params->max_iter;
@@ -1190,7 +1196,10 @@ static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, 
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
-    solve_projection_method_omp(field, grid, &step_params);
+    cfd_status_t status = solve_projection_method_omp(field, grid, &step_params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     if (stats) {
         stats->iterations = 1;
@@ -1217,7 +1226,10 @@ static cfd_status_t projection_omp_solve(ns_solver_t* solver, flow_field* field,
         return CFD_ERROR_INVALID;
     }
 
-    solve_projection_method_omp(field, grid, params);
+    cfd_status_t status = solve_projection_method_omp(field, grid, params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     if (stats) {
         stats->iterations = params->max_iter;

@@ -160,15 +160,12 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         }
 
         // Solve Poisson equation using library solver
-        // Use POISSON_SOLVER_REDBLACK_SCALAR for consistency with AVX2/OMP backends
+        // Use CG for reliable convergence on all grid sizes
         int poisson_iters = poisson_solve(p_new, p_temp, rhs, nx, ny, dx, dy,
-                                          POISSON_SOLVER_REDBLACK_SCALAR);
+                                          POISSON_SOLVER_CG_SCALAR);
 
         if (poisson_iters < 0) {
-            // Poisson solver didn't converge - use simple pressure update as fallback
-            for (size_t idx = 0; idx < size; idx++) {
-                p_new[idx] = field->p[idx] - (0.1 * dt * rhs[idx]);
-            }
+            return CFD_ERROR_MAX_ITER;
         }
 
         // ============================================================

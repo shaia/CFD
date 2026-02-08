@@ -82,13 +82,11 @@ void test_u_centerline_re100(void) {
 
     printf("\n    u-centerline RMS error vs Ghia: %.4f\n", rms_error);
 
-    /* Error threshold depends on grid resolution and iterations.
-     * In fast mode with fewer iterations, allow higher error.
-     * Full validation mode uses tighter tolerance. */
+    /* CG Poisson solver converges reliably on all grid sizes */
 #if CAVITY_FULL_VALIDATION
-    TEST_ASSERT_TRUE(rms_error < 0.20);
+    TEST_ASSERT_TRUE(rms_error < 0.12);
 #else
-    TEST_ASSERT_TRUE(rms_error < 0.40);
+    TEST_ASSERT_TRUE(rms_error < 0.15);
 #endif
 
     free(y_vals);
@@ -121,7 +119,7 @@ void test_v_centerline_re100(void) {
 
     printf("\n    v-centerline RMS error vs Ghia: %.4f\n", rms_error);
 
-    TEST_ASSERT_TRUE(rms_error < 0.25);
+    TEST_ASSERT_TRUE(rms_error < 0.15);
 
     free(x_vals);
     free(v_vals);

@@ -344,6 +344,7 @@ static inline void test_init_pressure_gradient(flow_field* field, const grid* g,
  */
 typedef struct {
     int passed;
+    int solver_unavailable;      // 1 if solver_init returned CFD_ERROR_UNSUPPORTED
     double error_l2;             // Primary L2 error (u-velocity or main metric)
     double error_l2_secondary;   // Secondary L2 error (v-velocity in consistency tests)
     double relative_error;
@@ -358,6 +359,7 @@ typedef struct {
 static inline test_result test_result_init(void) {
     test_result r;
     r.passed = 1;
+    r.solver_unavailable = 0;
     r.error_l2 = 0.0;
     r.error_l2_secondary = 0.0;
     r.relative_error = 0.0;
@@ -411,18 +413,49 @@ static inline test_result test_run_stability(
         goto cleanup;
     }
 
-    solver_init(slv, g, params);
-    ns_solver_stats_t stats = ns_solver_stats_default();
-
-    for (int step = 0; step < num_steps; step++) {
-        solver_step(slv, field, g, params, &stats);
-        result.steps_completed = step + 1;
-
-        if (!test_flow_field_is_valid(field)) {
+    {
+        cfd_status_t init_status = solver_init(slv, g, params);
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
             result.passed = 0;
+            result.solver_unavailable = 1;
             snprintf(result.message, sizeof(result.message),
-                     "Instability at step %d", step);
-            break;
+                     "Solver init returned UNSUPPORTED (backend not compiled)");
+            goto cleanup;
+        }
+        if (init_status != CFD_SUCCESS) {
+            result.passed = 0;
+            const char* err_str = cfd_get_error_string(init_status);
+            const char* detail = cfd_get_last_error();
+            if (detail && detail[0]) {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d) - %s", err_str, init_status, detail);
+            } else {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d)", err_str, init_status);
+            }
+            goto cleanup;
+        }
+    }
+
+    {
+        ns_solver_stats_t stats = ns_solver_stats_default();
+
+        for (int step = 0; step < num_steps; step++) {
+            cfd_status_t step_status = solver_step(slv, field, g, params, &stats);
+            if (step_status != CFD_SUCCESS) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Solver step failed at step %d with status %d", step, step_status);
+                break;
+            }
+            result.steps_completed = step + 1;
+
+            if (!test_flow_field_is_valid(field)) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Instability at step %d", step);
+                break;
+            }
         }
     }
 
@@ -478,18 +511,49 @@ static inline test_result test_run_energy_decay(
         goto cleanup;
     }
 
-    solver_init(slv, g, params);
-    ns_solver_stats_t stats = ns_solver_stats_default();
-
-    for (int step = 0; step < num_steps; step++) {
-        solver_step(slv, field, g, params, &stats);
-        result.steps_completed = step + 1;
-
-        if (!test_flow_field_is_valid(field)) {
+    {
+        cfd_status_t init_status = solver_init(slv, g, params);
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
             result.passed = 0;
+            result.solver_unavailable = 1;
             snprintf(result.message, sizeof(result.message),
-                     "Field invalid at step %d", step);
-            break;
+                     "Solver init returned UNSUPPORTED (backend not compiled)");
+            goto cleanup;
+        }
+        if (init_status != CFD_SUCCESS) {
+            result.passed = 0;
+            const char* err_str = cfd_get_error_string(init_status);
+            const char* detail = cfd_get_last_error();
+            if (detail && detail[0]) {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d) - %s", err_str, init_status, detail);
+            } else {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d)", err_str, init_status);
+            }
+            goto cleanup;
+        }
+    }
+
+    {
+        ns_solver_stats_t stats = ns_solver_stats_default();
+
+        for (int step = 0; step < num_steps; step++) {
+            cfd_status_t step_status = solver_step(slv, field, g, params, &stats);
+            if (step_status != CFD_SUCCESS) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Solver step failed at step %d with status %d", step, step_status);
+                break;
+            }
+            result.steps_completed = step + 1;
+
+            if (!test_flow_field_is_valid(field)) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Field invalid at step %d", step);
+                break;
+            }
         }
     }
 
@@ -565,46 +629,73 @@ static inline test_result test_run_consistency(
         goto cleanup;
     }
 
-    solver_init(slv_a, g_a, params);
-    solver_init(slv_b, g_b, params);
-
-    ns_solver_stats_t stats_a = ns_solver_stats_default();
-    ns_solver_stats_t stats_b = ns_solver_stats_default();
-
-    for (int step = 0; step < num_steps; step++) {
-        solver_step(slv_a, field_a, g_a, params, &stats_a);
-        solver_step(slv_b, field_b, g_b, params, &stats_b);
-        result.steps_completed = step + 1;
+    {
+        cfd_status_t init_a = solver_init(slv_a, g_a, params);
+        cfd_status_t init_b = solver_init(slv_b, g_b, params);
+        if (init_a == CFD_ERROR_UNSUPPORTED || init_b == CFD_ERROR_UNSUPPORTED) {
+            result.passed = 0;
+            result.solver_unavailable = 1;
+            snprintf(result.message, sizeof(result.message),
+                     "Solver init returned UNSUPPORTED (backend not compiled)");
+            goto cleanup;
+        }
+        if (init_a != CFD_SUCCESS || init_b != CFD_SUCCESS) {
+            result.passed = 0;
+            const char* err_a = cfd_get_error_string(init_a);
+            const char* err_b = cfd_get_error_string(init_b);
+            snprintf(result.message, sizeof(result.message),
+                     "Solver init failed: A=%s (%d), B=%s (%d)",
+                     err_a, init_a, err_b, init_b);
+            goto cleanup;
+        }
     }
 
-    if (!test_flow_field_is_valid(field_a) || !test_flow_field_is_valid(field_b)) {
-        result.passed = 0;
-        snprintf(result.message, sizeof(result.message), "One or both fields invalid");
-    } else {
-        double u_diff = test_compute_l2_error(field_a->u, field_b->u, n);
-        double v_diff = test_compute_l2_error(field_a->v, field_b->v, n);
-        double u_norm = test_compute_l2_norm(field_a->u, n);
-        double v_norm = test_compute_l2_norm(field_a->v, n);
+    {
+        ns_solver_stats_t stats_a = ns_solver_stats_default();
+        ns_solver_stats_t stats_b = ns_solver_stats_default();
 
-        result.error_l2 = u_diff;
-        result.error_l2_secondary = v_diff;
+        for (int step = 0; step < num_steps; step++) {
+            cfd_status_t status_a = solver_step(slv_a, field_a, g_a, params, &stats_a);
+            cfd_status_t status_b = solver_step(slv_b, field_b, g_b, params, &stats_b);
+            if (status_a != CFD_SUCCESS || status_b != CFD_SUCCESS) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Solver step failed at step %d (status_a=%d, status_b=%d)",
+                         step, status_a, status_b);
+                break;
+            }
+            result.steps_completed = step + 1;
+        }
 
-        // Calculate relative errors separately for u and v components.
-        // For very small norms (< 1e-15), use absolute error instead to avoid
-        // division by near-zero. Take maximum of both relative errors.
-        double u_rel_error = (u_norm > 1e-15) ? (u_diff / u_norm) : u_diff;
-        double v_rel_error = (v_norm > 1e-15) ? (v_diff / v_norm) : v_diff;
-        result.relative_error = fmax(u_rel_error, v_rel_error);
-
-        if (result.relative_error > tolerance) {
+        if (!test_flow_field_is_valid(field_a) || !test_flow_field_is_valid(field_b)) {
             result.passed = 0;
-            snprintf(result.message, sizeof(result.message),
-                     "Relative error %.2e exceeds tolerance %.2e",
-                     result.relative_error, tolerance);
+            snprintf(result.message, sizeof(result.message), "One or both fields invalid");
         } else {
-            snprintf(result.message, sizeof(result.message),
-                     "Relative error %.2e within tolerance %.2e",
-                     result.relative_error, tolerance);
+            double u_diff = test_compute_l2_error(field_a->u, field_b->u, n);
+            double v_diff = test_compute_l2_error(field_a->v, field_b->v, n);
+            double u_norm = test_compute_l2_norm(field_a->u, n);
+            double v_norm = test_compute_l2_norm(field_a->v, n);
+
+            result.error_l2 = u_diff;
+            result.error_l2_secondary = v_diff;
+
+            // Calculate relative errors separately for u and v components.
+            // For very small norms (< 1e-15), use absolute error instead to avoid
+            // division by near-zero. Take maximum of both relative errors.
+            double u_rel_error = (u_norm > 1e-15) ? (u_diff / u_norm) : u_diff;
+            double v_rel_error = (v_norm > 1e-15) ? (v_diff / v_norm) : v_diff;
+            result.relative_error = fmax(u_rel_error, v_rel_error);
+
+            if (result.relative_error > tolerance) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Relative error %.2e exceeds tolerance %.2e",
+                         result.relative_error, tolerance);
+            } else {
+                snprintf(result.message, sizeof(result.message),
+                         "Relative error %.2e within tolerance %.2e",
+                         result.relative_error, tolerance);
+            }
         }
     }
 
@@ -675,18 +766,49 @@ static inline test_result test_run_divergence_free(
         goto cleanup;
     }
 
-    solver_init(slv, g, params);
-    ns_solver_stats_t stats = ns_solver_stats_default();
-
-    for (int step = 0; step < num_steps; step++) {
-        solver_step(slv, field, g, params, &stats);
-        result.steps_completed = step + 1;
-
-        if (!test_flow_field_is_valid(field)) {
+    {
+        cfd_status_t init_status = solver_init(slv, g, params);
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
             result.passed = 0;
+            result.solver_unavailable = 1;
             snprintf(result.message, sizeof(result.message),
-                     "Field invalid at step %d", step);
-            break;
+                     "Solver init returned UNSUPPORTED (backend not compiled)");
+            goto cleanup;
+        }
+        if (init_status != CFD_SUCCESS) {
+            result.passed = 0;
+            const char* err_str = cfd_get_error_string(init_status);
+            const char* detail = cfd_get_last_error();
+            if (detail && detail[0]) {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d) - %s", err_str, init_status, detail);
+            } else {
+                snprintf(result.message, sizeof(result.message),
+                         "Solver init failed: %s (%d)", err_str, init_status);
+            }
+            goto cleanup;
+        }
+    }
+
+    {
+        ns_solver_stats_t stats = ns_solver_stats_default();
+
+        for (int step = 0; step < num_steps; step++) {
+            cfd_status_t step_status = solver_step(slv, field, g, params, &stats);
+            if (step_status != CFD_SUCCESS) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Solver step failed at step %d with status %d", step, step_status);
+                break;
+            }
+            result.steps_completed = step + 1;
+
+            if (!test_flow_field_is_valid(field)) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "Field invalid at step %d", step);
+                break;
+            }
         }
     }
 

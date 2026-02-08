@@ -220,19 +220,22 @@ void test_simulation_has_solver_invalid(void) {
 
 void test_run_simulation_step_advances_time(void) {
     double initial_time = test_sim->current_time;
-    run_simulation_step(test_sim);
+    cfd_status_t status = run_simulation_step(test_sim);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     TEST_ASSERT_TRUE(test_sim->current_time > initial_time);
 }
 
 void test_run_simulation_step_updates_stats(void) {
-    run_simulation_step(test_sim);
+    cfd_status_t status = run_simulation_step(test_sim);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     const ns_solver_stats_t* stats = simulation_get_stats(test_sim);
     TEST_ASSERT_NOT_NULL(stats);
 }
 
 void test_run_simulation_step_null_sim_no_crash(void) {
-    // Should not crash
-    run_simulation_step(NULL);
+    // Should return error for NULL input
+    cfd_status_t status = run_simulation_step(NULL);
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
 }
 
 void test_simulation_get_stats_returns_stats(void) {
@@ -385,7 +388,8 @@ void test_simulation_write_outputs_with_csv_timeseries(void) {
     simulation_register_output(test_sim, OUTPUT_CSV_TIMESERIES, 1, "timeseries");
 
     // Run a step to generate some data
-    run_simulation_step(test_sim);
+    cfd_status_t status = run_simulation_step(test_sim);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     // Write outputs
     simulation_write_outputs(test_sim, 0);
@@ -402,7 +406,8 @@ void test_simulation_write_outputs_respects_interval(void) {
 
     // Steps 0, 1, 2, 3, 4 - only step 0 should write (interval 5)
     for (int step = 0; step < 5; step++) {
-        run_simulation_step(test_sim);
+        cfd_status_t status = run_simulation_step(test_sim);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
         simulation_write_outputs(test_sim, step);
     }
 }
@@ -412,7 +417,8 @@ void test_simulation_write_outputs_respects_interval(void) {
 //=============================================================================
 
 void test_simulation_field_values_finite_after_step(void) {
-    run_simulation_step(test_sim);
+    cfd_status_t status = run_simulation_step(test_sim);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     size_t nx = test_sim->field->nx;
     size_t ny = test_sim->field->ny;
@@ -431,9 +437,11 @@ void test_simulation_field_values_finite_after_step(void) {
 
 void test_simulation_current_time_accumulates(void) {
     double time_before = test_sim->current_time;
-    run_simulation_step(test_sim);
+    cfd_status_t status = run_simulation_step(test_sim);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     double time_after_1 = test_sim->current_time;
-    run_simulation_step(test_sim);
+    status = run_simulation_step(test_sim);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     double time_after_2 = test_sim->current_time;
 
     TEST_ASSERT_TRUE(time_after_1 > time_before);

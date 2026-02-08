@@ -40,8 +40,8 @@
 #define FINE_DT         0.0005
 #else
 /* Fast mode for CI - uses fewer iterations
- * At Re=100 with 33x33 grid using POISSON_SOLVER_REDBLACK_SCALAR:
- *   - 5000 steps achieves RMS ~0.12
+ * At Re=100 with 33x33 grid using POISSON_SOLVER_CG_SCALAR:
+ *   - 5000 steps achieves RMS < 0.10
  * Using SIMD backends achieves RMS < 0.05.
  * Using dt=0.0005 for stability. */
 #define FAST_STEPS      2000
@@ -171,6 +171,7 @@ typedef struct {
 typedef struct {
     /* Status */
     int success;
+    int solver_unavailable;  /* 1 if solver/backend not compiled in, 0 otherwise */
     char error_msg[256];
 
     /* Center point values */
@@ -274,6 +275,7 @@ static inline cavity_sim_result_t cavity_run_with_solver(
 
     ns_solver_t* solver = cfd_solver_create(registry, solver_type);
     if (!solver) {
+        result.solver_unavailable = 1;
         snprintf(result.error_msg, sizeof(result.error_msg),
                  "Solver '%s' not available", solver_type);
         cfd_registry_destroy(registry);
@@ -281,14 +283,39 @@ static inline cavity_sim_result_t cavity_run_with_solver(
         return result;
     }
 
-    solver_init(solver, ctx->g, &params);
+    cfd_status_t init_status = solver_init(solver, ctx->g, &params);
+    if (init_status != CFD_SUCCESS) {
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
+            result.solver_unavailable = 1;
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Solver '%s' backend not available (not compiled)", solver_type);
+        } else {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Solver '%s' init failed with status %d", solver_type, init_status);
+        }
+        solver_destroy(solver);
+        cfd_registry_destroy(registry);
+        cavity_context_destroy(ctx);
+        return result;
+    }
+
     ns_solver_stats_t stats = ns_solver_stats_default();
 
     double prev_ke = compute_kinetic_energy(ctx->field);
 
     for (int step = 0; step < max_steps; step++) {
         apply_cavity_bc(ctx->field, lid_velocity);
-        solver_step(solver, ctx->field, ctx->g, &params, &stats);
+        cfd_status_t step_status = solver_step(solver, ctx->field, ctx->g, &params, &stats);
+
+        if (step_status != CFD_SUCCESS) {
+            const char* err_str = cfd_get_error_string(step_status);
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Solver step failed at step %d: %s (%d)", step, err_str, step_status);
+            solver_destroy(solver);
+            cfd_registry_destroy(registry);
+            cavity_context_destroy(ctx);
+            return result;
+        }
 
         if (!check_field_finite(ctx->field)) {
             snprintf(result.error_msg, sizeof(result.error_msg),
@@ -399,6 +426,7 @@ static inline cavity_sim_result_t cavity_run_with_solver_ctx(
 
     ns_solver_t* solver = cfd_solver_create(registry, solver_type);
     if (!solver) {
+        result.solver_unavailable = 1;
         snprintf(result.error_msg, sizeof(result.error_msg),
                  "Solver '%s' not available", solver_type);
         cfd_registry_destroy(registry);
@@ -406,14 +434,41 @@ static inline cavity_sim_result_t cavity_run_with_solver_ctx(
         return result;
     }
 
-    solver_init(solver, ctx->g, &params);
+    cfd_status_t init_status = solver_init(solver, ctx->g, &params);
+    if (init_status != CFD_SUCCESS) {
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
+            result.solver_unavailable = 1;
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Solver '%s' backend not available (not compiled)", solver_type);
+        } else {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Solver '%s' init failed with status %d", solver_type, init_status);
+        }
+        solver_destroy(solver);
+        cfd_registry_destroy(registry);
+        cavity_context_destroy(ctx);
+        if (out_ctx) *out_ctx = NULL;
+        return result;
+    }
+
     ns_solver_stats_t stats = ns_solver_stats_default();
 
     double prev_ke = compute_kinetic_energy(ctx->field);
 
     for (int step = 0; step < max_steps; step++) {
         apply_cavity_bc(ctx->field, lid_velocity);
-        solver_step(solver, ctx->field, ctx->g, &params, &stats);
+        cfd_status_t step_status = solver_step(solver, ctx->field, ctx->g, &params, &stats);
+
+        if (step_status != CFD_SUCCESS) {
+            const char* err_str = cfd_get_error_string(step_status);
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "Solver step failed at step %d: %s (%d)", step, err_str, step_status);
+            solver_destroy(solver);
+            cfd_registry_destroy(registry);
+            cavity_context_destroy(ctx);
+            if (out_ctx) *out_ctx = NULL;
+            return result;
+        }
 
         if (!check_field_finite(ctx->field)) {
             snprintf(result.error_msg, sizeof(result.error_msg),
@@ -421,6 +476,7 @@ static inline cavity_sim_result_t cavity_run_with_solver_ctx(
             solver_destroy(solver);
             cfd_registry_destroy(registry);
             cavity_context_destroy(ctx);
+            if (out_ctx) *out_ctx = NULL;
             return result;
         }
 
@@ -513,14 +569,26 @@ static inline simulation_result_t run_cavity_simulation(
         return result;
     }
 
-    solver_init(solver, ctx->g, &params);
+    cfd_status_t init_status = solver_init(solver, ctx->g, &params);
+    if (init_status != CFD_SUCCESS) {
+        solver_destroy(solver);
+        cfd_registry_destroy(registry);
+        result.blew_up = 1;
+        return result;
+    }
+
     ns_solver_stats_t stats = ns_solver_stats_default();
 
     double prev_ke = compute_kinetic_energy(ctx->field);
 
     for (int step = 0; step < max_steps; step++) {
         apply_cavity_bc(ctx->field, lid_velocity);
-        solver_step(solver, ctx->field, ctx->g, &params, &stats);
+        cfd_status_t step_status = solver_step(solver, ctx->field, ctx->g, &params, &stats);
+
+        if (step_status != CFD_SUCCESS) {
+            result.blew_up = 1;
+            break;
+        }
 
         if (!check_field_finite(ctx->field)) {
             result.blew_up = 1;

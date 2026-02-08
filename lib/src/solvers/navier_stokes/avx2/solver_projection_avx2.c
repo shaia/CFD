@@ -70,6 +70,15 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         return CFD_ERROR_INVALID;
     }
 
+    /* Verify SIMD CG Poisson solver is available before allocating resources */
+    poisson_solver_t* test_solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
+    if (!test_solver) {
+        fprintf(stderr, "projection_simd_init: SIMD CG Poisson solver not available\n");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    poisson_solver_destroy(test_solver);
+
     projection_simd_context* ctx =
         (projection_simd_context*)cfd_calloc(1, sizeof(projection_simd_context));
     if (!ctx) {
@@ -255,16 +264,14 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
         }
     }
 
-    // Use SIMD Poisson solver (Red-Black SOR with SIMD)
+    // Use SIMD Poisson solver (Conjugate Gradient with SIMD)
     // ctx->u_new is used as temp buffer for the Poisson solver
+    // CG provides reliable convergence on all grid sizes, matching CPU solver behavior
     int poisson_iters = poisson_solve(p_new, ctx->u_new, rhs, nx, ny, dx, dy,
-                                       POISSON_SOLVER_REDBLACK_SIMD);
+                                       POISSON_SOLVER_CG_SIMD);
 
     if (poisson_iters < 0) {
-        // Poisson solver didn't converge - use simple pressure update as fallback
-        for (size_t idx = 0; idx < size; idx++) {
-            p_new[idx] = field->p[idx] - (0.1 * dt * rhs[idx]);
-        }
+        return CFD_ERROR_MAX_ITER;
     }
 
     // ============================================================

@@ -62,8 +62,10 @@ void test_multiple_simulations_independent_outputs(void) {
     simulation_register_output(sim2, OUTPUT_VELOCITY, 1, "vel2");
 
     // Run a step
-    run_simulation_step(sim1);
-    run_simulation_step(sim2);
+    cfd_status_t status = run_simulation_step(sim1);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+    status = run_simulation_step(sim2);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     // Write outputs
     simulation_write_outputs(sim1, 1);
