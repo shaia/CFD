@@ -40,6 +40,7 @@ cd build          # Linux/macOS
 **Code (~50 lines):**
 ```c
 #include "cfd/api/simulation_api.h"
+#include "cfd/io/vtk_output.h"
 
 int main(void) {
     // Initialize library
@@ -67,7 +68,10 @@ int main(void) {
             char filename[256];
             snprintf(filename, sizeof(filename),
                      "output/step_%04d.vtk", step);
-            write_vtk_file(filename, sim->field, sim->grid);
+            write_vtk_flow_field(filename, sim->field,
+                                sim->grid->nx, sim->grid->ny,
+                                sim->grid->xmin, sim->grid->xmax,
+                                sim->grid->ymin, sim->grid->ymax);
         }
     }
 
@@ -417,36 +421,38 @@ For Re=100, centerline velocities should match Ghia et al. within ~1%.
 
 **Examples:**
 
-**Export full field:**
+**Export timeseries:**
 ```c
 #include "cfd/io/csv_output.h"
 
-write_field_to_csv(field->u, grid->nx, grid->ny, "u_velocity.csv");
-write_field_to_csv(field->v, grid->nx, grid->ny, "v_velocity.csv");
-write_field_to_csv(field->p, grid->nx, grid->ny, "pressure.csv");
+// Write timeseries data (step, time, max velocities, etc.)
+ns_solver_stats_t stats = ns_solver_stats_default();
+write_csv_timeseries("timeseries.csv", step, sim->current_time,
+                     sim->field, NULL, &sim->params, &stats,
+                     sim->grid->nx, sim->grid->ny, (step == 0));
 ```
 
 **Export centerline:**
 ```c
-write_centerline_to_csv(field, grid, "centerline.csv");
-// Output: x, u(x, y=0.5), v(x, y=0.5), p(x, y=0.5)
+// Export horizontal centerline (along x-axis at y=mid)
+write_csv_centerline("centerline.csv", sim->field, NULL,
+                     sim->grid->x, sim->grid->y,
+                     sim->grid->nx, sim->grid->ny,
+                     PROFILE_HORIZONTAL);
 ```
 
-**Time series:**
+**Statistics export:**
 ```c
-FILE* fp = fopen("timeseries.csv", "w");
-fprintf(fp, "time,kinetic_energy,max_velocity\n");
-
+// Export global statistics (min/max/avg for all fields)
 for (int step = 0; step < max_steps; step++) {
-    run_simulation_step(sim);
+    cfd_status_t status = run_simulation_step(sim);
+    if (status != CFD_SUCCESS) break;
 
-    double ke = compute_kinetic_energy(field, grid);
-    double u_max = compute_max_velocity(field, grid);
-
-    fprintf(fp, "%.6f,%.6e,%.6e\n", step*dt, ke, u_max);
+    // Write statistics every step
+    write_csv_statistics("statistics.csv", step, sim->current_time,
+                        sim->field, NULL,
+                        sim->grid->nx, sim->grid->ny, (step == 0));
 }
-
-fclose(fp);
 ```
 
 ---
@@ -583,7 +589,10 @@ for (int step = 0; step < max_steps; step++) {
     if (step % output_interval == 0) {
         snprintf(filename, sizeof(filename),
                  "%s/result_%04d.vtk", output_dir, step);
-        write_simulation_to_vtk(sim, filename);
+        write_vtk_flow_field(filename, sim->field,
+                           sim->grid->nx, sim->grid->ny,
+                           sim->grid->xmin, sim->grid->xmax,
+                           sim->grid->ymin, sim->grid->ymax);
     }
 }
 ```
