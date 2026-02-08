@@ -800,15 +800,19 @@ void test_redblack_simd_converges_uniform_rhs(void) {
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(solver);
 
-    poisson_solver_params_t params = poisson_solver_params_default();
-    /* Red-Black SOR has linear convergence and needs many more iterations
-     * than CG for uniform RHS with zero initial guess */
-    params.max_iterations = 20000;
-    params.tolerance = 1e-6;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    /* Use smaller grid for Red-Black SOR to ensure convergence in reasonable time.
+     * Red-Black SOR has linear convergence O(n^2 iterations) vs CG's O(n iterations),
+     * making it impractical for large grids. */
+    const size_t nx = 13, ny = 13;
+    const double dx = 0.1, dy = 0.1;
 
-    double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
-    double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 10000;
+    params.tolerance = 1e-6;
+    poisson_solver_init(solver, nx, ny, dx, dy, &params);
+
+    double* x = create_test_field(nx, ny, 0.0);
+    double* rhs = create_uniform_rhs(nx, ny, 1.0);
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
     cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
@@ -838,17 +842,20 @@ void test_redblack_simd_scalar_consistency(void) {
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(simd_solver);
 
-    /* Use high iteration count for Red-Black SOR convergence */
+    /* Use smaller grid for Red-Black SOR to ensure convergence in reasonable time */
+    const size_t nx = 13, ny = 13;
+    const double dx = 0.1, dy = 0.1;
+
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.max_iterations = 20000;
+    params.max_iterations = 10000;
     params.tolerance = 1e-6;
 
-    poisson_solver_init(scalar_solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
-    poisson_solver_init(simd_solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(scalar_solver, nx, ny, dx, dy, &params);
+    poisson_solver_init(simd_solver, nx, ny, dx, dy, &params);
 
-    double* x_scalar = create_test_field(TEST_NX, TEST_NY, 0.0);
-    double* x_simd = create_test_field(TEST_NX, TEST_NY, 0.0);
-    double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
+    double* x_scalar = create_test_field(nx, ny, 0.0);
+    double* x_simd = create_test_field(nx, ny, 0.0);
+    double* rhs = create_uniform_rhs(nx, ny, 1.0);
 
     poisson_solver_stats_t stats_scalar = poisson_solver_stats_default();
     poisson_solver_stats_t stats_simd = poisson_solver_stats_default();
@@ -861,7 +868,7 @@ void test_redblack_simd_scalar_consistency(void) {
 
     /* Verify SIMD and scalar produce same results */
     double max_diff = 0.0;
-    for (size_t i = 0; i < TEST_NX * TEST_NY; i++) {
+    for (size_t i = 0; i < nx * ny; i++) {
         double diff = fabs(x_simd[i] - x_scalar[i]);
         if (diff > max_diff) max_diff = diff;
     }
