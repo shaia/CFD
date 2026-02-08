@@ -168,7 +168,7 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_REDBLACK_SOR,
 **Usage:**
 ```c
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
-                                                 POISSON_BACKEND_AVX2);
+                                                 POISSON_BACKEND_SIMD);
 ```
 
 #### 5. Preconditioned CG (PCG)
@@ -186,10 +186,11 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
 **Usage:**
 ```c
 poisson_solver_params_t params = poisson_solver_params_default();
-params.preconditioner = POISSON_PRECOND_JACOBI;
+params.preconditioner = POISSON_PRECOND_JACOBI;  // Enable preconditioning
 
-poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_PCG,
+poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
                                                  POISSON_BACKEND_SIMD);
+poisson_solver_init(solver, nx, ny, dx, dy, &params);  // Pass params with preconditioner
 ```
 
 #### 6. BiCGSTAB
