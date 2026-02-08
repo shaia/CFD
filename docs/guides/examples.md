@@ -156,7 +156,7 @@ ns_solver_registry_t* registry = cfd_registry_create();
 cfd_registry_register_defaults(registry);
 
 const char* names[32];
-int count = cfd_registry_list_solvers(registry, names, 32);
+int count = cfd_registry_list(registry, names, 32);
 
 printf("Available solvers:\n");
 for (int i = 0; i < count; i++) {
@@ -175,9 +175,9 @@ if (cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
 
 **Use specific solver:**
 ```c
-simulation* sim = simulation_create_with_solver(
+simulation_data* sim = init_simulation_with_solver(
     100, 50, 0.0, 1.0, 0.0, 0.5,
-    "projection_avx2"
+    "projection_optimized"
 );
 ```
 
@@ -249,9 +249,9 @@ Benchmark: euler_avx2 (100x50, 50 steps)
   Time: 0.001 seconds (0.018 ms/step)
   Speedup: 2.9x
 
-Benchmark: projection_avx2 (100x50, 50 steps)
+Benchmark: projection_optimized (100x50, 50 steps)
   Time: 0.005 seconds (0.106 ms/step)
-  Speedup: 3.6x vs projection_cpu
+  Speedup: 3.6x vs projection
 ```
 
 ---

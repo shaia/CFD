@@ -85,7 +85,7 @@ cfd_registry_register(registry, "my_custom_solver",
                       NS_SOLVER_BACKEND_SCALAR);
 
 // Factory pattern for clean instantiation
-ns_solver_t* solver = cfd_solver_create(registry, "projection_avx2");
+ns_solver_t* solver = cfd_solver_create(registry, "projection_optimized");
 ```
 
 #### Output Registry
@@ -118,9 +118,9 @@ lib/src/solvers/
 ```c
 // Check backend availability at runtime
 if (cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
-    solver = cfd_solver_create(registry, "projection_avx2");
+    solver = cfd_solver_create(registry, "projection_optimized");
 } else {
-    solver = cfd_solver_create(registry, "projection_cpu");
+    solver = cfd_solver_create(registry, "projection");
 }
 ```
 

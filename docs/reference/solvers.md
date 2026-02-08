@@ -71,11 +71,10 @@ Chorin's projection method - properly enforces incompressibility constraint.
 **Available Backends:**
 | Solver | Backend | Description |
 |--------|---------|-------------|
-| `projection_cpu` | Scalar | Basic implementation |
-| `projection_avx2` | SIMD | AVX2-optimized (x86-64) |
-| `projection_neon` | SIMD | NEON-optimized (ARM64) |
+| `projection` | Scalar | Basic implementation |
+| `projection_optimized` | SIMD | SIMD-optimized (runtime detection: AVX2/NEON) |
 | `projection_omp` | OpenMP | Multi-threaded |
-| `projection_cuda` | GPU | CUDA-accelerated |
+| `projection_jacobi_gpu` | GPU | CUDA-accelerated (Jacobi iteration) |
 
 ## Linear Solvers (Poisson Equation)
 
@@ -324,9 +323,9 @@ GPU-accelerated using CUDA:
 // Check if GPU should be used
 gpu_config_t config = gpu_config_default();
 if (gpu_should_use(&config, nx, ny, num_steps)) {
-    solver = cfd_solver_create(registry, "projection_cuda");
+    solver = cfd_solver_create(registry, "projection_jacobi_gpu");
 } else {
-    solver = cfd_solver_create(registry, "projection_avx2");
+    solver = cfd_solver_create(registry, "projection_optimized");
 }
 ```
 
@@ -336,17 +335,17 @@ if (gpu_should_use(&config, nx, ny, num_steps)) {
 
 | Solver | Time (ms) | Speedup | Accuracy |
 |--------|-----------|---------|----------|
-| euler_cpu | 2.6 | 1.0x | Low |
-| euler_avx2 | 0.9 | 2.9x | Low |
-| euler_omp (8 cores) | 0.8 | 3.3x | Low |
-| projection_cpu | 19.0 | 1.0x | High |
-| projection_avx2 | 5.3 | 3.6x | High |
+| explicit_euler | 2.6 | 1.0x | Low |
+| explicit_euler_optimized | 0.9 | 2.9x | Low |
+| explicit_euler_omp (8 cores) | 0.8 | 3.3x | Low |
+| projection | 19.0 | 1.0x | High |
+| projection_optimized | 5.3 | 3.6x | High |
 | projection_omp (8 cores) | 4.2 | 4.5x | High |
-| projection_cuda | 8.4 | 0.45x† | High |
+| projection_jacobi_gpu | 8.4 | 0.45x† | High |
 
 † GPU slower on small grids due to data transfer overhead
 
-### Grid Size Scaling (projection_avx2, 100 steps)
+### Grid Size Scaling (projection_optimized, 100 steps)
 
 | Grid | Time (s) | Memory (MB) | Iterations/step |
 |------|----------|-------------|-----------------|
@@ -359,8 +358,8 @@ if (gpu_should_use(&config, nx, ny, num_steps)) {
 
 | Solver | Time (s) | Speedup |
 |--------|----------|---------|
-| projection_avx2 | 824 | 1.0x |
-| projection_cuda | 68 | 12.1x |
+| projection_optimized | 824 | 1.0x |
+| projection_jacobi_gpu | 68 | 12.1x |
 
 ## Choosing a Solver
 
@@ -374,9 +373,9 @@ Need strict incompressibility enforcement?
 │        └─ Large grid (>500)     → euler_omp or euler_cuda
 │
 └─ Yes → Use Projection Method family
-         ├─ Small grid (<100×100) → projection_cpu
-         ├─ Medium grid (100-500) → projection_avx2 or projection_omp
-         └─ Large grid (>500)     → projection_cuda
+         ├─ Small grid (<100×100) → projection
+         ├─ Medium grid (100-500) → projection_optimized or projection_omp
+         └─ Large grid (>500)     → projection_jacobi_gpu
 
 GPU available and grid >200×200?
 └─ Use CUDA variant for 10-50x speedup
@@ -390,8 +389,8 @@ GPU available and grid >200×200?
 - Easy to inspect intermediate results
 
 **Production Simulations:**
-- `projection_avx2` or `projection_omp` (medium grids)
-- `projection_cuda` (large grids)
+- `projection_optimized` or `projection_omp` (medium grids)
+- `projection_jacobi_gpu` (large grids)
 - Best accuracy and performance
 
 **Benchmarking:**

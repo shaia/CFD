@@ -156,12 +156,12 @@ ns_solver_t* cfd_solver_create(ns_solver_registry_t* registry, const char* name)
 ns_solver_t* cfd_solver_create_checked(ns_solver_registry_t* registry, const char* name);
 
 // Query solvers
-int cfd_registry_list_solvers(ns_solver_registry_t* registry,
-                              const char** names, int max_count);
+int cfd_registry_list(ns_solver_registry_t* registry,
+                      const char** names, int max_count);
 int cfd_registry_list_by_backend(ns_solver_registry_t* registry,
                                  ns_solver_backend_t backend,
                                  const char** names, int max_count);
-int cfd_registry_has_solver(ns_solver_registry_t* registry, const char* name);
+int cfd_registry_has(ns_solver_registry_t* registry, const char* name);
 ```
 
 **Example:**
@@ -171,13 +171,13 @@ cfd_registry_register_defaults(reg);
 
 // List all solvers
 const char* names[32];
-int count = cfd_registry_list_solvers(reg, names, 32);
+int count = cfd_registry_list(reg, names, 32);
 for (int i = 0; i < count; i++) {
     printf("  %s\n", names[i]);
 }
 
 // Create specific solver
-ns_solver_t* solver = cfd_solver_create(reg, "projection_avx2");
+ns_solver_t* solver = cfd_solver_create(reg, "projection_optimized");
 if (!solver) {
     fprintf(stderr, "Failed to create solver: %s\n", cfd_get_last_error());
 }
@@ -481,18 +481,16 @@ cfd_free(data);
 ## Solver Type Constants
 
 ```c
-// Explicit Euler family
-#define NS_SOLVER_TYPE_EULER_CPU        "euler_cpu"
-#define NS_SOLVER_TYPE_EULER_AVX2       "euler_avx2"
-#define NS_SOLVER_TYPE_EULER_NEON       "euler_neon"
-#define NS_SOLVER_TYPE_EULER_OMP        "euler_omp"
-
-// Projection method family
-#define NS_SOLVER_TYPE_PROJECTION_CPU   "projection_cpu"
-#define NS_SOLVER_TYPE_PROJECTION_AVX2  "projection_avx2"
-#define NS_SOLVER_TYPE_PROJECTION_NEON  "projection_neon"
-#define NS_SOLVER_TYPE_PROJECTION_OMP   "projection_omp"
-#define NS_SOLVER_TYPE_PROJECTION_CUDA  "projection_cuda"
+// Standard Built-in Solver Types (from navier_stokes_solver.h)
+#define NS_SOLVER_TYPE_EXPLICIT_EULER           "explicit_euler"
+#define NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED "explicit_euler_optimized"
+#define NS_SOLVER_TYPE_EXPLICIT_EULER_OMP       "explicit_euler_omp"
+#define NS_SOLVER_TYPE_EXPLICIT_EULER_GPU       "explicit_euler_gpu"
+#define NS_SOLVER_TYPE_PROJECTION               "projection"
+#define NS_SOLVER_TYPE_PROJECTION_OPTIMIZED     "projection_optimized"
+#define NS_SOLVER_TYPE_PROJECTION_OMP           "projection_omp"
+#define NS_SOLVER_TYPE_RK2                      "rk2"
+#define NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU    "projection_jacobi_gpu"
 ```
 
 ## Version Information
