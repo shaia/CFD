@@ -76,7 +76,7 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 
 1. Study [Numerical Methods](reference/solvers.md#solver-families)
 2. Review [Validation Results](validation/)
-3. Check [Lid-Driven Cavity](validation/lid_driven_cavity.md) benchmark
+3. Check [Lid-Driven Cavity](validation/lid-driven-cavity.md) benchmark
 4. Read [Linear Solvers](reference/solvers.md#linear-solvers-poisson-equation)
 
 **Key resources:**
@@ -121,7 +121,7 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 
 ### Validation & Testing
 
-- [Lid-Driven Cavity](validation/lid_driven_cavity.md) - Ghia benchmark
+- [Lid-Driven Cavity](validation/lid-driven-cavity.md) - Ghia benchmark
 - [Taylor-Green Vortex](reference/solvers.md#taylor-green-vortex) - Analytical validation
 - [Testing Patterns](../README.md#testing) - Test suite organization
 
@@ -181,7 +181,7 @@ Full reference: [API Reference](reference/api-reference.md)
 
 **...validate my results?**
 - See [Validation](reference/solvers.md#validation)
-- Or [Lid-Driven Cavity Benchmark](validation/lid_driven_cavity.md)
+- Or [Lid-Driven Cavity Benchmark](validation/lid-driven-cavity.md)
 
 ## External Resources
 
@@ -236,7 +236,7 @@ Current documentation corresponds to:
 ### Specialized Documentation
 
 7. [Validation/](validation/) - Benchmark validation
-   - [Lid-Driven Cavity](validation/lid_driven_cavity.md)
+   - [Lid-Driven Cavity](validation/lid-driven-cavity.md)
 8. [SIMD Optimization Analysis](technical-notes/simd-optimization-analysis.md)
 9. [Boundary Conditions Design](boundary-conditions-design.md)
 10. [AVX2 Alignment Bug Fix](technical-notes/avx2-alignment-bug-fix.md)

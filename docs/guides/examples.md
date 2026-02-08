@@ -395,7 +395,7 @@ For Re=100, centerline velocities should match Ghia et al. within ~1%.
 
 **Output:**
 - VTK files in `output/lid_cavity_Re<number>/`
-- Compare with published data in [validation/lid_driven_cavity.md](validation/lid_driven_cavity.md)
+- Compare with published data in [validation/lid-driven-cavity.md](validation/lid-driven-cavity.md)
 
 ---
 

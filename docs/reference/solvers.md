@@ -444,7 +444,7 @@ Classic benchmark problem validated against Ghia et al. (1982):
 - Centerline velocity profiles match published data
 - RMS error < 0.01
 
-See [validation/lid_driven_cavity.md](validation/lid_driven_cavity.md) for details.
+See [validation/lid-driven-cavity.md](validation/lid-driven-cavity.md) for details.
 
 ### Taylor-Green Vortex
 
