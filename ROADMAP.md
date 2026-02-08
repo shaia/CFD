@@ -249,13 +249,20 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
   - [ ] BiCGSTAB AVX2
   - [ ] BiCGSTAB NEON
   - [ ] BiCGSTAB OMP
+- [ ] GMRES (Generalized Minimal Residual) for non-symmetric systems
+  - [ ] GMRES scalar
+  - [ ] GMRES AVX2
+  - [ ] GMRES NEON
+  - [ ] GMRES OMP
 - [x] Jacobi (diagonal) preconditioner for CG (scalar, AVX2, NEON backends)
+- [ ] SSOR (Symmetric SOR) preconditioner
 - [ ] SOR SIMD variants (currently CPU-only)
   - [ ] SOR AVX2
   - [ ] SOR NEON
 - [ ] ILU preconditioner
 - [ ] Geometric multigrid
-- [ ] Algebraic multigrid (AMG)
+- [ ] Algebraic multigrid (AMG) solver
+- [ ] AMG preconditioner (for use with CG/GMRES/BiCGSTAB)
 - [ ] Performance benchmarking in Release mode
 
 **Note:** Current SIMD Poisson solvers produce valid results but may not converge to strict tolerance (1e-6) on challenging problems like sinusoidal RHS within iteration limits. They converge properly on simpler problems (zero RHS, uniform RHS). See `docs/simd-optimization-analysis.md` for details.
