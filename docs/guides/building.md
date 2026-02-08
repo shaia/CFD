@@ -16,9 +16,7 @@ Complete guide to building the CFD Framework on Windows, Linux, and macOS.
 
 - **CUDA Toolkit** 11.0+ (for GPU acceleration)
 - **OpenMP** (usually included with compiler)
-- **Python 3.7+** (for visualization scripts)
-  - matplotlib
-  - numpy
+- **ParaView** or **VisIt** (for VTK visualization)
 
 ## Quick Start
 
@@ -160,13 +158,11 @@ The `build.sh` script (Linux/macOS) provides convenient build automation:
    ```bash
    sudo apt-get update
    sudo apt-get install build-essential cmake git
-   sudo apt-get install python3 python3-matplotlib  # For visualization
    ```
 
 2. **Install Dependencies (Fedora/RHEL):**
    ```bash
    sudo dnf install gcc gcc-c++ cmake make git
-   sudo dnf install python3 python3-matplotlib
    ```
 
 3. **CUDA Support:**

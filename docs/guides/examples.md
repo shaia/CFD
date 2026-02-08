@@ -81,13 +81,12 @@ int main(void) {
 
 **Output:**
 - `output/minimal_step_*.vtk` files
-- Visualize with ParaView or `visualization/simple_viz.py`
+- Visualize with ParaView or VisIt
 
 **Run:**
 ```bash
 cd build/Release
 ./minimal_example
-python ../../visualization/simple_viz.py
 ```
 
 ---
@@ -527,23 +526,6 @@ Grid 500x500, 100 iterations:
    - Add "Glyph" filter for velocity vectors
    - Add "Contour" filter for pressure isocontours
    - Add "Stream Tracer" for streamlines
-
-### Python Scripts
-
-**Simple Visualization:**
-```bash
-python visualization/simple_viz.py
-```
-
-**Advanced Plotting:**
-```bash
-python visualization/visualize_cfd.py --input output/result_0100.vtk
-```
-
-**Animated Flow:**
-```bash
-python visualization/enhanced_visualize.py --animate output/simulation_*/*.vtk
-```
 
 ## Common Patterns
 

@@ -36,8 +36,8 @@ cmake --build build --config Release
 cd build/Release
 ./minimal_example
 
-# Visualize (requires Python + matplotlib)
-python ../../visualization/simple_viz.py
+# Visualize with ParaView or VisIt
+# VTK files are written to output/ directory
 ```
 
 ### Windows Quick Build
@@ -131,8 +131,7 @@ int main(void) {
 │       └── api/            # Public API
 ├── tests/                  # Comprehensive test suite
 ├── examples/               # Example programs
-├── docs/                   # Documentation
-└── visualization/          # Python plotting scripts
+└── docs/                   # Documentation
 ```
 
 ## Documentation
