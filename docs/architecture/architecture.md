@@ -148,14 +148,17 @@ typedef struct {
 
 #### SIMD-Friendly Layouts
 ```c
-// Aligned allocation for SIMD
-double* field = cfd_aligned_calloc(nx * ny, sizeof(double), 32);
+// Aligned allocation for SIMD (fixed 32-byte alignment)
+double* field = cfd_aligned_calloc(nx * ny, sizeof(double));
 
 // Structure-of-arrays pattern
 for (size_t i = 0; i < nx * ny; i += 4) {
     __m256d u_vec = _mm256_load_pd(&field[i]);  // Aligned load
     // SIMD operations...
 }
+
+// Must use cfd_aligned_free() for aligned allocations
+cfd_aligned_free(field);
 ```
 
 #### Explicit Memory Management

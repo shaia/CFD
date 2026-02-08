@@ -470,26 +470,28 @@ cfd_status_t write_centerline_to_csv(flow_field* field, grid_t* grid,
 ```c
 #include "cfd/core/memory.h"
 
-// Aligned allocation for SIMD
-void* cfd_aligned_calloc(size_t count, size_t size, size_t alignment);
-void* cfd_aligned_malloc(size_t size, size_t alignment);
-void cfd_free(void* ptr);
+// Aligned allocation for SIMD (fixed 32-byte alignment)
+void* cfd_aligned_calloc(size_t count, size_t size);
+void* cfd_aligned_malloc(size_t size);
+void cfd_aligned_free(void* ptr);  // MUST use this for aligned memory
 
 // Regular allocation
 void* cfd_calloc(size_t count, size_t size);
 void* cfd_malloc(size_t size);
+void cfd_free(void* ptr);
 ```
 
 **Example:**
 ```c
-// Allocate SIMD-aligned array (32-byte for AVX2)
-double* data = cfd_aligned_calloc(nx * ny, sizeof(double), 32);
+// Allocate SIMD-aligned array (32-byte aligned for AVX2/AVX512)
+double* data = cfd_aligned_calloc(nx * ny, sizeof(double));
 
 // Use with SIMD
 __m256d vec = _mm256_load_pd(&data[i]);  // Aligned load
 
-// Free
-cfd_free(data);
+// IMPORTANT: Must free with cfd_aligned_free(), not cfd_free()
+cfd_aligned_free(data);  // Correct
+// cfd_free(data);       // WRONG - undefined behavior!
 ```
 
 ## Solver Type Constants
