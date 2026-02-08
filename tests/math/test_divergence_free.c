@@ -192,18 +192,42 @@ static double run_projection_test(
 
     cfd_status_t init_status = solver_init(slv, g, &params);
     if (init_status != CFD_SUCCESS) {
-        /* Backend init failed (e.g., SIMD Poisson not available) */
         solver_destroy(slv);
         grid_destroy(g);
         flow_field_destroy(field);
         cfd_registry_destroy(registry);
-        return -1.0;  /* Signal unavailable */
+
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
+            /* Backend not available (e.g., SIMD Poisson not compiled) - skip gracefully */
+            return -1.0;  /* Signal unavailable */
+        }
+
+        /* Real error (e.g., CFD_ERROR_INVALID, CFD_ERROR_NOMEM) - fail test */
+        char error_msg[256];
+        snprintf(error_msg, sizeof(error_msg),
+                 "solver_init() failed with status %d (not CFD_ERROR_UNSUPPORTED)",
+                 init_status);
+        TEST_FAIL_MESSAGE(error_msg);
+        return -1.0;  /* Unreachable, but satisfies compiler */
     }
 
     ns_solver_stats_t stats = ns_solver_stats_default();
 
     for (int step = 0; step < num_steps; step++) {
-        solver_step(slv, field, g, &params, &stats);
+        cfd_status_t step_status = solver_step(slv, field, g, &params, &stats);
+        if (step_status != CFD_SUCCESS) {
+            solver_destroy(slv);
+            cfd_registry_destroy(registry);
+            flow_field_destroy(field);
+            grid_destroy(g);
+
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg),
+                     "solver_step() failed at step %d with status %d", step, step_status);
+            TEST_FAIL_MESSAGE(error_msg);
+            return -1.0;  /* Unreachable, but satisfies compiler */
+        }
+
         TEST_ASSERT_TRUE_MESSAGE(test_flow_field_is_valid(field),
             "Flow field became invalid during projection");
     }
