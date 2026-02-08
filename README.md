@@ -28,9 +28,7 @@ A production-grade computational fluid dynamics (CFD) library in C for solving 2
 ### Build & Run
 
 ```bash
-# Clone and build
-git clone https://github.com/yourusername/cfd.git
-cd cfd
+# Build
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 
@@ -62,27 +60,41 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ```c
 #include "cfd/api/simulation_api.h"
+#include "cfd/io/vtk_output.h"
 
 int main(void) {
     // Initialize library
     cfd_status_t status = cfd_init();
-
-    // Create simulation (100x50 grid)
-    simulation* sim = simulation_create(100, 50, 0.0, 1.0, 0.0, 0.5);
-
-    // Run 1000 steps
-    int steps_taken;
-    status = run_simulation_solve(sim, 1.0, &steps_taken);
     if (status != CFD_SUCCESS) {
-        fprintf(stderr, "Error: %s\n", cfd_get_last_error());
+        fprintf(stderr, "Init failed: %s\n", cfd_get_last_error());
         return 1;
     }
 
-    // Export results
-    write_simulation_to_vtk(sim, "output/result.vtk");
+    // Create simulation (100x50 grid, domain [0,1] x [0,0.5])
+    simulation_data* sim = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
+    if (!sim) {
+        fprintf(stderr, "Failed to create simulation\n");
+        return 1;
+    }
+
+    // Configure parameters
+    sim->params.dt = 0.001;
+    sim->params.mu = 0.01;  // Viscosity
+
+    // Run simulation steps
+    for (int step = 0; step < 1000; step++) {
+        status = run_simulation_step(sim);
+        if (status != CFD_SUCCESS) {
+            fprintf(stderr, "Step failed: %s\n", cfd_get_last_error());
+            break;
+        }
+    }
+
+    // Export results to VTK
+    write_vtk_file("output/result.vtk", sim->field, sim->grid);
 
     // Cleanup
-    simulation_destroy(sim);
+    free_simulation(sim);
     cfd_cleanup();
 
     return 0;
@@ -93,13 +105,14 @@ int main(void) {
 
 | Solver | Backend | Description |
 |--------|---------|-------------|
-| `euler_cpu` | Scalar | Basic explicit Euler |
-| `euler_avx2` | SIMD | AVX2-optimized Euler |
-| `euler_omp` | OpenMP | Multi-threaded Euler |
-| `projection_cpu` | Scalar | Chorin's projection method |
-| `projection_avx2` | SIMD | SIMD-optimized projection |
+| `explicit_euler` | Scalar | Basic explicit Euler |
+| `explicit_euler_optimized` | SIMD | SIMD-optimized Euler (AVX2/NEON) |
+| `explicit_euler_omp` | OpenMP | Multi-threaded Euler |
+| `projection` | Scalar | Chorin's projection method |
+| `projection_optimized` | SIMD | SIMD-optimized projection (AVX2/NEON) |
 | `projection_omp` | OpenMP | Multi-threaded projection |
-| `projection_cuda` | GPU | CUDA-accelerated projection |
+| `projection_jacobi_gpu` | GPU | CUDA-accelerated projection |
+| `rk2` | Scalar | 2nd-order Runge-Kutta |
 
 ## Project Structure
 
@@ -159,10 +172,10 @@ Typical performance (100x50 grid, 50 steps, Release mode):
 
 | Solver | Time | Speedup |
 |--------|------|---------|
-| euler_cpu | 2.6ms | 1.0x |
-| euler_avx2 | 0.9ms | 2.9x |
-| projection_cpu | 19.0ms | 1.0x |
-| projection_avx2 | 5.3ms | 3.6x |
+| explicit_euler | 2.6ms | 1.0x |
+| explicit_euler_optimized | 0.9ms | 2.9x |
+| projection | 19.0ms | 1.0x |
+| projection_optimized | 5.3ms | 3.6x |
 
 GPU acceleration shows significant benefits for grids ≥200x200.
 
@@ -189,7 +202,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions welcome! Please see [development guidelines](.claude/CLAUDE.md) and [ROADMAP](ROADMAP.md) for current priorities.
 
 ## Citation
 
@@ -198,16 +211,18 @@ If you use this library in your research, please cite:
 ```bibtex
 @software{cfd_framework,
   title = {CFD Framework: A Modular C Library for Computational Fluid Dynamics},
-  author = {Your Name},
-  year = {2024},
-  url = {https://github.com/yourusername/cfd}
+  author = {Shaia Halevy},
+  year = {2025},
+  url = {https://github.com/shaia/CFD}
 }
 ```
 
-## Contact
+## Support
 
-- Issues: [GitHub Issues](https://github.com/yourusername/cfd/issues)
-- Discussions: [GitHub Discussions](https://github.com/yourusername/cfd/discussions)
+For questions, bug reports, or feature requests, please:
+- Check existing [documentation](docs/index.md)
+- Review [examples](docs/guides/examples.md)
+- See [architecture guide](docs/architecture/architecture.md) for design details
 
 ## Acknowledgments
 
