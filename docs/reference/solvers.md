@@ -36,10 +36,10 @@ dt ≤ min(dx²/(4ν), dx/u_max)
 **Available Backends:**
 | Solver | Backend | Description |
 |--------|---------|-------------|
-| `euler_cpu` | Scalar | Basic implementation |
-| `euler_avx2` | SIMD | AVX2-optimized (x86-64) |
-| `euler_neon` | SIMD | NEON-optimized (ARM64) |
-| `euler_omp` | OpenMP | Multi-threaded |
+| `explicit_euler` | Scalar | Basic implementation |
+| `explicit_euler_optimized` | SIMD | SIMD-optimized (auto-detects AVX2/NEON) |
+| `explicit_euler_omp` | OpenMP | Multi-threaded |
+| `explicit_euler_gpu` | CUDA | GPU-accelerated |
 
 ### 2. Projection Method Solvers
 
@@ -369,9 +369,9 @@ if (gpu_should_use(&config, nx, ny, num_steps)) {
 ```
 Need strict incompressibility enforcement?
 ├─ No  → Use Explicit Euler family (faster)
-│        ├─ Small grid (<100×100) → euler_cpu
-│        ├─ Medium grid (100-500) → euler_avx2 or euler_omp
-│        └─ Large grid (>500)     → euler_omp or euler_cuda
+│        ├─ Small grid (<100×100) → explicit_euler
+│        ├─ Medium grid (100-500) → explicit_euler_optimized or explicit_euler_omp
+│        └─ Large grid (>500)     → explicit_euler_omp or explicit_euler_gpu
 │
 └─ Yes → Use Projection Method family
          ├─ Small grid (<100×100) → projection
@@ -385,7 +385,7 @@ GPU available and grid >200×200?
 ### Recommendations by Use Case
 
 **Learning/Debugging:**
-- `euler_cpu` or `projection_cpu`
+- `explicit_euler` or `projection`
 - Simple, predictable behavior
 - Easy to inspect intermediate results
 
