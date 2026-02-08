@@ -28,7 +28,8 @@ int main(int argc, char* argv[]) {
 
     // Run the simulation
     for (int iter = 0; iter < sim_data->params.max_iter; iter++) {
-        run_simulation_step(sim_data);
+        cfd_status_t status = run_simulation_step(sim_data);
+        if (status != CFD_SUCCESS) break;
 
         // Automatically write registered outputs
         simulation_write_outputs(sim_data, iter);

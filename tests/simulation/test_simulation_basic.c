@@ -63,7 +63,8 @@ void test_simulation_step_execution(void) {
         TEST_ASSERT_TRUE(isfinite(sim_data->field->T[i]));
     }
 
-    run_simulation_step(sim_data);
+    cfd_status_t status = run_simulation_step(sim_data);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     // Verify stability - ensure all fields remain finite
     for (size_t i = 0; i < nx * ny; i++) {

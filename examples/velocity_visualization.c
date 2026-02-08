@@ -44,7 +44,8 @@ int main() {
 
     for (int step = 0; step < max_steps; step++) {
         // Run simulation step
-        run_simulation_step(sim_data);
+        cfd_status_t status = run_simulation_step(sim_data);
+        if (status != CFD_SUCCESS) break;
 
         // Automatically write all registered outputs
         simulation_write_outputs(sim_data, step);

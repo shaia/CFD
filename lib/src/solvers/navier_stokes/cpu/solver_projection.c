@@ -165,14 +165,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                                           POISSON_SOLVER_CG_SCALAR);
 
         if (poisson_iters < 0) {
-            static int warned = 0;
-            if (!warned) {
-                fprintf(stderr, "WARNING: Poisson solver failed to converge "
-                        "(grid %zux%zu, dt=%.4e, projection iteration %d). "
-                        "Pressure field may be inaccurate.\n",
-                        nx, ny, dt, iter);
-                warned = 1;
-            }
+            return CFD_ERROR_MAX_ITER;
         }
 
         // ============================================================

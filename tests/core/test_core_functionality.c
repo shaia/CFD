@@ -109,7 +109,8 @@ void test_simulation_step_execution(void) {
     double initial_p = sim_data->field->p[12];
 
     // Run one simulation step
-    run_simulation_step(sim_data);
+    cfd_status_t status = run_simulation_step(sim_data);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     // Verify that the simulation ran (values may have changed or stayed the same)
     // The important thing is that no crashes occurred and memory is still valid
@@ -138,7 +139,8 @@ void test_multiple_simulation_steps(void) {
 
     // Run multiple simulation steps
     for (int step = 0; step < 5; step++) {
-        run_simulation_step(sim_data);
+        cfd_status_t status = run_simulation_step(sim_data);
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
         // Verify stability after each step
         for (size_t i = 0; i < nx * ny; i++) {
