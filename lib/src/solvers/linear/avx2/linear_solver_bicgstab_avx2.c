@@ -17,8 +17,11 @@
 #include <string.h>
 #include <limits.h>
 
-/* Platform detection for AVX2 + OpenMP */
-#if defined(__AVX2__) && defined(_OPENMP)
+/* Platform detection for AVX2 + OpenMP
+ * CFD_HAS_AVX2 is set by CMake when -DCFD_ENABLE_AVX2=ON.
+ * This works consistently across all compilers (GCC, Clang, MSVC).
+ */
+#if defined(CFD_HAS_AVX2) && defined(CFD_ENABLE_OPENMP)
 #define BICGSTAB_HAS_AVX2 1
 #include <immintrin.h>
 #include <omp.h>

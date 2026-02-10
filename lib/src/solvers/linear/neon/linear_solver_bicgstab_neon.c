@@ -17,8 +17,11 @@
 #include <string.h>
 #include <limits.h>
 
-/* Platform detection for NEON + OpenMP */
-#if defined(__aarch64__) && defined(_OPENMP)
+/* Platform detection for NEON + OpenMP
+ * Checks for ARM64 architecture across different compilers.
+ * Works consistently on GCC, Clang, and MSVC ARM64.
+ */
+#if (defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
 #define BICGSTAB_HAS_NEON 1
 #include <arm_neon.h>
 #include <omp.h>
