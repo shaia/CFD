@@ -87,8 +87,9 @@ static inline double SIMD_FUNC(dot_product)(const double* a, const double* b,
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return 0.0;
 
+    int jj;
     #pragma omp parallel for reduction(+:sum) schedule(static)
-    for (int jj = 1; jj < ny_int - 1; jj++) {
+    for (jj = 1; jj < ny_int - 1; jj++) {
         size_t j = (size_t)jj;
         double row_sum = 0.0;
 
@@ -128,8 +129,9 @@ static inline void SIMD_FUNC(axpy)(double alpha, const double* x, double* y,
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return;
 
+    int jj;
     #pragma omp parallel for schedule(static)
-    for (int jj = 1; jj < ny_int - 1; jj++) {
+    for (jj = 1; jj < ny_int - 1; jj++) {
         size_t j = (size_t)jj;
         size_t i = 1;
 
@@ -163,8 +165,9 @@ static inline void SIMD_FUNC(apply_laplacian)(const double* p, double* Ap,
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return;
 
+    int jj;
     #pragma omp parallel for schedule(static)
-    for (int jj = 1; jj < ny_int - 1; jj++) {
+    for (jj = 1; jj < ny_int - 1; jj++) {
         size_t j = (size_t)jj;
         size_t i = 1;
 
@@ -226,8 +229,9 @@ static inline void SIMD_FUNC(compute_residual)(const double* x, const double* rh
         return;
     }
 
+    int jj;
     #pragma omp parallel for schedule(static)
-    for (int jj = 1; jj < ny_int - 1; jj++) {
+    for (jj = 1; jj < ny_int - 1; jj++) {
         size_t j = (size_t)jj;
         size_t i = 1;
 
@@ -258,8 +262,9 @@ static inline void SIMD_FUNC(copy_vector)(const double* src, double* dst,
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return;
 
+    int jj;
     #pragma omp parallel for schedule(static)
-    for (int jj = 1; jj < ny_int - 1; jj++) {
+    for (jj = 1; jj < ny_int - 1; jj++) {
         size_t j = (size_t)jj;
         size_t i = 1;
 
@@ -284,8 +289,9 @@ static inline void SIMD_FUNC(zero_vector)(double* vec, size_t nx, size_t ny) {
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return;
 
+    int jj;
     #pragma omp parallel for schedule(static)
-    for (int jj = 1; jj < ny_int - 1; jj++) {
+    for (jj = 1; jj < ny_int - 1; jj++) {
         size_t j = (size_t)jj;
         size_t i = 1;
 
@@ -451,8 +457,9 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         SIMD_FUNC(axpy)(-omega, v, p, nx, ny);
         /* Then: p = r + beta*p (reuse p as storage) */
         int ny_int = bicgstab_size_to_int(ny);
+        int jj;
         #pragma omp parallel for schedule(static)
-        for (int jj = 1; jj < ny_int - 1; jj++) {
+        for (jj = 1; jj < ny_int - 1; jj++) {
             size_t j = (size_t)jj;
             for (size_t i = 1; i < nx - 1; i++) {
                 size_t idx = j * nx + i;
