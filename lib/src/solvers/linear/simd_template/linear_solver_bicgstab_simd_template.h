@@ -424,6 +424,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
     double r_norm_init = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
     if (r_norm_init == 0.0) {
         if (stats) {
+            stats->status = POISSON_CONVERGED;
             stats->iterations = 0;
             stats->final_residual = 0.0;
         }
@@ -443,6 +444,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         if (fabs(rho_new) < BICGSTAB_BREAKDOWN_THRESHOLD) {
             cfd_set_error(CFD_ERROR_DIVERGED, "BiCGSTAB breakdown: rho = 0");
             if (stats) {
+                stats->status = POISSON_STAGNATED;
                 stats->iterations = iter;
                 stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
             }
@@ -475,6 +477,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         if (fabs(r_hat_dot_v) < BICGSTAB_BREAKDOWN_THRESHOLD) {
             cfd_set_error(CFD_ERROR_DIVERGED, "BiCGSTAB breakdown: (r_hat, v) = 0");
             if (stats) {
+                stats->status = POISSON_STAGNATED;
                 stats->iterations = iter;
                 stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
             }
@@ -492,6 +495,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
             /* Early termination: x = x + alpha*p */
             SIMD_FUNC(axpy)(alpha, p, x, nx, ny);
             if (stats) {
+                stats->status = POISSON_CONVERGED;
                 stats->iterations = iter + 1;
                 stats->final_residual = s_norm / r_norm_init;
             }
@@ -507,6 +511,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         if (fabs(t_dot_t) < BICGSTAB_BREAKDOWN_THRESHOLD) {
             cfd_set_error(CFD_ERROR_DIVERGED, "BiCGSTAB breakdown: (t, t) = 0");
             if (stats) {
+                stats->status = POISSON_STAGNATED;
                 stats->iterations = iter;
                 stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
             }
@@ -526,6 +531,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         double r_norm = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
         if (r_norm / r_norm_init < tol) {
             if (stats) {
+                stats->status = POISSON_CONVERGED;
                 stats->iterations = iter + 1;
                 stats->final_residual = r_norm / r_norm_init;
             }
@@ -539,6 +545,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
     /* Max iterations reached */
     double r_norm_final = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
     if (stats) {
+        stats->status = POISSON_MAX_ITER;
         stats->iterations = max_iter;
         stats->final_residual = r_norm_final / r_norm_init;
     }
