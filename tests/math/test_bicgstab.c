@@ -541,14 +541,14 @@ void test_bicgstab_dirichlet(void) {
  * Test that unsupported backends return NULL
  */
 void test_bicgstab_unsupported_backend(void) {
-    /* SIMD backend not yet implemented for BiCGSTAB */
+    /* OMP backend not yet implemented for BiCGSTAB */
     poisson_solver_t* solver = poisson_solver_create(
-        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SIMD);
+        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_OMP);
     TEST_ASSERT_NULL(solver);
 
-    /* OMP backend not yet implemented for BiCGSTAB */
+    /* GPU backend not yet implemented for BiCGSTAB */
     solver = poisson_solver_create(
-        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_OMP);
+        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_GPU);
     TEST_ASSERT_NULL(solver);
 }
 
