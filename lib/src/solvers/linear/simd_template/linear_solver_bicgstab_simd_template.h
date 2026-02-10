@@ -316,7 +316,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_init)(
     size_t nx, size_t ny,
     double dx, double dy,
     const poisson_solver_params_t* params) {
-    (void)params;  /* Not used for BiCGSTAB */
+    (void)params;  /* Params stored in solver->params by caller */
 
     bicgstab_simd_context_t* ctx = (bicgstab_simd_context_t*)cfd_aligned_calloc(
         1, sizeof(bicgstab_simd_context_t));
@@ -420,19 +420,35 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
     double alpha = 1.0;
     double omega = 1.0;
 
+    /* Get solver parameters */
+    poisson_solver_params_t* params = &solver->params;
+    double start_time = poisson_solver_get_time_ms();
+
     /* Compute initial residual norm */
     double r_norm_init = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
-    if (r_norm_init == 0.0) {
+
+    if (stats) {
+        stats->initial_residual = r_norm_init;
+    }
+
+    /* Compute convergence tolerance (relative + absolute) */
+    double tolerance = params->tolerance * r_norm_init;
+    if (tolerance < params->absolute_tolerance) {
+        tolerance = params->absolute_tolerance;
+    }
+
+    /* Check if already converged */
+    if (r_norm_init < params->absolute_tolerance) {
         if (stats) {
             stats->status = POISSON_CONVERGED;
             stats->iterations = 0;
-            stats->final_residual = 0.0;
+            stats->final_residual = r_norm_init;
+            stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
         }
         return CFD_SUCCESS;  /* Already converged */
     }
 
-    const int max_iter = 5000;
-    const double tol = 1.0e-6;
+    const int max_iter = (int)params->max_iterations;
 
     /* BICGSTAB ITERATION LOOP */
     int iter;
@@ -446,7 +462,8 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
             if (stats) {
                 stats->status = POISSON_STAGNATED;
                 stats->iterations = iter;
-                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
+                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
+                stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
             }
             return CFD_ERROR_DIVERGED;
         }
@@ -479,7 +496,8 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
             if (stats) {
                 stats->status = POISSON_STAGNATED;
                 stats->iterations = iter;
-                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
+                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
+                stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
             }
             return CFD_ERROR_DIVERGED;
         }
@@ -491,13 +509,14 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
 
         /* 7. Check early convergence on ||s|| */
         double s_norm = sqrt(SIMD_FUNC(dot_product)(s, s, nx, ny));
-        if (s_norm / r_norm_init < tol) {
+        if (s_norm < tolerance) {
             /* Early termination: x = x + alpha*p */
             SIMD_FUNC(axpy)(alpha, p, x, nx, ny);
             if (stats) {
                 stats->status = POISSON_CONVERGED;
                 stats->iterations = iter + 1;
-                stats->final_residual = s_norm / r_norm_init;
+                stats->final_residual = s_norm;
+                stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
             }
             return CFD_SUCCESS;
         }
@@ -513,7 +532,8 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
             if (stats) {
                 stats->status = POISSON_STAGNATED;
                 stats->iterations = iter;
-                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
+                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
+                stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
             }
             return CFD_ERROR_DIVERGED;
         }
@@ -529,11 +549,12 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
 
         /* 12. Check convergence on ||r|| */
         double r_norm = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
-        if (r_norm / r_norm_init < tol) {
+        if (r_norm < tolerance) {
             if (stats) {
                 stats->status = POISSON_CONVERGED;
                 stats->iterations = iter + 1;
-                stats->final_residual = r_norm / r_norm_init;
+                stats->final_residual = r_norm;
+                stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
             }
             return CFD_SUCCESS;
         }
@@ -547,7 +568,8 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
     if (stats) {
         stats->status = POISSON_MAX_ITER;
         stats->iterations = max_iter;
-        stats->final_residual = r_norm_final / r_norm_init;
+        stats->final_residual = r_norm_final;
+        stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
     }
 
     return CFD_ERROR_MAX_ITER;
