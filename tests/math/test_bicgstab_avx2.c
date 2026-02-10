@@ -124,14 +124,23 @@ void test_bicgstab_avx2_scalar_consistency(void) {
     poisson_solver_t* solver_avx2 = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SIMD);
 
-    /* Skip test if AVX2 not available on this platform */
+    /* Check if SIMD backend should be available */
+    bool simd_available = poisson_solver_backend_available(POISSON_BACKEND_SIMD);
+
     if (!solver_avx2) {
         cfd_free(x_scalar);
         cfd_free(x_avx2);
         cfd_free(x_temp);
         cfd_free(rhs);
         poisson_solver_destroy(solver_scalar);
-        TEST_IGNORE_MESSAGE("AVX2 not available on this platform");
+
+        if (simd_available) {
+            /* SIMD available but factory returned NULL - this is a bug */
+            TEST_FAIL_MESSAGE("SIMD backend available but BiCGSTAB SIMD solver creation failed");
+        } else {
+            /* SIMD not available on this platform - expected */
+            TEST_IGNORE_MESSAGE("SIMD backend not available on this platform");
+        }
     }
 
     /* Initialize AVX2 solver */

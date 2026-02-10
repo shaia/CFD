@@ -124,14 +124,23 @@ void test_bicgstab_neon_scalar_consistency(void) {
     poisson_solver_t* solver_neon = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SIMD);
 
-    /* Skip test if NEON not available on this platform */
+    /* Check if SIMD backend should be available */
+    bool simd_available = poisson_solver_backend_available(POISSON_BACKEND_SIMD);
+
     if (!solver_neon) {
         cfd_free(x_scalar);
         cfd_free(x_neon);
         cfd_free(x_temp);
         cfd_free(rhs);
         poisson_solver_destroy(solver_scalar);
-        TEST_IGNORE_MESSAGE("NEON not available on this platform");
+
+        if (simd_available) {
+            /* SIMD available but factory returned NULL - this is a bug */
+            TEST_FAIL_MESSAGE("SIMD backend available but BiCGSTAB SIMD solver creation failed");
+        } else {
+            /* SIMD not available on this platform - expected */
+            TEST_IGNORE_MESSAGE("SIMD backend not available on this platform");
+        }
     }
 
     /* Initialize NEON solver */
