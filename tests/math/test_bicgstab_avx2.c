@@ -167,7 +167,7 @@ void test_bicgstab_avx2_scalar_consistency(void) {
     l2_diff = sqrt(l2_diff / count);
 
     /* Verify consistency (L2 diff < 1e-10) */
-    TEST_ASSERT_LESS_THAN(1.0e-10, l2_diff);
+    TEST_ASSERT_DOUBLE_WITHIN(1.0e-10, 0.0, l2_diff);
 
     /* Iteration counts should match (±1 allowed due to rounding) */
     int iter_diff = abs((int)stats_scalar.iterations - (int)stats_avx2.iterations);
