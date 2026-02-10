@@ -281,10 +281,23 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 - [x] Conjugate Gradient (CG) for SPD systems (scalar, AVX2, NEON backends)
   - **Note:** CG is now the default Poisson solver for all projection methods (PR #139)
   - CPU/OMP use CG_SCALAR, AVX2 uses CG_SIMD for reliable O(√κ) convergence
-- [x] BiCGSTAB for non-symmetric systems — scalar
-  - [ ] BiCGSTAB AVX2
-  - [ ] BiCGSTAB NEON
-  - [ ] BiCGSTAB OMP
+- [x] BiCGSTAB for non-symmetric systems — scalar ✅
+  - [x] BiCGSTAB AVX2 ✅
+  - [x] BiCGSTAB NEON ✅
+  - [x] BiCGSTAB OMP (included in AVX2/NEON via `#pragma omp parallel for`) ✅
+
+  **Files created (BiCGSTAB backends):**
+
+  - `lib/src/solvers/linear/avx2/linear_solver_bicgstab_avx2.c` - AVX2 SIMD implementation with OpenMP
+  - `lib/src/solvers/linear/neon/linear_solver_bicgstab_neon.c` - NEON SIMD implementation with OpenMP
+  - `tests/math/test_bicgstab_avx2.c` - AVX2 vs scalar consistency test
+  - `tests/math/test_bicgstab_neon.c` - NEON vs scalar consistency test
+
+  Updated files:
+
+  - `lib/src/solvers/linear/simd/linear_solver_simd_dispatch.c` - Added BiCGSTAB dispatcher
+  - `lib/src/solvers/linear/linear_solver_internal.h` - Added BiCGSTAB SIMD factory declaration
+
 - [ ] GMRES (Generalized Minimal Residual) for non-symmetric systems
   - [ ] GMRES scalar
   - [ ] GMRES AVX2

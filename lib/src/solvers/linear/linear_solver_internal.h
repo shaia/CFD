@@ -43,6 +43,7 @@ poisson_solver_t* create_cg_simd_solver(void);
 
 /* BiCGSTAB solvers (for non-symmetric systems) */
 poisson_solver_t* create_bicgstab_scalar_solver(void);
+poisson_solver_t* create_bicgstab_simd_solver(void);
 
 /* ============================================================================
  * CG ALGORITHM CONSTANTS
