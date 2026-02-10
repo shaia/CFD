@@ -12,6 +12,7 @@
  */
 
 #include "../linear_solver_internal.h"
+#include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/memory.h"
 #include <math.h>
 #include <string.h>

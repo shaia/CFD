@@ -410,6 +410,13 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
     double* s = ctx->s;
     double* t = ctx->t;
 
+    /* Get solver parameters */
+    poisson_solver_params_t* params = &solver->params;
+    double start_time = poisson_solver_get_time_ms();
+
+    /* Apply initial boundary conditions (Neumann) */
+    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+
     /* INITIALIZATION */
     SIMD_FUNC(compute_residual)(x, rhs, r, nx, ny, ctx);  /* r_0 = b - A*x_0 */
     SIMD_FUNC(copy_vector)(r, r_hat, nx, ny);             /* r_hat = r_0 (shadow residual) */
@@ -419,10 +426,6 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
     double rho = 1.0;
     double alpha = 1.0;
     double omega = 1.0;
-
-    /* Get solver parameters */
-    poisson_solver_params_t* params = &solver->params;
-    double start_time = poisson_solver_get_time_ms();
 
     /* Compute initial residual norm */
     double r_norm_init = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
@@ -512,6 +515,10 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         if (s_norm < tolerance) {
             /* Early termination: x = x + alpha*p */
             SIMD_FUNC(axpy)(alpha, p, x, nx, ny);
+
+            /* Apply final boundary conditions */
+            bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+
             if (stats) {
                 stats->status = POISSON_CONVERGED;
                 stats->iterations = iter + 1;
@@ -550,6 +557,9 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         /* 12. Check convergence on ||r|| */
         double r_norm = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
         if (r_norm < tolerance) {
+            /* Apply final boundary conditions */
+            bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+
             if (stats) {
                 stats->status = POISSON_CONVERGED;
                 stats->iterations = iter + 1;
@@ -563,7 +573,9 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         rho = rho_new;
     }
 
-    /* Max iterations reached */
+    /* Max iterations reached - apply BCs even if not converged */
+    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+
     double r_norm_final = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
     if (stats) {
         stats->status = POISSON_MAX_ITER;
