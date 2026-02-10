@@ -43,6 +43,10 @@
 #define CONCAT(a, b) CONCAT_IMPL(a, b)
 #define SIMD_FUNC(name) CONCAT(name, SIMD_SUFFIX)
 
+/* Factory function name: create_bicgstab_<suffix>_solver */
+#define FACTORY_NAME_IMPL(suffix) create_bicgstab_##suffix##_solver
+#define FACTORY_NAME(suffix) FACTORY_NAME_IMPL(suffix)
+
 //=============================================================================
 // CONTEXT STRUCTURE
 //=============================================================================
@@ -511,7 +515,7 @@ static int SIMD_FUNC(bicgstab_iterate)(void* context, double* x, const double* r
 // FACTORY FUNCTION
 //=============================================================================
 
-poisson_solver_t* SIMD_FUNC(create_bicgstab_solver)(void) {
+poisson_solver_t* FACTORY_NAME(SIMD_SUFFIX)(void) {
     poisson_solver_t* solver = (poisson_solver_t*)cfd_calloc(1, sizeof(poisson_solver_t));
     if (!solver) return NULL;
 
