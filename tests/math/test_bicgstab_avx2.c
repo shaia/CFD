@@ -141,6 +141,7 @@ void test_bicgstab_avx2_scalar_consistency(void) {
             /* SIMD not available on this platform - expected */
             TEST_IGNORE_MESSAGE("SIMD backend not available on this platform");
         }
+        return;  /* Defensive: ensure we don't continue if Unity doesn't longjmp */
     }
 
     /* Initialize AVX2 solver */
