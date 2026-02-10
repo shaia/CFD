@@ -10,6 +10,7 @@
 
 #include "cfd/solvers/poisson_solver.h"
 #include <stdbool.h>
+#include <limits.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,6 +79,31 @@ poisson_solver_t* create_bicgstab_simd_solver(void);
             return CFD_ERROR_MAX_ITER; \
         } \
     } while (0)
+
+/* ============================================================================
+ * BICGSTAB ALGORITHM CONSTANTS
+ * ============================================================================ */
+
+/**
+ * Threshold for detecting BiCGSTAB breakdown (division by near-zero).
+ * If rho, (r_hat,v), or (t,t) falls below this, the algorithm has stagnated.
+ */
+#define BICGSTAB_BREAKDOWN_THRESHOLD 1e-30
+
+/**
+ * Convert size_t to int for OpenMP loop bounds.
+ * OpenMP requires int loop variables, but grid dimensions are size_t.
+ *
+ * @param val The size_t value to convert
+ * @return int value, or 0 on overflow (error set)
+ */
+static inline int bicgstab_size_to_int(size_t val) {
+    if (val > (size_t)INT_MAX) {
+        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Grid size exceeds INT_MAX for OpenMP loop");
+        return 0;
+    }
+    return (int)val;
+}
 
 /* ============================================================================
  * SIMD BACKEND AVAILABILITY (Runtime detection)
