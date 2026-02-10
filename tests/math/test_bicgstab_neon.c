@@ -121,6 +121,17 @@ void test_bicgstab_neon_scalar_consistency(void) {
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats_scalar.status);
 
+    /* BiCGSTAB SIMD backends require OpenMP - skip if not available */
+#ifndef CFD_ENABLE_OPENMP
+    cfd_free(x_scalar);
+    cfd_free(x_neon);
+    cfd_free(x_temp);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver_scalar);
+    TEST_IGNORE_MESSAGE("BiCGSTAB SIMD requires OpenMP (not enabled in this build)");
+    return;
+#endif
+
     /* Check if SIMD backend should be available */
     bool simd_available = poisson_solver_backend_available(POISSON_BACKEND_SIMD);
 
