@@ -209,25 +209,16 @@ static inline void SIMD_FUNC(apply_laplacian)(const double* p, double* Ap,
 
 /**
  * Compute residual: r = rhs - A*x
- * Uses apply_laplacian internally
+ * Fused computation without temporary Ax buffer
  */
 static inline void SIMD_FUNC(compute_residual)(const double* x, const double* rhs,
                                                  double* r, size_t nx, size_t ny,
                                                  const bicgstab_simd_context_t* ctx) {
-    /* Temporary storage for A*x */
-    double* Ax = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
-    if (!Ax) {
-        cfd_set_error(CFD_ERROR_NOMEM, "Failed to allocate temporary Ax vector");
-        return;
-    }
-
-    SIMD_FUNC(apply_laplacian)(x, Ax, nx, ny, ctx);
-
+    SIMD_VEC dx2_inv = ctx->dx2_inv_vec;
+    SIMD_VEC dy2_inv = ctx->dy2_inv_vec;
+    SIMD_VEC two_vec = ctx->two_vec;
     int ny_int = bicgstab_size_to_int(ny);
-    if (ny_int == 0) {
-        cfd_aligned_free(Ax);
-        return;
-    }
+    if (ny_int == 0) return;
 
     int jj;
     #pragma omp parallel for schedule(static)
@@ -235,23 +226,51 @@ static inline void SIMD_FUNC(compute_residual)(const double* x, const double* rh
         size_t j = (size_t)jj;
         size_t i = 1;
 
-        /* SIMD loop */
+        /* SIMD loop: r = rhs - A*x (fused Laplacian + subtraction) */
         for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
             size_t idx = j * nx + i;
+
+            /* Load 5-point stencil */
+            SIMD_VEC center = SIMD_LOAD(&x[idx]);
+            SIMD_VEC left = SIMD_LOAD(&x[idx - 1]);
+            SIMD_VEC right = SIMD_LOAD(&x[idx + 1]);
+            SIMD_VEC down = SIMD_LOAD(&x[idx - nx]);
+            SIMD_VEC up = SIMD_LOAD(&x[idx + nx]);
+
+            /* Compute A*x = (left + right - 2*center)/dx^2 + (down + up - 2*center)/dy^2 */
+            SIMD_VEC sum_x = SIMD_ADD(left, right);
+            SIMD_VEC sum_y = SIMD_ADD(down, up);
+            SIMD_VEC two_center = SIMD_MUL(two_vec, center);
+
+            SIMD_VEC d2x = SIMD_SUB(sum_x, two_center);
+            SIMD_VEC d2y = SIMD_SUB(sum_y, two_center);
+
+            SIMD_VEC term_x = SIMD_MUL(d2x, dx2_inv);
+            SIMD_VEC term_y = SIMD_MUL(d2y, dy2_inv);
+            SIMD_VEC Ax = SIMD_ADD(term_x, term_y);
+
+            /* r = rhs - A*x */
             SIMD_VEC vrhs = SIMD_LOAD(&rhs[idx]);
-            SIMD_VEC vAx = SIMD_LOAD(&Ax[idx]);
-            SIMD_VEC vr = SIMD_SUB(vrhs, vAx);
+            SIMD_VEC vr = SIMD_SUB(vrhs, Ax);
             SIMD_STORE(&r[idx], vr);
         }
 
         /* Scalar remainder */
         for (; i < nx - 1; i++) {
             size_t idx = j * nx + i;
-            r[idx] = rhs[idx] - Ax[idx];
+            double center = x[idx];
+            double left = x[idx - 1];
+            double right = x[idx + 1];
+            double down = x[idx - nx];
+            double up = x[idx + nx];
+
+            double d2x = (left + right - 2.0 * center) / ctx->dx2;
+            double d2y = (down + up - 2.0 * center) / ctx->dy2;
+            double Ax = d2x + d2y;
+
+            r[idx] = rhs[idx] - Ax;
         }
     }
-
-    cfd_aligned_free(Ax);
 }
 
 /**
