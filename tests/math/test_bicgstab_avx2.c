@@ -13,6 +13,7 @@
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
+#include "cfd/core/cpu_features.h"
 #include <math.h>
 #include <stdlib.h>
 
@@ -120,12 +121,24 @@ void test_bicgstab_avx2_scalar_consistency(void) {
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats_scalar.status);
 
-    /* Create SIMD solver */
-    poisson_solver_t* solver_avx2 = poisson_solver_create(
-        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SIMD);
-
     /* Check if SIMD backend should be available */
     bool simd_available = poisson_solver_backend_available(POISSON_BACKEND_SIMD);
+
+    /* Verify we're on an AVX2 platform (x86-64) */
+    cfd_simd_arch_t arch = cfd_detect_simd_arch();
+    if (simd_available && arch != CFD_SIMD_AVX2) {
+        cfd_free(x_scalar);
+        cfd_free(x_avx2);
+        cfd_free(x_temp);
+        cfd_free(rhs);
+        poisson_solver_destroy(solver_scalar);
+        TEST_IGNORE_MESSAGE("AVX2 test skipped: platform uses different SIMD architecture");
+        return;
+    }
+
+    /* Create SIMD solver (will be AVX2 on this platform) */
+    poisson_solver_t* solver_avx2 = poisson_solver_create(
+        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SIMD);
 
     if (!solver_avx2) {
         cfd_free(x_scalar);
