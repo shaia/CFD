@@ -36,7 +36,9 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 |                     | SOR            | done | **TODO** | **TODO** | —        | —    |
 |                     | Red-Black SOR  | done | done     | done     | done     | —    |
 |                     | CG / PCG       | done | done     | done     | —        | —    |
-|                     | BiCGSTAB       | done | **TODO** | **TODO** | **TODO** | —    |
+|                     | BiCGSTAB       | done | done¹    | done¹    | —        | —    |
+
+¹ AVX2/NEON implementations include OpenMP parallelization internally. No separate OMP backend exists.
 
 ### Critical Gaps
 
@@ -281,10 +283,11 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 - [x] Conjugate Gradient (CG) for SPD systems (scalar, AVX2, NEON backends)
   - **Note:** CG is now the default Poisson solver for all projection methods (PR #139)
   - CPU/OMP use CG_SCALAR, AVX2 uses CG_SIMD for reliable O(√κ) convergence
-- [x] BiCGSTAB for non-symmetric systems — scalar ✅
-  - [x] BiCGSTAB AVX2 ✅
-  - [x] BiCGSTAB NEON ✅
-  - [x] BiCGSTAB OMP (included in AVX2/NEON via `#pragma omp parallel for`) ✅
+- [x] BiCGSTAB for non-symmetric systems ✅
+  - [x] BiCGSTAB Scalar (CPU) ✅
+  - [x] BiCGSTAB SIMD (AVX2/NEON with integrated OpenMP parallelization) ✅
+
+  **Note:** AVX2 and NEON implementations include OpenMP parallelization via `#pragma omp parallel for` in inner loops. There is no separate `POISSON_BACKEND_OMP` backend for BiCGSTAB.
 
   **Files created (BiCGSTAB backends):**
 
