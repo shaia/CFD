@@ -309,7 +309,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_init)(void** context, size_t nx, size_t n
     bicgstab_simd_context_t* ctx = (bicgstab_simd_context_t*)cfd_aligned_calloc(
         1, sizeof(bicgstab_simd_context_t));
     if (!ctx) {
-        return CFD_ERROR_MEMORY;
+        return CFD_ERROR_NOMEM;
     }
 
     size_t n = nx * ny;
@@ -330,7 +330,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_init)(void** context, size_t nx, size_t n
         cfd_aligned_free(ctx->s);
         cfd_aligned_free(ctx->t);
         cfd_aligned_free(ctx);
-        return CFD_ERROR_MEMORY;
+        return CFD_ERROR_NOMEM;
     }
 
     /* Store grid spacing */
@@ -370,7 +370,7 @@ static void SIMD_FUNC(bicgstab_destroy)(void** context) {
 
 static int SIMD_FUNC(bicgstab_solve)(void* context, double* x, const double* rhs,
                                       size_t nx, size_t ny,
-                                      ns_solver_stats_t* stats) {
+                                      poisson_solver_stats_t* stats) {
     bicgstab_simd_context_t* ctx = (bicgstab_simd_context_t*)context;
     if (!ctx || !ctx->initialized) {
         cfd_set_error(CFD_ERROR, "BiCGSTAB SIMD solver not initialized");
@@ -503,7 +503,7 @@ static int SIMD_FUNC(bicgstab_iterate)(void* context, double* x, const double* r
                                         size_t nx, size_t ny) {
     /* Single iteration not commonly used for BiCGSTAB */
     /* Delegate to full solve with max_iter=1 */
-    ns_solver_stats_t stats = ns_solver_stats_default();
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
     return SIMD_FUNC(bicgstab_solve)(context, x, rhs, nx, ny, &stats);
 }
 

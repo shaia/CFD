@@ -44,14 +44,16 @@
 #define SIMD_MUL(a, b) _mm256_mul_pd(a, b)
 #define SIMD_FMA(a, b, c) _mm256_fmadd_pd(a, b, c)
 
-/* AVX2 horizontal sum (4 doubles -> 1 double) */
-#define SIMD_HSUM(vec) ({ \
-    __m128d low = _mm256_castpd256_pd128(vec); \
-    __m128d high = _mm256_extractf128_pd(vec, 1); \
-    __m128d sum128 = _mm_add_pd(low, high); \
-    sum128 = _mm_hadd_pd(sum128, sum128); \
-    _mm_cvtsd_f64(sum128); \
-})
+/* AVX2 horizontal sum (4 doubles -> 1 double) - MSVC-compatible */
+static inline double simd_hsum_avx2(__m256d vec) {
+    __m128d low = _mm256_castpd256_pd128(vec);
+    __m128d high = _mm256_extractf128_pd(vec, 1);
+    __m128d sum128 = _mm_add_pd(low, high);
+    sum128 = _mm_hadd_pd(sum128, sum128);
+    return _mm_cvtsd_f64(sum128);
+}
+
+#define SIMD_HSUM(vec) simd_hsum_avx2(vec)
 
 //=============================================================================
 // INCLUDE SIMD TEMPLATE
