@@ -45,16 +45,6 @@
 #include <string.h>
 
 /* ============================================================================
- * BICGSTAB CONSTANTS
- * ============================================================================ */
-
-/**
- * Threshold for detecting BiCGSTAB breakdown.
- * Breakdown occurs when rho or omega becomes too small.
- */
-#define BICGSTAB_BREAKDOWN_THRESHOLD 1e-30
-
-/* ============================================================================
  * BICGSTAB CONTEXT
  * ============================================================================ */
 
