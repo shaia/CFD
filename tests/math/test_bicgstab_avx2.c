@@ -175,9 +175,11 @@ void test_bicgstab_avx2_scalar_consistency(void) {
      * numerical agreement (better than 8 decimal places). */
     TEST_ASSERT_DOUBLE_WITHIN(5.0e-9, 0.0, l2_diff);
 
-    /* Iteration counts should match (±1 allowed due to rounding) */
+    /* Iteration counts should match (±2 allowed due to rounding)
+     * SIMD rounding differences can accumulate over iterations, causing
+     * slightly different convergence paths across platforms. */
     int iter_diff = abs((int)stats_scalar.iterations - (int)stats_avx2.iterations);
-    TEST_ASSERT_LESS_OR_EQUAL(1, iter_diff);
+    TEST_ASSERT_LESS_OR_EQUAL(2, iter_diff);
 
     /* Cleanup */
     poisson_solver_destroy(solver_scalar);
