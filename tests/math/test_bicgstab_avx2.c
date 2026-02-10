@@ -166,11 +166,14 @@ void test_bicgstab_avx2_scalar_consistency(void) {
     }
     l2_diff = sqrt(l2_diff / count);
 
-    /* Verify consistency (L2 diff < 1e-9)
+    /* Verify consistency (L2 diff < 5e-9)
      * Note: SIMD uses FMA and different operation ordering than scalar,
-     * causing minor rounding differences (~2e-10 observed). 1e-9 threshold
-     * still ensures excellent numerical agreement (9 decimal places). */
-    TEST_ASSERT_DOUBLE_WITHIN(1.0e-9, 0.0, l2_diff);
+     * causing minor rounding differences that vary by platform:
+     * - Windows AVX2: ~2.4e-10
+     * - macOS AVX2/NEON: ~1.5e-9
+     * 5e-9 threshold provides cross-platform margin while ensuring excellent
+     * numerical agreement (better than 8 decimal places). */
+    TEST_ASSERT_DOUBLE_WITHIN(5.0e-9, 0.0, l2_diff);
 
     /* Iteration counts should match (±1 allowed due to rounding) */
     int iter_diff = abs((int)stats_scalar.iterations - (int)stats_avx2.iterations);
