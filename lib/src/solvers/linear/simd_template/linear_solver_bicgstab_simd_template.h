@@ -593,12 +593,14 @@ static cfd_status_t SIMD_FUNC(bicgstab_iterate)(
     double* x_temp,
     const double* rhs,
     double* residual) {
-    (void)residual;  /* Not used by BiCGSTAB iterate */
+    (void)x_temp;
 
-    /* Single iteration not commonly used for BiCGSTAB */
-    /* Delegate to full solve with max_iter=1 */
-    poisson_solver_stats_t stats = poisson_solver_stats_default();
-    return SIMD_FUNC(bicgstab_solve)(solver, x, x_temp, rhs, &stats);
+    /* BiCGSTAB doesn't support single iteration mode well.
+     * Return the current residual from the Laplacian. */
+    if (residual) {
+        *residual = poisson_solver_compute_residual(solver, x, rhs);
+    }
+    return CFD_SUCCESS;
 }
 
 //=============================================================================
