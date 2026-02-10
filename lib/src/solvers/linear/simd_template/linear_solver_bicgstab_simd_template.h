@@ -305,9 +305,11 @@ static inline void SIMD_FUNC(zero_vector)(double* vec, size_t nx, size_t ny) {
 // INITIALIZATION AND CLEANUP
 //=============================================================================
 
-static cfd_status_t SIMD_FUNC(bicgstab_init)(void** context, size_t nx, size_t ny,
-                                               double dx, double dy,
-                                               const poisson_solver_params_t* params) {
+static cfd_status_t SIMD_FUNC(bicgstab_init)(
+    poisson_solver_t* solver,
+    size_t nx, size_t ny,
+    double dx, double dy,
+    const poisson_solver_params_t* params) {
     (void)params;  /* Not used for BiCGSTAB */
 
     bicgstab_simd_context_t* ctx = (bicgstab_simd_context_t*)cfd_aligned_calloc(
@@ -347,15 +349,15 @@ static cfd_status_t SIMD_FUNC(bicgstab_init)(void** context, size_t nx, size_t n
     ctx->two_vec = SIMD_SET1(2.0);
 
     ctx->initialized = 1;
-    *context = ctx;
+    solver->context = ctx;
 
     return CFD_SUCCESS;
 }
 
-static void SIMD_FUNC(bicgstab_destroy)(void** context) {
-    if (!context || !*context) return;
+static void SIMD_FUNC(bicgstab_destroy)(poisson_solver_t* solver) {
+    if (!solver || !solver->context) return;
 
-    bicgstab_simd_context_t* ctx = (bicgstab_simd_context_t*)(*context);
+    bicgstab_simd_context_t* ctx = (bicgstab_simd_context_t*)(solver->context);
 
     cfd_aligned_free(ctx->r);
     cfd_aligned_free(ctx->r_hat);
@@ -365,21 +367,34 @@ static void SIMD_FUNC(bicgstab_destroy)(void** context) {
     cfd_aligned_free(ctx->t);
     cfd_aligned_free(ctx);
 
-    *context = NULL;
+    solver->context = NULL;
 }
 
 //=============================================================================
 // BICGSTAB SOLVER
 //=============================================================================
 
-static int SIMD_FUNC(bicgstab_solve)(void* context, double* x, const double* rhs,
-                                      size_t nx, size_t ny,
-                                      poisson_solver_stats_t* stats) {
-    bicgstab_simd_context_t* ctx = (bicgstab_simd_context_t*)context;
-    if (!ctx || !ctx->initialized) {
+static cfd_status_t SIMD_FUNC(bicgstab_solve)(
+    poisson_solver_t* solver,
+    double* x,
+    double* x_temp,
+    const double* rhs,
+    poisson_solver_stats_t* stats) {
+    (void)x_temp;  /* Not used by BiCGSTAB */
+
+    if (!solver || !solver->context) {
         cfd_set_error(CFD_ERROR, "BiCGSTAB SIMD solver not initialized");
-        return -1;
+        return CFD_ERROR;
     }
+
+    bicgstab_simd_context_t* ctx = (bicgstab_simd_context_t*)(solver->context);
+    if (!ctx->initialized) {
+        cfd_set_error(CFD_ERROR, "BiCGSTAB SIMD solver not initialized");
+        return CFD_ERROR;
+    }
+
+    size_t nx = solver->nx;
+    size_t ny = solver->ny;
 
     /* Extract working vectors */
     double* r = ctx->r;
@@ -402,8 +417,11 @@ static int SIMD_FUNC(bicgstab_solve)(void* context, double* x, const double* rhs
     /* Compute initial residual norm */
     double r_norm_init = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
     if (r_norm_init == 0.0) {
-        if (stats) stats->final_residual = 0.0;
-        return 0;  /* Already converged */
+        if (stats) {
+            stats->iterations = 0;
+            stats->final_residual = 0.0;
+        }
+        return CFD_SUCCESS;  /* Already converged */
     }
 
     const int max_iter = 5000;
@@ -418,8 +436,11 @@ static int SIMD_FUNC(bicgstab_solve)(void* context, double* x, const double* rhs
         /* Check for breakdown */
         if (fabs(rho_new) < BICGSTAB_BREAKDOWN_THRESHOLD) {
             cfd_set_error(CFD_ERROR_DIVERGED, "BiCGSTAB breakdown: rho = 0");
-            if (stats) stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
-            return iter;
+            if (stats) {
+                stats->iterations = iter;
+                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
+            }
+            return CFD_ERROR_DIVERGED;
         }
 
         /* 2. beta = (rho_new / rho) * (alpha / omega) */
@@ -446,8 +467,11 @@ static int SIMD_FUNC(bicgstab_solve)(void* context, double* x, const double* rhs
         double r_hat_dot_v = SIMD_FUNC(dot_product)(r_hat, v, nx, ny);
         if (fabs(r_hat_dot_v) < BICGSTAB_BREAKDOWN_THRESHOLD) {
             cfd_set_error(CFD_ERROR_DIVERGED, "BiCGSTAB breakdown: (r_hat, v) = 0");
-            if (stats) stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
-            return iter;
+            if (stats) {
+                stats->iterations = iter;
+                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
+            }
+            return CFD_ERROR_DIVERGED;
         }
         alpha = rho_new / r_hat_dot_v;
 
@@ -460,8 +484,11 @@ static int SIMD_FUNC(bicgstab_solve)(void* context, double* x, const double* rhs
         if (s_norm / r_norm_init < tol) {
             /* Early termination: x = x + alpha*p */
             SIMD_FUNC(axpy)(alpha, p, x, nx, ny);
-            if (stats) stats->final_residual = s_norm / r_norm_init;
-            return iter + 1;
+            if (stats) {
+                stats->iterations = iter + 1;
+                stats->final_residual = s_norm / r_norm_init;
+            }
+            return CFD_SUCCESS;
         }
 
         /* 8. t = A*s */
@@ -472,8 +499,11 @@ static int SIMD_FUNC(bicgstab_solve)(void* context, double* x, const double* rhs
         double t_dot_t = SIMD_FUNC(dot_product)(t, t, nx, ny);
         if (fabs(t_dot_t) < BICGSTAB_BREAKDOWN_THRESHOLD) {
             cfd_set_error(CFD_ERROR_DIVERGED, "BiCGSTAB breakdown: (t, t) = 0");
-            if (stats) stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
-            return iter;
+            if (stats) {
+                stats->iterations = iter;
+                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny)) / r_norm_init;
+            }
+            return CFD_ERROR_DIVERGED;
         }
         omega = t_dot_s / t_dot_t;
 
@@ -488,8 +518,11 @@ static int SIMD_FUNC(bicgstab_solve)(void* context, double* x, const double* rhs
         /* 12. Check convergence on ||r|| */
         double r_norm = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
         if (r_norm / r_norm_init < tol) {
-            if (stats) stats->final_residual = r_norm / r_norm_init;
-            return iter + 1;
+            if (stats) {
+                stats->iterations = iter + 1;
+                stats->final_residual = r_norm / r_norm_init;
+            }
+            return CFD_SUCCESS;
         }
 
         /* Update rho for next iteration */
@@ -498,17 +531,26 @@ static int SIMD_FUNC(bicgstab_solve)(void* context, double* x, const double* rhs
 
     /* Max iterations reached */
     double r_norm_final = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
-    if (stats) stats->final_residual = r_norm_final / r_norm_init;
+    if (stats) {
+        stats->iterations = max_iter;
+        stats->final_residual = r_norm_final / r_norm_init;
+    }
 
-    return max_iter;
+    return CFD_ERROR_MAX_ITER;
 }
 
-static int SIMD_FUNC(bicgstab_iterate)(void* context, double* x, const double* rhs,
-                                        size_t nx, size_t ny) {
+static cfd_status_t SIMD_FUNC(bicgstab_iterate)(
+    poisson_solver_t* solver,
+    double* x,
+    double* x_temp,
+    const double* rhs,
+    double* residual) {
+    (void)residual;  /* Not used by BiCGSTAB iterate */
+
     /* Single iteration not commonly used for BiCGSTAB */
     /* Delegate to full solve with max_iter=1 */
     poisson_solver_stats_t stats = poisson_solver_stats_default();
-    return SIMD_FUNC(bicgstab_solve)(context, x, rhs, nx, ny, &stats);
+    return SIMD_FUNC(bicgstab_solve)(solver, x, x_temp, rhs, &stats);
 }
 
 //=============================================================================
