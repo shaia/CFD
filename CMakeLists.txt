@@ -207,6 +207,7 @@ if(BUILD_TESTS)
     add_executable(test_cavity_flow tests/validation/test_cavity_flow.c)
     add_executable(test_cavity_validation tests/validation/test_cavity_validation.c)
     add_executable(test_cavity_reference tests/validation/test_cavity_reference.c)
+    add_executable(test_cavity_backends tests/validation/test_cavity_backends.c)
 
     # Ghia validation - per-architecture test files
     add_executable(test_ghia_euler_cpu tests/validation/test_ghia_euler_cpu.c)
@@ -294,6 +295,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_cavity_flow PRIVATE CFD::Library unity)
     target_link_libraries(test_cavity_validation PRIVATE CFD::Library unity)
     target_link_libraries(test_cavity_reference PRIVATE CFD::Library unity)
+    target_link_libraries(test_cavity_backends PRIVATE CFD::Library unity)
     target_link_libraries(test_ghia_euler_cpu PRIVATE CFD::Library unity)
     target_link_libraries(test_ghia_euler_avx2 PRIVATE CFD::Library unity)
     target_link_libraries(test_ghia_euler_omp PRIVATE CFD::Library unity)
@@ -359,6 +361,7 @@ if(BUILD_TESTS)
     add_test(NAME CavityFlowTest COMMAND test_cavity_flow)
     add_test(NAME CavityValidationTest COMMAND test_cavity_validation)
     add_test(NAME CavityReferenceTest COMMAND test_cavity_reference)
+    add_test(NAME CavityBackendsTest COMMAND test_cavity_backends)
 
     # Ghia validation tests - per architecture
     # These run long simulations (3000-5000 steps) to validate physics accuracy
@@ -393,6 +396,7 @@ if(BUILD_TESTS)
     set_tests_properties(
         CavityValidationTest
         CavityReferenceTest
+        CavityBackendsTest
         GhiaEulerCpuTest
         GhiaEulerAvx2Test
         GhiaEulerOmpTest
