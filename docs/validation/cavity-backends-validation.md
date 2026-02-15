@@ -24,7 +24,7 @@ This document describes the comprehensive backend validation system for the lid-
 - **OpenMP** (`explicit_euler_omp`)
 
 ### Backend Consistency
-- Verifies all backends produce consistent results (within 0.1%)
+- Verifies projection backends (CPU, AVX2, OMP) produce consistent results (within 0.1%)
 
 ## Accuracy Targets
 
@@ -62,10 +62,10 @@ For each backend:
 
 ### 2. Backend Consistency Check
 
-Compare all available backends:
-- Extract center point values (u, v)
-- Verify all backends within 0.1% of each other
-- Ensures SIMD/OMP optimizations preserve correctness
+Compare projection backends (CPU Scalar, AVX2, OpenMP):
+- Extract center point values (u, v) at 33×33 grid
+- Verify all available projection backends within 0.1% of each other
+- Ensures SIMD/OMP optimizations preserve numerical correctness
 
 ## Grid Sizes
 
