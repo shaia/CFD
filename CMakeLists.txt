@@ -35,6 +35,9 @@ option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 # Code coverage option (for GCC/Clang)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 
+# Validation test options
+option(CAVITY_FULL_VALIDATION "Enable full 129x129 cavity validation (slow)" OFF)
+
 # Explicitly default to static libraries to simplifiy running tests on Windows
 set(BUILD_SHARED_LIBS OFF)
 
@@ -208,6 +211,9 @@ if(BUILD_TESTS)
     add_executable(test_cavity_validation tests/validation/test_cavity_validation.c)
     add_executable(test_cavity_reference tests/validation/test_cavity_reference.c)
     add_executable(test_cavity_backends tests/validation/test_cavity_backends.c)
+    if(CAVITY_FULL_VALIDATION)
+        target_compile_definitions(test_cavity_backends PRIVATE CAVITY_FULL_VALIDATION=1)
+    endif()
 
     # Ghia validation - per-architecture test files
     add_executable(test_ghia_euler_cpu tests/validation/test_ghia_euler_cpu.c)
