@@ -21,6 +21,8 @@
  * 4. Compare backends to ensure consistency (values within 0.1%)
  */
 
+#include <string.h>
+
 #include "cavity_reference_data.h"
 #include "cavity_validation_utils.h"
 #include "lid_driven_cavity_common.h"
@@ -87,7 +89,7 @@ static profile_data_t extract_profiles_from_ctx(const cavity_context_t* ctx) {
         free(data.u_values);
         free(data.x_coords);
         free(data.v_values);
-        data.y_coords = NULL;
+        memset(&data, 0, sizeof(data));
         return data;
     }
 
