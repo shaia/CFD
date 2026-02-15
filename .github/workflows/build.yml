@@ -642,7 +642,7 @@ jobs:
             exit 1
           fi
 
-      - name: Configure with AVX2 + OpenMP + CUDA
+      - name: Configure with AVX2 + OpenMP + CUDA + full validation
         run: |
           mkdir -p build
           cd build
@@ -652,7 +652,8 @@ jobs:
             -DBUILD_EXAMPLES=OFF \
             -DBUILD_TESTS=ON \
             -DCFD_ENABLE_AVX2=ON \
-            -DCFD_ENABLE_CUDA=ON
+            -DCFD_ENABLE_CUDA=ON \
+            -DCAVITY_FULL_VALIDATION=ON
 
       - name: Build
         run: |
