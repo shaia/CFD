@@ -368,6 +368,11 @@ if(BUILD_TESTS)
     add_test(NAME CavityValidationTest COMMAND test_cavity_validation)
     add_test(NAME CavityReferenceTest COMMAND test_cavity_reference)
     add_test(NAME CavityBackendsTest COMMAND test_cavity_backends)
+    if(CAVITY_FULL_VALIDATION)
+        set_tests_properties(CavityBackendsTest PROPERTIES TIMEOUT 14400)
+        set_tests_properties(CavityBackendsTest PROPERTIES DEPENDS
+            "CavityValidationTest;CavityReferenceTest;GhiaEulerCpuTest;GhiaEulerAvx2Test;GhiaEulerOmpTest;GhiaProjectionCpuTest;GhiaProjectionAvx2Test;GhiaProjectionOmpTest;GhiaProjectionGpuTest;TaylorGreenVortexTest;PoiseuilleFlowTest;ConvergenceOrderTest;SolverArchitectureTest")
+    endif()
 
     # Ghia validation tests - per architecture
     # These run long simulations (3000-5000 steps) to validate physics accuracy
