@@ -52,6 +52,30 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake git
 
+      - name: Install CUDA toolkit
+        run: |
+          # Deep Learning Base AMI has the NVIDIA driver but not nvcc
+          # Add CUDA to PATH if already installed
+          if [ -d /usr/local/cuda/bin ]; then
+            echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+            echo "LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          fi
+
+          # Check if nvcc is now available
+          if command -v nvcc &>/dev/null || [ -x /usr/local/cuda/bin/nvcc ]; then
+            echo "CUDA toolkit already installed"
+            /usr/local/cuda/bin/nvcc --version || nvcc --version
+          else
+            echo "Installing CUDA toolkit from NVIDIA repository..."
+            # Install NVIDIA CUDA keyring for Ubuntu 22.04
+            wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+            sudo dpkg -i cuda-keyring_1.1-1_all.deb
+            sudo apt-get update
+            sudo apt-get install -y cuda-toolkit
+            echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+            echo "LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          fi
+
       - name: Verify hardware
         run: |
           echo "=== GPU ==="
@@ -132,6 +156,21 @@ jobs:
           else
             echo "GPU backend ran successfully"
           fi
+
+      - name: Run 129x129 cavity validation with ASan
+        if: always()
+        run: |
+          cmake -B build-asan -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=gcc \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON \
+            -DCFD_ENABLE_AVX2=ON \
+            -DCAVITY_FULL_VALIDATION=ON \
+            -DENABLE_ASAN=ON
+          cmake --build build-asan --parallel $(nproc) --target test_cavity_backends
+          cd build-asan
+          ASAN_OPTIONS=detect_leaks=0 ./test_cavity_backends
 
       - name: Generate summary
         if: always()
