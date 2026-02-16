@@ -33,7 +33,7 @@ jobs:
           ec2-instance-type: g4dn.4xlarge
           subnet-id: ${{ secrets.EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.EC2_SECURITY_GROUP_ID }}
-          market-type: spot
+       
 
   gpu-validation:
     name: Run GPU + CPU validation
