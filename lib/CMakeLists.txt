@@ -209,6 +209,7 @@ function(apply_cuda_options target_name)
     if(CFD_HAS_CUDA)
         target_compile_options(${target_name} PRIVATE
             $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:Release>>:-O3 --use_fast_math>
+            $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:Debug>>:-g -G>
         )
     endif()
 endfunction()
