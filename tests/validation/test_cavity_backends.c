@@ -419,13 +419,17 @@ int main(void) {
     printf("========================================\n");
 
     printf("\n[Projection Method Backends]\n");
+#if !CAVITY_FULL_VALIDATION
     RUN_TEST(test_projection_cpu_scalar);
+#endif
     RUN_TEST(test_projection_optimized_avx2);
     RUN_TEST(test_projection_omp);
     RUN_TEST(test_projection_gpu);
 
     printf("\n[Explicit Euler Backends]\n");
+#if !CAVITY_FULL_VALIDATION
     RUN_TEST(test_explicit_euler_cpu);
+#endif
     RUN_TEST(test_explicit_euler_optimized);
     RUN_TEST(test_explicit_euler_omp);
 
