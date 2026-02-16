@@ -706,6 +706,7 @@ jobs:
           ctest --output-on-failure -L "validation" -V
 
       - name: Run 129x129 cavity validation with ASan
+        if: always()
         run: |
           mkdir -p build-asan
           cd build-asan
