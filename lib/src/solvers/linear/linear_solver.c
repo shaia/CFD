@@ -467,10 +467,6 @@ static poisson_solver_t* g_cached_redblack_omp = NULL;
 static poisson_solver_t* g_cached_redblack_scalar = NULL;
 static poisson_solver_t* g_cached_cg_scalar = NULL;
 static poisson_solver_t* g_cached_cg_simd = NULL;
-static size_t g_cached_nx = 0;
-static size_t g_cached_ny = 0;
-static double g_cached_dx = 0.0;
-static double g_cached_dy = 0.0;
 
 /**
  * Cleanup cached solvers (called at program exit)
@@ -504,10 +500,6 @@ static void cleanup_cached_solvers(void) {
         poisson_solver_destroy(g_cached_cg_simd);
         g_cached_cg_simd = NULL;
     }
-    g_cached_nx = 0;
-    g_cached_ny = 0;
-    g_cached_dx = 0.0;
-    g_cached_dy = 0.0;
 }
 
 int poisson_solve(
@@ -567,9 +559,12 @@ int poisson_solve(
             return -1;
     }
 
-    /* Recreate solver if grid dimensions or spacing changed */
-    if (*solver_ptr == NULL || g_cached_nx != nx || g_cached_ny != ny
-        || g_cached_dx != dx || g_cached_dy != dy) {
+    /* Recreate solver if grid dimensions or spacing changed.
+     * Compare against the solver's own stored dimensions, not shared globals,
+     * because each solver type is cached independently. */
+    if (*solver_ptr == NULL
+        || (*solver_ptr)->nx != nx || (*solver_ptr)->ny != ny
+        || (*solver_ptr)->dx != dx || (*solver_ptr)->dy != dy) {
         /* Register cleanup on first use */
         static int cleanup_registered = 0;
         if (!cleanup_registered) {
@@ -588,10 +583,6 @@ int poisson_solve(
 
         if (*solver_ptr) {
             poisson_solver_init(*solver_ptr, nx, ny, dx, dy, NULL);
-            g_cached_nx = nx;
-            g_cached_ny = ny;
-            g_cached_dx = dx;
-            g_cached_dy = dy;
         }
     }
 
