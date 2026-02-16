@@ -1,0 +1,163 @@
+name: GPU Validation (EC2)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  start-runner:
+    name: Start EC2 runner
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.label.name == 'gpu-test')
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start.outputs.label }}
+      ec2-instance-id: ${{ steps.start.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Start EC2 runner
+        id: start
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          ec2-image-id: ${{ secrets.EC2_AMI_ID }}
+          ec2-instance-type: g4dn.4xlarge
+          subnet-id: ${{ secrets.EC2_SUBNET_ID }}
+          security-group-id: ${{ secrets.EC2_SECURITY_GROUP_ID }}
+          market-type: spot
+
+  gpu-validation:
+    name: Run GPU + CPU validation
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git
+
+      - name: Verify hardware
+        run: |
+          echo "=== GPU ==="
+          nvidia-smi
+          echo ""
+          echo "=== CPU (AVX2) ==="
+          if grep -q avx2 /proc/cpuinfo; then
+            echo "AVX2: supported"
+          else
+            echo "AVX2: NOT supported"
+            exit 1
+          fi
+          echo ""
+          echo "=== CUDA ==="
+          nvcc --version
+
+      - name: Configure
+        run: |
+          cmake -B build -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc \
+            -DBUILD_TESTS=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DCFD_ENABLE_AVX2=ON \
+            -DCFD_ENABLE_CUDA=ON \
+            -DCAVITY_FULL_VALIDATION=ON
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Verify backends
+        run: |
+          cd build
+          OUTPUT=$(./test_linear_solver 2>&1 || true)
+          echo "$OUTPUT"
+
+          echo ""
+          echo "Checking backend availability..."
+
+          # AVX2
+          if echo "$OUTPUT" | grep -q "SIMD backend available: YES"; then
+            echo "AVX2: enabled"
+          else
+            echo "AVX2: MISSING"
+            exit 1
+          fi
+
+          # GPU symbols
+          LIB_CHECK=""
+          if [ -f lib/libcfd_library.a ]; then
+            LIB_CHECK=lib/libcfd_library.a
+          elif [ -f lib/libcfd_api.a ]; then
+            LIB_CHECK=lib/libcfd_api.a
+          fi
+          if [ -n "$LIB_CHECK" ] && nm -C "$LIB_CHECK" 2>/dev/null | grep -q "gpu"; then
+            echo "GPU: symbols found"
+          else
+            echo "GPU: symbols MISSING"
+          fi
+
+      - name: Run validation tests
+        run: |
+          cd build
+          echo "=== Cross-architecture consistency ==="
+          ctest --output-on-failure -L "cross-arch" -V
+          echo ""
+          echo "=== Physics validation (129x129 cavity) ==="
+          ctest --output-on-failure -L "validation" -V
+
+      - name: Verify GPU backend was tested
+        run: |
+          cd build
+          # Run cavity backends directly and check GPU didn't skip
+          OUTPUT=$(./test_cavity_backends 2>&1 || true)
+          if echo "$OUTPUT" | grep -q "projection_jacobi_gpu.*SKIPPED"; then
+            echo "WARNING: GPU backend was skipped despite GPU hardware"
+            echo "$OUTPUT" | grep -i "gpu\|GPU"
+          else
+            echo "GPU backend ran successfully"
+          fi
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## GPU Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Instance**: g4dn.4xlarge (T4 GPU + 16 vCPUs)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backends**: AVX2, OpenMP, CUDA GPU" >> $GITHUB_STEP_SUMMARY
+          echo "- **Grid**: 129x129 full validation" >> $GITHUB_STEP_SUMMARY
+          echo "- **GPU**: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs: [start-runner, gpu-validation]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}

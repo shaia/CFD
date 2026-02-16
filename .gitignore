@@ -121,3 +121,7 @@ artifacts/
 test_frames/
 build_log.txt
 *.log
+
+# AWS credentials / keys
+*.pem
+scripts/aws/.gpu-runner-config
