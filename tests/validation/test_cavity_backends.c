@@ -348,7 +348,7 @@ void test_backend_consistency(void) {
         }
 
         if (!result.success) {
-            char msg[256];
+            char msg[512];
             snprintf(msg, sizeof(msg), "%s failed: %s", names[i], result.error_msg);
             TEST_FAIL_MESSAGE(msg);
         }

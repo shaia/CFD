@@ -148,6 +148,7 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 
 - [ ] Negative testing suite (more edge cases)
 - [ ] Memory leak checks (Valgrind/ASan integration in CI)
+- [ ] Add `TEST_FAIL_PRINTF` macro to eliminate repeated `snprintf` + `TEST_FAIL_MESSAGE` pattern (5+ occurrences, causes `-Wformat-truncation` warnings). Enable `UNITY_INCLUDE_PRINT_FORMATTED` or define a local helper macro.
 
 ### 0.5 Error Handling & Robustness (P0) ✅
 
