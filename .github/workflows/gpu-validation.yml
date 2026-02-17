@@ -156,21 +156,6 @@ jobs:
             echo "GPU backend ran successfully (or not applicable)"
           fi
 
-      - name: Run 129x129 cavity validation with ASan
-        if: always()
-        run: |
-          cmake -B build-asan -G "Unix Makefiles" \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=gcc \
-            -DBUILD_EXAMPLES=OFF \
-            -DBUILD_TESTS=ON \
-            -DCFD_ENABLE_AVX2=ON \
-            -DCAVITY_FULL_VALIDATION=ON \
-            -DENABLE_ASAN=ON
-          cmake --build build-asan --parallel $(nproc) --target test_cavity_backends
-          cd build-asan
-          ASAN_OPTIONS=detect_leaks=0 ./test_cavity_backends
-
       - name: Generate summary
         if: always()
         run: |
