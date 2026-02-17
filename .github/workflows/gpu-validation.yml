@@ -1,6 +1,8 @@
-name: GPU Validation (EC2)
+name: Cross-Architecture Validation (EC2)
 
 on:
+  push:
+    branches: [master, main]
   workflow_dispatch:
   pull_request:
     types: [labeled]
@@ -9,6 +11,7 @@ jobs:
   start-runner:
     name: Start EC2 runner
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.label.name == 'gpu-test')
     runs-on: ubuntu-latest
@@ -21,7 +24,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Start EC2 runner
         id: start
@@ -30,10 +33,9 @@ jobs:
           mode: start
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           ec2-image-id: ${{ secrets.EC2_AMI_ID }}
-          ec2-instance-type: c6i.4xlarge
+          ec2-instance-type: g4dn.xlarge
           subnet-id: ${{ secrets.EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.EC2_SECURITY_GROUP_ID }}
-       
 
   gpu-validation:
     name: Run GPU + CPU validation
@@ -49,6 +51,30 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake git
+
+      - name: Install CUDA toolkit
+        run: |
+          # Deep Learning Base AMI has the NVIDIA driver but not nvcc
+          # Add CUDA to PATH if already installed
+          if [ -d /usr/local/cuda/bin ]; then
+            echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+            echo "LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          fi
+
+          # Check if nvcc is now available
+          if command -v nvcc &>/dev/null || [ -x /usr/local/cuda/bin/nvcc ]; then
+            echo "CUDA toolkit already installed"
+            /usr/local/cuda/bin/nvcc --version || nvcc --version
+          else
+            echo "Installing CUDA toolkit from NVIDIA repository..."
+            # Install NVIDIA CUDA keyring for Ubuntu 22.04
+            wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+            sudo dpkg -i cuda-keyring_1.1-1_all.deb
+            sudo apt-get update
+            sudo apt-get install -y cuda-toolkit
+            echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+            echo "LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          fi
 
       - name: Verify hardware
         run: |
@@ -117,18 +143,17 @@ jobs:
           ctest --output-on-failure -L "cross-arch" -V
           echo ""
           echo "=== Physics validation (129x129 cavity) ==="
-          ctest --output-on-failure -L "validation" -V
+          ctest --output-on-failure -L "validation" -V 2>&1 | tee validation_output.txt
 
       - name: Verify GPU backend was tested
         run: |
           cd build
-          # Run cavity backends directly and check GPU didn't skip
-          OUTPUT=$(./test_cavity_backends 2>&1 || true)
-          if echo "$OUTPUT" | grep -q "projection_jacobi_gpu.*SKIPPED"; then
+          # Check validation output for GPU skip (don't re-run the full test)
+          if [ -f validation_output.txt ] && grep -q "projection_jacobi_gpu.*SKIPPED" validation_output.txt; then
             echo "WARNING: GPU backend was skipped despite GPU hardware"
-            echo "$OUTPUT" | grep -i "gpu\|GPU"
+            grep -i "gpu\|GPU" validation_output.txt
           else
-            echo "GPU backend ran successfully"
+            echo "GPU backend ran successfully (or not applicable)"
           fi
 
       - name: Generate summary
@@ -136,7 +161,7 @@ jobs:
         run: |
           echo "## GPU Validation Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Instance**: g4dn.4xlarge (T4 GPU + 16 vCPUs)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Instance**: g4dn.xlarge (T4 GPU + 4 vCPUs)" >> $GITHUB_STEP_SUMMARY
           echo "- **Backends**: AVX2, OpenMP, CUDA GPU" >> $GITHUB_STEP_SUMMARY
           echo "- **Grid**: 129x129 full validation" >> $GITHUB_STEP_SUMMARY
           echo "- **GPU**: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
@@ -152,7 +177,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Stop EC2 runner
         uses: machulav/ec2-github-runner@v2

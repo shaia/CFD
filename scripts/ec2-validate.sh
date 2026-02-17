@@ -83,17 +83,24 @@ if [[ "${DO_SETUP}" == "true" ]]; then
         echo "Use an NVIDIA Deep Learning AMI or install CUDA toolkit manually."
     fi
 
+    # Add CUDA to PATH if installed but not in PATH
+    if [[ -d /usr/local/cuda/bin ]]; then
+        export PATH="/usr/local/cuda/bin:${PATH}"
+        export LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
+    fi
+
     if command -v nvcc &>/dev/null; then
         nvcc --version | tail -1
     else
-        echo "WARNING: nvcc not found. CUDA compilation will fail."
-        echo "Ensure CUDA toolkit is installed and /usr/local/cuda/bin is in PATH."
-        # Try to add CUDA to PATH if installed but not in PATH
-        if [[ -d /usr/local/cuda/bin ]]; then
-            export PATH="/usr/local/cuda/bin:${PATH}"
-            echo "Added /usr/local/cuda/bin to PATH"
-            nvcc --version | tail -1
-        fi
+        echo "nvcc not found. Installing CUDA toolkit..."
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+        sudo dpkg -i cuda-keyring_1.1-1_all.deb
+        rm -f cuda-keyring_1.1-1_all.deb
+        sudo apt-get update
+        sudo apt-get install -y cuda-toolkit
+        export PATH="/usr/local/cuda/bin:${PATH}"
+        export LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
+        nvcc --version | tail -1
     fi
 
     echo ""

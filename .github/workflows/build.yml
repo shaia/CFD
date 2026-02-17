@@ -609,132 +609,9 @@ jobs:
           echo "- **Compiler**: MSVC" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
 
-  # Cross-Architecture Validation - Tests that CPU, AVX2, OpenMP, and GPU backends produce identical results
-  # This job enables ALL backends (AVX2, OpenMP, CUDA) to compare implementations
-  # Note: GPU tests will be skipped since GitHub runners don't have GPU hardware
-  cross-arch-validation:
-    name: Cross-Architecture Validation (Linux + CUDA)
-    runs-on: ubuntu-latest
-    container:
-      image: nvidia/cuda:12.2.0-devel-ubuntu22.04
-
-    steps:
-      - name: Install dependencies
-        run: |
-          apt-get update
-          apt-get install -y build-essential cmake git
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Verify AVX2 hardware support (REQUIRED)
-        run: |
-          echo "CPU Info:"
-          cat /proc/cpuinfo | grep -E "(model name|flags)" | head -2
-          echo ""
-          if grep -q avx2 /proc/cpuinfo; then
-            echo "✅ AVX2 is supported on this runner"
-          else
-            echo "❌ ERROR: AVX2 is NOT supported on this runner"
-            echo "This job REQUIRES AVX2 hardware."
-            exit 1
-          fi
-
-      - name: Configure with AVX2 + OpenMP + CUDA + full validation
-        run: |
-          mkdir -p build
-          cd build
-          cmake .. -G "Unix Makefiles" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=gcc \
-            -DBUILD_EXAMPLES=OFF \
-            -DBUILD_TESTS=ON \
-            -DCFD_ENABLE_AVX2=ON \
-            -DCFD_ENABLE_CUDA=ON \
-            -DCAVITY_FULL_VALIDATION=ON
-
-      - name: Build
-        run: |
-          cd build
-          cmake --build . --parallel $(nproc)
-
-      - name: Verify backends are available
-        run: |
-          cd build
-          # Verify AVX2 SIMD backend is available
-          OUTPUT=$(./test_linear_solver 2>&1 || true)
-          echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -q "SIMD backend available: YES"; then
-            echo "✅ AVX2 SIMD backend is correctly enabled"
-          else
-            echo "❌ ERROR: AVX2 was expected but SIMD backend reports NO"
-            exit 1
-          fi
-          # Verify OpenMP backend is available (GCC has built-in OpenMP)
-          if echo "$OUTPUT" | grep -q "OMP"; then
-            echo "✅ OpenMP backend is available"
-          else
-            echo "⚠️ OpenMP backend may not be available"
-          fi
-          # Verify CUDA/GPU symbols are compiled in
-          echo ""
-          echo "Checking for GPU symbols in library..."
-          # For static builds, cfd_library is an INTERFACE library, check cfd_api instead
-          if [ -f lib/libcfd_library.a ]; then
-            LIB_CHECK=lib/libcfd_library.a
-          else
-            LIB_CHECK=lib/libcfd_api.a
-          fi
-          if nm -C "$LIB_CHECK" 2>/dev/null | grep -q "gpu"; then
-            echo "✅ GPU symbols found in $LIB_CHECK (CUDA compiled)"
-          else
-            echo "⚠️ GPU symbols NOT found in $LIB_CHECK (CUDA may not be enabled)"
-          fi
-
-      - name: Run cross-architecture and validation tests
-        run: |
-          cd build
-          # Run cross-arch and validation labeled tests
-          # - cross-arch: verify all backends produce identical results
-          # - validation: Ghia reference data comparison (physics accuracy)
-          # Note: GPU tests will be skipped since no GPU hardware is available
-          echo "Running cross-architecture consistency tests..."
-          ctest --output-on-failure -L "cross-arch" -V
-          echo "Running physics validation tests..."
-          ctest --output-on-failure -L "validation" -V
-
-      - name: Run 129x129 cavity validation with ASan
-        if: always()
-        run: |
-          mkdir -p build-asan
-          cd build-asan
-          cmake .. -G "Unix Makefiles" \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=gcc \
-            -DBUILD_EXAMPLES=OFF \
-            -DBUILD_TESTS=ON \
-            -DCFD_ENABLE_AVX2=ON \
-            -DCAVITY_FULL_VALIDATION=ON \
-            -DENABLE_ASAN=ON
-          cmake --build . --parallel $(nproc) --target test_cavity_backends
-          ASAN_OPTIONS=detect_leaks=0 ./test_cavity_backends
-
-      - name: Generate summary
-        if: always()
-        run: |
-          echo "## Cross-Architecture & Physics Validation Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "This job validates:" >> $GITHUB_STEP_SUMMARY
-          echo "- All solver backends (CPU, AVX2, OpenMP, GPU) produce identical results" >> $GITHUB_STEP_SUMMARY
-          echo "- Physics accuracy vs Ghia et al. (1982) reference data" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **AVX2**: Enabled" >> $GITHUB_STEP_SUMMARY
-          echo "- **OpenMP**: Enabled (GCC built-in)" >> $GITHUB_STEP_SUMMARY
-          echo "- **CUDA**: Enabled (compiled, GPU tests skipped - no hardware)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Compiler**: GCC" >> $GITHUB_STEP_SUMMARY
-          echo "- **Build Type**: Release" >> $GITHUB_STEP_SUMMARY
+  # Cross-Architecture Validation has been moved to gpu-validation.yml
+  # It runs on an EC2 g4dn.4xlarge instance (16 vCPUs, T4 GPU) for proper
+  # OMP scaling and actual GPU backend testing.
 
   # CUDA build on Windows - Verify CUDA code compiles (optional, slow)
   # Only runs on releases to save CI time
@@ -996,7 +873,6 @@ jobs:
       - openmp-test-linux
       - openmp-test-clang
       - openmp-test-windows
-      - cross-arch-validation
       - cuda-build
       - cuda-build-windows
       - sanitizers
@@ -1050,7 +926,6 @@ jobs:
           check_job "OpenMP (Linux GCC)" "${{ needs.openmp-test-linux.result }}"
           check_job "OpenMP (Linux Clang)" "${{ needs.openmp-test-clang.result }}"
           check_job "OpenMP (Windows)" "${{ needs.openmp-test-windows.result }}"
-          check_job "Cross-Arch Validation" "${{ needs.cross-arch-validation.result }}"
           check_job "CUDA (Linux)" "${{ needs.cuda-build.result }}"
           check_optional_job "CUDA (Windows)" "${{ needs.cuda-build-windows.result }}"
           check_job "Sanitizers" "${{ needs.sanitizers.result }}"
