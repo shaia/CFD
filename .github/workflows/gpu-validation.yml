@@ -143,18 +143,17 @@ jobs:
           ctest --output-on-failure -L "cross-arch" -V
           echo ""
           echo "=== Physics validation (129x129 cavity) ==="
-          ctest --output-on-failure -L "validation" -V
+          ctest --output-on-failure -L "validation" -V 2>&1 | tee validation_output.txt
 
       - name: Verify GPU backend was tested
         run: |
           cd build
-          # Run cavity backends directly and check GPU didn't skip
-          OUTPUT=$(./test_cavity_backends 2>&1 || true)
-          if echo "$OUTPUT" | grep -q "projection_jacobi_gpu.*SKIPPED"; then
+          # Check validation output for GPU skip (don't re-run the full test)
+          if [ -f validation_output.txt ] && grep -q "projection_jacobi_gpu.*SKIPPED" validation_output.txt; then
             echo "WARNING: GPU backend was skipped despite GPU hardware"
-            echo "$OUTPUT" | grep -i "gpu\|GPU"
+            grep -i "gpu\|GPU" validation_output.txt
           else
-            echo "GPU backend ran successfully"
+            echo "GPU backend ran successfully (or not applicable)"
           fi
 
       - name: Run 129x129 cavity validation with ASan
