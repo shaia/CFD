@@ -33,7 +33,7 @@ jobs:
           mode: start
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           ec2-image-id: ${{ secrets.EC2_AMI_ID }}
-          ec2-instance-type: g4dn.2xlarge
+          ec2-instance-type: g4dn.xlarge
           subnet-id: ${{ secrets.EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.EC2_SECURITY_GROUP_ID }}
 
@@ -177,7 +177,7 @@ jobs:
         run: |
           echo "## GPU Validation Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Instance**: g4dn.2xlarge (T4 GPU + 8 vCPUs)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Instance**: g4dn.xlarge (T4 GPU + 4 vCPUs)" >> $GITHUB_STEP_SUMMARY
           echo "- **Backends**: AVX2, OpenMP, CUDA GPU" >> $GITHUB_STEP_SUMMARY
           echo "- **Grid**: 129x129 full validation" >> $GITHUB_STEP_SUMMARY
           echo "- **GPU**: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
