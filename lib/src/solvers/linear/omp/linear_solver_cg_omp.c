@@ -43,7 +43,7 @@ typedef struct {
 
 static inline int size_to_int(size_t val) {
     if (val > (size_t)INT_MAX) {
-        return 0;
+        return INT_MAX;
     }
     return (int)val;
 }

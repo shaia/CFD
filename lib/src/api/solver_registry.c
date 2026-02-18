@@ -1206,7 +1206,7 @@ static cfd_status_t projection_omp_init(ns_solver_t* solver, const grid* grid,
 
     projection_context* ctx = (projection_context*)cfd_malloc(sizeof(projection_context));
     if (!ctx) {
-        return CFD_ERROR;
+        return CFD_ERROR_NOMEM;
     }
     ctx->initialized = 1;
     solver->context = ctx;
