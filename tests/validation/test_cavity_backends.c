@@ -399,7 +399,9 @@ void test_backend_consistency(void) {
  * MAIN
  * ============================================================================ */
 
-int main(void) {
+int main(int argc, char** argv) {
+    const char* filter = (argc > 1) ? argv[1] : NULL;
+
     UNITY_BEGIN();
 
     printf("\n");
@@ -416,25 +418,32 @@ int main(void) {
 #else
     printf("Mode:        FAST (CI)\n");
 #endif
+    if (filter)
+        printf("Filter:      %s\n", filter);
     printf("========================================\n");
 
-    printf("\n[Projection Method Backends]\n");
 #if !CAVITY_FULL_VALIDATION
-    RUN_TEST(test_projection_cpu_scalar);
+    if (!filter || strcmp(filter, "projection_scalar") == 0)
+        RUN_TEST(test_projection_cpu_scalar);
 #endif
-    RUN_TEST(test_projection_optimized_avx2);
-    RUN_TEST(test_projection_omp);
-    RUN_TEST(test_projection_gpu);
+    if (!filter || strcmp(filter, "projection_avx2") == 0)
+        RUN_TEST(test_projection_optimized_avx2);
+    if (!filter || strcmp(filter, "projection_omp") == 0)
+        RUN_TEST(test_projection_omp);
+    if (!filter || strcmp(filter, "projection_gpu") == 0)
+        RUN_TEST(test_projection_gpu);
 
-    printf("\n[Explicit Euler Backends]\n");
 #if !CAVITY_FULL_VALIDATION
-    RUN_TEST(test_explicit_euler_cpu);
+    if (!filter || strcmp(filter, "euler_scalar") == 0)
+        RUN_TEST(test_explicit_euler_cpu);
 #endif
-    RUN_TEST(test_explicit_euler_optimized);
-    RUN_TEST(test_explicit_euler_omp);
+    if (!filter || strcmp(filter, "euler_avx2") == 0)
+        RUN_TEST(test_explicit_euler_optimized);
+    if (!filter || strcmp(filter, "euler_omp") == 0)
+        RUN_TEST(test_explicit_euler_omp);
 
-    printf("\n[Backend Consistency]\n");
-    RUN_TEST(test_backend_consistency);
+    if (!filter || strcmp(filter, "consistency") == 0)
+        RUN_TEST(test_backend_consistency);
 
     return UNITY_END();
 }

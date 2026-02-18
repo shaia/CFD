@@ -367,11 +367,29 @@ if(BUILD_TESTS)
     add_test(NAME CavityFlowTest COMMAND test_cavity_flow)
     add_test(NAME CavityValidationTest COMMAND test_cavity_validation)
     add_test(NAME CavityReferenceTest COMMAND test_cavity_reference)
-    add_test(NAME CavityBackendsTest COMMAND test_cavity_backends)
     if(CAVITY_FULL_VALIDATION)
-        set_tests_properties(CavityBackendsTest PROPERTIES TIMEOUT 14400)
-        set_tests_properties(CavityBackendsTest PROPERTIES DEPENDS
-            "CavityValidationTest;CavityReferenceTest;GhiaEulerCpuTest;GhiaEulerAvx2Test;GhiaEulerOmpTest;GhiaProjectionCpuTest;GhiaProjectionAvx2Test;GhiaProjectionOmpTest;GhiaProjectionGpuTest;TaylorGreenVortexTest;PoiseuilleFlowTest;ConvergenceOrderTest;SolverArchitectureTest")
+        # Split into parallel tests for full validation (ctest -j runs them concurrently)
+        add_test(NAME CavityBackend_ProjectionAvx2 COMMAND test_cavity_backends projection_avx2)
+        add_test(NAME CavityBackend_ProjectionOmp COMMAND test_cavity_backends projection_omp)
+        add_test(NAME CavityBackend_ProjectionGpu COMMAND test_cavity_backends projection_gpu)
+        add_test(NAME CavityBackend_EulerAvx2 COMMAND test_cavity_backends euler_avx2)
+        add_test(NAME CavityBackend_EulerOmp COMMAND test_cavity_backends euler_omp)
+        add_test(NAME CavityBackend_Consistency COMMAND test_cavity_backends consistency)
+
+        set_tests_properties(
+            CavityBackend_ProjectionAvx2 CavityBackend_ProjectionOmp
+            CavityBackend_ProjectionGpu CavityBackend_EulerAvx2
+            CavityBackend_EulerOmp CavityBackend_Consistency
+            PROPERTIES TIMEOUT 14400 LABELS "validation"
+        )
+        # Consistency waits for all backends to finish
+        set_tests_properties(CavityBackend_Consistency PROPERTIES
+            DEPENDS "CavityBackend_ProjectionAvx2;CavityBackend_ProjectionOmp;CavityBackend_ProjectionGpu;CavityBackend_EulerAvx2;CavityBackend_EulerOmp"
+        )
+    else()
+        # CI mode: run all sequentially (fast enough at 33x33)
+        add_test(NAME CavityBackendsTest COMMAND test_cavity_backends)
+        set_tests_properties(CavityBackendsTest PROPERTIES LABELS "validation")
     endif()
 
     # Ghia validation tests - per architecture
@@ -407,7 +425,6 @@ if(BUILD_TESTS)
     set_tests_properties(
         CavityValidationTest
         CavityReferenceTest
-        CavityBackendsTest
         GhiaEulerCpuTest
         GhiaEulerAvx2Test
         GhiaEulerOmpTest
