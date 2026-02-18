@@ -149,16 +149,23 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
         // to field to ensure boundary conditions are preserved
         copy_boundary_velocities(field->u, field->v, u_star, v_star, nx, ny);
 
-        // Check for NaN
-        for (size_t k = 0; k < size; k++) {
+        // Check for NaN/Inf values (parallelized)
+        int has_nan = 0;
+        int k;
+        int limit = (int)size;
+#pragma omp parallel for reduction(| : has_nan) schedule(static)
+        for (k = 0; k < limit; k++) {
             if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
-                cfd_free(u_star);
-                cfd_free(v_star);
-                cfd_free(p_new);
-                cfd_free(p_temp);
-                cfd_free(rhs);
-                return CFD_ERROR_DIVERGED;
+                has_nan = 1;
             }
+        }
+        if (has_nan) {
+            cfd_free(u_star);
+            cfd_free(v_star);
+            cfd_free(p_new);
+            cfd_free(p_temp);
+            cfd_free(rhs);
+            return CFD_ERROR_DIVERGED;
         }
     }
 
