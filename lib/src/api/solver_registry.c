@@ -18,6 +18,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef CFD_ENABLE_OPENMP
+#include <omp.h>
+#endif
 
 // Forward declarations for internal solver implementations
 // These are not part of the public API
@@ -1231,13 +1234,17 @@ static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, 
     if (stats) {
         stats->iterations = 1;
         double max_vel = 0.0, max_p = 0.0;
-        for (size_t i = 0; i < field->nx * field->ny; i++) {
+        int i;
+        int n = (int)(field->nx * field->ny);
+#pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
+        for (i = 0; i < n; i++) {
             double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
             if (vel > max_vel) {
                 max_vel = vel;
             }
-            if (fabs(field->p[i]) > max_p) {
-                max_p = fabs(field->p[i]);
+            double ap = fabs(field->p[i]);
+            if (ap > max_p) {
+                max_p = ap;
             }
         }
         stats->max_velocity = max_vel;
