@@ -192,6 +192,10 @@ poisson_solver_t* poisson_solver_create(
             switch (backend) {
                 case POISSON_BACKEND_SIMD:
                     return create_cg_simd_solver();
+#ifdef CFD_ENABLE_OPENMP
+                case POISSON_BACKEND_OMP:
+                    return create_cg_omp_solver();
+#endif
                 case POISSON_BACKEND_SCALAR:
                     return create_cg_scalar_solver();
                 default:
@@ -466,6 +470,7 @@ static poisson_solver_t* g_cached_redblack_simd = NULL;
 static poisson_solver_t* g_cached_redblack_omp = NULL;
 static poisson_solver_t* g_cached_redblack_scalar = NULL;
 static poisson_solver_t* g_cached_cg_scalar = NULL;
+static poisson_solver_t* g_cached_cg_omp = NULL;
 static poisson_solver_t* g_cached_cg_simd = NULL;
 
 /**
@@ -495,6 +500,10 @@ static void cleanup_cached_solvers(void) {
     if (g_cached_cg_scalar) {
         poisson_solver_destroy(g_cached_cg_scalar);
         g_cached_cg_scalar = NULL;
+    }
+    if (g_cached_cg_omp) {
+        poisson_solver_destroy(g_cached_cg_omp);
+        g_cached_cg_omp = NULL;
     }
     if (g_cached_cg_simd) {
         poisson_solver_destroy(g_cached_cg_simd);
@@ -552,6 +561,12 @@ int poisson_solve(
             solver_ptr = &g_cached_cg_simd;
             method = POISSON_METHOD_CG;
             backend = POISSON_BACKEND_SIMD;
+            break;
+
+        case POISSON_SOLVER_CG_OMP:
+            solver_ptr = &g_cached_cg_omp;
+            method = POISSON_METHOD_CG;
+            backend = POISSON_BACKEND_OMP;
             break;
 
         default:
