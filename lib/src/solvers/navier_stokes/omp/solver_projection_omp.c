@@ -119,9 +119,9 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             }
         }
 
-        // Use CG for reliable convergence on all grid sizes
+        // Use OMP CG for parallelized Poisson solve
         int poisson_iters = poisson_solve(p_new, p_temp, rhs, nx, ny, dx, dy,
-                                          POISSON_SOLVER_CG_SCALAR);
+                                          POISSON_SOLVER_CG_OMP);
 
         if (poisson_iters < 0) {
             return CFD_ERROR_MAX_ITER;

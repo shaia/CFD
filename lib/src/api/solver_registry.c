@@ -5,6 +5,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/poisson_solver.h"
 
 
 #ifdef _WIN32
@@ -1186,6 +1187,32 @@ static ns_solver_t* create_explicit_euler_omp_solver(void) {
  * Built-in NSSolver: Projection OpenMP
  */
 
+static cfd_status_t projection_omp_init(ns_solver_t* solver, const grid* grid,
+                                        const ns_solver_params_t* params) {
+    (void)params;
+    if (!solver || !grid) {
+        return CFD_ERROR_INVALID;
+    }
+
+    /* OMP projection requires OMP CG Poisson solver.
+     * Never fall back to scalar CG — it would serialize the Poisson solve. */
+    poisson_solver_t* test_solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_OMP);
+    if (!test_solver) {
+        fprintf(stderr, "projection_omp_init: OMP CG Poisson solver not available\n");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    poisson_solver_destroy(test_solver);
+
+    projection_context* ctx = (projection_context*)cfd_malloc(sizeof(projection_context));
+    if (!ctx) {
+        return CFD_ERROR_NOMEM;
+    }
+    ctx->initialized = 1;
+    solver->context = ctx;
+    return CFD_SUCCESS;
+}
+
 static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
@@ -1260,8 +1287,8 @@ static ns_solver_t* create_projection_omp_solver(void) {
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_PARALLEL;
 
-    s->init = projection_init;        // Can reuse existing init
-    s->destroy = projection_destroy;  // Can reuse existing destroy
+    s->init = projection_omp_init;    // Checks OMP CG availability
+    s->destroy = projection_destroy;
     s->step = projection_omp_step;
     s->solve = projection_omp_solve;
     s->apply_boundary = NULL;

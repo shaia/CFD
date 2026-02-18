@@ -159,6 +159,7 @@ set(CFD_OMP_SOURCES
     src/solvers/navier_stokes/omp/solver_projection_omp.c
     # Linear solvers - OMP
     src/solvers/linear/omp/linear_solver_redblack_omp.c
+    src/solvers/linear/omp/linear_solver_cg_omp.c
 )
 
 # Note: API sources (solver_registry, simulation_api, output_registry) are in

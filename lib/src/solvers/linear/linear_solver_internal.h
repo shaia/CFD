@@ -36,6 +36,7 @@ poisson_solver_t* create_redblack_simd_solver(void);
 
 #ifdef CFD_ENABLE_OPENMP
 poisson_solver_t* create_redblack_omp_solver(void);
+poisson_solver_t* create_cg_omp_solver(void);
 #endif
 
 /* Conjugate Gradient solvers */
