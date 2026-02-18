@@ -143,7 +143,8 @@ jobs:
           ctest --output-on-failure -L "cross-arch" -V
           echo ""
           echo "=== Physics validation (129x129 cavity) ==="
-          ctest --output-on-failure -L "validation" -V -j 5 2>&1 | tee validation_output.txt
+          # Limit OMP threads per test to avoid oversubscription when running parallel
+          OMP_NUM_THREADS=2 ctest --output-on-failure -L "validation" -V -j 4 2>&1 | tee validation_output.txt
 
       - name: Verify GPU backend was tested
         run: |
