@@ -14,6 +14,7 @@
 #endif
 
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1205,15 +1206,12 @@ static cfd_status_t rk2_omp_step(ns_solver_t* solver, flow_field* field, const g
     step_params.max_iter = 1;
 
     cfd_status_t status = rk2_omp_impl(field, grid, &step_params);
-    if (status != CFD_SUCCESS) {
-        return status;
-    }
 
     if (stats) {
         stats->iterations = 1;
         double max_vel = 0.0, max_p = 0.0;
-        int i;
-        int n = (int)(field->nx * field->ny);
+        ptrdiff_t i;
+        ptrdiff_t n = (ptrdiff_t)(field->nx * field->ny);
 #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
         for (i = 0; i < n; i++) {
             double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
@@ -1228,7 +1226,7 @@ static cfd_status_t rk2_omp_step(ns_solver_t* solver, flow_field* field, const g
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
     }
-    return CFD_SUCCESS;
+    return status;
 }
 
 static cfd_status_t rk2_omp_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
@@ -1243,8 +1241,8 @@ static cfd_status_t rk2_omp_solve(ns_solver_t* solver, flow_field* field, const 
     if (stats) {
         stats->iterations = params->max_iter;
         double max_vel = 0.0, max_p = 0.0;
-        int i;
-        int n = (int)(field->nx * field->ny);
+        ptrdiff_t i;
+        ptrdiff_t n = (ptrdiff_t)(field->nx * field->ny);
 #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
         for (i = 0; i < n; i++) {
             double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
@@ -1332,8 +1330,8 @@ static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, 
     if (stats) {
         stats->iterations = 1;
         double max_vel = 0.0, max_p = 0.0;
-        int i;
-        int n = (int)(field->nx * field->ny);
+        ptrdiff_t i;
+        ptrdiff_t n = (ptrdiff_t)(field->nx * field->ny);
 #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
         for (i = 0; i < n; i++) {
             double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));

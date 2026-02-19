@@ -12,6 +12,7 @@
 #include "cfd/solvers/navier_stokes_solver.h"
 
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 #ifdef CFD_ENABLE_OPENMP
@@ -38,12 +39,12 @@ static void compute_rhs_omp(const double* u, const double* v, const double* p,
                              double* rhs_u, double* rhs_v, double* rhs_p,
                              const grid* grid, const ns_solver_params_t* params,
                              size_t nx, size_t ny, int iter, double dt) {
-    int ny_int = (int)ny;
-    int nx_int = (int)nx;
-    int j;
+    ptrdiff_t ny_int = (ptrdiff_t)ny;
+    ptrdiff_t nx_int = (ptrdiff_t)nx;
+    ptrdiff_t j;
 #pragma omp parallel for schedule(static)
     for (j = 1; j < ny_int - 1; j++) {
-        for (int i = 1; i < nx_int - 1; i++) {
+        for (ptrdiff_t i = 1; i < nx_int - 1; i++) {
             size_t idx = (size_t)j * nx + (size_t)i;
 
             /* Safety checks */
@@ -172,7 +173,7 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
     }
 
     double dt = params->dt;
-    int size_int = (int)size;
+    ptrdiff_t size_int = (ptrdiff_t)size;
     cfd_status_t status = CFD_SUCCESS;
 
     for (int iter = 0; iter < params->max_iter; iter++) {
@@ -192,7 +193,7 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
 
         /* ---- Intermediate: field = Q^n + dt * k1 ---- */
         {
-            int k;
+            ptrdiff_t k;
 #pragma omp parallel for schedule(static)
             for (k = 0; k < size_int; k++) {
                 field->u[k] = u0[k] + dt * k1_u[k];
@@ -221,7 +222,7 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
         /* ---- Final update: Q^{n+1} = Q^n + (dt/2)*(k1 + k2) ---- */
         {
             double half_dt = 0.5 * dt;
-            int k;
+            ptrdiff_t k;
 #pragma omp parallel for schedule(static)
             for (k = 0; k < size_int; k++) {
                 field->u[k] = u0[k] + half_dt * (k1_u[k] + k2_u[k]);
@@ -239,7 +240,7 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
         /* NaN / Inf check (parallelized) */
         {
             int has_nan = 0;
-            int k;
+            ptrdiff_t k;
 #pragma omp parallel for reduction(| : has_nan) schedule(static)
             for (k = 0; k < size_int; k++) {
                 if (!isfinite(field->u[k]) || !isfinite(field->v[k]) ||
