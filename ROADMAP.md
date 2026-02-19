@@ -1137,7 +1137,7 @@ Achieve O(N) complexity vs O(N²) for iterative methods.
 
 1. **Switched Projection Solvers to CG:**
    - [x] CPU projection: Red-Black SOR → CG_SCALAR ✅
-   - [x] OMP projection: Red-Black SOR → CG_SCALAR ✅
+   - [x] OMP projection: Red-Black SOR → CG_OMP ✅ (initially CG_SCALAR in PR #139, upgraded to CG_OMP in PR #145)
    - [x] AVX2 projection: Red-Black SOR → CG_SIMD ✅
    - **Rationale:** CG has O(√κ) convergence vs SOR's O(n) - typically 20-64 iterations vs 100s-1000s
 
