@@ -35,7 +35,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 | **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
 |                     | SOR            | done | **TODO** | **TODO** | —        | —    |
 |                     | Red-Black SOR  | done | done     | done     | done     | —    |
-|                     | CG / PCG       | done | done     | done     | —        | —    |
+|                     | CG / PCG       | done | done     | done     | done     | —    |
 |                     | BiCGSTAB       | done | done¹    | done¹    | —        | —    |
 
 ¹ AVX2/NEON implementations include OpenMP parallelization internally. No separate OMP backend exists.
@@ -53,15 +53,15 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 
 #### OMP Red-Black SOR Poisson Solver Convergence (P1)
 
-**Status:** Workaround implemented (switched OMP projection to CG)
+**Status:** Workaround implemented (switched OMP projection to CG_OMP)
 
 **Issue:** The OMP Red-Black SOR Poisson solver fails to converge on certain problem configurations (e.g., 33×33 grids with dt=5e-4), hitting max iterations (1000) without reaching tolerance (1e-6).
 
 **Impact:**
 
-- OMP projection solver switched to CG as workaround (commit be356a3)
+- OMP projection solver switched to CG_OMP (dedicated OMP CG solver) as workaround
 - Red-Black SOR remains available but unreliable for production use with OMP backend
-- CG provides reliable convergence (O(√κ) vs SOR's O(n))
+- CG_OMP provides reliable convergence with fully parallelized primitives
 
 **Root Cause:** Unknown - requires investigation of:
 
@@ -281,9 +281,9 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 **Still needed:**
 
 - [x] Solver abstraction interface
-- [x] Conjugate Gradient (CG) for SPD systems (scalar, AVX2, NEON backends)
+- [x] Conjugate Gradient (CG) for SPD systems (scalar, AVX2, NEON, OMP backends)
   - **Note:** CG is now the default Poisson solver for all projection methods (PR #139)
-  - CPU/OMP use CG_SCALAR, AVX2 uses CG_SIMD for reliable O(√κ) convergence
+  - CPU uses CG_SCALAR, AVX2 uses CG_SIMD, OMP uses CG_OMP for reliable O(√κ) convergence
 - [x] BiCGSTAB for non-symmetric systems ✅
   - [x] BiCGSTAB Scalar (CPU) ✅
   - [x] BiCGSTAB SIMD (AVX2/NEON with integrated OpenMP parallelization) ✅
@@ -1186,9 +1186,9 @@ Achieve O(N) complexity vs O(N²) for iterative methods.
 
 **Remaining Work (for 129×129 full validation):**
 
-- [ ] Run full validation at 129×129 grid
-- [ ] All backends at publication-quality grid resolution
-- [ ] Expected runtime: ~30 minutes
+- [x] Parallel CTest infrastructure for full validation (per-backend test entries, `ctest -j 4`)
+- [x] OMP thread oversubscription mitigation (`OMP_NUM_THREADS=2`)
+- [ ] Confirm all backends pass at 129×129 on EC2 and record RMS values
 - [ ] Use CAVITY_FULL_VALIDATION=1 build flag
 
 **Acceptance Criteria (non-negotiable):**
