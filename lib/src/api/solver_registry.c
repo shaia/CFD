@@ -14,6 +14,7 @@
 #endif
 
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +32,8 @@ void explicit_euler_optimized_impl(flow_field* field, const grid* grid,
 #ifdef CFD_ENABLE_OPENMP
 cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params);
+cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
+                           const ns_solver_params_t* params);
 cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params);
 #endif
@@ -92,6 +95,7 @@ static ns_solver_t* create_projection_gpu_solver(void);
 #ifdef CFD_ENABLE_OPENMP
 static ns_solver_t* create_explicit_euler_omp_solver(void);
 static ns_solver_t* create_projection_omp_solver(void);
+static ns_solver_t* create_rk2_omp_solver(void);
 #endif
 
 // External projection method solver functions
@@ -163,6 +167,7 @@ void cfd_registry_register_defaults(ns_solver_registry_t* registry) {
     cfd_registry_register(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
                           create_explicit_euler_omp_solver);
     cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION_OMP, create_projection_omp_solver);
+    cfd_registry_register(registry, NS_SOLVER_TYPE_RK2_OMP, create_rk2_omp_solver);
 #endif
 }
 
@@ -1187,6 +1192,97 @@ static ns_solver_t* create_explicit_euler_omp_solver(void) {
 }
 
 /**
+ * Built-in NSSolver: RK2 OpenMP
+ */
+
+static cfd_status_t rk2_omp_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    (void)solver;
+    if (field->nx < 3 || field->ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+
+    ns_solver_params_t step_params = *params;
+    step_params.max_iter = 1;
+
+    cfd_status_t status = rk2_omp_impl(field, grid, &step_params);
+
+    if (stats) {
+        stats->iterations = 1;
+        double max_vel = 0.0, max_p = 0.0;
+        ptrdiff_t i;
+        ptrdiff_t n = (ptrdiff_t)(field->nx * field->ny);
+#pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
+        for (i = 0; i < n; i++) {
+            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
+            if (vel > max_vel) {
+                max_vel = vel;
+            }
+            double ap = fabs(field->p[i]);
+            if (ap > max_p) {
+                max_p = ap;
+            }
+        }
+        stats->max_velocity = max_vel;
+        stats->max_pressure = max_p;
+    }
+    return status;
+}
+
+static cfd_status_t rk2_omp_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                   const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    (void)solver;
+    if (field->nx < 3 || field->ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+
+    cfd_status_t status = rk2_omp_impl(field, grid, params);
+
+    if (stats) {
+        stats->iterations = params->max_iter;
+        double max_vel = 0.0, max_p = 0.0;
+        ptrdiff_t i;
+        ptrdiff_t n = (ptrdiff_t)(field->nx * field->ny);
+#pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
+        for (i = 0; i < n; i++) {
+            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
+            if (vel > max_vel) {
+                max_vel = vel;
+            }
+            double ap = fabs(field->p[i]);
+            if (ap > max_p) {
+                max_p = ap;
+            }
+        }
+        stats->max_velocity = max_vel;
+        stats->max_pressure = max_p;
+    }
+    return status;
+}
+
+static ns_solver_t* create_rk2_omp_solver(void) {
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
+    if (!s) {
+        return NULL;
+    }
+
+    s->name = NS_SOLVER_TYPE_RK2_OMP;
+    s->description = "OpenMP-parallelized RK2 (Heun's method)";
+    s->version = "1.0.0";
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_PARALLEL;
+    s->backend = NS_SOLVER_BACKEND_OMP;
+
+    s->init = explicit_euler_init;
+    s->destroy = explicit_euler_destroy;
+    s->step = rk2_omp_step;
+    s->solve = rk2_omp_solve;
+    s->apply_boundary = NULL;
+    s->compute_dt = NULL;
+
+    return s;
+}
+
+/**
  * Built-in NSSolver: Projection OpenMP
  */
 
@@ -1234,8 +1330,8 @@ static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, 
     if (stats) {
         stats->iterations = 1;
         double max_vel = 0.0, max_p = 0.0;
-        int i;
-        int n = (int)(field->nx * field->ny);
+        ptrdiff_t i;
+        ptrdiff_t n = (ptrdiff_t)(field->nx * field->ny);
 #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
         for (i = 0; i < n; i++) {
             double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));

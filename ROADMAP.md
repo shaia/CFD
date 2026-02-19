@@ -31,7 +31,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 | ------------------- | -------------- | ---- | -------- | -------- | -------- | ---- |
 | **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | —    |
 |                     | Projection     | done | done     | —        | done     | done |
-|                     | RK2 (Heun)    | done | **TODO** | —        | **TODO** | —    |
+|                     | RK2 (Heun)    | done | **TODO** | —        | done     | —    |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
 |                     | SOR            | done | **TODO** | **TODO** | —        | —    |
 |                     | Red-Black SOR  | done | done     | done     | done     | —    |
@@ -502,8 +502,8 @@ See `/add-ns-time-integrator` command for the cross-backend workflow.
 **Algorithms:**
 
 - [x] RK2 (Heun's method) — scalar
-  - [ ] RK2 AVX2+OMP (`rk2_optimized`)
-  - [ ] RK2 OpenMP (`rk2_omp`)
+  - [ ] RK2 AVX2/SIMD (`rk2_avx2`)
+  - [x] RK2 OpenMP (`rk2_omp`)
   - [ ] RK2 CUDA (`rk2_gpu`)
 - [ ] RK4 (classical Runge-Kutta) — scalar
   - [ ] RK4 AVX2+OMP (`rk4_optimized`)
@@ -1137,7 +1137,7 @@ Achieve O(N) complexity vs O(N²) for iterative methods.
 
 1. **Switched Projection Solvers to CG:**
    - [x] CPU projection: Red-Black SOR → CG_SCALAR ✅
-   - [x] OMP projection: Red-Black SOR → CG_SCALAR ✅
+   - [x] OMP projection: Red-Black SOR → CG_OMP ✅ (initially CG_SCALAR in PR #139, upgraded to CG_OMP in PR #145)
    - [x] AVX2 projection: Red-Black SOR → CG_SIMD ✅
    - **Rationale:** CG has O(√κ) convergence vs SOR's O(n) - typically 20-64 iterations vs 100s-1000s
 
