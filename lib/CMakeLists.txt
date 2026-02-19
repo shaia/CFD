@@ -157,6 +157,7 @@ set(CFD_OMP_SOURCES
     # Navier-Stokes solvers - OMP
     src/solvers/navier_stokes/omp/solver_explicit_euler_omp.c
     src/solvers/navier_stokes/omp/solver_projection_omp.c
+    src/solvers/navier_stokes/omp/solver_rk2_omp.c
     # Linear solvers - OMP
     src/solvers/linear/omp/linear_solver_redblack_omp.c
     src/solvers/linear/omp/linear_solver_cg_omp.c
