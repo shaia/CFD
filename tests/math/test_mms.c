@@ -326,7 +326,7 @@ void test_mms_euler_spatial_convergence(void) {
                grid_sizes[i-1], grid_sizes[i], rate);
 
         TEST_ASSERT_TRUE_MESSAGE(errors[i] < errors[i-1] * 1.01,
-            "Error did not decrease with refinement");
+            "Error grew by more than 1% with grid refinement");
 
         if (errors[i-1] > 1e-10 && errors[i] > 1e-10) {
             TEST_ASSERT_TRUE_MESSAGE(rate > SPATIAL_RATE_MIN,
@@ -374,7 +374,7 @@ void test_mms_rk2_spatial_convergence(void) {
                grid_sizes[i-1], grid_sizes[i], rate);
 
         TEST_ASSERT_TRUE_MESSAGE(errors[i] < errors[i-1] * 1.01,
-            "Error did not decrease with refinement");
+            "Error grew by more than 1% with grid refinement");
 
         if (errors[i-1] > 1e-10 && errors[i] > 1e-10) {
             TEST_ASSERT_TRUE_MESSAGE(rate > SPATIAL_RATE_MIN,
