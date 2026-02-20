@@ -31,7 +31,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 | ------------------- | -------------- | ---- | -------- | -------- | -------- | ---- |
 | **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | —    |
 |                     | Projection     | done | done     | —        | done     | done |
-|                     | RK2 (Heun)    | done | **TODO** | —        | done     | —    |
+|                     | RK2 (Heun)    | done | done     | —        | done     | —    |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
 |                     | SOR            | done | **TODO** | **TODO** | —        | —    |
 |                     | Red-Black SOR  | done | done     | done     | done     | —    |
@@ -514,7 +514,7 @@ See `/add-ns-time-integrator` command for the cross-backend workflow.
 **Algorithms:**
 
 - [x] RK2 (Heun's method) — scalar
-  - [ ] RK2 AVX2/SIMD (`rk2_avx2`)
+  - [x] RK2 AVX2/SIMD (`rk2_avx2`, `rk2_optimized`)
   - [x] RK2 OpenMP (`rk2_omp`)
   - [ ] RK2 CUDA (`rk2_gpu`)
 - [ ] RK4 (classical Runge-Kutta) — scalar
