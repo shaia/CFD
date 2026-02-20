@@ -225,6 +225,14 @@ void apply_boundary_conditions(flow_field* field, const grid* grid) {
 // Helper function to compute source terms consistently across all solvers
 void compute_source_terms(double x, double y, int iter, double dt, const ns_solver_params_t* params,
                           double* source_u, double* source_v) {
+    // Use custom source function if provided
+    if (params->source_func) {
+        double t = iter * dt;
+        params->source_func(x, y, t, params->source_context, source_u, source_v);
+        return;
+    }
+
+    // Default source term implementation
     *source_u =
         params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * dt);
     *source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) *

@@ -61,6 +61,19 @@ typedef struct {
 } flow_field;
 
 /**
+ * Custom source term callback function
+ * @param x X coordinate
+ * @param y Y coordinate
+ * @param t Physical time
+ * @param context User-provided context pointer
+ * @param source_u Output: u-velocity source term
+ * @param source_v Output: v-velocity source term
+ */
+typedef void (*ns_source_func_t)(double x, double y, double t,
+                                  void* context,
+                                  double* source_u, double* source_v);
+
+/**
  * Navier-Stokes solver parameters
  */
 typedef struct {
@@ -77,6 +90,10 @@ typedef struct {
     double source_amplitude_v;  /**< Amplitude of v-velocity source term */
     double source_decay_rate;   /**< Decay rate for source terms over time */
     double pressure_coupling;   /**< Coupling coefficient for pressure update */
+
+    /* Custom source term callback (NULL = use default) */
+    ns_source_func_t source_func;  /**< Custom source term function pointer */
+    void* source_context;           /**< User context for source_func */
 } ns_solver_params_t;
 
 

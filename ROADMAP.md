@@ -446,20 +446,32 @@ Unit tests for individual stencil operations:
 
 - `tests/math/test_convergence_order.c`
 
-#### 1.3.3 Method of Manufactured Solutions (MMS)
+#### 1.3.3 Method of Manufactured Solutions (MMS) ✅
 
-- [ ] Define manufactured velocity/pressure fields with known derivatives
-- [ ] Compute analytical source terms from Navier-Stokes substitution
-- [ ] Run solver with manufactured source terms
-- [ ] Compare numerical to manufactured solution
-- [ ] Verify convergence order
+- [x] Define manufactured velocity/pressure fields with known derivatives
+- [x] Compute analytical source terms from Navier-Stokes substitution
+- [x] Run solver with manufactured source terms
+- [x] Compare numerical to manufactured solution
+- [x] Verify convergence order
 
-**Example manufactured solution:**
+**Manufactured solution (Modified Taylor-Green):**
 
 ```c
-u(x,y,t) = sin(πx) * cos(πy) * exp(-2νπ²t)
-v(x,y,t) = -cos(πx) * sin(πy) * exp(-2νπ²t)
+u(x,y,t) =  cos(x) * sin(y) * exp(-αt)
+v(x,y,t) = -sin(x) * cos(y) * exp(-αt)
+Source:  f = (2ν - α) · u_exact  // With α = ν
 ```
+
+**Implementation:**
+
+- Added `ns_source_func_t` callback to `ns_solver_params_t` for custom source terms
+- Extended `compute_source_terms()` to use callback when provided (backward-compatible)
+- Created `tests/math/test_mms.c` with 5 tests:
+  1. Source callback mechanism verification
+  2. Spatial convergence (Euler) — verified O(h^1.5+)
+  3. Spatial convergence (RK2) — verified O(h^1.5+)
+  4. Temporal convergence (Euler) — verified error decreases
+  5. Temporal convergence (RK2) — verified better rate than Euler
 
 #### 1.3.4 Divergence-Free Constraint Validation ✅
 
