@@ -267,8 +267,10 @@ void test_mms_source_callback(void) {
     printf("    Difference:         %.2f%%\n",
            100.0 * fabs(error_with_source - error_without_source) / (error_without_source + 1e-15));
 
-    /* Source callback should have measurable effect (at least 0.1% difference) */
-    TEST_ASSERT_TRUE(fabs(error_with_source - error_without_source) > error_without_source * 0.001);
+    /* Source callback should improve accuracy: MMS forcing keeps solution on manufactured track */
+    TEST_ASSERT_TRUE(error_with_source < error_without_source);
+    /* Effect should be measurable (at least 0.1% improvement) */
+    TEST_ASSERT_TRUE(error_without_source - error_with_source > error_without_source * 0.001);
     /* Both should have reasonable accuracy */
     TEST_ASSERT_TRUE(error_with_source < 0.2 && error_without_source < 0.2);
 
