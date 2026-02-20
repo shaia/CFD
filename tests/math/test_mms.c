@@ -22,10 +22,8 @@
 
 #include "unity.h"
 #include "cfd/core/grid.h"
-#include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "../validation/taylor_green_reference.h"
-#include "../solvers/navier_stokes/test_solver_helpers.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -40,7 +38,7 @@
 
 /* Convergence tolerances (same as existing convergence tests) */
 #define SPATIAL_RATE_MIN    1.4     /* Super-linear (BC-limited O(h^1.5)) */
-#define TEMPORAL_RATE_MIN  -0.5     /* Accept negative (spatial-dominated regime) */
+#define TEMPORAL_RATE_MIN  (-0.5)   /* Accept negative (spatial-dominated regime) */
 
 /* Spatial convergence parameters */
 #define SPATIAL_FINAL_TIME  0.1
@@ -82,7 +80,7 @@ static void mms_exact_solution(double x, double y, double t,
 static void mms_source_func(double x, double y, double t, void* context,
                              double* source_u, double* source_v) {
     mms_context_t* mms = (mms_context_t*)context;
-    double coeff = 2.0 * mms->nu - mms->alpha;
+    double coeff = (2.0 * mms->nu) - mms->alpha;
     double decay = exp(-mms->alpha * t);
 
     *source_u =  coeff * cos(x) * sin(y) * decay;
@@ -96,7 +94,7 @@ static void mms_init_field(flow_field* field, const grid* g,
                             double nu, double alpha) {
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = j * field->nx + i;
+            size_t idx = (j * field->nx) + i;
             double x = g->x[i];
             double y = g->y[j];
             mms_exact_solution(x, y, 0.0, nu, alpha,
@@ -117,7 +115,7 @@ static double mms_compute_error(flow_field* field, const grid* g,
 
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = j * field->nx + i;
+            size_t idx = (j * field->nx) + i;
             double u_exact, v_exact, p_exact;
             mms_exact_solution(g->x[i], g->y[j], t_final, nu, alpha,
                                &u_exact, &v_exact, &p_exact);
@@ -198,7 +196,7 @@ static double mms_run_simulation(const char* solver_type,
                    mms_compute_error(field, g, nu, alpha, t_final) : 1e10;
 
     /* Cleanup */
-    solver->destroy(solver);
+    solver_destroy(solver);
     cfd_registry_destroy(registry);
     flow_field_destroy(field);
     grid_destroy(g);
@@ -211,8 +209,8 @@ static double mms_run_simulation(const char* solver_type,
  */
 static double compute_convergence_rate(double e_coarse, double e_fine,
                                         double h_coarse, double h_fine) {
-    if (e_fine < 1e-15 || e_coarse < 1e-15) return 0.0;
-    if (h_fine < 1e-15 || h_coarse < 1e-15) return 0.0;
+    if (e_fine < 1e-15 || e_coarse < 1e-15) { return 0.0; }
+    if (h_fine < 1e-15 || h_coarse < 1e-15) { return 0.0; }
     return log(e_coarse / e_fine) / log(h_coarse / h_fine);
 }
 
@@ -274,7 +272,7 @@ void test_mms_source_callback(void) {
     /* Both should have reasonable accuracy */
     TEST_ASSERT_TRUE(error_with_source < 0.2 && error_without_source < 0.2);
 
-    solver->destroy(solver);
+    solver_destroy(solver);
     cfd_registry_destroy(registry);
     flow_field_destroy(field);
     grid_destroy(g);
