@@ -113,7 +113,12 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                 // Source terms (optional, for maintaining flow)
                 double source_u = 0.0;
                 double source_v = 0.0;
-                if (params->source_amplitude_u > 0) {
+                if (params->source_func) {
+                    double x = grid->x[i];
+                    double y = grid->y[j];
+                    double t = iter * dt;
+                    params->source_func(x, y, t, params->source_context, &source_u, &source_v);
+                } else if (params->source_amplitude_u > 0) {
                     double x = grid->x[i];
                     double y = grid->y[j];
                     source_u = params->source_amplitude_u * sin(M_PI * y) *

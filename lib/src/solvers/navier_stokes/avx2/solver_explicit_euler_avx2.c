@@ -307,7 +307,7 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
 #if !USE_AVX
 static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* field,
                                const grid* grid, const ns_solver_params_t* params, size_t j,
-                               double conservative_dt) {
+                               double conservative_dt, double t) {
     for (size_t i = 1; i < ctx->nx - 1; i++) {
         size_t idx = (j * ctx->nx) + i;
 
@@ -337,7 +337,10 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
 
         double source_u = 0.0;
         double source_v = 0.0;
-        if (params->source_amplitude_u > 0) {
+        if (params->source_func) {
+            params->source_func(grid->x[i], grid->y[j], t,
+                                params->source_context, &source_u, &source_v);
+        } else if (params->source_amplitude_u > 0) {
             source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]);
             source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]);
         }
@@ -405,7 +408,7 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     #pragma omp parallel for schedule(static)
 #endif
     for (j = 1; j < ny_int - 1; j++) {
-        process_scalar_row(ctx, field, grid, params, (size_t)j, conservative_dt);
+        process_scalar_row(ctx, field, grid, params, (size_t)j, conservative_dt, 0.0);
     }
 #endif
 

@@ -88,10 +88,17 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
                 nu = fmin(nu, 1.0);
 
                 // Source terms
-                double source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]) *
-                                  exp(-params->source_decay_rate * iter * conservative_dt);
-                double source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]) *
-                                  exp(-params->source_decay_rate * iter * conservative_dt);
+                double source_u = 0.0;
+                double source_v = 0.0;
+                if (params->source_func) {
+                    params->source_func(grid->x[i], grid->y[j], iter * conservative_dt,
+                                        params->source_context, &source_u, &source_v);
+                } else {
+                    source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]) *
+                               exp(-params->source_decay_rate * iter * conservative_dt);
+                    source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]) *
+                               exp(-params->source_decay_rate * iter * conservative_dt);
+                }
 
                 // Update u
                 double du = conservative_dt * (-field->u[idx] * du_dx - field->v[idx] * du_dy -
