@@ -225,10 +225,13 @@ void test_mms_source_callback(void) {
     printf("\n  Testing MMS source callback mechanism:\n");
 
     size_t n = 32;
-    double nu = 0.1;    /* Higher viscosity for this test to amplify difference */
-    double alpha = nu;
+    double nu = 0.1;    /* Higher viscosity to amplify difference */
+    double alpha = 0.0; /* Constant-in-time source: f = 2ν·cos(x)sin(y) maintains steady field.
+                         * alpha=0 keeps source time-independent so t=0 evaluation is always
+                         * correct regardless of the solver's internal iteration counter. */
     double dt = 0.001;
-    int steps = 100;  /* Run longer to see source effect */
+    int steps = 1000; /* Run to t=1.0: without source, field decays ~18% from manufactured
+                       * solution (exp(-2·ν·t)=exp(-0.2)≈0.82), well above spatial disc. noise */
 
     /* Run with source callback */
     double error_with_source = mms_run_simulation(
@@ -269,10 +272,12 @@ void test_mms_source_callback(void) {
 
     /* Source callback should improve accuracy: MMS forcing keeps solution on manufactured track */
     TEST_ASSERT_TRUE(error_with_source < error_without_source);
-    /* Effect should be measurable (at least 0.1% improvement) */
-    TEST_ASSERT_TRUE(error_without_source - error_with_source > error_without_source * 0.001);
-    /* Both should have reasonable accuracy */
-    TEST_ASSERT_TRUE(error_with_source < 0.2 && error_without_source < 0.2);
+    /* Effect should be measurable (at least 1% improvement) */
+    TEST_ASSERT_TRUE(error_without_source - error_with_source > error_without_source * 0.01);
+    /* With source: error stays near spatial discretization level */
+    TEST_ASSERT_TRUE(error_with_source < 0.2);
+    /* Without source: error must be large (viscous drift dominates) */
+    TEST_ASSERT_TRUE(error_without_source > 0.05);
 
     solver_destroy(solver);
     cfd_registry_destroy(registry);
@@ -320,7 +325,7 @@ void test_mms_euler_spatial_convergence(void) {
         printf("      %zu->%zu: %.2f (expected ~1.5-2.0)\n",
                grid_sizes[i-1], grid_sizes[i], rate);
 
-        TEST_ASSERT_TRUE_MESSAGE(errors[i] < errors[i-1] * 1.1,
+        TEST_ASSERT_TRUE_MESSAGE(errors[i] < errors[i-1] * 1.01,
             "Error did not decrease with refinement");
 
         if (errors[i-1] > 1e-10 && errors[i] > 1e-10) {
@@ -368,7 +373,7 @@ void test_mms_rk2_spatial_convergence(void) {
         printf("      %zu->%zu: %.2f (expected ~1.5-2.0)\n",
                grid_sizes[i-1], grid_sizes[i], rate);
 
-        TEST_ASSERT_TRUE_MESSAGE(errors[i] < errors[i-1] * 1.1,
+        TEST_ASSERT_TRUE_MESSAGE(errors[i] < errors[i-1] * 1.01,
             "Error did not decrease with refinement");
 
         if (errors[i-1] > 1e-10 && errors[i] > 1e-10) {
