@@ -9,8 +9,25 @@ on:
       - 'LICENSE'
       - '.github/workflows/version-release.yml'
   workflow_dispatch:
+    inputs:
+      ec2-instance-type:
+        description: 'EC2 instance type'
+        required: false
+        default: 'g4dn.4xlarge'
+        type: choice
+        options:
+          - g4dn.4xlarge
+          - g4dn.2xlarge
+          - g4dn.xlarge
   pull_request:
     types: [labeled]
+
+# Prevent multiple EC2 instances from running concurrently.
+# cancel-in-progress is false to avoid orphaning instances (stop-runner
+# must complete for each run).
+concurrency:
+  group: ec2-validation
+  cancel-in-progress: false
 
 jobs:
   start-runner:
@@ -38,7 +55,7 @@ jobs:
           mode: start
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           ec2-image-id: ${{ secrets.EC2_AMI_ID }}
-          ec2-instance-type: g4dn.4xlarge
+          ec2-instance-type: ${{ inputs.ec2-instance-type || 'g4dn.4xlarge' }}
           subnet-id: ${{ secrets.EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.EC2_SECURITY_GROUP_ID }}
 
