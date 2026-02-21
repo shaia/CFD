@@ -234,12 +234,18 @@ static void compute_rhs_row(
             __m256d p_jd = _mm256_loadu_pd(&p[jd_row + (size_t)i]);
             __m256d p_ju = _mm256_loadu_pd(&p[ju_row + (size_t)i]);
 
-            /* Density */
-            __m256d rho_c  = _mm256_max_pd(_mm256_loadu_pd(&rho[idx]), eps);
+            /* Density: clamp for safe division, but track validity */
+            __m256d rho_raw = _mm256_loadu_pd(&rho[idx]);
+            __m256d rho_valid = _mm256_cmp_pd(rho_raw, eps, _CMP_GT_OQ);
+            __m256d rho_c   = _mm256_max_pd(rho_raw, eps);
             __m256d rho_inv = _mm256_div_pd(one, rho_c);
 
-            /* dx stencil: dx_inv[i] = 1/(2*dx[i]) */
+            /* dx stencil: dx_inv[i] = 1/(2*dx[i]), 0 when dx < 1e-10 */
             __m256d dx_inv_v  = _mm256_loadu_pd(&ctx->dx_inv[(size_t)i]);
+            __m256d dx_valid  = _mm256_cmp_pd(dx_inv_v, _mm256_setzero_pd(), _CMP_GT_OQ);
+
+            /* Combined validity: rho > eps AND dx > 0 (dy already checked at row level) */
+            __m256d valid = _mm256_and_pd(rho_valid, dx_valid);
             /* 1/dx^2 = 4 * (1/(2*dx))^2 */
             __m256d dx2_inv_v = _mm256_mul_pd(four, _mm256_mul_pd(dx_inv_v, dx_inv_v));
 
@@ -320,6 +326,11 @@ static void compute_rhs_row(
                 _mm256_add_pd(du_dx, dv_dy), min_div, max_div);
             __m256d rhs_p_v = _mm256_mul_pd(
                 neg_puf, _mm256_mul_pd(rho_c, divergence));
+
+            /* Zero RHS for invalid lanes (rho <= eps or dx degenerate) */
+            rhs_u_v = _mm256_and_pd(rhs_u_v, valid);
+            rhs_v_v = _mm256_and_pd(rhs_v_v, valid);
+            rhs_p_v = _mm256_and_pd(rhs_p_v, valid);
 
             _mm256_storeu_pd(&rhs_u[idx], rhs_u_v);
             _mm256_storeu_pd(&rhs_v[idx], rhs_v_v);
