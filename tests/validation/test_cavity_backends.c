@@ -25,6 +25,7 @@
 
 #include "cavity_reference_data.h"
 #include "cavity_validation_utils.h"
+#include "cfd/core/indexing.h"
 #include "lid_driven_cavity_common.h"
 
 void setUp(void) {}
@@ -100,14 +101,14 @@ static profile_data_t extract_profiles_from_ctx(const cavity_context_t* ctx) {
     size_t center_i = nx / 2;
     for (size_t j = 0; j < ny; j++) {
         data.y_coords[j] = ctx->g->y[j];
-        data.u_values[j] = ctx->field->u[j * nx + center_i];
+        data.u_values[j] = ctx->field->u[IDX_2D(center_i, j, nx)];
     }
 
     /* Horizontal centerline: v(x, y=0.5) */
     size_t center_j = ny / 2;
     for (size_t i = 0; i < nx; i++) {
         data.x_coords[i] = ctx->g->x[i];
-        data.v_values[i] = ctx->field->v[center_j * nx + i];
+        data.v_values[i] = ctx->field->v[IDX_2D(i, center_j, nx)];
     }
 
     return data;

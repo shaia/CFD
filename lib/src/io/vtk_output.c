@@ -1,6 +1,7 @@
 #include "cfd/io/vtk_output.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/logging.h"
 
 
@@ -134,7 +135,7 @@ void write_vtk_output(const char* filename, const char* field_name, const double
 
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
             fprintf(fp, "%f\n", data[idx]);
         }
     }
@@ -169,7 +170,7 @@ void write_vtk_vector_output(const char* filename, const char* field_name, const
 
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
             fprintf(fp, "%f %f 0.0\n", u_data[idx], v_data[idx]);
         }
     }
@@ -204,7 +205,7 @@ void write_vtk_flow_field(const char* filename, const flow_field* field, size_t 
     fprintf(fp, "VECTORS velocity float\n");
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
             fprintf(fp, "%f %f 0.0\n", field->u[idx], field->v[idx]);
         }
     }
@@ -214,7 +215,7 @@ void write_vtk_flow_field(const char* filename, const flow_field* field, size_t 
     fprintf(fp, "LOOKUP_TABLE default\n");
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
             fprintf(fp, "%f\n", field->p[idx]);
         }
     }
@@ -224,7 +225,7 @@ void write_vtk_flow_field(const char* filename, const flow_field* field, size_t 
     fprintf(fp, "LOOKUP_TABLE default\n");
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
             fprintf(fp, "%f\n", field->rho[idx]);
         }
     }
@@ -234,7 +235,7 @@ void write_vtk_flow_field(const char* filename, const flow_field* field, size_t 
     fprintf(fp, "LOOKUP_TABLE default\n");
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
             fprintf(fp, "%f\n", field->T[idx]);
         }
     }

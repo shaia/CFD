@@ -18,6 +18,7 @@
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cpu_features.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -131,7 +132,7 @@ static cfd_status_t jacobi_avx2_iterate(
 
         /* SIMD loop: process 4 doubles at a time */
         for (; i + 4 <= nx - 1; i += 4) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
 
             /* Load neighbors */
             __m256d p_xp = _mm256_loadu_pd(&p_old[idx + 1]);   /* x+1 */
@@ -159,7 +160,7 @@ static cfd_status_t jacobi_avx2_iterate(
 
         /* Scalar remainder */
         for (; i < nx - 1; i++) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
             double p_result = -(rhs[idx]
                 - (p_old[idx + 1] + p_old[idx - 1]) / dx2
                 - (p_old[idx + nx] + p_old[idx - nx]) / dy2) * inv_factor;

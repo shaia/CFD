@@ -25,6 +25,7 @@
 
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 

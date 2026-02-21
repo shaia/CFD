@@ -9,6 +9,8 @@
  * Outlet is in boundary_conditions_outlet_scalar.c.
  */
 
+#include "cfd/core/indexing.h"
+
 #define BC_CORE_FUNC_PREFIX scalar
 #define BC_CORE_USE_OMP 0
 #include "../boundary_conditions_core_impl.h"
@@ -30,8 +32,8 @@ cfd_status_t bc_apply_symmetry_scalar_impl(double* u, double* v, size_t nx, size
      * - dv/dx = 0 (tangential gradient is zero, copy from interior) */
     if (edges & BC_EDGE_LEFT) {
         for (j = 0; j < ny; j++) {
-            u[j * nx] = 0.0;
-            v[j * nx] = v[j * nx + 1];
+            u[IDX_2D(0, j, nx)] = 0.0;
+            v[IDX_2D(0, j, nx)] = v[IDX_2D(1, j, nx)];
         }
     }
 
@@ -40,8 +42,8 @@ cfd_status_t bc_apply_symmetry_scalar_impl(double* u, double* v, size_t nx, size
      * - dv/dx = 0 (tangential gradient is zero, copy from interior) */
     if (edges & BC_EDGE_RIGHT) {
         for (j = 0; j < ny; j++) {
-            u[j * nx + (nx - 1)] = 0.0;
-            v[j * nx + (nx - 1)] = v[j * nx + (nx - 2)];
+            u[IDX_2D(nx - 1, j, nx)] = 0.0;
+            v[IDX_2D(nx - 1, j, nx)] = v[IDX_2D(nx - 2, j, nx)];
         }
     }
 

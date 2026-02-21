@@ -14,6 +14,7 @@
  */
 
 #include "boundary_conditions_internal.h"
+#include "cfd/core/indexing.h"
 #include <limits.h>
 
 #define BC_SIMD_PASTE2(a, b) a##b

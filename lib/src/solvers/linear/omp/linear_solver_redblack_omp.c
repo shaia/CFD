@@ -12,6 +12,7 @@
 #include "../linear_solver_internal.h"
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -93,7 +94,7 @@ static cfd_status_t redblack_omp_iterate(
         size_t i_start = (j % 2 == 0) ? 1 : 2;
         size_t i;
         for (i = i_start; i < nx - 1; i += 2) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
 
             double p_new = -(rhs[idx]
                 - (x[idx + 1] + x[idx - 1]) / dx2
@@ -109,7 +110,7 @@ static cfd_status_t redblack_omp_iterate(
         size_t i_start = (j % 2 == 0) ? 2 : 1;
         size_t i;
         for (i = i_start; i < nx - 1; i += 2) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
 
             double p_new = -(rhs[idx]
                 - (x[idx + 1] + x[idx - 1]) / dx2

@@ -18,6 +18,7 @@
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cpu_features.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -160,7 +161,7 @@ static void apply_laplacian_avx2(const double* p, double* Ap,
 
         /* SIMD loop */
         for (; i + 4 <= nx - 1; i += 4) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
 
             /* Load neighbors */
             __m256d p_center = _mm256_loadu_pd(&p[idx]);
@@ -192,7 +193,7 @@ static void apply_laplacian_avx2(const double* p, double* Ap,
         double dx2_inv_scalar = _mm256_cvtsd_f64(dx2_inv_vec);
         double dy2_inv_scalar = _mm256_cvtsd_f64(dy2_inv_vec);
         for (; i < nx - 1; i++) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
             double laplacian = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv_scalar
                              + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv_scalar;
             Ap[idx] = -laplacian;
@@ -216,7 +217,7 @@ static void compute_residual_avx2(const double* x, const double* rhs, double* r,
 
         /* SIMD loop */
         for (; i + 4 <= nx - 1; i += 4) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
 
             /* Load neighbors */
             __m256d x_center = _mm256_loadu_pd(&x[idx]);
@@ -249,7 +250,7 @@ static void compute_residual_avx2(const double* x, const double* rhs, double* r,
         double dx2_inv_scalar = _mm256_cvtsd_f64(dx2_inv_vec);
         double dy2_inv_scalar = _mm256_cvtsd_f64(dy2_inv_vec);
         for (; i < nx - 1; i++) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
             double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv_scalar
                              + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv_scalar;
             r[idx] = -rhs[idx] + laplacian;

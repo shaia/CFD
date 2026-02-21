@@ -9,6 +9,7 @@
  */
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "unity.h"
 
@@ -50,8 +51,8 @@ static double* create_test_field(size_t nx, size_t ny) {
 static void init_velocity_fields(double* u, double* v, size_t nx, size_t ny) {
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            u[j * nx + i] = 1.0 + 0.1 * (double)i + 0.01 * (double)j;
-            v[j * nx + i] = 2.0 + 0.1 * (double)i + 0.01 * (double)j;
+            u[IDX_2D(i, j, nx)] = 1.0 + 0.1 * (double)i + 0.01 * (double)j;
+            v[IDX_2D(i, j, nx)] = 2.0 + 0.1 * (double)i + 0.01 * (double)j;
         }
     }
 }
@@ -75,7 +76,7 @@ void test_symmetry_left_edge_u_zero(void) {
 
     /* u should be zero at left boundary (column 0) */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, j, nx)]);
     }
 
     cfd_free(u);
@@ -97,8 +98,8 @@ void test_symmetry_left_edge_v_neumann(void) {
 
     /* v should be copied from interior (dv/dx = 0) */
     for (size_t j = 0; j < ny; j++) {
-        double expected_v = v[j * nx + 1];  /* Interior value at column 1 */
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[j * nx]);
+        double expected_v = v[IDX_2D(1, j, nx)];  /* Interior value at column 1 */
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[IDX_2D(0, j, nx)]);
     }
 
     cfd_free(u);
@@ -124,7 +125,7 @@ void test_symmetry_right_edge_u_zero(void) {
 
     /* u should be zero at right boundary (column nx-1) */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx + (nx - 1)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(nx - 1, j, nx)]);
     }
 
     cfd_free(u);
@@ -146,8 +147,8 @@ void test_symmetry_right_edge_v_neumann(void) {
 
     /* v should be copied from interior (dv/dx = 0) */
     for (size_t j = 0; j < ny; j++) {
-        double expected_v = v[j * nx + (nx - 2)];  /* Interior value at column nx-2 */
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[j * nx + (nx - 1)]);
+        double expected_v = v[IDX_2D(nx - 2, j, nx)];  /* Interior value at column nx-2 */
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[IDX_2D(nx - 1, j, nx)]);
     }
 
     cfd_free(u);
@@ -273,8 +274,8 @@ void test_symmetry_left_right_edges(void) {
 
     /* u should be zero at both left and right boundaries */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx + (nx - 1)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(nx - 1, j, nx)]);
     }
 
     cfd_free(u);
@@ -320,8 +321,8 @@ void test_symmetry_all_edges(void) {
 
     /* u should be zero at left and right boundaries */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx + (nx - 1)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(nx - 1, j, nx)]);
     }
 
     /* v should be zero at top and bottom boundaries */
@@ -358,12 +359,12 @@ void test_symmetry_corner_points(void) {
     TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[nx - 1]);
 
     /* Top-left corner (0,ny-1): u=0 from LEFT, v=0 from TOP */
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx]);
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[(ny - 1) * nx]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, ny - 1, nx)]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(0, ny - 1, nx)]);
 
     /* Top-right corner (nx-1,ny-1): u=0 from RIGHT, v=0 from TOP */
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx + (nx - 1)]);
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[(ny - 1) * nx + (nx - 1)]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(nx - 1, ny - 1, nx)]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(nx - 1, ny - 1, nx)]);
 
     cfd_free(u);
     cfd_free(v);
@@ -393,9 +394,9 @@ void test_symmetry_perpendicular_edges(void) {
     TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u[nx + (nx - 1)], u[nx - 1]);
 
     /* Top-left corner should only have u=0 (no top edge applied) */
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, ny - 1, nx)]);
     /* v at top-left should be copied from interior (Neumann from LEFT) */
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v[(ny - 1) * nx + 1], v[(ny - 1) * nx]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v[IDX_2D(1, ny - 1, nx)], v[IDX_2D(0, ny - 1, nx)]);
 
     cfd_free(u);
     cfd_free(v);
@@ -420,7 +421,7 @@ void test_symmetry_main_dispatcher(void) {
 
     /* u should be zero at left boundary */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, j, nx)]);
     }
 
     cfd_free(u);
@@ -600,8 +601,8 @@ void test_symmetry_all_macro(void) {
     /* Verify all boundary conditions applied */
     /* u = 0 at left and right */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx + (nx - 1)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(nx - 1, j, nx)]);
     }
 
     /* v = 0 at top and bottom */

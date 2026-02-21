@@ -1,6 +1,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
@@ -37,7 +38,7 @@ void test_viscous_diffusion(void) {
     // Create a sharp velocity gradient (should diffuse with viscosity)
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double x = grid->x[i];
 
             // Sharp step function in velocity
@@ -58,7 +59,7 @@ void test_viscous_diffusion(void) {
     double initial_gradient = 0.0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
             initial_gradient += fabs(du_dx);
         }
@@ -91,7 +92,7 @@ void test_viscous_diffusion(void) {
     double final_gradient = 0.0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
             final_gradient += fabs(du_dx);
         }
@@ -128,7 +129,7 @@ void test_pressure_gradient_effects(void) {
     // Set up pressure gradient with zero initial velocity
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double x = grid->x[i];
 
             field->u[idx] = 0.0;  // Start with zero velocity
@@ -185,7 +186,7 @@ void test_pressure_gradient_effects(void) {
     int count = 0;
     for (size_t j = 2; j < ny - 2; j++) {  // Check interior points
         for (size_t i = 2; i < nx - 2; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             avg_u_velocity += field->u[idx];
             count++;
         }

@@ -12,6 +12,7 @@
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
@@ -190,7 +191,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     for (jj = 1; jj < ny_int - 1; jj++) {
         size_t j = (size_t)jj;
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             double u = field->u[idx];
             double v = field->v[idx];
@@ -258,7 +259,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     for (jj = 1; jj < ny_int - 1; jj++) {
         size_t j = (size_t)jj;
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             double du_star_dx = (u_star[idx + 1] - u_star[idx - 1]) / (2.0 * dx);
             double dv_star_dy = (v_star[idx + nx] - v_star[idx - nx]) / (2.0 * dy);
@@ -306,7 +307,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
 #if USE_AVX
         // SIMD loop - process 4 cells at once
         for (; i + 4 <= nx - 1; i += 4) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             // Load pressure neighbors for gradient computation
             __m256d p_xp = _mm256_loadu_pd(&p_new[idx + 1]);
@@ -338,7 +339,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
 
         // Scalar remainder
         for (; i < nx - 1; i++) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             double dp_dx = (p_new[idx + 1] - p_new[idx - 1]) * inv_2dx;
             double dp_dy = (p_new[idx + nx] - p_new[idx - nx]) * inv_2dy;

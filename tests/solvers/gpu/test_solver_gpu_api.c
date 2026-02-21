@@ -8,6 +8,7 @@
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/gpu_device.h"
+#include "cfd/core/indexing.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
@@ -401,7 +402,7 @@ void test_gpu_solver_lid_driven_cavity(void) {
     // Initialize with zero velocity except top lid
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             field->u[idx] = 0.0;
             field->v[idx] = 0.0;
             field->p[idx] = 1.0;
@@ -411,7 +412,7 @@ void test_gpu_solver_lid_driven_cavity(void) {
     }
     // Set lid velocity (top boundary)
     for (size_t i = 0; i < nx; i++) {
-        field->u[(ny - 1) * nx + i] = 1.0;
+        field->u[IDX_2D(i, ny-1, nx)] = 1.0;
     }
 
     ns_solver_registry_t* registry = cfd_registry_create();
@@ -443,7 +444,7 @@ void test_gpu_solver_lid_driven_cavity(void) {
     // Verify lid velocity is maintained (approximately)
     double lid_u_avg = 0.0;
     for (size_t i = 1; i < nx - 1; i++) {
-        lid_u_avg += field->u[(ny - 1) * nx + i];
+        lid_u_avg += field->u[IDX_2D(i, ny-1, nx)];
     }
     lid_u_avg /= (nx - 2);
     TEST_ASSERT_DOUBLE_WITHIN(0.5, 1.0, lid_u_avg);

@@ -13,6 +13,7 @@
  */
 
 #include "boundary_conditions_internal.h"
+#include "cfd/core/indexing.h"
 #include <limits.h>
 
 /* Token pasting helpers */
@@ -39,8 +40,8 @@ void BC_CORE_FN(neumann)(double* field, size_t nx, size_t ny) {
 
     BC_OMP_FOR
     for (j = 0; j < BC_LOOP_LIMIT(ny); j++) {
-        field[(j * nx) + 0] = field[(j * nx) + 1];
-        field[(j * nx) + nx - 1] = field[(j * nx) + nx - 2];
+        field[IDX_2D(0, j, nx)] = field[IDX_2D(1, j, nx)];
+        field[IDX_2D(nx - 1, j, nx)] = field[IDX_2D(nx - 2, j, nx)];
     }
 
     double* bottom_dst = field;
@@ -63,8 +64,8 @@ void BC_CORE_FN(periodic)(double* field, size_t nx, size_t ny) {
 
     BC_OMP_FOR
     for (j = 0; j < BC_LOOP_LIMIT(ny); j++) {
-        field[(j * nx) + 0] = field[(j * nx) + nx - 2];
-        field[(j * nx) + nx - 1] = field[(j * nx) + 1];
+        field[IDX_2D(0, j, nx)] = field[IDX_2D(nx - 2, j, nx)];
+        field[IDX_2D(nx - 1, j, nx)] = field[IDX_2D(1, j, nx)];
     }
 
     double* bottom_dst = field;
@@ -92,8 +93,8 @@ void BC_CORE_FN(dirichlet)(double* field, size_t nx, size_t ny,
 
     BC_OMP_FOR
     for (j = 0; j < BC_LOOP_LIMIT(ny); j++) {
-        field[j * nx] = val_left;
-        field[j * nx + (nx - 1)] = val_right;
+        field[IDX_2D(0, j, nx)] = val_left;
+        field[IDX_2D(nx - 1, j, nx)] = val_right;
     }
 
     double* bottom_row = field;

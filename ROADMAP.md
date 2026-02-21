@@ -42,7 +42,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 
 ### Critical Gaps
 
-- [ ] Only 2D (no 3D support)
+- [ ] Only 2D (no 3D support) — **3D extension in progress, see Phase 3.1**
 - [x] ~~Limited boundary conditions (no symmetry planes)~~ Symmetry planes now supported
 - [ ] Only structured grids
 - [ ] No turbulence models
@@ -634,15 +634,31 @@ Find eigenvalues/eigenvectors for stability analysis.
 
 **Goal:** Support complex geometries.
 
-### 3.1 3D Support (P0 - Critical)
+### 3.1 3D Support (P0 - Critical) — **ACTIVE PRIORITY**
 
-- [ ] Extend data structures (FlowField, Grid)
-- [ ] 3D stencil operations
-- [ ] 3D boundary conditions
-- [ ] 3D VTK output
-- [ ] Update all solvers for 3D
+**Status:** In progress. Phase 0 (indexing macros) complete. See [3D Extension Plan](docs/technical-notes/3d-extension-plan.md) for full design.
 
-**Estimated effort:** High - touches most of codebase
+**Approach:** "2D as subset of 3D" — `nz=1` produces bit-identical results to current 2D code. No separate 2D/3D codepaths. All code becomes 3D-aware with branch-free solver loops using precomputed constants (`stride_z=0`, `inv_dz2=0.0` when `nz==1`).
+
+**Phases:**
+
+- [x] Phase 0: Introduce `IDX_2D`/`IDX_3D` indexing macros (`lib/include/cfd/core/indexing.h`), replace all inline `j*nx+i` patterns across ~50 files
+- [ ] Phase 1: Extend core data structures (grid: `nz, z[], dz[], stride_z, inv_dz2, k_start, k_end`; flow_field: `w, nz`; BCs: `front/back`)
+- [ ] Phase 2: Add 3D stencils (7-point) and update scalar CPU linear solvers
+- [ ] Phase 3: Update scalar CPU NS solvers with w-momentum equation
+- [ ] Phase 4: Extend boundary conditions for z-faces (all backends)
+- [ ] Phase 5: Update SIMD backends (AVX2/NEON) for 3D
+- [ ] Phase 6: Update OMP backends for 3D
+- [ ] Phase 7: Update CUDA backend for 3D
+- [ ] Phase 8: Update I/O (VTK 3D), examples, validation tests, and docs
+
+**Key design decisions:**
+
+- Branch-free inner loops: `stride_z=0` makes z-neighbor reads return same cell, z-terms vanish mathematically
+- Cache-optimized: k→j→i loop order, three-plane working set fits L2, OMP `collapse(2) schedule(static)`
+- Backward-compatible API: `grid_create(nx, ny, ...)` becomes wrapper for `grid_create_3d(nx, ny, 1, ...)`
+
+**Estimated effort:** ~90 files, 12-18 weeks across all phases
 
 ### 3.2 Unstructured Meshes (P1)
 
@@ -1745,11 +1761,14 @@ cfd.run_simulation(output_buffer=buf)
 - [x] Add tanh-based stretching for boundary layer clustering
 - [x] Add 16 unit tests for grid initialization functions
 
-### v0.2.0 - 3D Support
+### v0.2.0 - 3D Support (In Progress)
 
-- [ ] Full 3D solver capability
-- [ ] 3D boundary conditions
-- [ ] 3D validation cases
+- [x] Phase 0: IDX_2D/IDX_3D indexing macros, replace all inline indexing
+- [ ] Phase 1: Extend grid, flow_field, BCs with z-dimension (nz=1 backward compatible)
+- [ ] Phase 2-3: 3D stencils, linear solvers, NS solvers with w-momentum
+- [ ] Phase 4: 3D boundary conditions (all backends)
+- [ ] Phase 5-7: SIMD, OMP, CUDA backends for 3D
+- [ ] Phase 8: 3D VTK output, examples, validation (Taylor-Green 3D, Poiseuille 3D)
 
 ### v0.3.0 - Heat Transfer
 

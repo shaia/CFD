@@ -12,6 +12,7 @@
 #define CFD_BOUNDARY_CONDITIONS_INLET_COMMON_H
 
 #include "boundary_conditions_internal.h"
+#include "cfd/core/indexing.h"
 #include <math.h>
 
 /* ============================================================================
@@ -79,12 +80,12 @@ typedef size_t (*bc_inlet_idx_func_t)(size_t i, size_t nx, size_t ny);
 
 static inline size_t bc_inlet_idx_left(size_t j, size_t nx, size_t ny) {
     (void)ny;
-    return j * nx;
+    return IDX_2D(0, j, nx);
 }
 
 static inline size_t bc_inlet_idx_right(size_t j, size_t nx, size_t ny) {
     (void)ny;
-    return j * nx + (nx - 1);
+    return IDX_2D(nx - 1, j, nx);
 }
 
 static inline size_t bc_inlet_idx_bottom(size_t i, size_t nx, size_t ny) {
@@ -93,7 +94,7 @@ static inline size_t bc_inlet_idx_bottom(size_t i, size_t nx, size_t ny) {
 }
 
 static inline size_t bc_inlet_idx_top(size_t i, size_t nx, size_t ny) {
-    return (ny - 1) * nx + i;
+    return IDX_2D(i, ny - 1, nx);
 }
 
 /**

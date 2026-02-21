@@ -21,6 +21,7 @@
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cpu_features.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -97,7 +98,7 @@ static inline void redblack_avx2_process_row(
         double p_xp[4], p_xm[4], p_yp[4], p_ym[4], rhs_vals[4];
 
         for (int k = 0; k < 4; k++) {
-            size_t idx = (size_t)j * nx + i + (size_t)k * 2;
+            size_t idx = IDX_2D(i + (size_t)k * 2, (size_t)j, nx);
             vals[k] = x[idx];
             p_xp[k] = x[idx + 1];
             p_xm[k] = x[idx - 1];
@@ -132,14 +133,14 @@ static inline void redblack_avx2_process_row(
         double result[4];
         _mm256_storeu_pd(result, v_result);
         for (int k = 0; k < 4; k++) {
-            size_t idx = (size_t)j * nx + i + (size_t)k * 2;
+            size_t idx = IDX_2D(i + (size_t)k * 2, (size_t)j, nx);
             x[idx] = result[k];
         }
     }
 
     /* Scalar remainder */
     for (; i < nx - 1; i += 2) {
-        size_t idx = (size_t)j * nx + i;
+        size_t idx = IDX_2D(i, (size_t)j, nx);
         double p_new = -(rhs[idx]
             - (x[idx + 1] + x[idx - 1]) / dx2
             - (x[idx + nx] + x[idx - nx]) / dy2) * inv_factor;

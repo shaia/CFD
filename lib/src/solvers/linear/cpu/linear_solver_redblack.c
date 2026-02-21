@@ -12,6 +12,7 @@
 #include "../linear_solver_internal.h"
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -90,7 +91,7 @@ static cfd_status_t redblack_scalar_iterate(
     for (size_t j = 1; j < ny - 1; j++) {
         size_t i_start = (j % 2 == 0) ? 1 : 2;  /* Ensure (i+j) % 2 == 0 */
         for (size_t i = i_start; i < nx - 1; i += 2) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             double p_new = -(rhs[idx]
                 - (x[idx + 1] + x[idx - 1]) / dx2
@@ -105,7 +106,7 @@ static cfd_status_t redblack_scalar_iterate(
     for (size_t j = 1; j < ny - 1; j++) {
         size_t i_start = (j % 2 == 0) ? 2 : 1;  /* Ensure (i+j) % 2 == 1 */
         for (size_t i = i_start; i < nx - 1; i += 2) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             double p_new = -(rhs[idx]
                 - (x[idx + 1] + x[idx - 1]) / dx2

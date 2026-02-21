@@ -29,6 +29,7 @@
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
@@ -194,7 +195,7 @@ static inline void tg_initialize_field(tg_context_t* ctx) {
         for (size_t i = 0; i < nx; i++) {
             double x = ctx->g->x[i];
             double y = ctx->g->y[j];
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             ctx->field->u[idx] = tg_analytical_u(x, y, 0.0, ctx->nu);
             ctx->field->v[idx] = tg_analytical_v(x, y, 0.0, ctx->nu);
@@ -234,7 +235,7 @@ static inline double tg_compute_l2_error_u(const tg_context_t* ctx, double t) {
         for (size_t i = 0; i < nx; i++) {
             double x = ctx->g->x[i];
             double y = ctx->g->y[j];
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             double u_exact = tg_analytical_u(x, y, t, ctx->nu);
             double u_num = ctx->field->u[idx];
@@ -259,7 +260,7 @@ static inline double tg_compute_l2_error_v(const tg_context_t* ctx, double t) {
         for (size_t i = 0; i < nx; i++) {
             double x = ctx->g->x[i];
             double y = ctx->g->y[j];
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             double v_exact = tg_analytical_v(x, y, t, ctx->nu);
             double v_num = ctx->field->v[idx];
@@ -303,7 +304,7 @@ static inline double tg_compute_kinetic_energy(const tg_context_t* ctx) {
 
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double u = ctx->field->u[idx];
             double v = ctx->field->v[idx];
             ke += 0.5 * (u * u + v * v) * dx * dy;
@@ -326,7 +327,7 @@ static inline double tg_compute_max_divergence(const tg_context_t* ctx) {
     /* Compute divergence using central differences, skip boundaries */
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double du_dx = (ctx->field->u[idx + 1] - ctx->field->u[idx - 1]) / (2.0 * dx);
             double dv_dy = (ctx->field->v[idx + nx] - ctx->field->v[idx - nx]) / (2.0 * dy);
             double div = fabs(du_dx + dv_dy);

@@ -14,6 +14,7 @@
 #define TEST_SOLVER_HELPERS_H
 
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
@@ -120,7 +121,7 @@ static inline double test_compute_divergence_linf(const flow_field* field, const
 
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * dx);
             double dv_dy = (field->v[idx + nx] - field->v[idx - nx]) / (2.0 * dy);
@@ -147,7 +148,7 @@ static inline double test_compute_divergence_l2(const flow_field* field, const g
 
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * dx);
             double dv_dy = (field->v[idx + nx] - field->v[idx - nx]) / (2.0 * dy);
@@ -176,7 +177,7 @@ static inline double test_compute_kinetic_energy(const flow_field* field, const 
 
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double rho = field->rho[idx];
             double u = field->u[idx];
             double v = field->v[idx];
@@ -198,7 +199,7 @@ static inline double test_compute_kinetic_energy_simple(const flow_field* field,
 
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double u = field->u[idx];
             double v = field->v[idx];
             ke += 0.5 * (u * u + v * v) * dx * dy;
@@ -227,7 +228,7 @@ static inline void test_init_taylor_green_with_params(flow_field* field, const g
         for (size_t i = 0; i < nx; i++) {
             double x = i * dx;
             double y = j * dy;
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             field->u[idx] = U * cos(k * x) * sin(k * y);
             field->v[idx] = -U * sin(k * x) * cos(k * y);
@@ -263,7 +264,7 @@ static inline void test_init_poiseuille(flow_field* field, const grid* g, double
         double u_analytical = 4.0 * U_max * y_norm * (1.0 - y_norm);
 
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             field->u[idx] = u_analytical;
             field->v[idx] = 0.0;
             field->p[idx] = 0.0;
@@ -274,8 +275,8 @@ static inline void test_init_poiseuille(flow_field* field, const grid* g, double
 
     // Apply no-slip at walls
     for (size_t i = 0; i < nx; i++) {
-        field->u[i] = 0.0;                      // Bottom wall
-        field->u[(ny - 1) * nx + i] = 0.0;      // Top wall
+        field->u[i] = 0.0;                              // Bottom wall
+        field->u[IDX_2D(i, ny-1, nx)] = 0.0;           // Top wall
     }
 }
 
@@ -293,7 +294,7 @@ static inline void test_init_sinusoidal(flow_field* field, const grid* g,
         for (size_t i = 0; i < nx; i++) {
             double x = i * dx;
             double y = j * dy;
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             field->u[idx] = u_amp * sin(M_PI * x) * sin(M_PI * y);
             field->v[idx] = v_amp * cos(M_PI * x) * cos(M_PI * y);
@@ -319,7 +320,7 @@ static inline void test_init_pressure_gradient(flow_field* field, const grid* g,
         for (size_t i = 0; i < nx; i++) {
             double x = xmin + i * dx;
             double x_norm = (x - xmin) / (xmax - xmin);
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             field->u[idx] = 0.0;
             field->v[idx] = 0.0;
@@ -744,7 +745,7 @@ static inline test_result test_run_divergence_free(
         for (size_t i = 0; i < nx; i++) {
             double x = i * dx;
             double y = j * dy;
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             field->u[idx] = 0.1 * sin(2.0 * M_PI * x);
             field->v[idx] = 0.1 * cos(2.0 * M_PI * y);

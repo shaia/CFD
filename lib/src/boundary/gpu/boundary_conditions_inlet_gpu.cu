@@ -15,6 +15,7 @@
  */
 
 #include "cfd/boundary/boundary_conditions_gpu.cuh"
+#include "cfd/core/indexing.h"
 #include <math.h>
 #include <limits.h>
 
@@ -114,8 +115,8 @@ __global__ void kernel_bc_inlet_left(double* u, double* v, size_t nx, size_t ny,
         inlet_compute_velocity_gpu(BC_EDGE_LEFT, profile, spec_type,
                                     u_spec, v_spec, magnitude, direction,
                                     position, &u_val, &v_val);
-        u[idx * nx] = u_val;
-        v[idx * nx] = v_val;
+        u[IDX_2D(0, idx, nx)] = u_val;
+        v[IDX_2D(0, idx, nx)] = v_val;
     }
 }
 
@@ -136,8 +137,8 @@ __global__ void kernel_bc_inlet_right(double* u, double* v, size_t nx, size_t ny
         inlet_compute_velocity_gpu(BC_EDGE_RIGHT, profile, spec_type,
                                     u_spec, v_spec, magnitude, direction,
                                     position, &u_val, &v_val);
-        u[idx * nx + (nx - 1)] = u_val;
-        v[idx * nx + (nx - 1)] = v_val;
+        u[IDX_2D(nx - 1, idx, nx)] = u_val;
+        v[IDX_2D(nx - 1, idx, nx)] = v_val;
     }
 }
 
@@ -180,8 +181,8 @@ __global__ void kernel_bc_inlet_top(double* u, double* v, size_t nx, size_t ny,
         inlet_compute_velocity_gpu(BC_EDGE_TOP, profile, spec_type,
                                     u_spec, v_spec, magnitude, direction,
                                     position, &u_val, &v_val);
-        u[(ny - 1) * nx + idx] = u_val;
-        v[(ny - 1) * nx + idx] = v_val;
+        u[IDX_2D(idx, ny - 1, nx)] = u_val;
+        v[IDX_2D(idx, ny - 1, nx)] = v_val;
     }
 }
 

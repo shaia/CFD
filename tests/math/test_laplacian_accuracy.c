@@ -21,6 +21,7 @@
 #include "cfd/math/stencils.h"
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
+#include "cfd/core/indexing.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -85,7 +86,7 @@ static void init_manufactured_solution(double* p, size_t nx, size_t ny,
         double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * dx;
-            p[j * nx + i] = manufactured_p(x, y);
+            p[IDX_2D(i, j, nx)] = manufactured_p(x, y);
         }
     }
 }
@@ -180,7 +181,7 @@ void test_laplacian_stencil_manufactured_solution(void) {
             double y = DOMAIN_YMIN + j * dy;
             for (size_t i = 1; i < n - 1; i++) {
                 double x = DOMAIN_XMIN + i * dx;
-                size_t ij = j * n + i;
+                size_t ij = IDX_2D(i, j, n);
 
                 /* Get stencil values */
                 double p_ip1 = p[ij + 1];
@@ -248,7 +249,7 @@ void test_cg_backend_comparison(void) {
         double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * dx;
-            rhs[j * nx + i] = manufactured_laplacian(x, y);
+            rhs[IDX_2D(i, j, nx)] = manufactured_laplacian(x, y);
         }
     }
 
@@ -389,8 +390,8 @@ void test_laplacian_via_residual(void) {
             double y = DOMAIN_YMIN + j * dy;
             for (size_t i = 0; i < n; i++) {
                 double x = DOMAIN_XMIN + i * dx;
-                p[j * n + i] = manufactured_p(x, y);
-                rhs[j * n + i] = manufactured_laplacian(x, y);
+                p[IDX_2D(i, j, n)] = manufactured_p(x, y);
+                rhs[IDX_2D(i, j, n)] = manufactured_laplacian(x, y);
             }
         }
 
@@ -470,8 +471,8 @@ void test_laplacian_symmetry(void) {
         double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * dx;
-            u[j * nx + i] = sin(M_PI * x) * sin(M_PI * y);
-            v[j * nx + i] = x * (1.0 - x) * y * (1.0 - y);
+            u[IDX_2D(i, j, nx)] = sin(M_PI * x) * sin(M_PI * y);
+            v[IDX_2D(i, j, nx)] = x * (1.0 - x) * y * (1.0 - y);
         }
     }
 
@@ -481,7 +482,7 @@ void test_laplacian_symmetry(void) {
 
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t ij = j * nx + i;
+            size_t ij = IDX_2D(i, j, nx);
 
             /* Laplacian of u at (i,j) */
             double lap_u = stencil_laplacian_2d(

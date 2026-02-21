@@ -18,6 +18,7 @@
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cpu_features.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -124,7 +125,7 @@ static cfd_status_t jacobi_neon_iterate(
 
         /* NEON loop: process 2 doubles at a time */
         for (; i + 2 <= nx - 1; i += 2) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
 
             /* Load neighbors */
             float64x2_t p_xp = vld1q_f64(&p_old[idx + 1]);   /* x+1 */
@@ -152,7 +153,7 @@ static cfd_status_t jacobi_neon_iterate(
 
         /* Scalar remainder */
         for (; i < nx - 1; i++) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
             double p_result = -(rhs[idx]
                 - (p_old[idx + 1] + p_old[idx - 1]) / dx2
                 - (p_old[idx + nx] + p_old[idx - nx]) / dy2) * inv_factor;

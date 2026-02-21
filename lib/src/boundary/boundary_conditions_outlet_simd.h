@@ -12,6 +12,7 @@
  */
 
 #include "boundary_conditions_outlet_common.h"
+#include "cfd/core/indexing.h"
 #include <limits.h>
 
 static inline int bc_outlet_simd_size_to_int(size_t sz) {

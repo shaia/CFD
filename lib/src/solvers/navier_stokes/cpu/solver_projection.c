@@ -19,6 +19,7 @@
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
@@ -87,7 +88,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         // ============================================================
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = (j * nx) + i;
+                size_t idx = IDX_2D(i, j, nx);
 
                 double u = field->u[idx];
                 double v = field->v[idx];
@@ -154,7 +155,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = (j * nx) + i;
+                size_t idx = IDX_2D(i, j, nx);
 
                 double du_star_dx = (u_star[idx + 1] - u_star[idx - 1]) / (2.0 * dx);
                 double dv_star_dy = (v_star[idx + nx] - v_star[idx - nx]) / (2.0 * dy);
@@ -179,7 +180,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         // ============================================================
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = (j * nx) + i;
+                size_t idx = IDX_2D(i, j, nx);
 
                 double dp_dx = (p_new[idx + 1] - p_new[idx - 1]) / (2.0 * dx);
                 double dp_dy = (p_new[idx + nx] - p_new[idx - nx]) / (2.0 * dy);

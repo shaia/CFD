@@ -12,6 +12,7 @@
 #include "cfd/boundary/boundary_conditions_gpu.cuh"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/logging.h"
 #include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
@@ -86,7 +87,7 @@ __global__ void kernel_compute_divergence(const double* __restrict__ u,
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
-        size_t idx = j * nx + i;
+        size_t idx = IDX_2D(i, j, nx);
         div[idx] = (u[idx + 1] - u[idx - 1]) * inv_2dx + (v[idx + nx] - v[idx - nx]) * inv_2dy;
     }
 }
@@ -98,7 +99,7 @@ __global__ void kernel_poisson_jacobi(const double* __restrict__ p_old, double* 
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
-        size_t idx = j * nx + i;
+        size_t idx = IDX_2D(i, j, nx);
         double sum = (p_old[idx + 1] + p_old[idx - 1]) * inv_dx2 +
                      (p_old[idx + nx] + p_old[idx - nx]) * inv_dy2;
         p_new[idx] = (sum - rhs[idx]) * inv_factor;
@@ -113,7 +114,7 @@ __global__ void kernel_predictor(const double* __restrict__ u, const double* __r
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
-        size_t idx = j * nx + i;
+        size_t idx = IDX_2D(i, j, nx);
         double u_c = u[idx], v_c = v[idx];
         double du_dx = (u[idx + 1] - u[idx - 1]) * inv_2dx;
         double du_dy = (u[idx + nx] - u[idx - nx]) * inv_2dy;
@@ -138,7 +139,7 @@ __global__ void kernel_velocity_rhs(const double* __restrict__ u, const double* 
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
-        size_t idx = j * nx + i;
+        size_t idx = IDX_2D(i, j, nx);
         double u_c = u[idx], v_c = v[idx];
         double du_dx = (u[idx + 1] - u[idx - 1]) * inv_2dx;
         double du_dy = (u[idx + nx] - u[idx - nx]) * inv_2dy;
@@ -162,7 +163,7 @@ __global__ void kernel_velocity_update(double* __restrict__ u, double* __restric
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
-        size_t idx = j * nx + i;
+        size_t idx = IDX_2D(i, j, nx);
         u[idx] = ::fmax((double)-MAX_VELOCITY,
                         ::fmin((double)MAX_VELOCITY, (double)(u[idx] + dt * u_rhs[idx])));
         v[idx] = ::fmax((double)-MAX_VELOCITY,
@@ -178,7 +179,7 @@ __global__ void kernel_projection_correct(double* __restrict__ u, double* __rest
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
-        size_t idx = j * nx + i;
+        size_t idx = IDX_2D(i, j, nx);
         double u_c = u[idx], v_c = v[idx];
         double dp_dx = (p[idx + 1] - p[idx - 1]) * inv_2dx;
         double dp_dy = (p[idx + nx] - p[idx - nx]) * inv_2dy;
@@ -194,15 +195,18 @@ __global__ void kernel_pressure_update(double* __restrict__ p, const double* __r
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
-        p[j * nx + i] -= factor * div[j * nx + i];
+        size_t idx = IDX_2D(i, j, nx);
+        p[idx] -= factor * div[idx];
     }
 }
 
 __global__ void kernel_scale_rhs(double* __restrict__ rhs, size_t nx, size_t ny, double scale) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
-    if (i < nx - 1 && j < ny - 1)
-        rhs[j * nx + i] *= scale;
+    if (i < nx - 1 && j < ny - 1) {
+        size_t idx = IDX_2D(i, j, nx);
+        rhs[idx] *= scale;
+    }
 }
 
 // Copy boundary values from stored BC arrays to velocity arrays
@@ -220,19 +224,19 @@ __global__ void kernel_copy_velocity_boundaries(double* __restrict__ u, double* 
     }
     // Top boundary (j = ny-1)
     if (idx < nx) {
-        size_t top_idx = (ny - 1) * nx + idx;
+        size_t top_idx = IDX_2D(idx, ny - 1, nx);
         u[top_idx] = u_bc[top_idx];
         v[top_idx] = v_bc[top_idx];
     }
     // Left boundary (i = 0)
     if (idx < ny) {
-        size_t left_idx = idx * nx;
+        size_t left_idx = IDX_2D(0, idx, nx);
         u[left_idx] = u_bc[left_idx];
         v[left_idx] = v_bc[left_idx];
     }
     // Right boundary (i = nx-1)
     if (idx < ny) {
-        size_t right_idx = idx * nx + (nx - 1);
+        size_t right_idx = IDX_2D(nx - 1, idx, nx);
         u[right_idx] = u_bc[right_idx];
         v[right_idx] = v_bc[right_idx];
     }

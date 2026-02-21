@@ -8,6 +8,8 @@
 #ifndef POISSON_TEST_UTILS_H
 #define POISSON_TEST_UTILS_H
 
+#include "cfd/core/indexing.h"
+
 #include <math.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -63,7 +65,7 @@ static inline void initialize_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
             double x = i * dx;
             double y = j * dy;
             // RHS = -Laplacian(p) = 2*pi^2 * sin(pi*x)*sin(pi*y)
-            rhs[j * nx + i] = scale * 2.0 * M_PI * M_PI * sin(M_PI * x) * sin(M_PI * y);
+            rhs[IDX_2D(i, j, nx)] = scale * 2.0 * M_PI * M_PI * sin(M_PI * x) * sin(M_PI * y);
         }
     }
 }
@@ -88,7 +90,7 @@ static inline double compute_l2_error(const double* p, size_t nx, size_t ny,
             double x = i * dx;
             double y = j * dy;
             double analytical = compute_analytical_solution(x, y);
-            double diff = p[j * nx + i] - analytical;
+            double diff = p[IDX_2D(i, j, nx)] - analytical;
             error += diff * diff;
         }
     }
@@ -105,7 +107,7 @@ static inline double compute_max_residual(const double* p, const double* rhs,
     double max_res = 0.0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double p_xx = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / dx2;
             double p_yy = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / dy2;
             double res = fabs(p_xx + p_yy - rhs[idx]);

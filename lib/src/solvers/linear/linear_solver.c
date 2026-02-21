@@ -14,6 +14,7 @@
 #include "linear_solver_internal.h"
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -289,7 +290,7 @@ double poisson_solver_compute_residual(
 
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             /* Compute Laplacian: d^2x/dx^2 + d^2x/dy^2 */
             double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) / dx2

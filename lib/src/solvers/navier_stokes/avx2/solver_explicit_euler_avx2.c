@@ -19,6 +19,7 @@
 
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
@@ -212,7 +213,7 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
     __m256d dy2_recip = _mm256_div_pd(sc->one_vec, dy2_val);
 
     for (size_t i = 1; i + 3 < ctx->nx - 1; i += 4) {
-        size_t idx = j * ctx->nx + i;
+        size_t idx = IDX_2D(i, j, ctx->nx);
 
         __m256d u = _mm256_loadu_pd(&field->u[idx]);
         __m256d v = _mm256_loadu_pd(&field->v[idx]);
@@ -309,7 +310,7 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
                                const grid* grid, const ns_solver_params_t* params, size_t j,
                                double conservative_dt, double t) {
     for (size_t i = 1; i < ctx->nx - 1; i++) {
-        size_t idx = (j * ctx->nx) + i;
+        size_t idx = IDX_2D(i, j, ctx->nx);
 
         double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
         double du_dy = (field->u[idx + ctx->nx] - field->u[idx - ctx->nx]) / (2.0 * grid->dy[j]);
@@ -423,14 +424,14 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     for (size_t i = 0; i < nx; i++) {
         ctx->u_new[i] = field->u[i];
         ctx->v_new[i] = field->v[i];
-        ctx->u_new[(ny - 1) * nx + i] = field->u[(ny - 1) * nx + i];
-        ctx->v_new[(ny - 1) * nx + i] = field->v[(ny - 1) * nx + i];
+        ctx->u_new[IDX_2D(i, ny - 1, nx)] = field->u[IDX_2D(i, ny - 1, nx)];
+        ctx->v_new[IDX_2D(i, ny - 1, nx)] = field->v[IDX_2D(i, ny - 1, nx)];
     }
     for (size_t jj = 0; jj < ny; jj++) {
-        ctx->u_new[jj * nx] = field->u[jj * nx];
-        ctx->v_new[jj * nx] = field->v[jj * nx];
-        ctx->u_new[jj * nx + nx - 1] = field->u[jj * nx + nx - 1];
-        ctx->v_new[jj * nx + nx - 1] = field->v[jj * nx + nx - 1];
+        ctx->u_new[IDX_2D(0, jj, nx)] = field->u[IDX_2D(0, jj, nx)];
+        ctx->v_new[IDX_2D(0, jj, nx)] = field->v[IDX_2D(0, jj, nx)];
+        ctx->u_new[IDX_2D(nx - 1, jj, nx)] = field->u[IDX_2D(nx - 1, jj, nx)];
+        ctx->v_new[IDX_2D(nx - 1, jj, nx)] = field->v[IDX_2D(nx - 1, jj, nx)];
     }
 
     apply_boundary_conditions(field, grid);
@@ -439,14 +440,14 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     for (size_t i = 0; i < nx; i++) {
         field->u[i] = ctx->u_new[i];
         field->v[i] = ctx->v_new[i];
-        field->u[(ny - 1) * nx + i] = ctx->u_new[(ny - 1) * nx + i];
-        field->v[(ny - 1) * nx + i] = ctx->v_new[(ny - 1) * nx + i];
+        field->u[IDX_2D(i, ny - 1, nx)] = ctx->u_new[IDX_2D(i, ny - 1, nx)];
+        field->v[IDX_2D(i, ny - 1, nx)] = ctx->v_new[IDX_2D(i, ny - 1, nx)];
     }
     for (size_t jj = 0; jj < ny; jj++) {
-        field->u[jj * nx] = ctx->u_new[jj * nx];
-        field->v[jj * nx] = ctx->v_new[jj * nx];
-        field->u[jj * nx + nx - 1] = ctx->u_new[jj * nx + nx - 1];
-        field->v[jj * nx + nx - 1] = ctx->v_new[jj * nx + nx - 1];
+        field->u[IDX_2D(0, jj, nx)] = ctx->u_new[IDX_2D(0, jj, nx)];
+        field->v[IDX_2D(0, jj, nx)] = ctx->v_new[IDX_2D(0, jj, nx)];
+        field->u[IDX_2D(nx - 1, jj, nx)] = ctx->u_new[IDX_2D(nx - 1, jj, nx)];
+        field->v[IDX_2D(nx - 1, jj, nx)] = ctx->v_new[IDX_2D(nx - 1, jj, nx)];
     }
 
     if (stats) {

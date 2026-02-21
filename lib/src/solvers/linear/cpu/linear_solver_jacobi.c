@@ -12,6 +12,7 @@
 #include "../linear_solver_internal.h"
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -86,7 +87,7 @@ static cfd_status_t jacobi_scalar_iterate(
     /* Jacobi update: reads from p_old, writes to p_new */
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             double p_result = -(rhs[idx]
                 - (p_old[idx + 1] + p_old[idx - 1]) / dx2

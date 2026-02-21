@@ -8,6 +8,7 @@
  */
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "unity.h"
 
 #include <math.h>
@@ -49,7 +50,7 @@ static double* create_test_field(size_t nx, size_t ny) {
     /* Fill with a pattern: interior = 999.0 to verify BC doesn't touch it */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            field[j * nx + i] = 999.0;
+            field[IDX_2D(i, j, nx)] = 999.0;
         }
     }
     return field;
@@ -66,14 +67,14 @@ static int verify_dirichlet_bc(const double* field, size_t nx, size_t ny,
                                 const bc_dirichlet_values_t* values) {
     /* Check left boundary (column 0), excluding corners */
     for (size_t j = 1; j < ny - 1; j++) {
-        if (fabs(field[j * nx] - values->left) > TOLERANCE) {
+        if (fabs(field[IDX_2D(0, j, nx)] - values->left) > TOLERANCE) {
             return 0;
         }
     }
 
     /* Check right boundary (column nx-1), excluding corners */
     for (size_t j = 1; j < ny - 1; j++) {
-        if (fabs(field[j * nx + (nx - 1)] - values->right) > TOLERANCE) {
+        if (fabs(field[IDX_2D(nx - 1, j, nx)] - values->right) > TOLERANCE) {
             return 0;
         }
     }
@@ -87,7 +88,7 @@ static int verify_dirichlet_bc(const double* field, size_t nx, size_t ny,
 
     /* Check top boundary (row ny-1), including corners */
     for (size_t i = 0; i < nx; i++) {
-        if (fabs(field[(ny - 1) * nx + i] - values->top) > TOLERANCE) {
+        if (fabs(field[IDX_2D(i, ny - 1, nx)] - values->top) > TOLERANCE) {
             return 0;
         }
     }
@@ -101,7 +102,7 @@ static int verify_dirichlet_bc(const double* field, size_t nx, size_t ny,
 static int verify_interior_unchanged(const double* field, size_t nx, size_t ny) {
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            if (fabs(field[j * nx + i] - 999.0) > TOLERANCE) {
+            if (fabs(field[IDX_2D(i, j, nx)] - 999.0) > TOLERANCE) {
                 return 0;
             }
         }
@@ -257,8 +258,8 @@ void test_dirichlet_simd_consistency_with_scalar(void) {
         for (size_t i = 0; i < nx; i++) {
             if (i == 0 || i == nx - 1 || j == 0 || j == ny - 1) {
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE,
-                                          field_scalar[j * nx + i],
-                                          field_simd[j * nx + i]);
+                                          field_scalar[IDX_2D(i, j, nx)],
+                                          field_simd[IDX_2D(i, j, nx)]);
             }
         }
     }
@@ -325,8 +326,8 @@ void test_dirichlet_omp_consistency_with_scalar(void) {
         for (size_t i = 0; i < nx; i++) {
             if (i == 0 || i == nx - 1 || j == 0 || j == ny - 1) {
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE,
-                                          field_scalar[j * nx + i],
-                                          field_omp[j * nx + i]);
+                                          field_scalar[IDX_2D(i, j, nx)],
+                                          field_omp[IDX_2D(i, j, nx)]);
             }
         }
     }
@@ -397,13 +398,13 @@ void test_dirichlet_velocity_lid_driven_cavity(void) {
 
     /* Verify top boundary of u is 1.0 (moving lid) */
     for (size_t i = 0; i < nx; i++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[(ny - 1) * nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[IDX_2D(i, ny - 1, nx)]);
     }
 
     /* Verify all v boundaries are 0 */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);           /* Left */
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx + nx - 1]);  /* Right */
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(0, j, nx)]);           /* Left */
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(nx - 1, j, nx)]);  /* Right */
     }
 
     free(u);
@@ -479,7 +480,7 @@ void test_dirichlet_minimum_grid(void) {
                               "Minimum grid Dirichlet BC failed");
 
     /* Only one interior point (1,1) should be unchanged */
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, field[1 * nx + 1]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, field[IDX_2D(1, 1, nx)]);
 
     free(field);
 }

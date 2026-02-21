@@ -9,6 +9,7 @@
 #include "../linear_solver_internal.h"
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -57,7 +58,7 @@ static double dot_product_omp(const double* a, const double* b,
 #pragma omp parallel for schedule(static) reduction(+:sum)
     for (j = 1; j < ny_int - 1; j++) {
         for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = (size_t)j * nx + (size_t)i;
+            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
             sum += a[idx] * b[idx];
         }
     }
@@ -72,7 +73,7 @@ static void axpy_omp(double alpha, const double* x, double* y,
 #pragma omp parallel for schedule(static)
     for (j = 1; j < ny_int - 1; j++) {
         for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = (size_t)j * nx + (size_t)i;
+            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
             y[idx] += alpha * x[idx];
         }
     }
@@ -89,7 +90,7 @@ static void apply_laplacian_omp(const double* p, double* Ap,
 #pragma omp parallel for schedule(static)
     for (j = 1; j < ny_int - 1; j++) {
         for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = (size_t)j * nx + (size_t)i;
+            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
             double laplacian = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv
                              + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv;
             Ap[idx] = -laplacian;
@@ -108,7 +109,7 @@ static void compute_residual_omp(const double* x, const double* rhs, double* r,
 #pragma omp parallel for schedule(static)
     for (j = 1; j < ny_int - 1; j++) {
         for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = (size_t)j * nx + (size_t)i;
+            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
             double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv
                              + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv;
             r[idx] = -rhs[idx] + laplacian;
@@ -135,7 +136,7 @@ static void apply_jacobi_precond_omp(const double* r, double* z,
 #pragma omp parallel for schedule(static)
     for (j = 1; j < ny_int - 1; j++) {
         for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = (size_t)j * nx + (size_t)i;
+            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
             z[idx] = diag_inv * r[idx];
         }
     }
@@ -149,7 +150,7 @@ static void update_search_direction_omp(const double* src, double* p,
 #pragma omp parallel for schedule(static)
     for (j = 1; j < ny_int - 1; j++) {
         for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = (size_t)j * nx + (size_t)i;
+            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
             p[idx] = src[idx] + beta * p[idx];
         }
     }

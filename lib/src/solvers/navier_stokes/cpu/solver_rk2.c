@@ -15,6 +15,7 @@
 
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
@@ -63,7 +64,7 @@ static void compute_rhs(const double* u, const double* v, const double* p,
                          size_t nx, size_t ny, int iter, double dt) {
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = (j * nx) + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             /* Safety checks */
             if (rho[idx] <= 1e-10) {
@@ -82,10 +83,10 @@ static void compute_rhs(const double* u, const double* v, const double* p,
             /* Periodic stencil indices — avoids relying on ghost cells,
              * which is critical for preserving RK2 temporal order.
              * Ghost cell values may be stale during intermediate RK stages. */
-            size_t il = (i > 1)      ? idx - 1  : j * nx + (nx - 2);
-            size_t ir = (i < nx - 2) ? idx + 1  : j * nx + 1;
-            size_t jd = (j > 1)      ? idx - nx : (ny - 2) * nx + i;
-            size_t ju = (j < ny - 2) ? idx + nx : nx + i;
+            size_t il = (i > 1)      ? idx - 1  : IDX_2D(nx - 2, j, nx);
+            size_t ir = (i < nx - 2) ? idx + 1  : IDX_2D(1, j, nx);
+            size_t jd = (j > 1)      ? idx - nx : IDX_2D(i, ny - 2, nx);
+            size_t ju = (j < ny - 2) ? idx + nx : IDX_2D(i, 1, nx);
 
             /* First derivatives (central differences) */
             double du_dx = (u[ir] - u[il]) / (2.0 * grid->dx[i]);
