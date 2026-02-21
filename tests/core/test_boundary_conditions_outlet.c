@@ -15,6 +15,7 @@
  */
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "unity.h"
 
 #include <stdlib.h>
@@ -55,7 +56,7 @@ static double* create_test_field_ramp(size_t nx, size_t ny) {
     /* Fill with ramp pattern: field[j][i] = i + j*10 + 100 */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            field[j * nx + i] = (double)(i + j * 10 + 100);
+            field[IDX_2D(i, j, nx)] = (double)(i + j * 10 + 100);
         }
     }
     return field;
@@ -70,7 +71,7 @@ static double* create_test_field_uniform(size_t nx, size_t ny, double value) {
 
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            field[j * nx + i] = value;
+            field[IDX_2D(i, j, nx)] = value;
         }
     }
     return field;
@@ -83,14 +84,14 @@ static void verify_outlet_boundary(const double* field, size_t nx, size_t ny, bc
     switch (edge) {
         case BC_EDGE_LEFT:
             for (size_t j = 0; j < ny; j++) {
-                double expected = field[j * nx + 1];
-                TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[j * nx]);
+                double expected = field[IDX_2D(1, j, nx)];
+                TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[IDX_2D(0, j, nx)]);
             }
             break;
         case BC_EDGE_RIGHT:
             for (size_t j = 0; j < ny; j++) {
-                double expected = field[j * nx + (nx - 2)];
-                TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[j * nx + (nx - 1)]);
+                double expected = field[IDX_2D(nx - 2, j, nx)];
+                TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[IDX_2D(nx - 1, j, nx)]);
             }
             break;
         case BC_EDGE_BOTTOM:
@@ -101,8 +102,8 @@ static void verify_outlet_boundary(const double* field, size_t nx, size_t ny, bc
             break;
         case BC_EDGE_TOP:
             for (size_t i = 0; i < nx; i++) {
-                double expected = field[(ny - 2) * nx + i];
-                TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[(ny - 1) * nx + i]);
+                double expected = field[IDX_2D(i, ny - 2, nx)];
+                TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[IDX_2D(i, ny - 1, nx)]);
             }
             break;
         default:
@@ -116,7 +117,7 @@ static void verify_outlet_boundary(const double* field, size_t nx, size_t ny, bc
 static void verify_fields_equal(const double* field1, const double* field2, size_t nx, size_t ny) {
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, field1[j * nx + i], field2[j * nx + i]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, field1[IDX_2D(i, j, nx)], field2[IDX_2D(i, j, nx)]);
         }
     }
 }
@@ -137,7 +138,7 @@ static void verify_only_edge_modified(const double* field, const double* origina
                 default: break;
             }
             if (!on_modified_edge) {
-                TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, original[j * nx + i], field[j * nx + i]);
+                TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, original[IDX_2D(i, j, nx)], field[IDX_2D(i, j, nx)]);
             }
         }
     }
@@ -199,8 +200,8 @@ void test_outlet_zero_gradient_right(void) {
 
     /* Check right boundary (column nx-1) equals adjacent interior (column nx-2) */
     for (size_t j = 0; j < ny; j++) {
-        double expected = field[j * nx + (nx - 2)];
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[j * nx + (nx - 1)]);
+        double expected = field[IDX_2D(nx - 2, j, nx)];
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[IDX_2D(nx - 1, j, nx)]);
     }
 
     free(field);
@@ -219,8 +220,8 @@ void test_outlet_zero_gradient_left(void) {
 
     /* Check left boundary (column 0) equals adjacent interior (column 1) */
     for (size_t j = 0; j < ny; j++) {
-        double expected = field[j * nx + 1];
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[j * nx]);
+        double expected = field[IDX_2D(1, j, nx)];
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[IDX_2D(0, j, nx)]);
     }
 
     free(field);
@@ -239,8 +240,8 @@ void test_outlet_zero_gradient_top(void) {
 
     /* Check top boundary (row ny-1) equals adjacent interior (row ny-2) */
     for (size_t i = 0; i < nx; i++) {
-        double expected = field[(ny - 2) * nx + i];
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[(ny - 1) * nx + i]);
+        double expected = field[IDX_2D(i, ny - 2, nx)];
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[IDX_2D(i, ny - 1, nx)]);
     }
 
     free(field);
@@ -284,8 +285,8 @@ void test_outlet_convective_right(void) {
 
     /* Check right boundary equals adjacent interior (zero-gradient behavior) */
     for (size_t j = 0; j < ny; j++) {
-        double expected = field[j * nx + (nx - 2)];
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[j * nx + (nx - 1)]);
+        double expected = field[IDX_2D(nx - 2, j, nx)];
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[IDX_2D(nx - 1, j, nx)]);
     }
 
     free(field);
@@ -304,8 +305,8 @@ void test_outlet_convective_left(void) {
 
     /* Check left boundary equals adjacent interior */
     for (size_t j = 0; j < ny; j++) {
-        double expected = field[j * nx + 1];
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[j * nx]);
+        double expected = field[IDX_2D(1, j, nx)];
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[IDX_2D(0, j, nx)]);
     }
 
     free(field);
@@ -324,8 +325,8 @@ void test_outlet_convective_top(void) {
 
     /* Check top boundary equals adjacent interior */
     for (size_t i = 0; i < nx; i++) {
-        double expected = field[(ny - 2) * nx + i];
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[(ny - 1) * nx + i]);
+        double expected = field[IDX_2D(i, ny - 2, nx)];
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, field[IDX_2D(i, ny - 1, nx)]);
     }
 
     free(field);
@@ -365,7 +366,7 @@ void test_outlet_velocity_zero_gradient(void) {
     /* Modify v to have different values */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            v[j * nx + i] = -(double)(i + j * 10 + 100);
+            v[IDX_2D(i, j, nx)] = -(double)(i + j * 10 + 100);
         }
     }
 
@@ -377,10 +378,10 @@ void test_outlet_velocity_zero_gradient(void) {
 
     /* Check both u and v at right boundary */
     for (size_t j = 0; j < ny; j++) {
-        double expected_u = u[j * nx + (nx - 2)];
-        double expected_v = v[j * nx + (nx - 2)];
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[j * nx + (nx - 1)]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[j * nx + (nx - 1)]);
+        double expected_u = u[IDX_2D(nx - 2, j, nx)];
+        double expected_v = v[IDX_2D(nx - 2, j, nx)];
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[IDX_2D(nx - 1, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[IDX_2D(nx - 1, j, nx)]);
     }
 
     free(u);
@@ -407,7 +408,7 @@ void test_outlet_interior_unchanged(void) {
     /* Interior should be unchanged (all columns except nx-1) */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx - 1; i++) {
-            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, field_copy[j * nx + i], field[j * nx + i]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, field_copy[IDX_2D(i, j, nx)], field[IDX_2D(i, j, nx)]);
         }
     }
 
@@ -442,7 +443,7 @@ void test_outlet_backend_consistency(void) {
     /* Results should match */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, field_scalar[j * nx + i], field_auto[j * nx + i]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, field_scalar[IDX_2D(i, j, nx)], field_auto[IDX_2D(i, j, nx)]);
         }
     }
 
@@ -843,7 +844,7 @@ void test_outlet_velocity_left(void) {
     /* Make v have different values */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            v[j * nx + i] = -(double)(i + j * 10 + 100);
+            v[IDX_2D(i, j, nx)] = -(double)(i + j * 10 + 100);
         }
     }
 
@@ -855,10 +856,10 @@ void test_outlet_velocity_left(void) {
 
     /* Check both u and v at left boundary */
     for (size_t j = 0; j < ny; j++) {
-        double expected_u = u[j * nx + 1];
-        double expected_v = v[j * nx + 1];
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[j * nx]);
+        double expected_u = u[IDX_2D(1, j, nx)];
+        double expected_v = v[IDX_2D(1, j, nx)];
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -874,7 +875,7 @@ void test_outlet_velocity_top(void) {
 
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            v[j * nx + i] = -(double)(i + j * 10 + 100);
+            v[IDX_2D(i, j, nx)] = -(double)(i + j * 10 + 100);
         }
     }
 
@@ -885,10 +886,10 @@ void test_outlet_velocity_top(void) {
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     for (size_t i = 0; i < nx; i++) {
-        double expected_u = u[(ny - 2) * nx + i];
-        double expected_v = v[(ny - 2) * nx + i];
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[(ny - 1) * nx + i]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[(ny - 1) * nx + i]);
+        double expected_u = u[IDX_2D(i, ny - 2, nx)];
+        double expected_v = v[IDX_2D(i, ny - 2, nx)];
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[IDX_2D(i, ny - 1, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[IDX_2D(i, ny - 1, nx)]);
     }
 
     free(u);
@@ -904,7 +905,7 @@ void test_outlet_velocity_bottom(void) {
 
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            v[j * nx + i] = -(double)(i + j * 10 + 100);
+            v[IDX_2D(i, j, nx)] = -(double)(i + j * 10 + 100);
         }
     }
 
@@ -1062,8 +1063,8 @@ void test_outlet_correct_indices_left(void) {
 
     /* Verify specific indices: field[j][0] = field[j][1] */
     for (size_t j = 0; j < ny; j++) {
-        size_t dst_idx = j * nx + 0;
-        size_t src_idx = j * nx + 1;
+        size_t dst_idx = IDX_2D(0, j, nx);
+        size_t src_idx = IDX_2D(1, j, nx);
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, field[src_idx], field[dst_idx]);
     }
 
@@ -1083,8 +1084,8 @@ void test_outlet_correct_indices_right(void) {
 
     /* Verify specific indices: field[j][nx-1] = field[j][nx-2] */
     for (size_t j = 0; j < ny; j++) {
-        size_t dst_idx = j * nx + (nx - 1);
-        size_t src_idx = j * nx + (nx - 2);
+        size_t dst_idx = IDX_2D(nx - 1, j, nx);
+        size_t src_idx = IDX_2D(nx - 2, j, nx);
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, field[src_idx], field[dst_idx]);
     }
 
@@ -1104,8 +1105,8 @@ void test_outlet_correct_indices_bottom(void) {
 
     /* Verify specific indices: field[0][i] = field[1][i] */
     for (size_t i = 0; i < nx; i++) {
-        size_t dst_idx = 0 * nx + i;
-        size_t src_idx = 1 * nx + i;
+        size_t dst_idx = IDX_2D(i, 0, nx);
+        size_t src_idx = IDX_2D(i, 1, nx);
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, field[src_idx], field[dst_idx]);
     }
 
@@ -1125,8 +1126,8 @@ void test_outlet_correct_indices_top(void) {
 
     /* Verify specific indices: field[ny-1][i] = field[ny-2][i] */
     for (size_t i = 0; i < nx; i++) {
-        size_t dst_idx = (ny - 1) * nx + i;
-        size_t src_idx = (ny - 2) * nx + i;
+        size_t dst_idx = IDX_2D(i, ny - 1, nx);
+        size_t src_idx = IDX_2D(i, ny - 2, nx);
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, field[src_idx], field[dst_idx]);
     }
 

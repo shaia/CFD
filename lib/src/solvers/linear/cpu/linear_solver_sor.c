@@ -12,6 +12,7 @@
 #include "../linear_solver_internal.h"
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -89,7 +90,7 @@ static cfd_status_t sor_scalar_iterate(
     /* Single sweep: row-major order */
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             /* Compute Gauss-Seidel update
              * Note: x[idx-1] and x[idx-nx] are already updated this iteration

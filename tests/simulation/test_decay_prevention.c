@@ -1,4 +1,5 @@
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
@@ -126,7 +127,7 @@ void test_source_term_effectiveness(void) {
     // Start with nearly zero velocity (would decay without source terms)
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             field->u[idx] = 0.001;  // Tiny initial velocity
             field->v[idx] = 0.001;
             field->p[idx] = 1.0;

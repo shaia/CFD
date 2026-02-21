@@ -10,6 +10,7 @@
 #include "cfd/core/cfd_init.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
@@ -247,7 +248,7 @@ static void init_taylor_green_with_pressure(flow_field* field, const grid* g,
         for (size_t i = 0; i < nx; i++) {
             double x = i * dx;
             double y = j * dy;
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             field->u[idx] = U * cos(k * x) * sin(k * y);
             field->v[idx] = -U * sin(k * x) * cos(k * y);
@@ -307,7 +308,7 @@ static double compute_interior_l2_error(const double* a, const double* b,
     size_t count = 0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            double err = a[j * nx + i] - b[j * nx + i];
+            double err = a[IDX_2D(i, j, nx)] - b[IDX_2D(i, j, nx)];
             sum += err * err;
             count++;
         }
@@ -493,7 +494,7 @@ void test_spatial_convergence(void) {
             for (size_t i = 0; i < n; i++) {
                 double x = i * dx;
                 double y = j * dy;
-                analytical_u[j * n + i] = U * cos(k * x) * sin(k * y) * decay;
+                analytical_u[IDX_2D(i, j, n)] = U * cos(k * x) * sin(k * y) * decay;
             }
         }
 

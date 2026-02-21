@@ -1,6 +1,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
 
@@ -113,7 +114,7 @@ void initialize_flow_field(flow_field* field, const grid* grid) {
     // Initialize with a more stable flow field
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = (j * field->nx) + i;
+            size_t idx = IDX_2D(i, j, field->nx);
             double x = grid->x[i];
             double y = grid->y[j];
 
@@ -158,7 +159,7 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
     // Find maximum wave speed
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = (j * field->nx) + i;
+            size_t idx = IDX_2D(i, j, field->nx);
             double u_speed = fabs(field->u[idx]);
             double v_speed = fabs(field->v[idx]);
             double sound_speed = sqrt(params->gamma * field->p[idx] / field->rho[idx]);
@@ -190,30 +191,30 @@ void apply_boundary_conditions(flow_field* field, const grid* grid) {
     (void)grid;
     // Apply periodic boundary conditions in x-direction
     for (size_t j = 0; j < field->ny; j++) {
-        field->u[(j * field->nx) + 0] = field->u[(j * field->nx) + field->nx - 2];
-        field->v[(j * field->nx) + 0] = field->v[(j * field->nx) + field->nx - 2];
-        field->p[(j * field->nx) + 0] = field->p[(j * field->nx) + field->nx - 2];
-        field->rho[(j * field->nx) + 0] = field->rho[(j * field->nx) + field->nx - 2];
-        field->T[(j * field->nx) + 0] = field->T[(j * field->nx) + field->nx - 2];
+        field->u[IDX_2D(0, j, field->nx)] = field->u[IDX_2D(field->nx - 2, j, field->nx)];
+        field->v[IDX_2D(0, j, field->nx)] = field->v[IDX_2D(field->nx - 2, j, field->nx)];
+        field->p[IDX_2D(0, j, field->nx)] = field->p[IDX_2D(field->nx - 2, j, field->nx)];
+        field->rho[IDX_2D(0, j, field->nx)] = field->rho[IDX_2D(field->nx - 2, j, field->nx)];
+        field->T[IDX_2D(0, j, field->nx)] = field->T[IDX_2D(field->nx - 2, j, field->nx)];
 
-        field->u[(j * field->nx) + field->nx - 1] = field->u[(j * field->nx) + 1];
-        field->v[(j * field->nx) + field->nx - 1] = field->v[(j * field->nx) + 1];
-        field->p[(j * field->nx) + field->nx - 1] = field->p[(j * field->nx) + 1];
-        field->rho[(j * field->nx) + field->nx - 1] = field->rho[(j * field->nx) + 1];
-        field->T[(j * field->nx) + field->nx - 1] = field->T[(j * field->nx) + 1];
+        field->u[IDX_2D(field->nx - 1, j, field->nx)] = field->u[IDX_2D(1, j, field->nx)];
+        field->v[IDX_2D(field->nx - 1, j, field->nx)] = field->v[IDX_2D(1, j, field->nx)];
+        field->p[IDX_2D(field->nx - 1, j, field->nx)] = field->p[IDX_2D(1, j, field->nx)];
+        field->rho[IDX_2D(field->nx - 1, j, field->nx)] = field->rho[IDX_2D(1, j, field->nx)];
+        field->T[IDX_2D(field->nx - 1, j, field->nx)] = field->T[IDX_2D(1, j, field->nx)];
     }
 
     // Apply periodic boundary conditions in y-direction (instead of walls)
     for (size_t i = 0; i < field->nx; i++) {
         // Bottom boundary = top interior
-        field->u[i] = field->u[((field->ny - 2) * field->nx) + i];
-        field->v[i] = field->v[((field->ny - 2) * field->nx) + i];
-        field->p[i] = field->p[((field->ny - 2) * field->nx) + i];
-        field->rho[i] = field->rho[((field->ny - 2) * field->nx) + i];
-        field->T[i] = field->T[((field->ny - 2) * field->nx) + i];
+        field->u[i] = field->u[IDX_2D(i, field->ny - 2, field->nx)];
+        field->v[i] = field->v[IDX_2D(i, field->ny - 2, field->nx)];
+        field->p[i] = field->p[IDX_2D(i, field->ny - 2, field->nx)];
+        field->rho[i] = field->rho[IDX_2D(i, field->ny - 2, field->nx)];
+        field->T[i] = field->T[IDX_2D(i, field->ny - 2, field->nx)];
 
         // Top boundary = bottom interior
-        size_t top_idx = ((field->ny - 1) * field->nx) + i;
+        size_t top_idx = IDX_2D(i, field->ny - 1, field->nx);
         field->u[top_idx] = field->u[field->nx + i];
         field->v[top_idx] = field->v[field->nx + i];
         field->p[top_idx] = field->p[field->nx + i];
@@ -278,7 +279,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         // Update solution using explicit Euler method
         for (size_t j = 1; j < field->ny - 1; j++) {
             for (size_t i = 1; i < field->nx - 1; i++) {
-                size_t idx = (j * field->nx) + i;
+                size_t idx = IDX_2D(i, j, field->nx);
 
                 // Compute spatial derivatives
                 double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
@@ -398,15 +399,15 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
             // Bottom and top boundaries
             u_new[i] = field->u[i];
             v_new[i] = field->v[i];
-            u_new[(ny - 1) * nx + i] = field->u[(ny - 1) * nx + i];
-            v_new[(ny - 1) * nx + i] = field->v[(ny - 1) * nx + i];
+            u_new[IDX_2D(i, ny - 1, nx)] = field->u[IDX_2D(i, ny - 1, nx)];
+            v_new[IDX_2D(i, ny - 1, nx)] = field->v[IDX_2D(i, ny - 1, nx)];
         }
         for (size_t jj = 0; jj < ny; jj++) {
             // Left and right boundaries
-            u_new[jj * nx] = field->u[jj * nx];
-            v_new[jj * nx] = field->v[jj * nx];
-            u_new[jj * nx + nx - 1] = field->u[jj * nx + nx - 1];
-            v_new[jj * nx + nx - 1] = field->v[jj * nx + nx - 1];
+            u_new[IDX_2D(0, jj, nx)] = field->u[IDX_2D(0, jj, nx)];
+            v_new[IDX_2D(0, jj, nx)] = field->v[IDX_2D(0, jj, nx)];
+            u_new[IDX_2D(nx - 1, jj, nx)] = field->u[IDX_2D(nx - 1, jj, nx)];
+            v_new[IDX_2D(nx - 1, jj, nx)] = field->v[IDX_2D(nx - 1, jj, nx)];
         }
 
         // Apply boundary conditions (this applies periodic BCs)
@@ -416,14 +417,14 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         for (size_t i = 0; i < nx; i++) {
             field->u[i] = u_new[i];
             field->v[i] = v_new[i];
-            field->u[(ny - 1) * nx + i] = u_new[(ny - 1) * nx + i];
-            field->v[(ny - 1) * nx + i] = v_new[(ny - 1) * nx + i];
+            field->u[IDX_2D(i, ny - 1, nx)] = u_new[IDX_2D(i, ny - 1, nx)];
+            field->v[IDX_2D(i, ny - 1, nx)] = v_new[IDX_2D(i, ny - 1, nx)];
         }
         for (size_t jj = 0; jj < ny; jj++) {
-            field->u[jj * nx] = u_new[jj * nx];
-            field->v[jj * nx] = v_new[jj * nx];
-            field->u[jj * nx + nx - 1] = u_new[jj * nx + nx - 1];
-            field->v[jj * nx + nx - 1] = v_new[jj * nx + nx - 1];
+            field->u[IDX_2D(0, jj, nx)] = u_new[IDX_2D(0, jj, nx)];
+            field->v[IDX_2D(0, jj, nx)] = v_new[IDX_2D(0, jj, nx)];
+            field->u[IDX_2D(nx - 1, jj, nx)] = u_new[IDX_2D(nx - 1, jj, nx)];
+            field->v[IDX_2D(nx - 1, jj, nx)] = v_new[IDX_2D(nx - 1, jj, nx)];
         }
 
         // Check for NaN/Inf values and stop if found

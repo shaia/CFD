@@ -18,6 +18,7 @@
  */
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "unity.h"
 
 #include <math.h>
@@ -63,7 +64,7 @@ static double* create_test_field(size_t nx, size_t ny) {
     /* Fill with a pattern: all = 999.0 */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            field[j * nx + i] = 999.0;
+            field[IDX_2D(i, j, nx)] = 999.0;
         }
     }
     return field;
@@ -170,15 +171,15 @@ void test_inlet_uniform_left_boundary(void) {
 
     /* Check left boundary (column 0) has uniform velocity */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.0, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.5, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.0, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.5, v[IDX_2D(0, j, nx)]);
     }
 
     /* Check interior is unchanged */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 1; i < nx; i++) {
-            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[j * nx + i]);
-            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[j * nx + i]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[IDX_2D(i, j, nx)]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[IDX_2D(i, j, nx)]);
         }
     }
 
@@ -201,8 +202,8 @@ void test_inlet_uniform_right_boundary(void) {
 
     /* Check right boundary (column nx-1) has uniform velocity */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, -1.0, u[j * nx + (nx - 1)]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx + (nx - 1)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, -1.0, u[IDX_2D(nx - 1, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(nx - 1, j, nx)]);
     }
 
     free(u);
@@ -247,8 +248,8 @@ void test_inlet_uniform_top_boundary(void) {
 
     /* Check top boundary (row ny-1) has uniform velocity */
     for (size_t i = 0; i < nx; i++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx + i]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, -2.0, v[(ny - 1) * nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(i, ny - 1, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, -2.0, v[IDX_2D(i, ny - 1, nx)]);
     }
 
     free(u);
@@ -277,19 +278,19 @@ void test_inlet_parabolic_left_boundary(void) {
     for (size_t j = 0; j < ny; j++) {
         double position = (ny > 1) ? (double)j / (double)(ny - 1) : 0.5;
         double expected_u = u_max * 4.0 * position * (1.0 - position);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(0, j, nx)]);
     }
 
     /* Check boundaries (position = 0 and 1) have zero velocity */
     TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[0]);               /* j=0, position=0 */
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx]);   /* j=ny-1, position=1 */
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, ny - 1, nx)]);   /* j=ny-1, position=1 */
 
     /* Check center has maximum velocity */
     size_t j_center = ny / 2;
     double pos_center = (double)j_center / (double)(ny - 1);
     double expected_center = u_max * 4.0 * pos_center * (1.0 - pos_center);
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_center, u[j_center * nx]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_center, u[IDX_2D(0, j_center, nx)]);
 
     free(u);
     free(v);
@@ -311,13 +312,13 @@ void test_inlet_parabolic_symmetry(void) {
     /* Check symmetry: u[j] should equal u[ny-1-j] */
     for (size_t j = 0; j < ny / 2; j++) {
         TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE,
-                                   u[j * nx],
-                                   u[(ny - 1 - j) * nx]);
+                                   u[IDX_2D(0, j, nx)],
+                                   u[IDX_2D(0, ny - 1 - j, nx)]);
     }
 
     /* Verify center point (j=5) has maximum value (profile_factor=1.0 at position=0.5) */
     size_t center_j = ny / 2;
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[center_j * nx]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[IDX_2D(0, center_j, nx)]);
 
     free(u);
     free(v);
@@ -348,8 +349,8 @@ void test_inlet_magnitude_direction(void) {
     double expected_v = magnitude * sin(direction);
 
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -370,8 +371,8 @@ void test_inlet_magnitude_direction_horizontal(void) {
     bc_apply_inlet_cpu(u, v, nx, ny, &config);
 
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 5.0, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 5.0, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -404,8 +405,8 @@ void test_inlet_mass_flow_left(void) {
 
     /* Left boundary should have positive u (into domain) */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_velocity, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_velocity, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -432,8 +433,8 @@ void test_inlet_mass_flow_right(void) {
 
     /* Right boundary should have negative u (into domain) */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_velocity, u[j * nx + (nx - 1)]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx + (nx - 1)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_velocity, u[IDX_2D(nx - 1, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(nx - 1, j, nx)]);
     }
 
     free(u);
@@ -462,8 +463,8 @@ void test_inlet_mass_flow_zero_density(void) {
 
     /* With zero density, velocity should be zero (protected division) */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -492,8 +493,8 @@ void test_inlet_mass_flow_zero_length(void) {
 
     /* With zero length, velocity should be zero (protected division) */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -522,8 +523,8 @@ void test_inlet_mass_flow_negative_density(void) {
 
     /* Negative density should result in zero velocity */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -552,8 +553,8 @@ void test_inlet_mass_flow_negative_length(void) {
 
     /* Negative length should result in zero velocity */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -617,8 +618,8 @@ void test_inlet_custom_profile(void) {
     for (size_t j = 0; j < ny; j++) {
         double position = (ny > 1) ? (double)j / (double)(ny - 1) : 0.5;
         double expected_u = amplitude * sin(M_PI * position);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -645,8 +646,8 @@ void test_inlet_custom_profile_null_callback(void) {
 
     /* With NULL callback, should fall back to base velocity (uniform) */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.5, u[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.5, v[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.5, u[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.5, v[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -681,8 +682,8 @@ void test_inlet_omp_consistency(void) {
 
     /* Compare left boundary values */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_scalar[j * nx], u_omp[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_scalar[j * nx], v_omp[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_scalar[IDX_2D(0, j, nx)], u_omp[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_scalar[IDX_2D(0, j, nx)], v_omp[IDX_2D(0, j, nx)]);
     }
 
     free(u_scalar);
@@ -715,8 +716,8 @@ void test_inlet_simd_consistency(void) {
 
     /* Compare left boundary values */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_scalar[j * nx], u_simd[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_scalar[j * nx], v_simd[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_scalar[IDX_2D(0, j, nx)], u_simd[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_scalar[IDX_2D(0, j, nx)], v_simd[IDX_2D(0, j, nx)]);
     }
 
     free(u_scalar);
@@ -789,7 +790,7 @@ void test_inlet_minimum_grid(void) {
 
     /* Check left boundary */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 5.0, u[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 5.0, u[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -936,8 +937,8 @@ void test_inlet_parabolic_right_boundary(void) {
         double position = (ny > 1) ? (double)j / (double)(ny - 1) : 0.5;
         double profile_factor = 4.0 * position * (1.0 - position);
         double expected_u = -max_velocity * profile_factor;
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[j * nx + (nx - 1)]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[j * nx + (nx - 1)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_u, u[IDX_2D(nx - 1, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[IDX_2D(nx - 1, j, nx)]);
     }
 
     free(u);
@@ -996,8 +997,8 @@ void test_inlet_parabolic_top_boundary(void) {
         double position = (nx > 1) ? (double)i / (double)(nx - 1) : 0.5;
         double profile_factor = 4.0 * position * (1.0 - position);
         double expected_v = -max_velocity * profile_factor;
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx + i]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[(ny - 1) * nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(i, ny - 1, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_v, v[IDX_2D(i, ny - 1, nx)]);
     }
 
     free(u);
@@ -1022,7 +1023,7 @@ void test_inlet_parabolic_endpoints_zero(void) {
     TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[0]);
 
     /* Last point (j=ny-1, position=1): profile_factor = 4*1*(1-1) = 0 */
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(0, ny - 1, nx)]);
 
     free(u);
     free(v);
@@ -1082,8 +1083,8 @@ void test_inlet_mass_flow_top(void) {
 
     /* Top boundary should have negative v (into domain, -y) */
     for (size_t i = 0; i < nx; i++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx + i]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_velocity, v[(ny - 1) * nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(i, ny - 1, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected_velocity, v[IDX_2D(i, ny - 1, nx)]);
     }
 
     free(u);
@@ -1111,8 +1112,8 @@ void test_inlet_interior_unchanged(void) {
     /* Interior points (not on left boundary) should still be 999.0 */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 1; i < nx; i++) {  /* i > 0 means not left boundary */
-            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[j * nx + i]);
-            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[j * nx + i]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[IDX_2D(i, j, nx)]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[IDX_2D(i, j, nx)]);
         }
     }
 
@@ -1135,7 +1136,7 @@ void test_inlet_only_specified_edge_modified(void) {
 
     /* Right boundary should be unchanged */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[j * nx + (nx - 1)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[IDX_2D(nx - 1, j, nx)]);
     }
 
     /* Bottom boundary (except first column) should be unchanged */
@@ -1145,7 +1146,7 @@ void test_inlet_only_specified_edge_modified(void) {
 
     /* Top boundary (except first column) should be unchanged */
     for (size_t i = 1; i < nx; i++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[(ny - 1) * nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[IDX_2D(i, ny - 1, nx)]);
     }
 
     free(u);
@@ -1175,7 +1176,7 @@ void test_inlet_large_grid(void) {
         double position = (double)j / (double)(ny - 1);
         double profile_factor = 4.0 * position * (1.0 - position);
         double expected = 3.0 * profile_factor;
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, u[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, u[IDX_2D(0, j, nx)]);
     }
 
     free(u);
@@ -1242,8 +1243,8 @@ void test_inlet_backend_consistency_mass_flow(void) {
     bc_apply_inlet_omp(u_omp, v_omp, nx, ny, &config);
 
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_cpu[j * nx], u_omp[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_cpu[j * nx], v_omp[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_cpu[IDX_2D(0, j, nx)], u_omp[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_cpu[IDX_2D(0, j, nx)], v_omp[IDX_2D(0, j, nx)]);
     }
 
     free(u_cpu);
@@ -1275,8 +1276,8 @@ void test_inlet_backend_consistency_magnitude_dir(void) {
     bc_apply_inlet_simd(u_simd, v_simd, nx, ny, &config);
 
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_cpu[j * nx], u_simd[j * nx]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_cpu[j * nx], v_simd[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, u_cpu[IDX_2D(0, j, nx)], u_simd[IDX_2D(0, j, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, v_cpu[IDX_2D(0, j, nx)], v_simd[IDX_2D(0, j, nx)]);
     }
 
     free(u_cpu);
@@ -1390,14 +1391,14 @@ void test_inlet_correct_indices_top(void) {
 
     /* Check expected indices: 15, 16, 17, 18, 19 ((ny-1)*nx + i) */
     for (size_t i = 0; i < nx; i++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[(ny - 1) * nx + i]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, v[(ny - 1) * nx + i]);  /* v=1.0 as specified */
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, u[IDX_2D(i, ny - 1, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, v[IDX_2D(i, ny - 1, nx)]);  /* v=1.0 as specified */
     }
 
     /* Second-to-last row should be unchanged */
     for (size_t i = 0; i < nx; i++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[(ny - 2) * nx + i]);
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[(ny - 2) * nx + i]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[IDX_2D(i, ny - 2, nx)]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[IDX_2D(i, ny - 2, nx)]);
     }
 
     free(u);
@@ -1424,7 +1425,7 @@ void test_inlet_main_dispatch(void) {
 
     /* Check left boundary */
     for (size_t j = 0; j < ny; j++) {
-        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[j * nx]);
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 1.0, u[IDX_2D(0, j, nx)]);
     }
 
     free(u);

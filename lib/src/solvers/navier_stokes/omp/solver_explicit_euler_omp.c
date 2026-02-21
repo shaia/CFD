@@ -1,5 +1,6 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include "cfd/solvers/navier_stokes_solver.h"
@@ -55,7 +56,7 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
 #pragma omp parallel for schedule(static)
         for (j = 1; j < (int)field->ny - 1; j++) {
             for (int i = 1; i < (int)field->nx - 1; i++) {
-                size_t idx = (j * field->nx) + i;
+                size_t idx = IDX_2D(i, j, field->nx);
 
                 // Derivatives
                 double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
@@ -142,14 +143,14 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
         for (size_t ii = 0; ii < nx; ii++) {
             u_new[ii] = field->u[ii];
             v_new[ii] = field->v[ii];
-            u_new[(ny - 1) * nx + ii] = field->u[(ny - 1) * nx + ii];
-            v_new[(ny - 1) * nx + ii] = field->v[(ny - 1) * nx + ii];
+            u_new[IDX_2D(ii, ny - 1, nx)] = field->u[IDX_2D(ii, ny - 1, nx)];
+            v_new[IDX_2D(ii, ny - 1, nx)] = field->v[IDX_2D(ii, ny - 1, nx)];
         }
         for (size_t jj = 0; jj < ny; jj++) {
-            u_new[jj * nx] = field->u[jj * nx];
-            v_new[jj * nx] = field->v[jj * nx];
-            u_new[jj * nx + nx - 1] = field->u[jj * nx + nx - 1];
-            v_new[jj * nx + nx - 1] = field->v[jj * nx + nx - 1];
+            u_new[IDX_2D(0, jj, nx)] = field->u[IDX_2D(0, jj, nx)];
+            v_new[IDX_2D(0, jj, nx)] = field->v[IDX_2D(0, jj, nx)];
+            u_new[IDX_2D(nx - 1, jj, nx)] = field->u[IDX_2D(nx - 1, jj, nx)];
+            v_new[IDX_2D(nx - 1, jj, nx)] = field->v[IDX_2D(nx - 1, jj, nx)];
         }
 
         // Boundary conditions - applied sequentially in this implementation (O(N) vs O(N^2))
@@ -159,14 +160,14 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
         for (size_t ii = 0; ii < nx; ii++) {
             field->u[ii] = u_new[ii];
             field->v[ii] = v_new[ii];
-            field->u[(ny - 1) * nx + ii] = u_new[(ny - 1) * nx + ii];
-            field->v[(ny - 1) * nx + ii] = v_new[(ny - 1) * nx + ii];
+            field->u[IDX_2D(ii, ny - 1, nx)] = u_new[IDX_2D(ii, ny - 1, nx)];
+            field->v[IDX_2D(ii, ny - 1, nx)] = v_new[IDX_2D(ii, ny - 1, nx)];
         }
         for (size_t jj = 0; jj < ny; jj++) {
-            field->u[jj * nx] = u_new[jj * nx];
-            field->v[jj * nx] = v_new[jj * nx];
-            field->u[jj * nx + nx - 1] = u_new[jj * nx + nx - 1];
-            field->v[jj * nx + nx - 1] = v_new[jj * nx + nx - 1];
+            field->u[IDX_2D(0, jj, nx)] = u_new[IDX_2D(0, jj, nx)];
+            field->v[IDX_2D(0, jj, nx)] = v_new[IDX_2D(0, jj, nx)];
+            field->u[IDX_2D(nx - 1, jj, nx)] = u_new[IDX_2D(nx - 1, jj, nx)];
+            field->v[IDX_2D(nx - 1, jj, nx)] = v_new[IDX_2D(nx - 1, jj, nx)];
         }
 
         // Check for NaN/Inf values

@@ -25,6 +25,7 @@
 
 #include "cavity_reference_data.h"
 #include "cavity_validation_utils.h"
+#include "cfd/core/indexing.h"
 #include "lid_driven_cavity_common.h"
 
 void setUp(void) {}
@@ -76,7 +77,7 @@ static centerline_data_t extract_centerlines(const cavity_context_t* ctx) {
     data.u_min = 1e10;
     for (size_t j = 0; j < ny; j++) {
         data.y_coords[j] = ctx->g->y[j];
-        data.u_values[j] = ctx->field->u[j * nx + center_i];
+        data.u_values[j] = ctx->field->u[IDX_2D(center_i, j, nx)];
         if (data.u_values[j] < data.u_min) {
             data.u_min = data.u_values[j];
         }
@@ -86,11 +87,11 @@ static centerline_data_t extract_centerlines(const cavity_context_t* ctx) {
     size_t center_j = ny / 2;
     for (size_t i = 0; i < nx; i++) {
         data.x_coords[i] = ctx->g->x[i];
-        data.v_values[i] = ctx->field->v[center_j * nx + i];
+        data.v_values[i] = ctx->field->v[IDX_2D(i, center_j, nx)];
     }
 
     /* Values at geometric center */
-    size_t center_idx = center_j * nx + center_i;
+    size_t center_idx = IDX_2D(center_i, center_j, nx);
     data.u_at_center = ctx->field->u[center_idx];
     data.v_at_center = ctx->field->v[center_idx];
 

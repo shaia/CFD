@@ -27,6 +27,7 @@
 #include "../linear_solver_internal.h"
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -64,7 +65,7 @@ static double dot_product(const double* a, const double* b,
     double sum = 0.0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             sum += a[idx] * b[idx];
         }
     }
@@ -78,7 +79,7 @@ static void axpy(double alpha, const double* x, double* y,
                  size_t nx, size_t ny) {
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             y[idx] += alpha * x[idx];
         }
     }
@@ -97,7 +98,7 @@ static void apply_laplacian(const double* p, double* Ap,
 
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             /* -Laplacian = -(d^2p/dx^2 + d^2p/dy^2) */
             double laplacian = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv
@@ -124,7 +125,7 @@ static void compute_residual(const double* x, const double* rhs, double* r,
 
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             /* Laplacian(x) = d^2x/dx^2 + d^2x/dy^2 */
             double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv
@@ -144,7 +145,7 @@ static void copy_vector(const double* src, double* dst,
                         size_t nx, size_t ny) {
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             dst[idx] = src[idx];
         }
     }
@@ -160,7 +161,7 @@ static void apply_jacobi_precond(const double* r, double* z,
                                   double diag_inv) {
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             z[idx] = diag_inv * r[idx];
         }
     }
@@ -386,14 +387,14 @@ static cfd_status_t cg_scalar_solve(
         if (use_precond) {
             for (size_t j = 1; j < ny - 1; j++) {
                 for (size_t i = 1; i < nx - 1; i++) {
-                    size_t idx = j * nx + i;
+                    size_t idx = IDX_2D(i, j, nx);
                     p[idx] = z[idx] + beta * p[idx];
                 }
             }
         } else {
             for (size_t j = 1; j < ny - 1; j++) {
                 for (size_t i = 1; i < nx - 1; i++) {
-                    size_t idx = j * nx + i;
+                    size_t idx = IDX_2D(i, j, nx);
                     p[idx] = r[idx] + beta * p[idx];
                 }
             }

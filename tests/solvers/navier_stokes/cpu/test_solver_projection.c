@@ -13,6 +13,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
@@ -108,7 +109,7 @@ void test_projection_enforces_divergence_free(void) {
         for (size_t i = 0; i < nx; i++) {
             double x = i * dx;
             double y = j * dy;
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             field->u[idx] = 0.1 * sin(2.0 * M_PI * x);
             field->v[idx] = 0.1 * sin(2.0 * M_PI * y);
             field->p[idx] = 0.0;
@@ -181,7 +182,7 @@ void test_projection_pressure_gradient_response(void) {
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
             double x = i * dx;
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             field->u[idx] = 0.0;
             field->v[idx] = 0.0;
             field->p[idx] = 1.0 - x;  // Linear pressure gradient
@@ -345,7 +346,7 @@ void test_projection_poiseuille_profile(void) {
     for (size_t j = 1; j < ny - 1; j++) {
         double y = j * dy;
         double u_analytical = 4.0 * U_max * y * (1.0 - y);
-        double u_numerical = field->u[j * nx + i_center];
+        double u_numerical = field->u[IDX_2D(i_center, j, nx)];
         double deviation = fabs(u_numerical - u_analytical);
         if (deviation > max_deviation) {
             max_deviation = deviation;
@@ -420,7 +421,7 @@ void test_projection_fail_fast_on_divergence(void) {
     // Initialize with valid (but challenging) values
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             // High velocities that might stress the solver
             field->u[idx] = 10.0 * ((double)i / nx - 0.5);
             field->v[idx] = 10.0 * ((double)j / ny - 0.5);

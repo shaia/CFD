@@ -26,6 +26,7 @@
 #include "unity.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
+#include "cfd/core/indexing.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "../solvers/navier_stokes/test_solver_helpers.h"
 #include <math.h>
@@ -83,7 +84,7 @@ static void init_divergent_sinusoidal(flow_field* field, const grid* g) {
         for (size_t i = 0; i < nx; i++) {
             double x = g->xmin + i * dx;
             double y = g->ymin + j * dy;
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             field->u[idx] = 0.1 * sin(2.0 * M_PI * x);
             field->v[idx] = 0.1 * sin(2.0 * M_PI * y);
@@ -112,7 +113,7 @@ static void init_taylor_green(flow_field* field, const grid* g) {
         for (size_t i = 0; i < nx; i++) {
             double x = g->xmin + i * dx;
             double y = g->ymin + j * dy;
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             field->u[idx] = U * cos(k * x) * sin(k * y);
             field->v[idx] = -U * sin(k * x) * cos(k * y);
@@ -140,7 +141,7 @@ static void init_vortex_pair(flow_field* field, const grid* g) {
         for (size_t i = 0; i < nx; i++) {
             double x = g->xmin + i * dx;
             double y = g->ymin + j * dy;
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             field->u[idx] = A * M_PI * sin(M_PI * x) * cos(M_PI * y);
             field->v[idx] = -A * M_PI * cos(M_PI * x) * sin(M_PI * y);

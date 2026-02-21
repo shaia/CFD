@@ -9,6 +9,7 @@
 #include "cfd/core/cfd_init.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
@@ -198,7 +199,7 @@ void test_simd_fail_fast_on_divergence(void) {
     // Initialize with valid (but challenging) values
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             // High velocities that might stress the solver
             field->u[idx] = 10.0 * ((double)i / nx - 0.5);
             field->v[idx] = 10.0 * ((double)j / ny - 0.5);

@@ -8,6 +8,7 @@
 
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
@@ -52,7 +53,7 @@ static void compute_rhs_omp(const double* u, const double* v, const double* p,
 #pragma omp parallel for schedule(static)
     for (j = 1; j < ny_int - 1; j++) {
         for (ptrdiff_t i = 1; i < nx_int - 1; i++) {
-            size_t idx = (size_t)j * nx + (size_t)i;
+            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
 
             /* Safety checks */
             if (rho[idx] <= 1e-10) {
@@ -70,10 +71,10 @@ static void compute_rhs_omp(const double* u, const double* v, const double* p,
 
             /* Periodic stencil indices — avoids relying on ghost cells,
              * critical for preserving RK2 temporal order. */
-            size_t il = ((size_t)i > 1)      ? idx - 1  : (size_t)j * nx + (nx - 2);
-            size_t ir = ((size_t)i < nx - 2) ? idx + 1  : (size_t)j * nx + 1;
-            size_t jd = ((size_t)j > 1)      ? idx - nx : (ny - 2) * nx + (size_t)i;
-            size_t ju = ((size_t)j < ny - 2) ? idx + nx : nx + (size_t)i;
+            size_t il = ((size_t)i > 1)      ? idx - 1  : IDX_2D(nx - 2, (size_t)j, nx);
+            size_t ir = ((size_t)i < nx - 2) ? idx + 1  : IDX_2D(1, (size_t)j, nx);
+            size_t jd = ((size_t)j > 1)      ? idx - nx : IDX_2D((size_t)i, ny - 2, nx);
+            size_t ju = ((size_t)j < ny - 2) ? idx + nx : IDX_2D((size_t)i, 1, nx);
 
             /* First derivatives (central differences) */
             double du_dx = (u[ir] - u[il]) / (2.0 * grid->dx[i]);

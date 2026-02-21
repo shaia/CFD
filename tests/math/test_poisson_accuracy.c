@@ -20,6 +20,7 @@
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
+#include "cfd/core/indexing.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -91,7 +92,7 @@ static double compute_l2_error(const double* numerical, const double* analytical
     /* Compare interior points only */
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double err = numerical[idx] - analytical[idx];
             sum_sq += err * err;
             count++;
@@ -109,7 +110,7 @@ static double compute_max_error(const double* numerical, const double* analytica
     double max_err = 0.0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double err = fabs(numerical[idx] - analytical[idx]);
             if (err > max_err) max_err = err;
         }
@@ -162,7 +163,7 @@ static void init_sinusoidal_analytical(double* p, size_t nx, size_t ny,
         double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * dx;
-            p[j * nx + i] = sinusoidal_solution(x, y);
+            p[IDX_2D(i, j, nx)] = sinusoidal_solution(x, y);
         }
     }
 }
@@ -176,7 +177,7 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
         double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * dx;
-            rhs[j * nx + i] = sinusoidal_rhs(x, y);
+            rhs[IDX_2D(i, j, nx)] = sinusoidal_rhs(x, y);
         }
     }
 }
@@ -225,7 +226,7 @@ static void init_quadratic_analytical(double* p, size_t nx, size_t ny,
         double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * dx;
-            p[j * nx + i] = quadratic_solution(x, y);
+            p[IDX_2D(i, j, nx)] = quadratic_solution(x, y);
         }
     }
 }

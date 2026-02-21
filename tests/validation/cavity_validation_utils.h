@@ -10,6 +10,7 @@
 #define CAVITY_VALIDATION_UTILS_H
 
 #include "cavity_reference_data.h"
+#include "cfd/core/indexing.h"
 #include "lid_driven_cavity_common.h"
 
 /* ============================================================================
@@ -106,12 +107,12 @@ static inline ghia_result_t run_ghia_validation(const char* solver_type,
 
     for (size_t j = 0; j < ny; j++) {
         y_coords[j] = ctx->g->y[j];
-        u_vals[j] = ctx->field->u[j * nx + center_i];
+        u_vals[j] = ctx->field->u[IDX_2D(center_i, j, nx)];
     }
 
     for (size_t i = 0; i < nx; i++) {
         x_coords[i] = ctx->g->x[i];
-        v_vals[i] = ctx->field->v[center_j * nx + i];
+        v_vals[i] = ctx->field->v[IDX_2D(i, center_j, nx)];
     }
 
     /* Compute RMS errors against Ghia reference data */

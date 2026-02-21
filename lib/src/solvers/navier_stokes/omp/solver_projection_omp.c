@@ -1,6 +1,7 @@
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
@@ -64,7 +65,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 #pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
             for (int i = 1; i < (int)nx - 1; i++) {
-                size_t idx = (j * nx) + i;
+                size_t idx = IDX_2D(i, j, nx);
 
                 double u = field->u[idx];
                 double v = field->v[idx];
@@ -115,7 +116,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 #pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
             for (int i = 1; i < (int)nx - 1; i++) {
-                size_t idx = (j * nx) + i;
+                size_t idx = IDX_2D(i, j, nx);
                 double du_star_dx = (u_star[idx + 1] - u_star[idx - 1]) / (2.0 * dx);
                 double dv_star_dy = (v_star[idx + nx] - v_star[idx - nx]) / (2.0 * dy);
                 rhs[idx] = (rho / dt) * (du_star_dx + dv_star_dy);
@@ -134,7 +135,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 #pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
             for (int i = 1; i < (int)nx - 1; i++) {
-                size_t idx = (j * nx) + i;
+                size_t idx = IDX_2D(i, j, nx);
                 double dp_dx = (p_new[idx + 1] - p_new[idx - 1]) / (2.0 * dx);
                 double dp_dy = (p_new[idx + nx] - p_new[idx - nx]) / (2.0 * dy);
 

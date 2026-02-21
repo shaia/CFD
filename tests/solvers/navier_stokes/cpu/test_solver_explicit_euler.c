@@ -10,6 +10,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
@@ -281,7 +282,7 @@ void test_spatial_convergence(void) {
             for (size_t i = 0; i < n; i++) {
                 double x = i * dx;
                 double y = j * dy;
-                analytical_u[j * n + i] = U * cos(k * x) * sin(k * y) * decay;
+                analytical_u[IDX_2D(i, j, n)] = U * cos(k * x) * sin(k * y) * decay;
             }
         }
 
@@ -338,7 +339,7 @@ void test_cfl_stability(void) {
         for (size_t i = 0; i < nx; i++) {
             double x = i * dx;
             double y = j * dy;
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             field->u[idx] = 0.5 * sin(2.0 * M_PI * x);
             field->v[idx] = 0.5 * cos(2.0 * M_PI * y);
             field->p[idx] = 0.0;

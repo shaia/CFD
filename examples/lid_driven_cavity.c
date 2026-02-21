@@ -16,6 +16,7 @@
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/io/vtk_output.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
@@ -175,7 +176,7 @@ int main(int argc, char* argv[]) {
 
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = j * nx + i;
+                size_t idx = IDX_2D(i, j, nx);
 
                 /* Diffusion term (Laplacian) */
                 double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) / (dx * dx);

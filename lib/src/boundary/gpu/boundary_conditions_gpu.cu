@@ -6,6 +6,7 @@
  */
 
 #include "cfd/boundary/boundary_conditions_gpu.cuh"
+#include "cfd/core/indexing.h"
 
 // Block size for 1D boundary kernels
 #define BC_BLOCK_SIZE 256
@@ -23,14 +24,14 @@ __global__ void kernel_bc_neumann_scalar(double* field, size_t nx, size_t ny) {
 
     // Left and right boundaries (one thread per row)
     if (idx < (int)ny) {
-        field[idx * nx] = field[idx * nx + 1];                  // Left: copy from interior
-        field[idx * nx + nx - 1] = field[idx * nx + nx - 2];    // Right: copy from interior
+        field[IDX_2D(0, idx, nx)] = field[IDX_2D(1, idx, nx)];                  // Left: copy from interior
+        field[IDX_2D(nx - 1, idx, nx)] = field[IDX_2D(nx - 2, idx, nx)];        // Right: copy from interior
     }
 
     // Top and bottom boundaries (one thread per column)
     if (idx < (int)nx) {
-        field[idx] = field[nx + idx];                           // Bottom: copy from interior
-        field[(ny - 1) * nx + idx] = field[(ny - 2) * nx + idx];  // Top: copy from interior
+        field[idx] = field[IDX_2D(idx, 1, nx)];                           // Bottom: copy from interior
+        field[IDX_2D(idx, ny - 1, nx)] = field[IDX_2D(idx, ny - 2, nx)];  // Top: copy from interior
     }
 }
 
@@ -44,21 +45,21 @@ __global__ void kernel_bc_neumann_velocity(double* u, double* v, size_t nx, size
     // Left and right boundaries
     if (idx < (int)ny) {
         // u component
-        u[idx * nx] = u[idx * nx + 1];
-        u[idx * nx + nx - 1] = u[idx * nx + nx - 2];
+        u[IDX_2D(0, idx, nx)] = u[IDX_2D(1, idx, nx)];
+        u[IDX_2D(nx - 1, idx, nx)] = u[IDX_2D(nx - 2, idx, nx)];
         // v component
-        v[idx * nx] = v[idx * nx + 1];
-        v[idx * nx + nx - 1] = v[idx * nx + nx - 2];
+        v[IDX_2D(0, idx, nx)] = v[IDX_2D(1, idx, nx)];
+        v[IDX_2D(nx - 1, idx, nx)] = v[IDX_2D(nx - 2, idx, nx)];
     }
 
     // Top and bottom boundaries
     if (idx < (int)nx) {
         // u component
-        u[idx] = u[nx + idx];
-        u[(ny - 1) * nx + idx] = u[(ny - 2) * nx + idx];
+        u[idx] = u[IDX_2D(idx, 1, nx)];
+        u[IDX_2D(idx, ny - 1, nx)] = u[IDX_2D(idx, ny - 2, nx)];
         // v component
-        v[idx] = v[nx + idx];
-        v[(ny - 1) * nx + idx] = v[(ny - 2) * nx + idx];
+        v[idx] = v[IDX_2D(idx, 1, nx)];
+        v[IDX_2D(idx, ny - 1, nx)] = v[IDX_2D(idx, ny - 2, nx)];
     }
 }
 
@@ -74,14 +75,14 @@ __global__ void kernel_bc_periodic_scalar(double* field, size_t nx, size_t ny) {
 
     // Left and right boundaries (periodic in x)
     if (idx < (int)ny) {
-        field[idx * nx] = field[idx * nx + nx - 2];             // Left: copy from right interior
-        field[idx * nx + nx - 1] = field[idx * nx + 1];         // Right: copy from left interior
+        field[IDX_2D(0, idx, nx)] = field[IDX_2D(nx - 2, idx, nx)];             // Left: copy from right interior
+        field[IDX_2D(nx - 1, idx, nx)] = field[IDX_2D(1, idx, nx)];             // Right: copy from left interior
     }
 
     // Top and bottom boundaries (periodic in y)
     if (idx < (int)nx) {
-        field[idx] = field[(ny - 2) * nx + idx];                // Bottom: copy from top interior
-        field[(ny - 1) * nx + idx] = field[nx + idx];           // Top: copy from bottom interior
+        field[idx] = field[IDX_2D(idx, ny - 2, nx)];                // Bottom: copy from top interior
+        field[IDX_2D(idx, ny - 1, nx)] = field[IDX_2D(idx, 1, nx)]; // Top: copy from bottom interior
     }
 }
 
@@ -93,18 +94,18 @@ __global__ void kernel_bc_periodic_velocity(double* u, double* v, size_t nx, siz
 
     // Left and right boundaries (periodic in x)
     if (idx < (int)ny) {
-        u[idx * nx] = u[idx * nx + nx - 2];
-        u[idx * nx + nx - 1] = u[idx * nx + 1];
-        v[idx * nx] = v[idx * nx + nx - 2];
-        v[idx * nx + nx - 1] = v[idx * nx + 1];
+        u[IDX_2D(0, idx, nx)] = u[IDX_2D(nx - 2, idx, nx)];
+        u[IDX_2D(nx - 1, idx, nx)] = u[IDX_2D(1, idx, nx)];
+        v[IDX_2D(0, idx, nx)] = v[IDX_2D(nx - 2, idx, nx)];
+        v[IDX_2D(nx - 1, idx, nx)] = v[IDX_2D(1, idx, nx)];
     }
 
     // Top and bottom boundaries (periodic in y)
     if (idx < (int)nx) {
-        u[idx] = u[(ny - 2) * nx + idx];
-        u[(ny - 1) * nx + idx] = u[nx + idx];
-        v[idx] = v[(ny - 2) * nx + idx];
-        v[(ny - 1) * nx + idx] = v[nx + idx];
+        u[idx] = u[IDX_2D(idx, ny - 2, nx)];
+        u[IDX_2D(idx, ny - 1, nx)] = u[IDX_2D(idx, 1, nx)];
+        v[idx] = v[IDX_2D(idx, ny - 2, nx)];
+        v[IDX_2D(idx, ny - 1, nx)] = v[IDX_2D(idx, 1, nx)];
     }
 }
 
@@ -123,14 +124,14 @@ __global__ void kernel_bc_dirichlet_scalar(double* field, size_t nx, size_t ny,
 
     // Left and right boundaries (one thread per row)
     if (idx < (int)ny) {
-        field[idx * nx] = val_left;
-        field[idx * nx + nx - 1] = val_right;
+        field[IDX_2D(0, idx, nx)] = val_left;
+        field[IDX_2D(nx - 1, idx, nx)] = val_right;
     }
 
     // Top and bottom boundaries (one thread per column)
     if (idx < (int)nx) {
         field[idx] = val_bottom;
-        field[(ny - 1) * nx + idx] = val_top;
+        field[IDX_2D(idx, ny - 1, nx)] = val_top;
     }
 }
 
@@ -146,18 +147,18 @@ __global__ void kernel_bc_dirichlet_velocity(double* u, double* v, size_t nx, si
 
     // Left and right boundaries
     if (idx < (int)ny) {
-        u[idx * nx] = u_left;
-        u[idx * nx + nx - 1] = u_right;
-        v[idx * nx] = v_left;
-        v[idx * nx + nx - 1] = v_right;
+        u[IDX_2D(0, idx, nx)] = u_left;
+        u[IDX_2D(nx - 1, idx, nx)] = u_right;
+        v[IDX_2D(0, idx, nx)] = v_left;
+        v[IDX_2D(nx - 1, idx, nx)] = v_right;
     }
 
     // Top and bottom boundaries
     if (idx < (int)nx) {
         u[idx] = u_bottom;
-        u[(ny - 1) * nx + idx] = u_top;
+        u[IDX_2D(idx, ny - 1, nx)] = u_top;
         v[idx] = v_bottom;
-        v[(ny - 1) * nx + idx] = v_top;
+        v[IDX_2D(idx, ny - 1, nx)] = v_top;
     }
 }
 

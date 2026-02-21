@@ -23,6 +23,8 @@
  * PATTERN: Follows boundary conditions SIMD template pattern (Phase 1.1.1)
  */
 
+#include "cfd/core/indexing.h"
+
 #ifndef SIMD_SUFFIX
 #error "SIMD_SUFFIX must be defined before including linear_solver_bicgstab_simd_template.h"
 #endif
@@ -98,7 +100,7 @@ static inline double SIMD_FUNC(dot_product)(const double* a, const double* b,
 
         /* SIMD loop */
         for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             SIMD_VEC va = SIMD_LOAD(&a[idx]);
             SIMD_VEC vb = SIMD_LOAD(&b[idx]);
             acc = SIMD_FMA(va, vb, acc);  /* acc += va * vb */
@@ -109,7 +111,7 @@ static inline double SIMD_FUNC(dot_product)(const double* a, const double* b,
 
         /* Scalar remainder loop */
         for (; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             row_sum += a[idx] * b[idx];
         }
 
@@ -137,7 +139,7 @@ static inline void SIMD_FUNC(axpy)(double alpha, const double* x, double* y,
 
         /* SIMD loop */
         for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             SIMD_VEC vx = SIMD_LOAD(&x[idx]);
             SIMD_VEC vy = SIMD_LOAD(&y[idx]);
             vy = SIMD_FMA(alpha_vec, vx, vy);  /* y += alpha * x */
@@ -146,7 +148,7 @@ static inline void SIMD_FUNC(axpy)(double alpha, const double* x, double* y,
 
         /* Scalar remainder */
         for (; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             y[idx] += alpha * x[idx];
         }
     }
@@ -173,7 +175,7 @@ static inline void SIMD_FUNC(apply_laplacian)(const double* p, double* Ap,
 
         /* SIMD loop */
         for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             /* Load 5-point stencil */
             SIMD_VEC p_c = SIMD_LOAD(&p[idx]);
@@ -199,7 +201,7 @@ static inline void SIMD_FUNC(apply_laplacian)(const double* p, double* Ap,
 
         /* Scalar remainder */
         for (; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double d2pdx2 = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / ctx->dx2;
             double d2pdy2 = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / ctx->dy2;
             Ap[idx] = d2pdx2 + d2pdy2;
@@ -228,7 +230,7 @@ static inline void SIMD_FUNC(compute_residual)(const double* x, const double* rh
 
         /* SIMD loop: r = rhs - A*x (fused Laplacian + subtraction) */
         for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
 
             /* Load 5-point stencil */
             SIMD_VEC center = SIMD_LOAD(&x[idx]);
@@ -257,7 +259,7 @@ static inline void SIMD_FUNC(compute_residual)(const double* x, const double* rh
 
         /* Scalar remainder */
         for (; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             double center = x[idx];
             double left = x[idx - 1];
             double right = x[idx + 1];
@@ -288,13 +290,13 @@ static inline void SIMD_FUNC(copy_vector)(const double* src, double* dst,
         size_t i = 1;
 
         for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             SIMD_VEC v = SIMD_LOAD(&src[idx]);
             SIMD_STORE(&dst[idx], v);
         }
 
         for (; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             dst[idx] = src[idx];
         }
     }
@@ -315,12 +317,12 @@ static inline void SIMD_FUNC(zero_vector)(double* vec, size_t nx, size_t ny) {
         size_t i = 1;
 
         for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             SIMD_STORE(&vec[idx], zero);
         }
 
         for (; i < nx - 1; i++) {
-            size_t idx = j * nx + i;
+            size_t idx = IDX_2D(i, j, nx);
             vec[idx] = 0.0;
         }
     }
@@ -503,7 +505,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         for (jj = 1; jj < ny_int - 1; jj++) {
             size_t j = (size_t)jj;
             for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = j * nx + i;
+                size_t idx = IDX_2D(i, j, nx);
                 p[idx] = r[idx] + beta * p[idx];
             }
         }

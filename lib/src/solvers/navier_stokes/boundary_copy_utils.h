@@ -11,6 +11,7 @@
 #ifndef BOUNDARY_COPY_UTILS_H
 #define BOUNDARY_COPY_UTILS_H
 
+#include "cfd/core/indexing.h"
 #include <stddef.h>
 
 /**
@@ -36,15 +37,15 @@ static inline void copy_boundary_velocities(double* dst_u, double* dst_v,
     for (size_t i = 0; i < nx; i++) {
         dst_u[i] = src_u[i];
         dst_v[i] = src_v[i];
-        dst_u[(ny - 1) * nx + i] = src_u[(ny - 1) * nx + i];
-        dst_v[(ny - 1) * nx + i] = src_v[(ny - 1) * nx + i];
+        dst_u[IDX_2D(i, ny - 1, nx)] = src_u[IDX_2D(i, ny - 1, nx)];
+        dst_v[IDX_2D(i, ny - 1, nx)] = src_v[IDX_2D(i, ny - 1, nx)];
     }
     // Left and right boundaries (i = 0 and i = nx-1)
     for (size_t j = 1; j < ny - 1; j++) {
-        dst_u[j * nx] = src_u[j * nx];
-        dst_v[j * nx] = src_v[j * nx];
-        dst_u[j * nx + nx - 1] = src_u[j * nx + nx - 1];
-        dst_v[j * nx + nx - 1] = src_v[j * nx + nx - 1];
+        dst_u[IDX_2D(0, j, nx)] = src_u[IDX_2D(0, j, nx)];
+        dst_v[IDX_2D(0, j, nx)] = src_v[IDX_2D(0, j, nx)];
+        dst_u[IDX_2D(nx - 1, j, nx)] = src_u[IDX_2D(nx - 1, j, nx)];
+        dst_v[IDX_2D(nx - 1, j, nx)] = src_v[IDX_2D(nx - 1, j, nx)];
     }
 }
 
@@ -69,13 +70,13 @@ static inline void copy_dirichlet_boundaries(double* dst_u, double* dst_v,
     for (size_t i = 0; i < nx; i++) {
         dst_u[i] = src_u[i];
         dst_v[i] = src_v[i];
-        dst_u[(ny - 1) * nx + i] = src_u[(ny - 1) * nx + i];
-        dst_v[(ny - 1) * nx + i] = src_v[(ny - 1) * nx + i];
+        dst_u[IDX_2D(i, ny - 1, nx)] = src_u[IDX_2D(i, ny - 1, nx)];
+        dst_v[IDX_2D(i, ny - 1, nx)] = src_v[IDX_2D(i, ny - 1, nx)];
     }
     // Left boundary only (i = 0) - skip right boundary to preserve outlet
     for (size_t j = 1; j < ny - 1; j++) {
-        dst_u[j * nx] = src_u[j * nx];
-        dst_v[j * nx] = src_v[j * nx];
+        dst_u[IDX_2D(0, j, nx)] = src_u[IDX_2D(0, j, nx)];
+        dst_v[IDX_2D(0, j, nx)] = src_v[IDX_2D(0, j, nx)];
     }
 }
 

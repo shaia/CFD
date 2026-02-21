@@ -14,6 +14,7 @@
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
 #include "cfd/core/cpu_features.h"
+#include "cfd/core/indexing.h"
 #include <math.h>
 #include <stdlib.h>
 
@@ -44,7 +45,7 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
         double y = YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = XMIN + i * dx;
-            rhs[j * nx + i] = cos(2.0 * M_PI * x) * cos(2.0 * M_PI * y);
+            rhs[IDX_2D(i, j, nx)] = cos(2.0 * M_PI * x) * cos(2.0 * M_PI * y);
         }
     }
 
@@ -53,7 +54,7 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
     size_t interior_count = 0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            interior_sum += rhs[j * nx + i];
+            interior_sum += rhs[IDX_2D(i, j, nx)];
             interior_count++;
         }
     }
@@ -62,7 +63,7 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
         double interior_mean = interior_sum / (double)interior_count;
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
-                rhs[j * nx + i] -= interior_mean;
+                rhs[IDX_2D(i, j, nx)] -= interior_mean;
             }
         }
     }
@@ -183,7 +184,7 @@ void test_bicgstab_neon_scalar_consistency(void) {
     size_t count = 0;
     for (size_t j = 1; j < NY - 1; j++) {
         for (size_t i = 1; i < NX - 1; i++) {
-            size_t idx = j * NX + i;
+            size_t idx = IDX_2D(i, j, NX);
             double diff = x_scalar[idx] - x_neon[idx];
             l2_diff += diff * diff;
             count++;

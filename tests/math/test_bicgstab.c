@@ -17,6 +17,7 @@
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
+#include "cfd/core/indexing.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,7 +89,7 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
         double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * dx;
-            rhs[j * nx + i] = cos(2.0 * M_PI * x) * cos(2.0 * M_PI * y);
+            rhs[IDX_2D(i, j, nx)] = cos(2.0 * M_PI * x) * cos(2.0 * M_PI * y);
         }
     }
 
@@ -97,14 +98,14 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
     size_t interior_count = 0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            interior_sum += rhs[j * nx + i];
+            interior_sum += rhs[IDX_2D(i, j, nx)];
             interior_count++;
         }
     }
     double interior_mean = interior_sum / (double)interior_count;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            rhs[j * nx + i] -= interior_mean;
+            rhs[IDX_2D(i, j, nx)] -= interior_mean;
         }
     }
 }
@@ -117,7 +118,7 @@ static double compute_l2_error(const double* a, const double* b,
     double sum = 0.0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            double diff = a[j * nx + i] - b[j * nx + i];
+            double diff = a[IDX_2D(i, j, nx)] - b[IDX_2D(i, j, nx)];
             sum += diff * diff;
         }
     }
@@ -140,7 +141,7 @@ static void init_dirichlet_rhs(double* rhs, size_t nx, size_t ny,
         double y = DOMAIN_YMIN + j * (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
-            rhs[j * nx + i] = coeff * sin(M_PI * x) * sin(M_PI * y);
+            rhs[IDX_2D(i, j, nx)] = coeff * sin(M_PI * x) * sin(M_PI * y);
         }
     }
 }
@@ -153,7 +154,7 @@ static void compute_exact_solution(double* exact, size_t nx, size_t ny) {
         double y = DOMAIN_YMIN + j * (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
-            exact[j * nx + i] = sin(M_PI * x) * sin(M_PI * y);
+            exact[IDX_2D(i, j, nx)] = sin(M_PI * x) * sin(M_PI * y);
         }
     }
 }
@@ -166,14 +167,14 @@ static double remove_interior_mean(double* field, size_t nx, size_t ny) {
     size_t count = 0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            sum += field[j * nx + i];
+            sum += field[IDX_2D(i, j, nx)];
             count++;
         }
     }
     double mean = sum / count;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            field[j * nx + i] -= mean;
+            field[IDX_2D(i, j, nx)] -= mean;
         }
     }
     return mean;
@@ -364,8 +365,8 @@ void test_bicgstab_vs_cg(void) {
     size_t count = 0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            mean_bicgstab += p_bicgstab[j * nx + i];
-            mean_cg += p_cg[j * nx + i];
+            mean_bicgstab += p_bicgstab[IDX_2D(i, j, nx)];
+            mean_cg += p_cg[IDX_2D(i, j, nx)];
             count++;
         }
     }
@@ -376,8 +377,8 @@ void test_bicgstab_vs_cg(void) {
     double max_diff = 0.0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            double v_bicgstab = p_bicgstab[j * nx + i] - mean_bicgstab;
-            double v_cg = p_cg[j * nx + i] - mean_cg;
+            double v_bicgstab = p_bicgstab[IDX_2D(i, j, nx)] - mean_bicgstab;
+            double v_cg = p_cg[IDX_2D(i, j, nx)] - mean_cg;
             double diff = fabs(v_bicgstab - v_cg);
             if (diff > max_diff) max_diff = diff;
         }
@@ -438,8 +439,8 @@ void test_bicgstab_l2_error(void) {
     size_t count = (nx - 2) * (ny - 2);
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            mean_bicgstab += p_bicgstab[j * nx + i];
-            mean_cg += p_cg[j * nx + i];
+            mean_bicgstab += p_bicgstab[IDX_2D(i, j, nx)];
+            mean_cg += p_cg[IDX_2D(i, j, nx)];
         }
     }
     mean_bicgstab /= count;
@@ -448,8 +449,8 @@ void test_bicgstab_l2_error(void) {
     /* Shift solutions to zero mean */
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            p_bicgstab[j * nx + i] -= mean_bicgstab;
-            p_cg[j * nx + i] -= mean_cg;
+            p_bicgstab[IDX_2D(i, j, nx)] -= mean_bicgstab;
+            p_cg[IDX_2D(i, j, nx)] -= mean_cg;
         }
     }
 

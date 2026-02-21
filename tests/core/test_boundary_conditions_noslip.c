@@ -10,6 +10,7 @@
  */
 
 #include "cfd/boundary/boundary_conditions.h"
+#include "cfd/core/indexing.h"
 #include "unity.h"
 
 #include <math.h>
@@ -52,7 +53,7 @@ static double* create_test_field(size_t nx, size_t ny) {
     /* Fill with a non-zero pattern */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            field[j * nx + i] = 999.0;
+            field[IDX_2D(i, j, nx)] = 999.0;
         }
     }
     return field;
@@ -64,14 +65,14 @@ static double* create_test_field(size_t nx, size_t ny) {
 static int verify_noslip_bc(const double* field, size_t nx, size_t ny) {
     /* Check left boundary (column 0) */
     for (size_t j = 0; j < ny; j++) {
-        if (fabs(field[j * nx]) > TOLERANCE) {
+        if (fabs(field[IDX_2D(0, j, nx)]) > TOLERANCE) {
             return 0;
         }
     }
 
     /* Check right boundary (column nx-1) */
     for (size_t j = 0; j < ny; j++) {
-        if (fabs(field[j * nx + (nx - 1)]) > TOLERANCE) {
+        if (fabs(field[IDX_2D(nx - 1, j, nx)]) > TOLERANCE) {
             return 0;
         }
     }
@@ -85,7 +86,7 @@ static int verify_noslip_bc(const double* field, size_t nx, size_t ny) {
 
     /* Check top boundary (row ny-1) */
     for (size_t i = 0; i < nx; i++) {
-        if (fabs(field[(ny - 1) * nx + i]) > TOLERANCE) {
+        if (fabs(field[IDX_2D(i, ny - 1, nx)]) > TOLERANCE) {
             return 0;
         }
     }
@@ -99,7 +100,7 @@ static int verify_noslip_bc(const double* field, size_t nx, size_t ny) {
 static int verify_interior_unchanged(const double* field, size_t nx, size_t ny) {
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            if (fabs(field[j * nx + i] - 999.0) > TOLERANCE) {
+            if (fabs(field[IDX_2D(i, j, nx)] - 999.0) > TOLERANCE) {
                 return 0;
             }
         }
@@ -208,11 +209,11 @@ void test_noslip_simd_consistency_with_scalar(void) {
         for (size_t i = 0; i < nx; i++) {
             if (i == 0 || i == nx - 1 || j == 0 || j == ny - 1) {
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE,
-                                          u_scalar[j * nx + i],
-                                          u_simd[j * nx + i]);
+                                          u_scalar[IDX_2D(i, j, nx)],
+                                          u_simd[IDX_2D(i, j, nx)]);
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE,
-                                          v_scalar[j * nx + i],
-                                          v_simd[j * nx + i]);
+                                          v_scalar[IDX_2D(i, j, nx)],
+                                          v_simd[IDX_2D(i, j, nx)]);
             }
         }
     }
@@ -276,11 +277,11 @@ void test_noslip_omp_consistency_with_scalar(void) {
         for (size_t i = 0; i < nx; i++) {
             if (i == 0 || i == nx - 1 || j == 0 || j == ny - 1) {
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE,
-                                          u_scalar[j * nx + i],
-                                          u_omp[j * nx + i]);
+                                          u_scalar[IDX_2D(i, j, nx)],
+                                          u_omp[IDX_2D(i, j, nx)]);
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE,
-                                          v_scalar[j * nx + i],
-                                          v_omp[j * nx + i]);
+                                          v_scalar[IDX_2D(i, j, nx)],
+                                          v_omp[IDX_2D(i, j, nx)]);
             }
         }
     }
@@ -353,8 +354,8 @@ void test_noslip_minimum_grid(void) {
                               "Minimum grid v no-slip BC failed");
 
     /* Only one interior point (1,1) should be unchanged */
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[1 * nx + 1]);
-    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[1 * nx + 1]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[IDX_2D(1, 1, nx)]);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[IDX_2D(1, 1, nx)]);
 
     free(u);
     free(v);

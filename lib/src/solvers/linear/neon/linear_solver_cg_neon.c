@@ -18,6 +18,7 @@
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cpu_features.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -158,7 +159,7 @@ static void apply_laplacian_neon(const double* p, double* Ap,
 
         /* SIMD loop */
         for (; i + 2 <= nx - 1; i += 2) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
 
             /* Load neighbors */
             float64x2_t p_center = vld1q_f64(&p[idx]);
@@ -188,7 +189,7 @@ static void apply_laplacian_neon(const double* p, double* Ap,
 
         /* Scalar remainder */
         for (; i < nx - 1; i++) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
             double laplacian = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv_scalar
                              + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv_scalar;
             Ap[idx] = -laplacian;
@@ -214,7 +215,7 @@ static void compute_residual_neon(const double* x, const double* rhs, double* r,
 
         /* SIMD loop */
         for (; i + 2 <= nx - 1; i += 2) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
 
             /* Load neighbors */
             float64x2_t x_center = vld1q_f64(&x[idx]);
@@ -245,7 +246,7 @@ static void compute_residual_neon(const double* x, const double* rhs, double* r,
 
         /* Scalar remainder */
         for (; i < nx - 1; i++) {
-            size_t idx = (size_t)j * nx + i;
+            size_t idx = IDX_2D(i, (size_t)j, nx);
             double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv_scalar
                              + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv_scalar;
             r[idx] = -rhs[idx] + laplacian;

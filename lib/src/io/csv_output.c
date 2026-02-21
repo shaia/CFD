@@ -1,6 +1,7 @@
 #include "cfd/io/csv_output.h"
 #include "cfd/core/derived_fields.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/core/logging.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "csv_output_internal.h"
@@ -192,7 +193,7 @@ void write_csv_centerline(const char* filename, const flow_field* field,
         fprintf(fp, "\n");
 
         for (size_t i = 0; i < nx; i++) {
-            size_t idx = (j_mid * nx) + i;
+            size_t idx = IDX_2D(i, j_mid, nx);
             fprintf(fp, "%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", x_coords[i], field->u[idx], field->v[idx],
                     field->p[idx], field->rho[idx], field->T[idx]);
             if (has_vel_mag) {
@@ -211,7 +212,7 @@ void write_csv_centerline(const char* filename, const flow_field* field,
         fprintf(fp, "\n");
 
         for (size_t j = 0; j < ny; j++) {
-            size_t idx = (j * nx) + i_mid;
+            size_t idx = IDX_2D(i_mid, j, nx);
             fprintf(fp, "%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", y_coords[j], field->u[idx], field->v[idx],
                     field->p[idx], field->rho[idx], field->T[idx]);
             if (has_vel_mag) {

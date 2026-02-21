@@ -26,6 +26,7 @@
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
+#include "cfd/core/indexing.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,7 +74,7 @@ static void init_nontrivial_guess(double* p, size_t nx, size_t ny) {
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
             /* Checkerboard-like pattern */
-            p[j * nx + i] = ((i + j) % 2 == 0) ? 1.0 : -1.0;
+            p[IDX_2D(i, j, nx)] = ((i + j) % 2 == 0) ? 1.0 : -1.0;
         }
     }
 }
@@ -101,7 +102,7 @@ static void init_dirichlet_rhs(double* rhs, size_t nx, size_t ny,
         double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * dx;
-            rhs[j * nx + i] = coeff * sin(M_PI * x) * sin(M_PI * y);
+            rhs[IDX_2D(i, j, nx)] = coeff * sin(M_PI * x) * sin(M_PI * y);
         }
     }
 }
@@ -139,7 +140,7 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
         double y = DOMAIN_YMIN + j * dy;
         for (size_t i = 0; i < nx; i++) {
             double x = DOMAIN_XMIN + i * dx;
-            rhs[j * nx + i] = cos(2.0 * M_PI * x) * cos(2.0 * M_PI * y);
+            rhs[IDX_2D(i, j, nx)] = cos(2.0 * M_PI * x) * cos(2.0 * M_PI * y);
         }
     }
 
@@ -148,7 +149,7 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
     size_t interior_count = 0;
     for (size_t j = 1; j < ny - 1; j++) {
         for (size_t i = 1; i < nx - 1; i++) {
-            interior_sum += rhs[j * nx + i];
+            interior_sum += rhs[IDX_2D(i, j, nx)];
             interior_count++;
         }
     }
@@ -158,7 +159,7 @@ static void init_sinusoidal_rhs(double* rhs, size_t nx, size_t ny,
         double interior_mean = interior_sum / (double)interior_count;
         for (size_t j = 1; j < ny - 1; j++) {
             for (size_t i = 1; i < nx - 1; i++) {
-                rhs[j * nx + i] -= interior_mean;
+                rhs[IDX_2D(i, j, nx)] -= interior_mean;
             }
         }
     }

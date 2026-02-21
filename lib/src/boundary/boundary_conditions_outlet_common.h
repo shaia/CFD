@@ -12,6 +12,7 @@
 #define CFD_BOUNDARY_CONDITIONS_OUTLET_COMMON_H
 
 #include "boundary_conditions_internal.h"
+#include "cfd/core/indexing.h"
 
 /* ============================================================================
  * Edge validation
@@ -50,12 +51,12 @@ typedef size_t (*bc_outlet_idx_func_t)(size_t i, size_t nx, size_t ny);
 /* Destination index functions (boundary) */
 static inline size_t bc_outlet_dst_left(size_t j, size_t nx, size_t ny) {
     (void)ny;
-    return j * nx;
+    return IDX_2D(0, j, nx);
 }
 
 static inline size_t bc_outlet_dst_right(size_t j, size_t nx, size_t ny) {
     (void)ny;
-    return j * nx + (nx - 1);
+    return IDX_2D(nx - 1, j, nx);
 }
 
 static inline size_t bc_outlet_dst_bottom(size_t i, size_t nx, size_t ny) {
@@ -64,18 +65,18 @@ static inline size_t bc_outlet_dst_bottom(size_t i, size_t nx, size_t ny) {
 }
 
 static inline size_t bc_outlet_dst_top(size_t i, size_t nx, size_t ny) {
-    return (ny - 1) * nx + i;
+    return IDX_2D(i, ny - 1, nx);
 }
 
 /* Source index functions (adjacent interior) */
 static inline size_t bc_outlet_src_left(size_t j, size_t nx, size_t ny) {
     (void)ny;
-    return j * nx + 1;
+    return IDX_2D(1, j, nx);
 }
 
 static inline size_t bc_outlet_src_right(size_t j, size_t nx, size_t ny) {
     (void)ny;
-    return j * nx + (nx - 2);
+    return IDX_2D(nx - 2, j, nx);
 }
 
 static inline size_t bc_outlet_src_bottom(size_t i, size_t nx, size_t ny) {
@@ -84,7 +85,7 @@ static inline size_t bc_outlet_src_bottom(size_t i, size_t nx, size_t ny) {
 }
 
 static inline size_t bc_outlet_src_top(size_t i, size_t nx, size_t ny) {
-    return (ny - 2) * nx + i;
+    return IDX_2D(i, ny - 2, nx);
 }
 
 /**
