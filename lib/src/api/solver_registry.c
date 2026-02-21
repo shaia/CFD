@@ -65,6 +65,8 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* grid,
 void         rk2_avx2_destroy(ns_solver_t* solver);
 cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                              const ns_solver_params_t* params, ns_solver_stats_t* stats);
+cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                              const ns_solver_params_t* params, ns_solver_stats_t* stats);
 
 #ifdef _WIN32
 #else
@@ -667,33 +669,6 @@ static ns_solver_t* create_rk2_solver(void) {
     return s;
 }
 
-static cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
-                                    const ns_solver_params_t* params, ns_solver_stats_t* stats) {
-    if (!solver || !field || !grid || !params) {
-        return CFD_ERROR_INVALID;
-    }
-
-    for (int i = 0; i < params->max_iter; i++) {
-        cfd_status_t status = rk2_avx2_step(solver, field, grid, params, NULL);
-        if (status != CFD_SUCCESS) {
-            return status;
-        }
-    }
-
-    if (stats) {
-        stats->iterations = params->max_iter;
-        double max_vel = 0.0, max_p = 0.0;
-        for (size_t i = 0; i < field->nx * field->ny; i++) {
-            double vel = sqrt(field->u[i] * field->u[i] + field->v[i] * field->v[i]);
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
-        }
-        stats->max_velocity = max_vel;
-        stats->max_pressure = max_p;
-    }
-    return CFD_SUCCESS;
-}
-
 static ns_solver_t* create_rk2_optimized_solver(void) {
     ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
     if (!s) {
@@ -704,7 +679,7 @@ static ns_solver_t* create_rk2_optimized_solver(void) {
     s->description = "AVX2/SIMD + OpenMP RK2 (Heun's method)";
     s->version     = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT |
-                      NS_SOLVER_CAP_SIMD | NS_SOLVER_CAP_PARALLEL;
+                      NS_SOLVER_CAP_SIMD;
     s->backend     = NS_SOLVER_BACKEND_SIMD;
 
     s->init           = rk2_avx2_init;

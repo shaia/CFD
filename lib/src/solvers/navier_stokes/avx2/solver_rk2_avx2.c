@@ -41,13 +41,6 @@
 #include <omp.h>
 #endif
 
-/* OpenMP version-gated pragmas */
-#if defined(_OPENMP) && (_OPENMP >= 201307)  /* OMP 4.0 */
-#  define OMP_FOR_SIMD _Pragma("omp parallel for simd schedule(static)")
-#else
-#  define OMP_FOR_SIMD _Pragma("omp parallel for schedule(static)")
-#endif
-
 #if defined(CFD_HAS_AVX2)
 #include <immintrin.h>
 #define USE_AVX2 1
@@ -180,6 +173,11 @@ static void compute_rhs_row(
     size_t ny     = ctx->ny;
     size_t j_off  = j * nx;
 
+    /* Degenerate dy: zero RHS for entire row (matches scalar path) */
+    if (fabs(g->dy[j]) < 1e-10) {
+        return;  /* rhs arrays already memset to 0 before this call */
+    }
+
     /* j-direction stencil row offsets: uniform across entire row */
     size_t jd_row = (j > 1)      ? (j - 1) * nx : (ny - 2) * nx;
     size_t ju_row = (j < ny - 2) ? (j + 1) * nx : nx;
@@ -197,7 +195,8 @@ static void compute_rhs_row(
     /* --- AVX2: i = 2 while i+3 <= nx-3 (interior, no wrapping needed) --- */
     {
         __m256d dy_inv_v  = _mm256_set1_pd(ctx->dy_inv[j]);
-        __m256d dy2_inv_v = _mm256_set1_pd(1.0 / (g->dy[j] * g->dy[j]));
+        /* 1/dy^2 = 4 * (1/(2*dy))^2, derived from pre-guarded dy_inv */
+        __m256d dy2_inv_v = _mm256_set1_pd(4.0 * ctx->dy_inv[j] * ctx->dy_inv[j]);
         __m256d two       = _mm256_set1_pd(2.0);
         __m256d four      = _mm256_set1_pd(4.0);
         __m256d max_d1    = _mm256_set1_pd( MAX_DERIVATIVE_LIMIT);
@@ -573,6 +572,9 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
     }
 
     rk2_avx2_context_t* ctx = (rk2_avx2_context_t*)solver->context;
+    if (field->nx != ctx->nx || field->ny != ctx->ny) {
+        return CFD_ERROR_INVALID;
+    }
 
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
@@ -597,6 +599,50 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
         stats->max_pressure = max_p;
     }
 
+    return status;
+#endif
+}
+
+cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* g,
+                              const ns_solver_params_t* params, ns_solver_stats_t* stats)
+{
+#if !USE_AVX2
+    (void)solver; (void)field; (void)g; (void)params; (void)stats;
+    return CFD_ERROR_UNSUPPORTED;
+#else
+    if (!solver || !solver->context || !field || !g || !params) {
+        return CFD_ERROR_INVALID;
+    }
+    if (field->nx < 3 || field->ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+
+    rk2_avx2_context_t* ctx = (rk2_avx2_context_t*)solver->context;
+    if (field->nx != ctx->nx || field->ny != ctx->ny) {
+        return CFD_ERROR_INVALID;
+    }
+
+    /* Call impl directly so its internal loop runs iter=0..max_iter-1,
+     * giving compute_source_terms the correct iteration index. */
+    cfd_status_t status = rk2_avx2_impl(field, ctx, g, params);
+
+    if (stats) {
+        stats->iterations = params->max_iter;
+        double max_vel = 0.0, max_p = 0.0;
+        ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny);
+        ptrdiff_t ks;
+#if defined(_OPENMP) && (_OPENMP >= 201107)
+        #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
+#endif
+        for (ks = 0; ks < n_s; ks++) {
+            double vel = sqrt(field->u[ks] * field->u[ks] + field->v[ks] * field->v[ks]);
+            if (vel > max_vel) max_vel = vel;
+            double ap = fabs(field->p[ks]);
+            if (ap > max_p) max_p = ap;
+        }
+        stats->max_velocity = max_vel;
+        stats->max_pressure = max_p;
+    }
     return status;
 #endif
 }
