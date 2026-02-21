@@ -1,5 +1,6 @@
 #include "cfd/api/simulation_api.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
 
@@ -55,7 +56,7 @@ int main() {
     printf("\nSetting up enhanced initial conditions...\n");
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = (j * field->nx) + i;
+            size_t idx = IDX_2D(i, j, field->nx);
             double x = grid->x[i];
             double y = grid->y[j];
 

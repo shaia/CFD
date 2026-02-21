@@ -134,9 +134,13 @@ if(BUILD_EXAMPLES)
     add_executable(csv_data_export examples/csv_data_export.c)
     target_link_libraries(csv_data_export PRIVATE CFD::Library)
 
-    # Lid-driven cavity example - demonstrates Dirichlet boundary conditions
+    # Lid-driven cavity example - simulation API with Dirichlet BCs
     add_executable(lid_driven_cavity examples/lid_driven_cavity.c)
     target_link_libraries(lid_driven_cavity PRIVATE CFD::Library)
+
+    # Lid-driven cavity (direct) - solver registry API with manual control
+    add_executable(lid_driven_cavity_direct examples/lid_driven_cavity_direct.c)
+    target_link_libraries(lid_driven_cavity_direct PRIVATE CFD::Library)
 endif()
 
 # Optionally build tests

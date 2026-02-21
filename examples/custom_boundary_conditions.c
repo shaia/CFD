@@ -7,6 +7,7 @@
 
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/indexing.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
 #include "cfd/io/vtk_output.h"
@@ -20,7 +21,7 @@ void setup_cylinder_flow(flow_field* field, grid* grid) {
     // Initialize flow field with uniform flow
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = (j * field->nx) + i;
+            size_t idx = IDX_2D(i, j, field->nx);
 
             // Initial conditions: uniform flow in x-direction
             field->u[idx] = 1.0;    // u-velocity
@@ -46,7 +47,7 @@ void setup_cylinder_flow(flow_field* field, grid* grid) {
             double dist = sqrt(((x - cx) * (x - cx)) + ((y - cy) * (y - cy)));
 
             if (dist < radius) {
-                size_t idx = (j * field->nx) + i;
+                size_t idx = IDX_2D(i, j, field->nx);
                 // Inside cylinder: no-slip boundary conditions
                 field->u[idx] = 0.0;
                 field->v[idx] = 0.0;
@@ -58,7 +59,7 @@ void setup_cylinder_flow(flow_field* field, grid* grid) {
 void apply_inlet_outlet_bc(flow_field* field, grid* grid) {
     // Inlet boundary (left side): fixed velocity
     for (size_t j = 0; j < field->ny; j++) {
-        size_t idx = (j * field->nx) + 0;  // i = 0 (left boundary)
+        size_t idx = IDX_2D(0, j, field->nx);  // i = 0 (left boundary)
         field->u[idx] = 1.0;               // Inlet velocity
         field->v[idx] = 0.0;
         field->p[idx] = 0.0;
@@ -66,8 +67,8 @@ void apply_inlet_outlet_bc(flow_field* field, grid* grid) {
 
     // Outlet boundary (right side): zero gradient
     for (size_t j = 0; j < field->ny; j++) {
-        size_t idx_out = (j * field->nx) + (field->nx - 1);  // i = nx-1 (right boundary)
-        size_t idx_in = (j * field->nx) + (field->nx - 2);   // i = nx-2 (interior)
+        size_t idx_out = IDX_2D(field->nx - 1, j, field->nx);  // i = nx-1 (right boundary)
+        size_t idx_in = IDX_2D(field->nx - 2, j, field->nx);   // i = nx-2 (interior)
 
         field->u[idx_out] = field->u[idx_in];
         field->v[idx_out] = field->v[idx_in];
@@ -77,12 +78,12 @@ void apply_inlet_outlet_bc(flow_field* field, grid* grid) {
     // Top and bottom walls: no-slip
     for (size_t i = 0; i < field->nx; i++) {
         // Bottom wall (j = 0)
-        size_t idx_bot = (0 * field->nx) + i;
+        size_t idx_bot = IDX_2D(i, 0, field->nx);
         field->u[idx_bot] = 0.0;
         field->v[idx_bot] = 0.0;
 
         // Top wall (j = ny-1)
-        size_t idx_top = ((field->ny - 1) * field->nx) + i;
+        size_t idx_top = IDX_2D(i, field->ny - 1, field->nx);
         field->u[idx_top] = 0.0;
         field->v[idx_top] = 0.0;
     }
