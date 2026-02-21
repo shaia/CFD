@@ -3,9 +3,31 @@ name: Cross-Architecture Validation (EC2)
 on:
   push:
     branches: [master, main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/workflows/version-release.yml'
   workflow_dispatch:
+    inputs:
+      ec2-instance-type:
+        description: 'EC2 instance type'
+        required: false
+        default: 'g4dn.4xlarge'
+        type: choice
+        options:
+          - g4dn.4xlarge
+          - g4dn.2xlarge
+          - g4dn.xlarge
   pull_request:
     types: [labeled]
+
+# Prevent multiple EC2 instances from running concurrently.
+# cancel-in-progress is false to avoid orphaning instances (stop-runner
+# must complete for each run).
+concurrency:
+  group: ec2-validation
+  cancel-in-progress: false
 
 jobs:
   start-runner:
@@ -33,7 +55,7 @@ jobs:
           mode: start
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           ec2-image-id: ${{ secrets.EC2_AMI_ID }}
-          ec2-instance-type: g4dn.2xlarge
+          ec2-instance-type: ${{ inputs.ec2-instance-type || 'g4dn.4xlarge' }}
           subnet-id: ${{ secrets.EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.EC2_SECURITY_GROUP_ID }}
 
@@ -143,8 +165,11 @@ jobs:
           ctest --output-on-failure -L "cross-arch" -V
           echo ""
           echo "=== Physics validation (129x129 cavity) ==="
-          # Limit OMP threads per test to avoid oversubscription when running parallel
-          OMP_NUM_THREADS=2 ctest --output-on-failure -L "validation" -V -j 4 2>&1 | tee validation_output.txt
+          # Distribute vCPUs evenly: nproc / 4 parallel tests
+          OMP_THREADS=$(( $(nproc) / 4 ))
+          OMP_THREADS=$(( OMP_THREADS > 0 ? OMP_THREADS : 1 ))
+          echo "Running 4 parallel tests with OMP_NUM_THREADS=$OMP_THREADS ($(nproc) vCPUs)"
+          OMP_NUM_THREADS=$OMP_THREADS ctest --output-on-failure -L "validation" -V -j 4 2>&1 | tee validation_output.txt
 
       - name: Verify GPU backend was tested
         run: |
@@ -162,7 +187,7 @@ jobs:
         run: |
           echo "## GPU Validation Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Instance**: g4dn.2xlarge (T4 GPU + 8 vCPUs)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Instance**: ${{ inputs.ec2-instance-type || 'g4dn.4xlarge' }} (T4 GPU + $(nproc) vCPUs)" >> $GITHUB_STEP_SUMMARY
           echo "- **Backends**: AVX2, OpenMP, CUDA GPU" >> $GITHUB_STEP_SUMMARY
           echo "- **Grid**: 129x129 full validation" >> $GITHUB_STEP_SUMMARY
           echo "- **GPU**: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
