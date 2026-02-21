@@ -187,7 +187,7 @@ jobs:
         run: |
           echo "## GPU Validation Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Instance**: g4dn.4xlarge (T4 GPU + 16 vCPUs)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Instance**: ${{ inputs.ec2-instance-type || 'g4dn.4xlarge' }} (T4 GPU + $(nproc) vCPUs)" >> $GITHUB_STEP_SUMMARY
           echo "- **Backends**: AVX2, OpenMP, CUDA GPU" >> $GITHUB_STEP_SUMMARY
           echo "- **Grid**: 129x129 full validation" >> $GITHUB_STEP_SUMMARY
           echo "- **GPU**: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
