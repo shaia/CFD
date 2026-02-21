@@ -53,11 +53,13 @@ extern "C" {
 typedef struct {
     double* u;    /**< x-velocity component */
     double* v;    /**< y-velocity component */
+    double* w;    /**< z-velocity component (always allocated, zero for 2D) */
     double* p;    /**< pressure */
     double* rho;  /**< density */
     double* T;    /**< temperature */
     size_t nx;    /**< number of points in x-direction */
     size_t ny;    /**< number of points in y-direction */
+    size_t nz;    /**< number of points in z-direction (1 for 2D) */
 } flow_field;
 
 /**
@@ -346,6 +348,7 @@ static inline ns_solver_stats_t ns_solver_stats_default(void) {
 
 /** Flow field memory management */
 CFD_LIBRARY_EXPORT flow_field* flow_field_create(size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT flow_field* flow_field_create_3d(size_t nx, size_t ny, size_t nz);
 CFD_LIBRARY_EXPORT void flow_field_destroy(flow_field* field);
 
 /** Flow field initialization and operations */

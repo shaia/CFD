@@ -26,6 +26,17 @@ typedef struct {
     double xmax;  // maximum x-coordinate
     double ymin;  // minimum y-coordinate
     double ymax;  // maximum y-coordinate
+
+    // 3D extension (nz=1 reproduces 2D behavior)
+    double* z;        // z-coordinates of grid points [nz] (NULL when nz==1)
+    double* dz;       // z-direction cell sizes [nz-1] (NULL when nz==1)
+    size_t nz;        // number of points in z-direction (1 for 2D)
+    double zmin;      // minimum z-coordinate (0.0 for 2D)
+    double zmax;      // maximum z-coordinate (0.0 for 2D)
+    size_t stride_z;  // nx*ny when nz>1, 0 when nz==1
+    double inv_dz2;   // 1/(dz*dz) when nz>1, 0.0 when nz==1
+    size_t k_start;   // 1 when nz>1, 0 when nz==1
+    size_t k_end;     // nz-1 when nz>1, 1 when nz==1
 } grid;
 
 /**
@@ -41,6 +52,25 @@ typedef struct {
  */
 CFD_LIBRARY_EXPORT grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin,
                                      double ymax);
+
+/**
+ * Create a 3D grid
+ *
+ * @param nx   Number of points in x-direction
+ * @param ny   Number of points in y-direction
+ * @param nz   Number of points in z-direction (1 for 2D)
+ * @param xmin Minimum x-coordinate
+ * @param xmax Maximum x-coordinate
+ * @param ymin Minimum y-coordinate
+ * @param ymax Maximum y-coordinate
+ * @param zmin Minimum z-coordinate (0.0 for 2D)
+ * @param zmax Maximum z-coordinate (0.0 for 2D)
+ * @return Pointer to newly created grid
+ */
+CFD_LIBRARY_EXPORT grid* grid_create_3d(size_t nx, size_t ny, size_t nz,
+                                         double xmin, double xmax,
+                                         double ymin, double ymax,
+                                         double zmin, double zmax);
 
 /**
  * Destroy grid and free memory

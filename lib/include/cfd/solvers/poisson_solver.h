@@ -213,8 +213,10 @@ struct poisson_solver {
     /* Problem parameters (set during init) */
     size_t nx;                            /**< Grid points in x */
     size_t ny;                            /**< Grid points in y */
+    size_t nz;                            /**< Grid points in z (1 for 2D) */
     double dx;                            /**< Grid spacing in x */
     double dy;                            /**< Grid spacing in y */
+    double dz;                            /**< Grid spacing in z (0.0 for 2D) */
 
     /* Solver parameters */
     poisson_solver_params_t params;       /**< Solver configuration */

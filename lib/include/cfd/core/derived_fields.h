@@ -35,13 +35,15 @@ CFD_LIBRARY_EXPORT field_stats calculate_field_statistics(const double* data, si
 // before being passed to the output system
 typedef struct {
     // Derived field arrays
-    double* velocity_magnitude;  // sqrt(u^2 + v^2), NULL if not computed
+    double* velocity_magnitude;  // sqrt(u^2 + v^2 + w^2), NULL if not computed
     size_t nx;
     size_t ny;
+    size_t nz;  // 1 for 2D
 
     // Pre-computed statistics (for CSV output)
     field_stats u_stats;
     field_stats v_stats;
+    field_stats w_stats;
     field_stats p_stats;
     field_stats rho_stats;
     field_stats T_stats;
@@ -51,6 +53,7 @@ typedef struct {
 
 // Create derived fields container (all fields initially NULL, stats zeroed)
 CFD_LIBRARY_EXPORT derived_fields* derived_fields_create(size_t nx, size_t ny);
+CFD_LIBRARY_EXPORT derived_fields* derived_fields_create_3d(size_t nx, size_t ny, size_t nz);
 
 // Destroy derived fields and free all computed arrays
 CFD_LIBRARY_EXPORT void derived_fields_destroy(derived_fields* derived);
