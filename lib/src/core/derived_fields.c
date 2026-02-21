@@ -24,14 +24,19 @@
 // DERIVED FIELDS LIFECYCLE
 //=============================================================================
 
-derived_fields* derived_fields_create(size_t nx, size_t ny) {
+derived_fields* derived_fields_create_3d(size_t nx, size_t ny, size_t nz) {
     derived_fields* derived = (derived_fields*)cfd_calloc(1, sizeof(derived_fields));
     if (derived) {
         derived->nx = nx;
         derived->ny = ny;
+        derived->nz = nz;
         derived->velocity_magnitude = NULL;
     }
     return derived;
+}
+
+derived_fields* derived_fields_create(size_t nx, size_t ny) {
+    return derived_fields_create_3d(nx, ny, 1);
 }
 
 void derived_fields_destroy(derived_fields* derived) {
@@ -147,7 +152,7 @@ void derived_fields_compute_velocity_magnitude(derived_fields* derived, const fl
         return;
     }
 
-    size_t n = derived->nx * derived->ny;
+    size_t n = derived->nx * derived->ny * derived->nz;
 
     // Allocate if needed
     if (!derived->velocity_magnitude) {
@@ -160,6 +165,7 @@ void derived_fields_compute_velocity_magnitude(derived_fields* derived, const fl
     // Compute velocity magnitude (embarrassingly parallel)
     const double* u = field->u;
     const double* v = field->v;
+    const double* w = field->w;
     double* vel_mag = derived->velocity_magnitude;
 
 #ifdef CFD_ENABLE_OPENMP
@@ -169,16 +175,19 @@ void derived_fields_compute_velocity_magnitude(derived_fields* derived, const fl
         long long i;
         OMP_FOR_SIMD
         for (i = 0; i < nn; i++) {
-            vel_mag[i] = sqrt((u[i] * u[i]) + (v[i] * v[i]));
+            double w_i = w ? w[i] : 0.0;
+            vel_mag[i] = sqrt((u[i] * u[i]) + (v[i] * v[i]) + (w_i * w_i));
         }
     } else {
         for (size_t i = 0; i < n; i++) {
-            vel_mag[i] = sqrt((u[i] * u[i]) + (v[i] * v[i]));
+            double w_i = w ? w[i] : 0.0;
+            vel_mag[i] = sqrt((u[i] * u[i]) + (v[i] * v[i]) + (w_i * w_i));
         }
     }
 #else
     for (size_t i = 0; i < n; i++) {
-        vel_mag[i] = sqrt(u[i] * u[i] + v[i] * v[i]);
+        double w_i = w ? w[i] : 0.0;
+        vel_mag[i] = sqrt(u[i] * u[i] + v[i] * v[i] + w_i * w_i);
     }
 #endif
 }
@@ -188,7 +197,7 @@ void derived_fields_compute_statistics(derived_fields* derived, const flow_field
         return;
     }
 
-    size_t count = derived->nx * derived->ny;
+    size_t count = derived->nx * derived->ny * derived->nz;
 
     // Compute statistics for primary fields
     if (field->u) {
@@ -196,6 +205,9 @@ void derived_fields_compute_statistics(derived_fields* derived, const flow_field
     }
     if (field->v) {
         derived->v_stats = calculate_field_statistics(field->v, count);
+    }
+    if (field->w) {
+        derived->w_stats = calculate_field_statistics(field->w, count);
     }
     if (field->p) {
         derived->p_stats = calculate_field_statistics(field->p, count);

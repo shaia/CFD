@@ -19,10 +19,12 @@
 #define DEFAULT_SOLVER_TYPE NS_SOLVER_TYPE_EXPLICIT_EULER
 
 // Ensure registry is initialized
-// Internal helper to create simulation with a specific solver
-static simulation_data* create_simulation_with_solver(size_t nx, size_t ny, double xmin,
-                                                      double xmax, double ymin, double ymax,
-                                                      const char* solver_type) {
+// Internal helper to create 3D simulation with a specific solver
+static simulation_data* create_simulation_3d_with_solver(size_t nx, size_t ny, size_t nz,
+                                                          double xmin, double xmax,
+                                                          double ymin, double ymax,
+                                                          double zmin, double zmax,
+                                                          const char* solver_type) {
     // Lazy initialization of library
     if (!cfd_is_initialized()) {
         if (cfd_init() != CFD_SUCCESS) {
@@ -31,7 +33,7 @@ static simulation_data* create_simulation_with_solver(size_t nx, size_t ny, doub
         }
     }
 
-    if (nx == 0 || ny == 0) {
+    if (nx == 0 || ny == 0 || nz == 0) {
         cfd_set_error(CFD_ERROR_INVALID, "Simulation grid dimensions must be positive");
         return NULL;
     }
@@ -46,19 +48,18 @@ static simulation_data* create_simulation_with_solver(size_t nx, size_t ny, doub
     }
 
     // Initialize base output directory
-    // Initialize base output directory
     snprintf(sim_data->output_base_dir, sizeof(sim_data->output_base_dir), "../../artifacts");
 
     // Create and initialize grid
-    sim_data->grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    sim_data->grid = grid_create_3d(nx, ny, nz, xmin, xmax, ymin, ymax, zmin, zmax);
     if (!sim_data->grid) {
         cfd_free(sim_data);
         return NULL;
     }
     grid_initialize_uniform(sim_data->grid);
 
-    // Create fflow_field
-    sim_data->field = flow_field_create(nx, ny);
+    // Create flow_field
+    sim_data->field = flow_field_create_3d(nx, ny, nz);
     if (!sim_data->field) {
         grid_destroy(sim_data->grid);
         cfd_free(sim_data);
@@ -118,7 +119,8 @@ static simulation_data* create_simulation_with_solver(size_t nx, size_t ny, doub
 // Initialize simulation data with default solver
 simulation_data* init_simulation(size_t nx, size_t ny, double xmin, double xmax, double ymin,
                                  double ymax) {
-    return create_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, DEFAULT_SOLVER_TYPE);
+    return create_simulation_3d_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0,
+                                             DEFAULT_SOLVER_TYPE);
 }
 
 // Initialize simulation with a specific solver type
@@ -127,7 +129,30 @@ simulation_data* init_simulation_with_solver(size_t nx, size_t ny, double xmin, 
     if (!solver_type) {
         solver_type = DEFAULT_SOLVER_TYPE;
     }
-    return create_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, solver_type);
+    return create_simulation_3d_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0,
+                                             solver_type);
+}
+
+// Initialize 3D simulation with default solver
+simulation_data* init_simulation_3d(size_t nx, size_t ny, size_t nz,
+                                     double xmin, double xmax,
+                                     double ymin, double ymax,
+                                     double zmin, double zmax) {
+    return create_simulation_3d_with_solver(nx, ny, nz, xmin, xmax, ymin, ymax, zmin, zmax,
+                                             DEFAULT_SOLVER_TYPE);
+}
+
+// Initialize 3D simulation with a specific solver type
+simulation_data* init_simulation_3d_with_solver(size_t nx, size_t ny, size_t nz,
+                                                 double xmin, double xmax,
+                                                 double ymin, double ymax,
+                                                 double zmin, double zmax,
+                                                 const char* solver_type) {
+    if (!solver_type) {
+        solver_type = DEFAULT_SOLVER_TYPE;
+    }
+    return create_simulation_3d_with_solver(nx, ny, nz, xmin, xmax, ymin, ymax, zmin, zmax,
+                                             solver_type);
 }
 
 // Set the solver for an existing simulation
@@ -369,7 +394,8 @@ void simulation_write_outputs(simulation_data* sim_data, int step) {
     int compute_stats = needs_statistics(sim_data->outputs);
 
     if (compute_vel_mag || compute_stats) {
-        derived = derived_fields_create(sim_data->grid->nx, sim_data->grid->ny);
+        derived = derived_fields_create_3d(sim_data->grid->nx, sim_data->grid->ny,
+                                              sim_data->grid->nz);
         if (derived) {
             // Compute velocity magnitude if needed (CSV outputs)
             if (compute_vel_mag) {
