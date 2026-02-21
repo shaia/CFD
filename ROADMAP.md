@@ -31,7 +31,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 | ------------------- | -------------- | ---- | -------- | -------- | -------- | ---- |
 | **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | —    |
 |                     | Projection     | done | done     | —        | done     | done |
-|                     | RK2 (Heun)    | done | **TODO** | —        | done     | —    |
+|                     | RK2 (Heun)    | done | done     | —        | done     | —    |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
 |                     | SOR            | done | **TODO** | **TODO** | —        | —    |
 |                     | Red-Black SOR  | done | done     | done     | done     | —    |
@@ -465,11 +465,11 @@ Source:  f = (2ν - α) · u_exact  // With α = ν
 **Implementation:**
 
 - Added `ns_source_func_t` callback to `ns_solver_params_t` for custom source terms
-- Extended `compute_source_terms()` to use callback when provided (backward-compatible)
+- Propagated callback to all solver variants: CPU explicit Euler (via `compute_source_terms()`), CPU projection, AVX2 explicit Euler (scalar path), AVX2 projection, OMP explicit Euler, OMP projection, OMP RK2 (already via helper)
 - Created `tests/math/test_mms.c` with 5 tests:
-  1. Source callback mechanism verification
-  2. Spatial convergence (Euler) — verified O(h^1.5+)
-  3. Spatial convergence (RK2) — verified O(h^1.5+)
+  1. Source callback mechanism verification (constant source α=0 for robust direction check)
+  2. Spatial convergence (Euler) — verified O(h^1.5+), monotonic with 1% tolerance
+  3. Spatial convergence (RK2) — verified O(h^1.5+), monotonic with 1% tolerance
   4. Temporal convergence (Euler) — verified error decreases
   5. Temporal convergence (RK2) — verified better rate than Euler
 
@@ -514,7 +514,7 @@ See `/add-ns-time-integrator` command for the cross-backend workflow.
 **Algorithms:**
 
 - [x] RK2 (Heun's method) — scalar
-  - [ ] RK2 AVX2/SIMD (`rk2_avx2`)
+  - [x] RK2 AVX2/SIMD (`rk2_avx2`, `rk2_optimized`)
   - [x] RK2 OpenMP (`rk2_omp`)
   - [ ] RK2 CUDA (`rk2_gpu`)
 - [ ] RK4 (classical Runge-Kutta) — scalar

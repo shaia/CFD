@@ -19,6 +19,13 @@
 
 #include <omp.h>
 
+/* OpenMP version-gated pragmas */
+#if _OPENMP >= 201307  /* OMP 4.0 */
+#  define OMP_FOR_SIMD _Pragma("omp parallel for simd schedule(static)")
+#else
+#  define OMP_FOR_SIMD _Pragma("omp parallel for schedule(static)")
+#endif
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -194,7 +201,7 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
         /* ---- Intermediate: field = Q^n + dt * k1 ---- */
         {
             ptrdiff_t k;
-#pragma omp parallel for schedule(static)
+            OMP_FOR_SIMD
             for (k = 0; k < size_int; k++) {
                 field->u[k] = u0[k] + dt * k1_u[k];
                 field->v[k] = v0[k] + dt * k1_v[k];
@@ -223,7 +230,7 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
         {
             double half_dt = 0.5 * dt;
             ptrdiff_t k;
-#pragma omp parallel for schedule(static)
+            OMP_FOR_SIMD
             for (k = 0; k < size_int; k++) {
                 field->u[k] = u0[k] + half_dt * (k1_u[k] + k2_u[k]);
                 field->v[k] = v0[k] + half_dt * (k1_v[k] + k2_v[k]);

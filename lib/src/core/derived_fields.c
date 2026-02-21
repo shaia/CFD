@@ -9,6 +9,13 @@
 #include <omp.h>
 #endif
 
+/* OpenMP version-gated pragmas */
+#if defined(_OPENMP) && (_OPENMP >= 201307)  /* OMP 4.0 */
+#  define OMP_FOR_SIMD _Pragma("omp parallel for simd")
+#else
+#  define OMP_FOR_SIMD _Pragma("omp parallel for")
+#endif
+
 // Minimum grid size to benefit from parallelization
 // Below this threshold, thread overhead exceeds benefit
 #define OMP_THRESHOLD 1000
@@ -71,17 +78,25 @@ field_stats calculate_field_statistics(const double* data, size_t count) {
         // Use signed type for OpenMP compatibility with MSVC
         long long nn = (long long)count;
         long long i;
-#pragma omp parallel for reduction(min : min_val) reduction(max : max_val) reduction(+ : sum_val)
+#if _OPENMP >= 201107  /* OMP 3.1: min/max reductions */
+        #pragma omp parallel for reduction(min:min_val) reduction(max:max_val) reduction(+:sum_val)
         for (i = 0; i < nn; i++) {
             double val = data[i];
-            if (val < min_val) {
-                min_val = val;
-            }
-            if (val > max_val) {
-                max_val = val;
-            }
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
             sum_val += val;
         }
+#else
+        /* OMP < 3.1: only + reduction available; compute min/max serially */
+        #pragma omp parallel for reduction(+:sum_val)
+        for (i = 0; i < nn; i++) {
+            sum_val += data[i];
+        }
+        for (i = 0; i < nn; i++) {
+            if (data[i] < min_val) min_val = data[i];
+            if (data[i] > max_val) max_val = data[i];
+        }
+#endif
 
         stats.min_val = min_val;
         stats.max_val = max_val;
@@ -152,7 +167,7 @@ void derived_fields_compute_velocity_magnitude(derived_fields* derived, const fl
         // Use signed type for OpenMP compatibility with MSVC
         long long nn = (long long)n;
         long long i;
-#pragma omp parallel for
+        OMP_FOR_SIMD
         for (i = 0; i < nn; i++) {
             vel_mag[i] = sqrt((u[i] * u[i]) + (v[i] * v[i]));
         }
