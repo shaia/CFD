@@ -278,7 +278,7 @@ void test_jacobi_spectral_radius(void) {
         params.tolerance = 1e-12;
         params.max_iterations = 200;
 
-        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
 
         /* Record residual history */
@@ -395,7 +395,7 @@ void test_sor_optimal_omega(void) {
         params.max_iterations = 2000;
         params.omega = omega;
 
-        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver init failed");
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -463,7 +463,7 @@ void test_sor_vs_jacobi_speedup(void) {
         params.tolerance = 1e-6;
         params.max_iterations = 5000;
 
-        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "Jacobi solver init failed");
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -498,7 +498,7 @@ void test_sor_vs_jacobi_speedup(void) {
         params.max_iterations = 5000;
         params.omega = omega;
 
-        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver init failed");
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -562,7 +562,7 @@ void test_redblack_sor_equivalence(void) {
         params.max_iterations = 2000;
         params.omega = omega;
 
-        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver init failed");
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -596,7 +596,7 @@ void test_redblack_sor_equivalence(void) {
         params.max_iterations = 2000;
         params.omega = omega;
 
-        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "Red-Black SOR solver init failed");
 
         poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -677,7 +677,7 @@ void test_cg_iteration_bound(void) {
         params.tolerance = 1e-8;
         params.max_iterations = (int)(n * n);  /* Upper bound: matrix size */
 
-        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         if (status != CFD_SUCCESS) {
             poisson_solver_destroy(solver);
             cfd_free(p);
@@ -786,7 +786,7 @@ void test_solver_comparison(void) {
             params.omega = solvers[i].omega;
         }
 
-        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         if (status != CFD_SUCCESS) {
             printf("      %-15s: init failed\n", solvers[i].name);
             poisson_solver_destroy(solver);

@@ -224,8 +224,8 @@ poisson_solver_t* poisson_solver_create(
 
 cfd_status_t poisson_solver_init(
     poisson_solver_t* solver,
-    size_t nx, size_t ny,
-    double dx, double dy,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
     if (!solver) {
@@ -234,8 +234,10 @@ cfd_status_t poisson_solver_init(
 
     solver->nx = nx;
     solver->ny = ny;
+    solver->nz = nz;
     solver->dx = dx;
     solver->dy = dy;
+    solver->dz = dz;
 
     if (params) {
         solver->params = *params;
@@ -250,7 +252,7 @@ cfd_status_t poisson_solver_init(
 
     /* Call solver-specific init if provided */
     if (solver->init) {
-        return solver->init(solver, nx, ny, dx, dy, &solver->params);
+        return solver->init(solver, nx, ny, nz, dx, dy, dz, &solver->params);
     }
 
     return CFD_SUCCESS;
@@ -598,7 +600,7 @@ int poisson_solve(
         *solver_ptr = poisson_solver_create(method, backend);
 
         if (*solver_ptr) {
-            poisson_solver_init(*solver_ptr, nx, ny, dx, dy, NULL);
+            poisson_solver_init(*solver_ptr, nx, ny, 1, dx, dy, 0.0, NULL);
         }
     }
 

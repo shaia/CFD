@@ -153,8 +153,8 @@ typedef void* poisson_solver_context_t;
 /** Initialize solver for given problem size */
 typedef cfd_status_t (*poisson_solver_init_func)(
     poisson_solver_t* solver,
-    size_t nx, size_t ny,
-    double dx, double dy,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
     const poisson_solver_params_t* params);
 
 /** Destroy solver and free resources */
@@ -257,15 +257,17 @@ CFD_LIBRARY_EXPORT poisson_solver_t* poisson_solver_create(
  * @param solver Poisson solver instance from poisson_solver_create()
  * @param nx Grid points in x direction
  * @param ny Grid points in y direction
+ * @param nz Grid points in z direction (1 for 2D)
  * @param dx Grid spacing in x direction
  * @param dy Grid spacing in y direction
+ * @param dz Grid spacing in z direction (0.0 for 2D)
  * @param params Solver parameters (NULL for defaults)
  * @return CFD_SUCCESS on success
  */
 CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_init(
     poisson_solver_t* solver,
-    size_t nx, size_t ny,
-    double dx, double dy,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
     const poisson_solver_params_t* params);
 
 /**

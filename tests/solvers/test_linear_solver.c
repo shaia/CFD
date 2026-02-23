@@ -190,7 +190,7 @@ void test_init_solver(void) {
         POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(solver);
 
-    cfd_status_t status = poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, NULL);
+    cfd_status_t status = poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, NULL);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL_INT(TEST_NX, solver->nx);
     TEST_ASSERT_EQUAL_INT(TEST_NY, solver->ny);
@@ -210,7 +210,7 @@ void test_init_with_custom_params(void) {
     params.max_iterations = 500;
     params.omega = 1.7;
 
-    cfd_status_t status = poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    cfd_status_t status = poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL_DOUBLE(1e-8, solver->params.tolerance);
     TEST_ASSERT_EQUAL_INT(500, solver->params.max_iterations);
@@ -239,7 +239,7 @@ void test_jacobi_converges_zero_rhs(void) {
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* x_temp = create_test_field(TEST_NX, TEST_NY, 0.0);
@@ -265,7 +265,7 @@ void test_sor_converges_zero_rhs(void) {
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
@@ -288,7 +288,7 @@ void test_redblack_converges_zero_rhs(void) {
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
@@ -311,7 +311,7 @@ void test_cg_converges_zero_rhs(void) {
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
@@ -336,7 +336,7 @@ void test_cg_converges_uniform_rhs(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 500;
     params.tolerance = 1e-6;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
@@ -376,8 +376,8 @@ void test_cg_scalar_simd_consistency(void) {
     params.max_iterations = 200;
     params.tolerance = 1e-8;
 
-    poisson_solver_init(scalar_solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
-    poisson_solver_init(simd_solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(scalar_solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
+    poisson_solver_init(simd_solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     /* Allocate fields */
     double* x_scalar = create_test_field(TEST_NX, TEST_NY, 0.0);
@@ -428,7 +428,7 @@ void test_cg_larger_grid(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 2000;
     params.tolerance = 1e-6;
-    poisson_solver_init(solver, NX, NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, NX, NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(NX, NY, 0.0);
     double* rhs = create_uniform_rhs(NX, NY, 1.0);
@@ -460,7 +460,7 @@ void test_cg_nonzero_initial_guess(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 500;
     params.tolerance = 1e-6;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     /* Start with non-zero initial guess */
     double* x = create_test_field(TEST_NX, TEST_NY, 0.5);
@@ -495,8 +495,8 @@ void test_cg_no_more_iterations_than_jacobi(void) {
     params.max_iterations = 100;
     params.tolerance = 1e-6;
 
-    poisson_solver_init(cg_solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
-    poisson_solver_init(jacobi_solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(cg_solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
+    poisson_solver_init(jacobi_solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x_cg = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* x_jacobi = create_test_field(TEST_NX, TEST_NY, 0.0);
@@ -536,7 +536,7 @@ void test_cg_tight_tolerance(void) {
     params.max_iterations = 1000;
     params.tolerance = 1e-10;
     params.absolute_tolerance = 1e-12;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
@@ -573,7 +573,7 @@ void test_cg_auto_backend(void) {
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
@@ -600,7 +600,7 @@ void test_cg_statistics(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 500;
     params.tolerance = 1e-6;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
@@ -639,7 +639,7 @@ void test_cg_simd_larger_grid(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 1000;
     params.tolerance = 1e-6;
-    poisson_solver_init(solver, NX, NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, NX, NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(NX, NY, 0.0);
     double* rhs = create_uniform_rhs(NX, NY, 1.0);
@@ -663,7 +663,7 @@ void test_compute_residual_zero_rhs(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(solver);
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, NULL);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, NULL);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
@@ -743,7 +743,7 @@ void test_jacobi_simd_if_available(void) {
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* x_temp = create_test_field(TEST_NX, TEST_NY, 0.0);
@@ -774,7 +774,7 @@ void test_redblack_simd_if_available(void) {
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
@@ -809,7 +809,7 @@ void test_redblack_simd_converges_uniform_rhs(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
     params.tolerance = 1e-10;
-    poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
 
     double* x = create_test_field(nx, ny, 0.0);
     /* Use zero RHS for Neumann BCs (uniform RHS violates compatibility condition) */
@@ -852,8 +852,8 @@ void test_redblack_simd_scalar_consistency(void) {
     params.max_iterations = 100;
     params.tolerance = 1e-10;
 
-    poisson_solver_init(scalar_solver, nx, ny, dx, dy, &params);
-    poisson_solver_init(simd_solver, nx, ny, dx, dy, &params);
+    poisson_solver_init(scalar_solver, nx, ny, 1, dx, dy, 0.0, &params);
+    poisson_solver_init(simd_solver, nx, ny, 1, dx, dy, 0.0, &params);
 
     double* x_scalar = create_test_field(nx, ny, 0.0);
     double* x_simd = create_test_field(nx, ny, 0.0);
@@ -903,7 +903,7 @@ void test_cg_simd_if_available(void) {
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 100;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
@@ -932,7 +932,7 @@ void test_cg_simd_converges_uniform_rhs(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 500;
     params.tolerance = 1e-6;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_uniform_rhs(TEST_NX, TEST_NY, 1.0);
@@ -959,7 +959,7 @@ void test_stats_timing(void) {
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 50;
-    poisson_solver_init(solver, TEST_NX, TEST_NY, TEST_DX, TEST_DY, &params);
+    poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* x_temp = create_test_field(TEST_NX, TEST_NY, 0.0);

@@ -62,11 +62,11 @@ static inline int size_to_int(size_t sz) {
 
 static cfd_status_t jacobi_neon_init(
     poisson_solver_t* solver,
-    size_t nx, size_t ny,
-    double dx, double dy,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)nx; (void)ny; (void)params;
+    (void)nx; (void)ny; (void)nz; (void)params; (void)dz;
 
     jacobi_neon_context_t* ctx = (jacobi_neon_context_t*)cfd_calloc(1, sizeof(jacobi_neon_context_t));
     if (!ctx) {

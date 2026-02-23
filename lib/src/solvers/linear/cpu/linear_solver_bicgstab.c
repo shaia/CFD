@@ -174,11 +174,11 @@ static void zero_vector(double* v, size_t nx, size_t ny) {
 
 static cfd_status_t bicgstab_scalar_init(
     poisson_solver_t* solver,
-    size_t nx, size_t ny,
-    double dx, double dy,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)params;
+    (void)nz; (void)dz; (void)params;
 
     bicgstab_context_t* ctx = (bicgstab_context_t*)cfd_calloc(1, sizeof(bicgstab_context_t));
     if (!ctx) {
