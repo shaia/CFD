@@ -62,7 +62,7 @@ void test_projection_initializes_correctly(void) {
     printf("\n=== Test: Projection NSSolver Initializes Correctly ===\n");
 
     size_t nx = 16, ny = 16;
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
@@ -94,8 +94,8 @@ void test_projection_enforces_divergence_free(void) {
     printf("\n=== Test: Projection Enforces Divergence-Free ===\n");
 
     size_t nx = 32, ny = 32;
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(g);
     TEST_ASSERT_NOT_NULL(field);
 
@@ -169,8 +169,8 @@ void test_projection_pressure_gradient_response(void) {
     printf("\n=== Test: Projection Pressure Gradient Response ===\n");
 
     size_t nx = 32, ny = 32;
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(g);
     TEST_ASSERT_NOT_NULL(field);
 
@@ -309,8 +309,8 @@ void test_projection_poiseuille_profile(void) {
     size_t nx = 32, ny = 32;
     double U_max = 1.0;
 
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(g);
     TEST_ASSERT_NOT_NULL(field);
 
@@ -411,8 +411,8 @@ void test_projection_fail_fast_on_divergence(void) {
     // 4. The fail-fast code path exists (early return on Poisson failure)
 
     size_t nx = 16, ny = 16;
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(g);
     TEST_ASSERT_NOT_NULL(field);
 

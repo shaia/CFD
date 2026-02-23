@@ -16,11 +16,11 @@ void setUp(void) {}
 void tearDown(void) {}
 
 /* ============================================================================
- * flow_field_create_3d tests
+ * flow_field_create tests
  * ============================================================================ */
 
 void test_flow_field_create_3d_nz1(void) {
-    flow_field* f = flow_field_create_3d(10, 10, 1);
+    flow_field* f = flow_field_create(10, 10, 1);
     TEST_ASSERT_NOT_NULL(f);
 
     TEST_ASSERT_EQUAL(10, f->nx);
@@ -42,7 +42,7 @@ void test_flow_field_create_3d_nz1(void) {
 }
 
 void test_flow_field_create_wrapper_sets_nz1(void) {
-    flow_field* f = flow_field_create(8, 6);
+    flow_field* f = flow_field_create(8, 6, 1);
     TEST_ASSERT_NOT_NULL(f);
 
     TEST_ASSERT_EQUAL(8, f->nx);
@@ -54,7 +54,7 @@ void test_flow_field_create_wrapper_sets_nz1(void) {
 }
 
 void test_flow_field_create_3d_allocates_correct_size(void) {
-    flow_field* f = flow_field_create_3d(10, 8, 6);
+    flow_field* f = flow_field_create(10, 8, 6);
     TEST_ASSERT_NOT_NULL(f);
 
     TEST_ASSERT_EQUAL(10, f->nx);
@@ -81,9 +81,9 @@ void test_flow_field_create_3d_allocates_correct_size(void) {
 }
 
 void test_flow_field_create_3d_zero_dims_fails(void) {
-    TEST_ASSERT_NULL(flow_field_create_3d(0, 10, 10));
-    TEST_ASSERT_NULL(flow_field_create_3d(10, 0, 10));
-    TEST_ASSERT_NULL(flow_field_create_3d(10, 10, 0));
+    TEST_ASSERT_NULL(flow_field_create(0, 10, 10));
+    TEST_ASSERT_NULL(flow_field_create(10, 0, 10));
+    TEST_ASSERT_NULL(flow_field_create(10, 10, 0));
 }
 
 /* ============================================================================
@@ -91,7 +91,7 @@ void test_flow_field_create_3d_zero_dims_fails(void) {
  * ============================================================================ */
 
 void test_derived_fields_create_3d_stores_nz(void) {
-    derived_fields* d = derived_fields_create_3d(10, 8, 6);
+    derived_fields* d = derived_fields_create(10, 8, 6);
     TEST_ASSERT_NOT_NULL(d);
 
     TEST_ASSERT_EQUAL(10, d->nx);
@@ -102,7 +102,7 @@ void test_derived_fields_create_3d_stores_nz(void) {
 }
 
 void test_derived_fields_create_wrapper_nz1(void) {
-    derived_fields* d = derived_fields_create(10, 8);
+    derived_fields* d = derived_fields_create(10, 8, 1);
     TEST_ASSERT_NOT_NULL(d);
 
     TEST_ASSERT_EQUAL(1, d->nz);
@@ -112,7 +112,7 @@ void test_derived_fields_create_wrapper_nz1(void) {
 
 void test_velocity_magnitude_2d_unchanged(void) {
     // With w=0 (2D case), velocity magnitude should be sqrt(u^2 + v^2)
-    flow_field* f = flow_field_create(4, 4);
+    flow_field* f = flow_field_create(4, 4, 1);
     TEST_ASSERT_NOT_NULL(f);
 
     // Set u=3, v=4 everywhere => |v| = 5
@@ -122,7 +122,7 @@ void test_velocity_magnitude_2d_unchanged(void) {
         // w is already 0 from calloc
     }
 
-    derived_fields* d = derived_fields_create(4, 4);
+    derived_fields* d = derived_fields_create(4, 4, 1);
     TEST_ASSERT_NOT_NULL(d);
 
     derived_fields_compute_velocity_magnitude(d, f);
@@ -138,7 +138,7 @@ void test_velocity_magnitude_2d_unchanged(void) {
 
 void test_velocity_magnitude_3d_includes_w(void) {
     // u=1, v=2, w=2 => |v| = sqrt(1+4+4) = 3
-    flow_field* f = flow_field_create_3d(4, 4, 2);
+    flow_field* f = flow_field_create(4, 4, 2);
     TEST_ASSERT_NOT_NULL(f);
 
     size_t n = 4 * 4 * 2;
@@ -148,7 +148,7 @@ void test_velocity_magnitude_3d_includes_w(void) {
         f->w[i] = 2.0;
     }
 
-    derived_fields* d = derived_fields_create_3d(4, 4, 2);
+    derived_fields* d = derived_fields_create(4, 4, 2);
     TEST_ASSERT_NOT_NULL(d);
 
     derived_fields_compute_velocity_magnitude(d, f);
@@ -163,7 +163,7 @@ void test_velocity_magnitude_3d_includes_w(void) {
 }
 
 void test_statistics_3d_includes_w(void) {
-    flow_field* f = flow_field_create_3d(4, 4, 2);
+    flow_field* f = flow_field_create(4, 4, 2);
     TEST_ASSERT_NOT_NULL(f);
 
     size_t n = 4 * 4 * 2;
@@ -176,7 +176,7 @@ void test_statistics_3d_includes_w(void) {
         f->T[i] = 6.0;
     }
 
-    derived_fields* d = derived_fields_create_3d(4, 4, 2);
+    derived_fields* d = derived_fields_create(4, 4, 2);
     TEST_ASSERT_NOT_NULL(d);
 
     derived_fields_compute_statistics(d, f);
@@ -198,7 +198,7 @@ void test_statistics_3d_includes_w(void) {
 int main(void) {
     UNITY_BEGIN();
 
-    // flow_field_create_3d
+    // flow_field_create
     RUN_TEST(test_flow_field_create_3d_nz1);
     RUN_TEST(test_flow_field_create_wrapper_sets_nz1);
     RUN_TEST(test_flow_field_create_3d_allocates_correct_size);

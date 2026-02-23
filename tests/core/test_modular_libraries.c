@@ -72,7 +72,7 @@ void test_core_init_finalize(void) {
 
 void test_core_grid_creation(void) {
     // Grid creation is part of core
-    grid* g = grid_create(10, 10, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
     TEST_ASSERT_EQUAL(10, g->nx);
@@ -144,7 +144,7 @@ void test_scalar_solver_creation(void) {
 
 void test_scalar_flow_field(void) {
     // Flow field creation uses scalar backend
-    flow_field* field = flow_field_create(10, 10);
+    flow_field* field = flow_field_create(10, 10, 1);
     TEST_ASSERT_NOT_NULL(field);
     TEST_ASSERT_NOT_NULL(field->u);
     TEST_ASSERT_NOT_NULL(field->v);
@@ -159,9 +159,9 @@ void test_scalar_solver_step(void) {
     ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     TEST_ASSERT_NOT_NULL(solver);
 
-    grid* g = grid_create(16, 16, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(16, 16, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
-    flow_field* field = flow_field_create(16, 16);
+    flow_field* field = flow_field_create(16, 16, 1);
     ns_solver_params_t params = ns_solver_params_default();
 
     // Initialize solver
@@ -230,9 +230,9 @@ void test_simd_solver_step_conditional(void) {
     ns_solver_t* solver = cfd_solver_create_checked(registry, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED);
     TEST_ASSERT_NOT_NULL(solver);
 
-    grid* g = grid_create(16, 16, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(16, 16, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
-    flow_field* field = flow_field_create(16, 16);
+    flow_field* field = flow_field_create(16, 16, 1);
     ns_solver_params_t params = ns_solver_params_default();
 
     cfd_status_t status = solver_init(solver, g, &params);
@@ -308,9 +308,9 @@ void test_omp_solver_step_conditional(void) {
     ns_solver_t* solver = cfd_solver_create_checked(registry, NS_SOLVER_TYPE_PROJECTION_OMP);
     TEST_ASSERT_NOT_NULL(solver);
 
-    grid* g = grid_create(16, 16, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(16, 16, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
-    flow_field* field = flow_field_create(16, 16);
+    flow_field* field = flow_field_create(16, 16, 1);
     ns_solver_params_t params = ns_solver_params_default();
 
     cfd_status_t status = solver_init(solver, g, &params);
@@ -425,9 +425,9 @@ void test_unified_solver_switching(void) {
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    grid* g = grid_create(16, 16, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(16, 16, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
-    flow_field* field = flow_field_create(16, 16);
+    flow_field* field = flow_field_create(16, 16, 1);
     ns_solver_params_t params = ns_solver_params_default();
     ns_solver_stats_t stats;
 

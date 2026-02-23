@@ -52,8 +52,7 @@ typedef struct {
 } derived_fields;
 
 // Create derived fields container (all fields initially NULL, stats zeroed)
-CFD_LIBRARY_EXPORT derived_fields* derived_fields_create(size_t nx, size_t ny);
-CFD_LIBRARY_EXPORT derived_fields* derived_fields_create_3d(size_t nx, size_t ny, size_t nz);
+CFD_LIBRARY_EXPORT derived_fields* derived_fields_create(size_t nx, size_t ny, size_t nz);
 
 // Destroy derived fields and free all computed arrays
 CFD_LIBRARY_EXPORT void derived_fields_destroy(derived_fields* derived);

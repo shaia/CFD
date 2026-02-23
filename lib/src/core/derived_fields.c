@@ -24,7 +24,7 @@
 // DERIVED FIELDS LIFECYCLE
 //=============================================================================
 
-derived_fields* derived_fields_create_3d(size_t nx, size_t ny, size_t nz) {
+derived_fields* derived_fields_create(size_t nx, size_t ny, size_t nz) {
     derived_fields* derived = (derived_fields*)cfd_calloc(1, sizeof(derived_fields));
     if (derived) {
         derived->nx = nx;
@@ -33,10 +33,6 @@ derived_fields* derived_fields_create_3d(size_t nx, size_t ny, size_t nz) {
         derived->velocity_magnitude = NULL;
     }
     return derived;
-}
-
-derived_fields* derived_fields_create(size_t nx, size_t ny) {
-    return derived_fields_create_3d(nx, ny, 1);
 }
 
 void derived_fields_destroy(derived_fields* derived) {

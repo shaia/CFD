@@ -35,7 +35,7 @@ static int avx2_rk2_solver_available(ns_solver_registry_t* registry, const char*
         return 0;
     }
 
-    grid* g = grid_create(8, 8, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
     ns_solver_params_t p = ns_solver_params_default();
 
@@ -74,7 +74,7 @@ void test_avx2_rk2_creates(void) {
     printf("Solver name: %s\n", slv->name ? slv->name : "NULL");
 
     /* Try to init with a small grid to verify AVX2 availability */
-    grid* g = grid_create(8, 8, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
     ns_solver_params_t params = ns_solver_params_default();
 

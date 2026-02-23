@@ -14,12 +14,12 @@ void setUp(void) {}
 void tearDown(void) {}
 
 /* ============================================================================
- * grid_create_3d with nz=1 (2D compatibility)
+ * grid_create with nz=1 (2D compatibility)
  * ============================================================================ */
 
 void test_grid_create_3d_nz1_matches_2d(void) {
-    grid* g2d = grid_create(10, 10, 0.0, 1.0, 0.0, 1.0);
-    grid* g3d = grid_create_3d(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid* g2d = grid_create(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid* g3d = grid_create(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g2d);
     TEST_ASSERT_NOT_NULL(g3d);
 
@@ -38,7 +38,7 @@ void test_grid_create_3d_nz1_matches_2d(void) {
 }
 
 void test_grid_create_wrapper_sets_nz1(void) {
-    grid* g = grid_create(8, 8, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     TEST_ASSERT_EQUAL(1, g->nz);
@@ -53,11 +53,11 @@ void test_grid_create_wrapper_sets_nz1(void) {
 }
 
 /* ============================================================================
- * grid_create_3d with nz>1 (true 3D)
+ * grid_create with nz>1 (true 3D)
  * ============================================================================ */
 
 void test_grid_create_3d_allocates_z_arrays(void) {
-    grid* g = grid_create_3d(10, 10, 8, 0.0, 1.0, 0.0, 1.0, 0.0, 2.0);
+    grid* g = grid_create(10, 10, 8, 0.0, 1.0, 0.0, 1.0, 0.0, 2.0);
     TEST_ASSERT_NOT_NULL(g);
 
     TEST_ASSERT_EQUAL(8, g->nz);
@@ -68,7 +68,7 @@ void test_grid_create_3d_allocates_z_arrays(void) {
 }
 
 void test_grid_create_3d_precomputed_constants(void) {
-    grid* g = grid_create_3d(10, 12, 8, 0.0, 1.0, 0.0, 1.0, 0.0, 2.0);
+    grid* g = grid_create(10, 12, 8, 0.0, 1.0, 0.0, 1.0, 0.0, 2.0);
     TEST_ASSERT_NOT_NULL(g);
 
     TEST_ASSERT_EQUAL(10 * 12, g->stride_z);
@@ -81,7 +81,7 @@ void test_grid_create_3d_precomputed_constants(void) {
 }
 
 void test_grid_create_3d_uniform_z_coordinates(void) {
-    grid* g = grid_create_3d(5, 5, 11, 0.0, 1.0, 0.0, 1.0, 0.0, 2.0);
+    grid* g = grid_create(5, 5, 11, 0.0, 1.0, 0.0, 1.0, 0.0, 2.0);
     TEST_ASSERT_NOT_NULL(g);
 
     grid_initialize_uniform(g);
@@ -103,7 +103,7 @@ void test_grid_create_3d_uniform_z_coordinates(void) {
 }
 
 void test_grid_create_3d_nz1_uniform_skips_z(void) {
-    grid* g = grid_create_3d(5, 5, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid* g = grid_create(5, 5, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     grid_initialize_uniform(g);
@@ -121,7 +121,7 @@ void test_grid_create_3d_nz1_uniform_skips_z(void) {
 }
 
 void test_grid_create_3d_stretched_z(void) {
-    grid* g = grid_create_3d(5, 5, 21, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(5, 5, 21, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NOT_NULL(g);
 
     grid_initialize_stretched(g, 2.0);
@@ -150,29 +150,29 @@ void test_grid_create_3d_stretched_z(void) {
  * ============================================================================ */
 
 void test_grid_create_3d_zero_nz_fails(void) {
-    grid* g = grid_create_3d(10, 10, 0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(10, 10, 0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
     TEST_ASSERT_NULL(g);
 }
 
 void test_grid_create_3d_invalid_z_bounds_fails(void) {
     // nz > 1 but zmax <= zmin
-    grid* g = grid_create_3d(10, 10, 5, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0);
+    grid* g = grid_create(10, 10, 5, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0);
     TEST_ASSERT_NULL(g);
 
-    g = grid_create_3d(10, 10, 5, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0);
+    g = grid_create(10, 10, 5, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0);
     TEST_ASSERT_NULL(g);
 }
 
 void test_grid_create_3d_nz1_zero_zbounds_ok(void) {
     // nz=1 with zmin=zmax=0 should succeed (2D mode)
-    grid* g = grid_create_3d(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid* g = grid_create(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_destroy(g);
 }
 
 void test_grid_destroy_handles_null_z(void) {
     // nz=1 grid has z=NULL, dz=NULL — destroy should not crash
-    grid* g = grid_create(5, 5, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(5, 5, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_destroy(g);  // Should not crash
 }

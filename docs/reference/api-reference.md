@@ -88,14 +88,16 @@ if (status != CFD_SUCCESS) {
 #include "cfd/api/simulation_api.h"
 
 // Create simulation
-simulation_data* init_simulation(size_t nx, size_t ny,
-                                 double xmin, double xmax,
-                                 double ymin, double ymax);
+simulation_data* init_simulation(size_t nx, size_t ny, size_t nz,
+                                  double xmin, double xmax,
+                                  double ymin, double ymax,
+                                  double zmin, double zmax);
 
-simulation_data* init_simulation_with_solver(size_t nx, size_t ny,
-                                             double xmin, double xmax,
-                                             double ymin, double ymax,
-                                             const char* solver_type);
+simulation_data* init_simulation_with_solver(size_t nx, size_t ny, size_t nz,
+                                              double xmin, double xmax,
+                                              double ymin, double ymax,
+                                              double zmin, double zmax,
+                                              const char* solver_type);
 
 // Simulate (dt is in sim_data->params.dt)
 cfd_status_t run_simulation_step(simulation_data* sim_data);
@@ -116,7 +118,7 @@ void free_simulation(simulation_data* sim_data);
 **Example:**
 ```c
 // Create 100x50 simulation
-simulation_data* sim = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
+simulation_data* sim = init_simulation(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
 if (!sim) {
     fprintf(stderr, "Failed to create simulation\n");
     return 1;
@@ -330,7 +332,7 @@ typedef struct {
 #include "cfd/core/flow_field.h"
 
 // Create flow field
-flow_field* flow_field_create(size_t nx, size_t ny);
+flow_field* flow_field_create(size_t nx, size_t ny, size_t nz);
 
 // Initialize with values
 void flow_field_set_uniform(flow_field* field, double u_val, double v_val, double p_val);

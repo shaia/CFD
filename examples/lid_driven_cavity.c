@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
 
     /* Create simulation with projection method */
     simulation_data* sim = init_simulation_with_solver(
-        nx, ny, 0.0, L, 0.0, L, NS_SOLVER_TYPE_PROJECTION);
+        nx, ny, 1, 0.0, L, 0.0, L, 0.0, 0.0, NS_SOLVER_TYPE_PROJECTION);
     if (!sim) {
         fprintf(stderr, "Failed to create simulation\n");
         return 1;

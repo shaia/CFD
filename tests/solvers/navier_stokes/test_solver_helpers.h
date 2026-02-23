@@ -393,8 +393,8 @@ static inline test_result test_run_stability(
     ns_solver_registry_t* registry = NULL;
     ns_solver_t* slv = NULL;
 
-    g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    field = flow_field_create(nx, ny);
+    g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    field = flow_field_create(nx, ny, 1);
     if (!g || !field) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Failed to create grid/field");
@@ -489,8 +489,8 @@ static inline test_result test_run_energy_decay(
     ns_solver_registry_t* registry = NULL;
     ns_solver_t* slv = NULL;
 
-    g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    field = flow_field_create(nx, ny);
+    g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    field = flow_field_create(nx, ny, 1);
     if (!g || !field) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Failed to create grid/field");
@@ -603,10 +603,10 @@ static inline test_result test_run_consistency(
     ns_solver_t* slv_a = NULL;
     ns_solver_t* slv_b = NULL;
 
-    g_a = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    g_b = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    field_a = flow_field_create(nx, ny);
-    field_b = flow_field_create(nx, ny);
+    g_a = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    g_b = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    field_a = flow_field_create(nx, ny, 1);
+    field_b = flow_field_create(nx, ny, 1);
     if (!g_a || !g_b || !field_a || !field_b) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Failed to create grids/fields");
@@ -728,8 +728,8 @@ static inline test_result test_run_divergence_free(
     ns_solver_registry_t* registry = NULL;
     ns_solver_t* slv = NULL;
 
-    g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    field = flow_field_create(nx, ny);
+    g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    field = flow_field_create(nx, ny, 1);
     if (!g || !field) {
         result.passed = 0;
         snprintf(result.message, sizeof(result.message), "Failed to create grid/field");

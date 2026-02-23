@@ -13,7 +13,7 @@ void tearDown(void) {}
  * ============================================================================ */
 
 void test_grid_creation(void) {
-    grid* g = grid_create(32, 32, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(32, 32, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     TEST_ASSERT_EQUAL_size_t(32, g->nx);
     TEST_ASSERT_EQUAL_size_t(32, g->ny);
@@ -21,7 +21,7 @@ void test_grid_creation(void) {
 }
 
 void test_flow_field_creation(void) {
-    flow_field* field = flow_field_create(32, 32);
+    flow_field* field = flow_field_create(32, 32, 1);
     TEST_ASSERT_NOT_NULL(field);
     TEST_ASSERT_NOT_NULL(field->u);
     TEST_ASSERT_NOT_NULL(field->v);
@@ -106,8 +106,8 @@ void test_bc_various_velocities(void) {
 
 void test_rectangular_domain(void) {
     /* 2:1 aspect ratio */
-    grid* g = grid_create(32, 16, 0.0, 2.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(32, 16);
+    grid* g = grid_create(32, 16, 1, 0.0, 2.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(32, 16, 1);
     TEST_ASSERT_NOT_NULL(g);
     TEST_ASSERT_NOT_NULL(field);
 

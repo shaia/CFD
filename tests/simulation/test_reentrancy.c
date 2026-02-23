@@ -27,8 +27,8 @@ static int file_exists(const char* filename) {
 
 void test_multiple_simulations_independent_outputs(void) {
     // Create two independent simulations
-    simulation_data* sim1 = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
-    simulation_data* sim2 = init_simulation(20, 20, 0.0, 2.0, 0.0, 2.0);
+    simulation_data* sim1 = init_simulation(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    simulation_data* sim2 = init_simulation(20, 20, 1, 0.0, 2.0, 0.0, 2.0, 0.0, 0.0);
 
     TEST_ASSERT_NOT_NULL(sim1);
     TEST_ASSERT_NOT_NULL(sim2);

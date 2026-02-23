@@ -157,10 +157,10 @@ static inline tg_context_t* tg_context_create(size_t nx, size_t ny, double nu) {
     ctx->ny = ny;
     ctx->nu = nu;
 
-    ctx->g = grid_create(nx, ny,
+    ctx->g = grid_create(nx, ny, 1,
                          TG_DOMAIN_XMIN, TG_DOMAIN_XMAX,
-                         TG_DOMAIN_YMIN, TG_DOMAIN_YMAX);
-    ctx->field = flow_field_create(nx, ny);
+                         TG_DOMAIN_YMIN, TG_DOMAIN_YMAX, 0.0, 0.0);
+    ctx->field = flow_field_create(nx, ny, 1);
 
     if (!ctx->g || !ctx->field) {
         if (ctx->g) grid_destroy(ctx->g);

@@ -37,27 +37,17 @@ typedef struct {
 //=============================================================================
 
 // Initialize simulation with default solver
-CFD_LIBRARY_EXPORT simulation_data* init_simulation(size_t nx, size_t ny, double xmin, double xmax,
-                                                    double ymin, double ymax);
+CFD_LIBRARY_EXPORT simulation_data* init_simulation(size_t nx, size_t ny, size_t nz,
+                                                     double xmin, double xmax,
+                                                     double ymin, double ymax,
+                                                     double zmin, double zmax);
 
 // Initialize simulation with specific solver type
-CFD_LIBRARY_EXPORT simulation_data* init_simulation_with_solver(size_t nx, size_t ny, double xmin,
-                                                                double xmax, double ymin,
-                                                                double ymax,
-                                                                const char* solver_type);
-
-// Initialize 3D simulation with default solver
-CFD_LIBRARY_EXPORT simulation_data* init_simulation_3d(size_t nx, size_t ny, size_t nz,
-                                                        double xmin, double xmax,
-                                                        double ymin, double ymax,
-                                                        double zmin, double zmax);
-
-// Initialize 3D simulation with specific solver type
-CFD_LIBRARY_EXPORT simulation_data* init_simulation_3d_with_solver(size_t nx, size_t ny, size_t nz,
-                                                                    double xmin, double xmax,
-                                                                    double ymin, double ymax,
-                                                                    double zmin, double zmax,
-                                                                    const char* solver_type);
+CFD_LIBRARY_EXPORT simulation_data* init_simulation_with_solver(size_t nx, size_t ny, size_t nz,
+                                                                 double xmin, double xmax,
+                                                                 double ymin, double ymax,
+                                                                 double zmin, double zmax,
+                                                                 const char* solver_type);
 
 // Free all simulation resources
 CFD_LIBRARY_EXPORT void free_simulation(simulation_data* sim_data);

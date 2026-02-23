@@ -54,7 +54,7 @@ void test_initializes_correctly(void) {
     printf("\n=== Test: Explicit Euler Initializes Correctly ===\n");
 
     size_t nx = 16, ny = 16;
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
@@ -160,8 +160,8 @@ void test_taylor_green_decay_rate(void) {
     double nu = 0.01;
     double k = 2.0 * M_PI / L;
 
-    grid* g = grid_create(nx, ny, 0.0, L, 0.0, L);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* g = grid_create(nx, ny, 1, 0.0, L, 0.0, L, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(g);
     TEST_ASSERT_NOT_NULL(field);
 
@@ -242,8 +242,8 @@ void test_spatial_convergence(void) {
     for (int g_idx = 0; g_idx < num_grids; g_idx++) {
         size_t n = grid_sizes[g_idx];
 
-        grid* g = grid_create(n, n, 0.0, L, 0.0, L);
-        flow_field* field = flow_field_create(n, n);
+        grid* g = grid_create(n, n, 1, 0.0, L, 0.0, L, 0.0, 0.0);
+        flow_field* field = flow_field_create(n, n, 1);
         double* analytical_u = (double*)cfd_calloc(n * n, sizeof(double));
 
         grid_initialize_uniform(g);
@@ -327,8 +327,8 @@ void test_cfl_stability(void) {
     size_t nx = 32, ny = 32;
     double cfl_safe = 0.2;
 
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
     grid_initialize_uniform(g);
 
     double dx = g->dx[0];
@@ -416,8 +416,8 @@ void test_zero_velocity(void) {
     printf("\n=== Test: Zero Velocity Field ===\n");
 
     size_t nx = 16, ny = 16;
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
     grid_initialize_uniform(g);
 
     // Set zero velocity

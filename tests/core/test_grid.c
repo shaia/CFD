@@ -26,7 +26,7 @@ void tearDown(void) {
  * ============================================================================ */
 
 void test_uniform_grid_spans_full_domain(void) {
-    grid* g = grid_create(11, 11, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(11, 11, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     grid_initialize_uniform(g);
@@ -43,7 +43,7 @@ void test_uniform_grid_spans_full_domain(void) {
 }
 
 void test_uniform_grid_equal_spacing(void) {
-    grid* g = grid_create(5, 5, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(5, 5, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     grid_initialize_uniform(g);
@@ -63,7 +63,7 @@ void test_uniform_grid_equal_spacing(void) {
 }
 
 void test_uniform_grid_non_unit_domain(void) {
-    grid* g = grid_create(5, 5, -2.0, 3.0, 1.0, 6.0);
+    grid* g = grid_create(5, 5, 1, -2.0, 3.0, 1.0, 6.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     grid_initialize_uniform(g);
@@ -88,7 +88,7 @@ void test_uniform_grid_non_unit_domain(void) {
  * ============================================================================ */
 
 void test_stretched_grid_spans_full_domain(void) {
-    grid* g = grid_create(21, 21, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(21, 21, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     double beta = 2.0;  // Moderate stretching
@@ -111,7 +111,7 @@ void test_stretched_grid_spans_full_domain(void) {
 }
 
 void test_stretched_grid_clusters_near_boundaries(void) {
-    grid* g = grid_create(21, 21, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(21, 21, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     double beta = 2.0;
@@ -136,8 +136,8 @@ void test_stretched_grid_clusters_near_boundaries(void) {
 }
 
 void test_stretched_grid_higher_beta_more_clustering(void) {
-    grid* g1 = grid_create(21, 21, 0.0, 1.0, 0.0, 1.0);
-    grid* g2 = grid_create(21, 21, 0.0, 1.0, 0.0, 1.0);
+    grid* g1 = grid_create(21, 21, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid* g2 = grid_create(21, 21, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g1);
     TEST_ASSERT_NOT_NULL(g2);
 
@@ -158,8 +158,8 @@ void test_stretched_grid_higher_beta_more_clustering(void) {
 }
 
 void test_stretched_grid_beta_zero_equals_uniform(void) {
-    grid* g_stretched = grid_create(11, 11, 0.0, 1.0, 0.0, 1.0);
-    grid* g_uniform = grid_create(11, 11, 0.0, 1.0, 0.0, 1.0);
+    grid* g_stretched = grid_create(11, 11, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid* g_uniform = grid_create(11, 11, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g_stretched);
     TEST_ASSERT_NOT_NULL(g_uniform);
 
@@ -179,7 +179,7 @@ void test_stretched_grid_beta_zero_equals_uniform(void) {
 }
 
 void test_stretched_grid_non_unit_domain(void) {
-    grid* g = grid_create(21, 21, -1.0, 2.0, 0.5, 1.5);
+    grid* g = grid_create(21, 21, 1, -1.0, 2.0, 0.5, 1.5, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     double beta = 2.0;
@@ -202,7 +202,7 @@ void test_stretched_grid_non_unit_domain(void) {
 }
 
 void test_stretched_grid_monotonically_increasing(void) {
-    grid* g = grid_create(21, 21, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(21, 21, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     double beta = 2.5;
@@ -232,7 +232,7 @@ void test_stretched_grid_monotonically_increasing(void) {
 }
 
 void test_stretched_grid_y_direction_clustering(void) {
-    grid* g = grid_create(21, 21, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(21, 21, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     double beta = 2.0;
@@ -255,7 +255,7 @@ void test_stretched_grid_y_direction_clustering(void) {
 
 void test_stretched_grid_minimum_size(void) {
     // Test with minimum usable grid size (3x3)
-    grid* g = grid_create(3, 3, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(3, 3, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     double beta = 2.0;
@@ -274,8 +274,8 @@ void test_stretched_grid_minimum_size(void) {
 }
 
 void test_stretched_grid_negative_beta(void) {
-    grid* g_pos = grid_create(21, 21, 0.0, 1.0, 0.0, 1.0);
-    grid* g_neg = grid_create(21, 21, 0.0, 1.0, 0.0, 1.0);
+    grid* g_pos = grid_create(21, 21, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid* g_neg = grid_create(21, 21, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g_pos);
     TEST_ASSERT_NOT_NULL(g_neg);
 
@@ -295,7 +295,7 @@ void test_stretched_grid_negative_beta(void) {
 }
 
 void test_stretched_grid_large_beta(void) {
-    grid* g = grid_create(21, 21, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(21, 21, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     // Very large beta should still work (extreme clustering)
@@ -320,7 +320,7 @@ void test_stretched_grid_large_beta(void) {
 }
 
 void test_stretched_grid_dx_consistency(void) {
-    grid* g = grid_create(21, 21, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(21, 21, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
 
     double beta = 2.0;
@@ -346,24 +346,24 @@ void test_stretched_grid_dx_consistency(void) {
  * ============================================================================ */
 
 void test_grid_create_zero_dimensions_fails(void) {
-    grid* g = grid_create(0, 10, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(0, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(g);
 
-    g = grid_create(10, 0, 0.0, 1.0, 0.0, 1.0);
+    g = grid_create(10, 0, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(g);
 }
 
 void test_grid_create_invalid_bounds_fails(void) {
     // xmax <= xmin
-    grid* g = grid_create(10, 10, 1.0, 0.0, 0.0, 1.0);
+    grid* g = grid_create(10, 10, 1, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(g);
 
     // ymax <= ymin
-    g = grid_create(10, 10, 0.0, 1.0, 1.0, 0.0);
+    g = grid_create(10, 10, 1, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0);
     TEST_ASSERT_NULL(g);
 
     // Equal bounds
-    g = grid_create(10, 10, 0.0, 0.0, 0.0, 1.0);
+    g = grid_create(10, 10, 1, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(g);
 }
 

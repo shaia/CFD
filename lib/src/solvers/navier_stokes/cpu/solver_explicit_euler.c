@@ -64,7 +64,7 @@ ns_solver_params_t ns_solver_params_default(void) {
                             .pressure_coupling = DEFAULT_PRESSURE_COUPLING};
     return params;
 }
-flow_field* flow_field_create_3d(size_t nx, size_t ny, size_t nz) {
+flow_field* flow_field_create(size_t nx, size_t ny, size_t nz) {
     if (nx == 0 || ny == 0 || nz == 0) {
         cfd_set_error(CFD_ERROR_INVALID, "Flow field dimensions must be positive");
         return NULL;
@@ -95,10 +95,6 @@ flow_field* flow_field_create_3d(size_t nx, size_t ny, size_t nz) {
     }
 
     return field;
-}
-
-flow_field* flow_field_create(size_t nx, size_t ny) {
-    return flow_field_create_3d(nx, ny, 1);
 }
 
 void flow_field_destroy(flow_field* field) {

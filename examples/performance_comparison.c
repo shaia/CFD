@@ -31,8 +31,8 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
     }
 
     // Create grid and flow field
-    grid* grid = grid_create(nx, ny, 0.0, 1.0, 0.0, 0.5);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* grid = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
     initialize_flow_field(field, grid);
 
     // Initialize solver parameters

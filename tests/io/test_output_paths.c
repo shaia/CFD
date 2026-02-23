@@ -87,10 +87,10 @@ void test_vtk_output_paths(void) {
     size_t nx = 5, ny = 5;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     grid_initialize_uniform(grid);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     initialize_flow_field(field, grid);
 
     // Ensure output directory exists
@@ -149,10 +149,10 @@ void test_solver_output_paths(void) {
     size_t nx = 8, ny = 6;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     grid_initialize_uniform(grid);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     initialize_flow_field(field, grid);
 
     ns_solver_params_t params = ns_solver_params_default();
@@ -237,10 +237,10 @@ void test_no_scattered_output(void) {
     size_t nx = 5, ny = 5;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     grid_initialize_uniform(grid);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     initialize_flow_field(field, grid);
 
     ns_solver_params_t params = {.dt = 0.001,

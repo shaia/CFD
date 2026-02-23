@@ -70,14 +70,14 @@ int main(int argc, char* argv[]) {
     printf("Solver:     projection\n\n");
 
     /* Create grid and flow field */
-    grid* g = grid_create(nx, ny, 0.0, L, 0.0, L);
+    grid* g = grid_create(nx, ny, 1, 0.0, L, 0.0, L, 0.0, 0.0);
     if (!g) {
         fprintf(stderr, "Failed to allocate grid\n");
         return 1;
     }
     grid_initialize_uniform(g);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     if (!field) {
         fprintf(stderr, "Failed to allocate flow field\n");
         grid_destroy(g);

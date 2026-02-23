@@ -145,14 +145,14 @@ static double mms_run_simulation(const char* solver_type,
                                   double nu, double alpha,
                                   double dt, int max_steps) {
     /* Create grid on [0, 2π] with periodic BCs (same as Taylor-Green) */
-    grid* g = grid_create(nx, ny,
+    grid* g = grid_create(nx, ny, 1,
                           TG_DOMAIN_XMIN, TG_DOMAIN_XMAX,
-                          TG_DOMAIN_YMIN, TG_DOMAIN_YMAX);
+                          TG_DOMAIN_YMIN, TG_DOMAIN_YMAX, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
     /* Create field and initialize with exact solution at t=0 */
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(field);
     mms_init_field(field, g, nu, alpha);
 
@@ -238,11 +238,11 @@ void test_mms_source_callback(void) {
         NS_SOLVER_TYPE_EXPLICIT_EULER, n, n, nu, alpha, dt, steps);
 
     /* Run without source (should drift from manufactured solution) */
-    grid* g = grid_create(n, n,
+    grid* g = grid_create(n, n, 1,
                           TG_DOMAIN_XMIN, TG_DOMAIN_XMAX,
-                          TG_DOMAIN_YMIN, TG_DOMAIN_YMAX);
+                          TG_DOMAIN_YMIN, TG_DOMAIN_YMAX, 0.0, 0.0);
     grid_initialize_uniform(g);
-    flow_field* field = flow_field_create(n, n);
+    flow_field* field = flow_field_create(n, n, 1);
     mms_init_field(field, g, nu, alpha);
 
     ns_solver_registry_t* registry = cfd_registry_create();

@@ -71,7 +71,7 @@ int main(void) {
     }
 
     // Create simulation (100x50 grid, domain [0,1] x [0,0.5])
-    simulation_data* sim = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
+    simulation_data* sim = init_simulation(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
     if (!sim) {
         fprintf(stderr, "Failed to create simulation\n");
         return 1;

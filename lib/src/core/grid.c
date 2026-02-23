@@ -6,10 +6,10 @@
 #include <math.h>
 #include <stddef.h>
 
-grid* grid_create_3d(size_t nx, size_t ny, size_t nz,
-                     double xmin, double xmax,
-                     double ymin, double ymax,
-                     double zmin, double zmax) {
+grid* grid_create(size_t nx, size_t ny, size_t nz,
+                   double xmin, double xmax,
+                   double ymin, double ymax,
+                   double zmin, double zmax) {
     if (nx == 0 || ny == 0 || nz == 0) {
         cfd_set_error(CFD_ERROR_INVALID, "grid dimensions must be positive");
         return NULL;
@@ -75,10 +75,6 @@ grid* grid_create_3d(size_t nx, size_t ny, size_t nz,
     }
 
     return new_grid;
-}
-
-grid* grid_create(size_t nx, size_t ny, double xmin, double xmax, double ymin, double ymax) {
-    return grid_create_3d(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
 }
 
 void grid_destroy(grid* grid) {

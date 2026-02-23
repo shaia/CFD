@@ -622,11 +622,11 @@ cfd_status_t cfd_init(void);
 // Safe for concurrent applications:
 // Thread 1:
 cfd_init();
-simulation_data* sim1 = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
+simulation_data* sim1 = init_simulation(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
 
 // Thread 2:
 cfd_init();  // Safe - only initializes once
-simulation_data* sim2 = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
+simulation_data* sim2 = init_simulation(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
 ```
 
 ### Error Reporting

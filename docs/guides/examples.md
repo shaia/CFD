@@ -47,7 +47,7 @@ int main(void) {
     cfd_status_t status = cfd_init();
 
     // Create 100x50 grid from [0,1] x [0,0.5]
-    simulation_data* sim = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
+    simulation_data* sim = init_simulation(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
     if (!sim) {
         fprintf(stderr, "Failed to create simulation\n");
         return 1;
@@ -115,7 +115,7 @@ cd build/Release
 ```c
 // Setup phase
 simulation_data* setup_simulation(void) {
-    simulation_data* sim = init_simulation(200, 100, 0.0, 2.0, 0.0, 1.0);
+    simulation_data* sim = init_simulation(200, 100, 1, 0.0, 2.0, 0.0, 1.0, 0.0, 0.0);
     if (!sim) {
         fprintf(stderr, "Failed to create simulation\n");
         return NULL;
@@ -575,7 +575,7 @@ grid_t* grid = NULL;
 flow_field* field = NULL;
 
 // Setup...
-sim = init_simulation(100, 50, 0.0, 1.0, 0.0, 0.5);
+sim = init_simulation(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
 if (!sim) goto cleanup;
 
 grid = grid_create_uniform(...);

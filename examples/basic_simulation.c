@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
 
 
     // Initialize simulation
-    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
 
     // Configure output directory (optional)
     simulation_set_output_dir(sim_data, "../../artifacts");
