@@ -37,7 +37,7 @@ static simulation_data* create_simulation_with_solver(size_t nx, size_t ny, size
         cfd_set_error(CFD_ERROR_INVALID, "Simulation grid dimensions must be positive");
         return NULL;
     }
-    if (xmax <= xmin || ymax <= ymin) {
+    if (xmax <= xmin || ymax <= ymin || (nz > 1 && zmax <= zmin)) {
         cfd_set_error(CFD_ERROR_INVALID, "Simulation bounds invalid");
         return NULL;
     }

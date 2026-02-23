@@ -156,6 +156,7 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
     }
 
     // Find maximum wave speed
+    int has_w = (grid->nz > 1 && field->w);
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
             size_t idx = IDX_2D(i, j, field->nx);
@@ -165,6 +166,10 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
 
             // Optimized velocity magnitude calculation - avoid sqrt when possible
             double vel_mag_sq = (u_speed * u_speed) + (v_speed * v_speed);
+            if (has_w) {
+                double w_speed = fabs(field->w[idx]);
+                vel_mag_sq += w_speed * w_speed;
+            }
             double vel_mag = (vel_mag_sq > VELOCITY_EPSILON) ? sqrt(vel_mag_sq) : 0.0;
             double local_speed = vel_mag + sound_speed;
             max_speed = max_double(max_speed, local_speed);
