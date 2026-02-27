@@ -130,8 +130,8 @@ static void rk2_rhs_point(
     d2v_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
     d2v_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
 
-    double source_u = 0.0, source_v = 0.0;
-    compute_source_terms(g->x[i], g->y[j], iter, dt, params, &source_u, &source_v);
+    double source_u = 0.0, source_v = 0.0, source_w = 0.0;
+    compute_source_terms(g->x[i], g->y[j], 0.0, iter, dt, params, &source_u, &source_v, &source_w);
 
     rhs_u[idx] = -u[idx] * du_dx - v[idx] * du_dy
                  - dp_dx / rho[idx]
@@ -292,10 +292,12 @@ static void compute_rhs_row(
             /* Source terms: computed scalar per lane and packed */
             double src_u_arr[4] = {0.0, 0.0, 0.0, 0.0};
             double src_v_arr[4] = {0.0, 0.0, 0.0, 0.0};
+            double src_w_arr[4] = {0.0, 0.0, 0.0, 0.0};
             for (int lane = 0; lane < 4; lane++) {
                 compute_source_terms(g->x[(size_t)i + (size_t)lane], g->y[j],
-                                     iter, dt, params,
-                                     &src_u_arr[lane], &src_v_arr[lane]);
+                                     0.0, iter, dt, params,
+                                     &src_u_arr[lane], &src_v_arr[lane],
+                                     &src_w_arr[lane]);
             }
             __m256d src_u_v = _mm256_loadu_pd(src_u_arr);
             __m256d src_v_v = _mm256_loadu_pd(src_v_arr);

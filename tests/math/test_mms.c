@@ -77,14 +77,16 @@ static void mms_exact_solution(double x, double y, double t,
  * MMS source term callback
  * For modified TG with decay α: source = (2ν - α) · u_exact
  */
-static void mms_source_func(double x, double y, double t, void* context,
-                             double* source_u, double* source_v) {
+static void mms_source_func(double x, double y, double z, double t, void* context,
+                             double* source_u, double* source_v, double* source_w) {
+    (void)z;
     mms_context_t* mms = (mms_context_t*)context;
     double coeff = (2.0 * mms->nu) - mms->alpha;
     double decay = exp(-mms->alpha * t);
 
     *source_u =  coeff * cos(x) * sin(y) * decay;
     *source_v = -coeff * sin(x) * cos(y) * decay;
+    *source_w = 0.0;
 }
 
 /**

@@ -217,10 +217,12 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
             // Source terms (for maintaining flow)
             double source_u = 0.0;
             double source_v = 0.0;
+            double source_w = 0.0;
             if (params->source_func) {
                 double x = grid->x[i];
                 double y = grid->y[j];
-                params->source_func(x, y, 0.0, params->source_context, &source_u, &source_v);
+                params->source_func(x, y, 0.0, 0.0, params->source_context,
+                                    &source_u, &source_v, &source_w);
             } else if (params->source_amplitude_u > 0) {
                 double x = grid->x[i];
                 double y = grid->y[j];

@@ -435,6 +435,22 @@ CFD_LIBRARY_EXPORT int poisson_solve(
     poisson_solver_type solver_type);
 
 /**
+ * Convenience Poisson solver with 3D support
+ *
+ * Same caching behavior as poisson_solve(), but accepts nz/dz for 3D grids.
+ * When nz=1 and dz=0.0, behavior is identical to poisson_solve().
+ *
+ * @param nz    Number of grid points in z (1 for 2D)
+ * @param dz    Grid spacing in z (0.0 for 2D)
+ * @return Number of iterations on success, -1 on failure
+ */
+CFD_LIBRARY_EXPORT int poisson_solve_3d(
+    double* p, double* p_temp, const double* rhs,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
+    poisson_solver_type solver_type);
+
+/**
  * Direct solver functions
  *
  * These provide direct access to specific solver implementations.

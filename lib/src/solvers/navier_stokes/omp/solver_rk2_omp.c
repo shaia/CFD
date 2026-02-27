@@ -117,9 +117,9 @@ static void compute_rhs_omp(const double* u, const double* v, const double* p,
                            fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
 
             /* Source terms */
-            double source_u = 0.0, source_v = 0.0;
-            compute_source_terms(grid->x[i], grid->y[j], iter, dt,
-                                 params, &source_u, &source_v);
+            double source_u = 0.0, source_v = 0.0, source_w = 0.0;
+            compute_source_terms(grid->x[i], grid->y[j], 0.0, iter, dt,
+                                 params, &source_u, &source_v, &source_w);
 
             /* RHS for u-momentum */
             rhs_u[idx] = -u[idx] * du_dx - v[idx] * du_dy
