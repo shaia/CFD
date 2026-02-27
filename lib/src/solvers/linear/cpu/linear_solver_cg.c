@@ -26,7 +26,6 @@
 
 #include "../linear_solver_internal.h"
 
-#include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
@@ -41,7 +40,12 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
-    double diag_inv;   /* Jacobi preconditioner: 1/(2/dx2 + 2/dy2) */
+    double inv_dz2;    /* 1/dz^2 (0 for 2D) */
+    double diag_inv;   /* Jacobi preconditioner: 1/(2/dx2 + 2/dy2 + 2*inv_dz2) */
+
+    size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
+    size_t k_start;    /* first interior k index */
+    size_t k_end;      /* one-past-last interior k index */
 
     /* CG working vectors (allocated during init) */
     double* r;         /* Residual vector */
@@ -61,12 +65,15 @@ typedef struct {
  * Compute dot product of two vectors (interior points only)
  */
 static double dot_product(const double* a, const double* b,
-                          size_t nx, size_t ny) {
+                          size_t nx, size_t ny,
+                          size_t k_start, size_t k_end, size_t stride_z) {
     double sum = 0.0;
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            sum += a[idx] * b[idx];
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                sum += a[idx] * b[idx];
+            }
         }
     }
     return sum;
@@ -76,11 +83,14 @@ static double dot_product(const double* a, const double* b,
  * Compute y = y + alpha * x (interior points only)
  */
 static void axpy(double alpha, const double* x, double* y,
-                 size_t nx, size_t ny) {
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            y[idx] += alpha * x[idx];
+                 size_t nx, size_t ny,
+                 size_t k_start, size_t k_end, size_t stride_z) {
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                y[idx] += alpha * x[idx];
+            }
         }
     }
 }
@@ -92,18 +102,22 @@ static void axpy(double alpha, const double* x, double* y,
  */
 static void apply_laplacian(const double* p, double* Ap,
                             size_t nx, size_t ny,
-                            double dx2, double dy2) {
+                            double dx2, double dy2, double inv_dz2,
+                            size_t k_start, size_t k_end, size_t stride_z) {
     double dx2_inv = 1.0 / dx2;
     double dy2_inv = 1.0 / dy2;
 
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
 
-            /* -Laplacian = -(d^2p/dx^2 + d^2p/dy^2) */
-            double laplacian = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv
-                             + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv;
-            Ap[idx] = -laplacian;
+                double laplacian =
+                    ((p[idx + 1] - (2.0 * p[idx]) + p[idx - 1]) * dx2_inv)
+                  + ((p[idx + (nx)] - (2.0 * p[idx]) + p[idx - (nx)]) * dy2_inv)
+                  + ((p[idx + (stride_z)] + p[idx - (stride_z)] - (2.0 * p[idx])) * inv_dz2);
+                Ap[idx] = -laplacian;
+            }
         }
     }
 }
@@ -119,21 +133,26 @@ static void apply_laplacian(const double* p, double* Ap,
  */
 static void compute_residual(const double* x, const double* rhs, double* r,
                              size_t nx, size_t ny,
-                             double dx2, double dy2) {
+                             double dx2, double dy2, double inv_dz2,
+                             size_t k_start, size_t k_end, size_t stride_z) {
     double dx2_inv = 1.0 / dx2;
     double dy2_inv = 1.0 / dy2;
 
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
 
-            /* Laplacian(x) = d^2x/dx^2 + d^2x/dy^2 */
-            double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv
-                             + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv;
+                /* Laplacian(x) = d^2x/dx^2 + d^2x/dy^2 */
+                double laplacian =
+                    ((x[idx + 1] - (2.0 * x[idx]) + x[idx - 1]) * dx2_inv)
+                  + ((x[idx + (nx)] - (2.0 * x[idx]) + x[idx - (nx)]) * dy2_inv)
+                  + ((x[idx + (stride_z)] + x[idx - (stride_z)] - (2.0 * x[idx])) * inv_dz2);
 
-            /* r = -rhs + laplacian = -(rhs - laplacian)
-             * This is b - Ax where A = -nabla^2 and b = -rhs */
-            r[idx] = -rhs[idx] + laplacian;
+                /* r = -rhs + laplacian = -(rhs - laplacian)
+                 * This is b - Ax where A = -nabla^2 and b = -rhs */
+                r[idx] = -rhs[idx] + laplacian;
+            }
         }
     }
 }
@@ -142,27 +161,33 @@ static void compute_residual(const double* x, const double* rhs, double* r,
  * Copy vector p = r (interior points only)
  */
 static void copy_vector(const double* src, double* dst,
-                        size_t nx, size_t ny) {
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            dst[idx] = src[idx];
+                        size_t nx, size_t ny,
+                        size_t k_start, size_t k_end, size_t stride_z) {
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                dst[idx] = src[idx];
+            }
         }
     }
 }
 
 /**
  * Apply Jacobi preconditioner: z = M^{-1} * r
- * For the negative Laplacian -nabla^2, the diagonal is (2/dx^2 + 2/dy^2),
- * so M^{-1} = 1/(2/dx^2 + 2/dy^2) = diag_inv.
+ * For the negative Laplacian -nabla^2, the diagonal is (2/dx^2 + 2/dy^2 + 2*inv_dz2),
+ * so M^{-1} = 1/(2/dx^2 + 2/dy^2 + 2*inv_dz2) = diag_inv.
  */
 static void apply_jacobi_precond(const double* r, double* z,
                                   size_t nx, size_t ny,
-                                  double diag_inv) {
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            z[idx] = diag_inv * r[idx];
+                                  double diag_inv,
+                                  size_t k_start, size_t k_end, size_t stride_z) {
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                z[idx] = diag_inv * r[idx];
+            }
         }
     }
 }
@@ -177,7 +202,6 @@ static cfd_status_t cg_scalar_init(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)nz; (void)dz;
     cg_context_t* ctx = (cg_context_t*)cfd_calloc(1, sizeof(cg_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
@@ -185,15 +209,17 @@ static cfd_status_t cg_scalar_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
+    ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
+    poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
     /* Compute Jacobi preconditioner diagonal inverse */
-    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2);
+    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
 
     /* Check if preconditioner is enabled */
     ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
 
     /* Allocate working vectors */
-    size_t n = nx * ny;
+    size_t n = nx * ny * nz;
     ctx->r = (double*)cfd_calloc(n, sizeof(double));
     ctx->p = (double*)cfd_calloc(n, sizeof(double));
     ctx->Ap = (double*)cfd_calloc(n, sizeof(double));
@@ -275,6 +301,10 @@ static cfd_status_t cg_scalar_solve(
     size_t ny = solver->ny;
     double dx2 = ctx->dx2;
     double dy2 = ctx->dy2;
+    size_t stride_z = ctx->stride_z;
+    size_t k_start = ctx->k_start;
+    size_t k_end = ctx->k_end;
+    double inv_dz2 = ctx->inv_dz2;
 
     double* r = ctx->r;
     double* z = ctx->z;
@@ -287,28 +317,28 @@ static cfd_status_t cg_scalar_solve(
     double start_time = poisson_solver_get_time_ms();
 
     /* Apply initial boundary conditions */
-    bc_apply_scalar(x, nx, ny, BC_TYPE_NEUMANN);
+    poisson_solver_apply_bc(solver, x);
 
     /* Compute initial residual: r_0 = b - A*x_0 */
-    compute_residual(x, rhs, r, nx, ny, dx2, dy2);
+    compute_residual(x, rhs, r, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
     /* Initialize search direction and rho */
     double rho;
     if (use_precond) {
         /* z_0 = M^{-1} r_0 */
-        apply_jacobi_precond(r, z, nx, ny, diag_inv);
+        apply_jacobi_precond(r, z, nx, ny, diag_inv, k_start, k_end, stride_z);
         /* p_0 = z_0 */
-        copy_vector(z, p, nx, ny);
+        copy_vector(z, p, nx, ny, k_start, k_end, stride_z);
         /* rho_0 = (r_0, z_0) */
-        rho = dot_product(r, z, nx, ny);
+        rho = dot_product(r, z, nx, ny, k_start, k_end, stride_z);
     } else {
         /* p_0 = r_0 */
-        copy_vector(r, p, nx, ny);
+        copy_vector(r, p, nx, ny, k_start, k_end, stride_z);
         /* rho_0 = (r_0, r_0) */
-        rho = dot_product(r, r, nx, ny);
+        rho = dot_product(r, r, nx, ny, k_start, k_end, stride_z);
     }
 
-    double initial_res = sqrt(dot_product(r, r, nx, ny));
+    double initial_res = sqrt(dot_product(r, r, nx, ny, k_start, k_end, stride_z));
 
     if (stats) {
         stats->initial_residual = initial_res;
@@ -336,10 +366,10 @@ static cfd_status_t cg_scalar_solve(
 
     for (iter = 0; iter < params->max_iterations; iter++) {
         /* Compute Ap = A * p */
-        apply_laplacian(p, Ap, nx, ny, dx2, dy2);
+        apply_laplacian(p, Ap, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
         /* alpha = rho / (p, Ap) */
-        double p_dot_Ap = dot_product(p, Ap, nx, ny);
+        double p_dot_Ap = dot_product(p, Ap, nx, ny, k_start, k_end, stride_z);
 
         /* Check for breakdown (p_dot_Ap should be positive for SPD) */
         CG_CHECK_BREAKDOWN(p_dot_Ap, stats, iter, res_norm, start_time);
@@ -347,24 +377,24 @@ static cfd_status_t cg_scalar_solve(
         double alpha = rho / p_dot_Ap;
 
         /* x_{k+1} = x_k + alpha * p */
-        axpy(alpha, p, x, nx, ny);
+        axpy(alpha, p, x, nx, ny, k_start, k_end, stride_z);
 
         /* r_{k+1} = r_k - alpha * Ap */
-        axpy(-alpha, Ap, r, nx, ny);
+        axpy(-alpha, Ap, r, nx, ny, k_start, k_end, stride_z);
 
         /* Compute rho_new and update search direction */
         double rho_new;
         if (use_precond) {
             /* z_{k+1} = M^{-1} r_{k+1} */
-            apply_jacobi_precond(r, z, nx, ny, diag_inv);
+            apply_jacobi_precond(r, z, nx, ny, diag_inv, k_start, k_end, stride_z);
             /* rho_new = (r_{k+1}, z_{k+1}) */
-            rho_new = dot_product(r, z, nx, ny);
+            rho_new = dot_product(r, z, nx, ny, k_start, k_end, stride_z);
         } else {
             /* rho_new = (r_{k+1}, r_{k+1}) */
-            rho_new = dot_product(r, r, nx, ny);
+            rho_new = dot_product(r, r, nx, ny, k_start, k_end, stride_z);
         }
 
-        res_norm = sqrt(dot_product(r, r, nx, ny));
+        res_norm = sqrt(dot_product(r, r, nx, ny, k_start, k_end, stride_z));
 
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {
@@ -386,17 +416,21 @@ static cfd_status_t cg_scalar_solve(
 
         /* p_{k+1} = (z or r)_{k+1} + beta * p_k */
         if (use_precond) {
-            for (size_t j = 1; j < ny - 1; j++) {
-                for (size_t i = 1; i < nx - 1; i++) {
-                    size_t idx = IDX_2D(i, j, nx);
-                    p[idx] = z[idx] + beta * p[idx];
+            for (size_t k = k_start; k < k_end; k++) {
+                for (size_t j = 1; j < ny - 1; j++) {
+                    for (size_t i = 1; i < nx - 1; i++) {
+                        size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                        p[idx] = z[idx] + beta * p[idx];
+                    }
                 }
             }
         } else {
-            for (size_t j = 1; j < ny - 1; j++) {
-                for (size_t i = 1; i < nx - 1; i++) {
-                    size_t idx = IDX_2D(i, j, nx);
-                    p[idx] = r[idx] + beta * p[idx];
+            for (size_t k = k_start; k < k_end; k++) {
+                for (size_t j = 1; j < ny - 1; j++) {
+                    for (size_t i = 1; i < nx - 1; i++) {
+                        size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                        p[idx] = r[idx] + beta * p[idx];
+                    }
                 }
             }
         }
@@ -410,7 +444,7 @@ static cfd_status_t cg_scalar_solve(
     }
 
     /* Apply final boundary conditions */
-    bc_apply_scalar(x, nx, ny, BC_TYPE_NEUMANN);
+    poisson_solver_apply_bc(solver, x);
 
     double end_time = poisson_solver_get_time_ms();
 
