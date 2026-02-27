@@ -46,7 +46,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     if (!field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }
-    if (field->nx < 3 || field->ny < 3) {
+    if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
         return CFD_ERROR_INVALID;
     }
 

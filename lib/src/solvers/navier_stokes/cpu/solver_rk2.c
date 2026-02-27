@@ -197,7 +197,7 @@ static void compute_rhs(const double* u, const double* v, const double* w,
 
 cfd_status_t rk2_impl(flow_field* field, const grid* grid,
                        const ns_solver_params_t* params) {
-    if (field->nx < 3 || field->ny < 3) {
+    if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
         return CFD_ERROR_INVALID;
     }
 

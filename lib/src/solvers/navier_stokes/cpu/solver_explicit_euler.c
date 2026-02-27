@@ -316,7 +316,7 @@ void compute_source_terms(double x, double y, double z, int iter, double dt,
 // Internal explicit Euler implementation
 // This is called by the solver registry - not part of public API
 cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params) {
-    if (field->nx < 3 || field->ny < 3) {
+    if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
         return CFD_ERROR_INVALID;
     }
 
