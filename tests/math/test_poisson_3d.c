@@ -444,7 +444,11 @@ void test_3d_backward_compat_nz1_cg(void) {
     double* rhs    = alloc_field(n * n);
     double* analy  = alloc_field(n * n);
 
-    TEST_ASSERT_NOT_NULL(p);
+    if (!p || !p_temp || !rhs || !analy) {
+        cfd_free(p); cfd_free(p_temp); cfd_free(rhs); cfd_free(analy);
+        TEST_FAIL_MESSAGE("Memory allocation failed");
+        return;
+    }
 
     for (size_t j = 0; j < n; j++) {
         double y = DOMAIN_MIN + j * dy;
@@ -510,7 +514,11 @@ void test_3d_backward_compat_nz1_jacobi(void) {
     double* rhs    = alloc_field(n * n);
     double* analy  = alloc_field(n * n);
 
-    TEST_ASSERT_NOT_NULL(p);
+    if (!p || !p_temp || !rhs || !analy) {
+        cfd_free(p); cfd_free(p_temp); cfd_free(rhs); cfd_free(analy);
+        TEST_FAIL_MESSAGE("Memory allocation failed");
+        return;
+    }
 
     for (size_t j = 0; j < n; j++) {
         double y = DOMAIN_MIN + j * dy;
