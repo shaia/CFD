@@ -232,6 +232,12 @@ cfd_status_t poisson_solver_init(
         return CFD_ERROR_INVALID;
     }
 
+    /* SIMD/OMP backends are 2D-only until Phase 5-6.
+     * Reject nz>1 early to prevent silent wrong results. */
+    if (nz > 1 && solver->backend != POISSON_BACKEND_SCALAR) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+
     solver->nx = nx;
     solver->ny = ny;
     solver->nz = nz;
