@@ -52,6 +52,8 @@ typedef struct {
     double right;   // Value at x=Lx boundary (column nx-1)
     double top;     // Value at y=Ly boundary (row ny-1)
     double bottom;  // Value at y=0 boundary (row 0)
+    double front;   // Value at z=Lz boundary (plane nz-1, 3D only)
+    double back;    // Value at z=0 boundary (plane 0, 3D only)
 } bc_dirichlet_values_t;
 
 /**
@@ -95,7 +97,9 @@ typedef enum {
     BC_EDGE_LEFT   = 0x01,   // x=0 boundary (column 0)
     BC_EDGE_RIGHT  = 0x02,   // x=Lx boundary (column nx-1)
     BC_EDGE_BOTTOM = 0x04,   // y=0 boundary (row 0)
-    BC_EDGE_TOP    = 0x08    // y=Ly boundary (row ny-1)
+    BC_EDGE_TOP    = 0x08,   // y=Ly boundary (row ny-1)
+    BC_EDGE_FRONT  = 0x10,   // z=Lz boundary (plane nz-1, 3D only)
+    BC_EDGE_BACK   = 0x20    // z=0 boundary (plane 0, 3D only)
 } bc_edge_t;
 
 /* ============================================================================

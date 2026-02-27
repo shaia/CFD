@@ -162,10 +162,11 @@ static void update_search_direction_omp(const double* src, double* p,
 
 static cfd_status_t cg_omp_init(
     poisson_solver_t* solver,
-    size_t nx, size_t ny,
-    double dx, double dy,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
+    (void)nz; (void)dz;
     cg_omp_context_t* ctx = (cg_omp_context_t*)cfd_calloc(1, sizeof(cg_omp_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;

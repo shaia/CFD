@@ -113,7 +113,7 @@ void test_bicgstab_neon_scalar_consistency(void) {
     params.tolerance = TOLERANCE;
     params.max_iterations = 5000;
 
-    cfd_status_t status = poisson_solver_init(solver_scalar, NX, NY, dx, dy, &params);
+    cfd_status_t status = poisson_solver_init(solver_scalar, NX, NY, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     /* Solve with scalar solver */
@@ -170,7 +170,7 @@ void test_bicgstab_neon_scalar_consistency(void) {
     }
 
     /* Initialize NEON solver */
-    status = poisson_solver_init(solver_neon, NX, NY, dx, dy, &params);
+    status = poisson_solver_init(solver_neon, NX, NY, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     /* Solve with NEON solver */

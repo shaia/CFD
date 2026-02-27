@@ -162,12 +162,12 @@ void test_omp_deterministic_results(void) {
     size_t nx = 32, ny = 32;
     size_t n = nx * ny;
 
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
 
     // Run same simulation twice
-    flow_field* field1 = flow_field_create(nx, ny);
-    flow_field* field2 = flow_field_create(nx, ny);
+    flow_field* field1 = flow_field_create(nx, ny, 1);
+    flow_field* field2 = flow_field_create(nx, ny, 1);
 
     test_init_taylor_green(field1, g);
     test_init_taylor_green(field2, g);

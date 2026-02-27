@@ -164,8 +164,8 @@ static double run_projection_test(
     double* initial_div_out,
     double* final_div_l2_out
 ) {
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL_MESSAGE(g, "Failed to create grid");
     TEST_ASSERT_NOT_NULL_MESSAGE(field, "Failed to create flow field");
 

@@ -113,10 +113,10 @@ static pois_result_t run_poiseuille(void) {
     pois_result_t result = {0};
     result.expected_dpdx = pois_analytical_dpdx();
 
-    grid* g = grid_create(POIS_NX, POIS_NY,
+    grid* g = grid_create(POIS_NX, POIS_NY, 1,
                           0.0, POIS_DOMAIN_LENGTH,
-                          0.0, POIS_CHANNEL_HEIGHT);
-    flow_field* field = flow_field_create(POIS_NX, POIS_NY);
+                          0.0, POIS_CHANNEL_HEIGHT, 0.0, 0.0);
+    flow_field* field = flow_field_create(POIS_NX, POIS_NY, 1);
     if (!g || !field) {
         snprintf(result.error_msg, sizeof(result.error_msg),
                  "Failed to create grid or flow field");

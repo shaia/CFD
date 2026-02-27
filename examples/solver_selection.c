@@ -105,7 +105,7 @@ void run_solver_comparison(void) {
 
         // Create simulation with this solver
         simulation_data* sim =
-            init_simulation_with_solver(NX, NY, XMIN, XMAX, YMIN, YMAX, solver_type);
+            init_simulation_with_solver(NX, NY, 1, XMIN, XMAX, YMIN, YMAX, 0.0, 0.0, solver_type);
         if (!sim) {
             printf("  ERROR: Failed to create simulation\n");
             continue;
@@ -148,7 +148,7 @@ void run_dynamic_solver_switch(void) {
 
     // Start with default solver (explicit_euler)
     printf("\n1. Creating simulation with default solver...\n");
-    simulation_data* sim = init_simulation(NX, NY, XMIN, XMAX, YMIN, YMAX);
+    simulation_data* sim = init_simulation(NX, NY, 1, XMIN, XMAX, YMIN, YMAX, 0.0, 0.0);
     simulation_set_run_prefix(sim, "dynamic_switch");
     simulation_set_output_dir(sim, "../../artifacts");
 
@@ -211,10 +211,10 @@ void run_direct_solver_usage(void) {
     print_solver_info(solver);
 
     // Create grid and flow field manually
-    grid* grid = grid_create(NX, NY, XMIN, XMAX, YMIN, YMAX);
+    grid* grid = grid_create(NX, NY, 1, XMIN, XMAX, YMIN, YMAX, 0.0, 0.0);
     grid_initialize_uniform(grid);
 
-    flow_field* field = flow_field_create(NX, NY);
+    flow_field* field = flow_field_create(NX, NY, 1);
     initialize_flow_field(field, grid);
 
     ns_solver_params_t params = ns_solver_params_default();

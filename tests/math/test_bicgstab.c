@@ -211,7 +211,7 @@ void test_bicgstab_init(void) {
     double dx = (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
     double dy = (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
 
-    cfd_status_t status = poisson_solver_init(solver, nx, ny, dx, dy, NULL);
+    cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, NULL);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL(nx, solver->nx);
     TEST_ASSERT_EQUAL(ny, solver->ny);
@@ -250,7 +250,7 @@ void test_bicgstab_zero_rhs(void) {
     params.tolerance = TOLERANCE;
     params.max_iterations = MAX_ITERATIONS;
 
-    cfd_status_t status = poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -293,7 +293,7 @@ void test_bicgstab_sinusoidal_rhs(void) {
     params.tolerance = TOLERANCE;
     params.max_iterations = MAX_ITERATIONS;
 
-    cfd_status_t status = poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -338,7 +338,7 @@ void test_bicgstab_vs_cg(void) {
     poisson_solver_t* bicgstab = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(bicgstab);
-    poisson_solver_init(bicgstab, nx, ny, dx, dy, &params);
+    poisson_solver_init(bicgstab, nx, ny, 1, dx, dy, 0.0, &params);
 
     poisson_solver_stats_t stats_bicgstab = poisson_solver_stats_default();
     cfd_status_t status = poisson_solver_solve(bicgstab, p_bicgstab, NULL, rhs, &stats_bicgstab);
@@ -348,7 +348,7 @@ void test_bicgstab_vs_cg(void) {
     poisson_solver_t* cg = poisson_solver_create(
         POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(cg);
-    poisson_solver_init(cg, nx, ny, dx, dy, &params);
+    poisson_solver_init(cg, nx, ny, 1, dx, dy, 0.0, &params);
 
     poisson_solver_stats_t stats_cg = poisson_solver_stats_default();
     status = poisson_solver_solve(cg, p_cg, NULL, rhs, &stats_cg);
@@ -422,7 +422,7 @@ void test_bicgstab_l2_error(void) {
     poisson_solver_t* bicgstab = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(bicgstab);
-    poisson_solver_init(bicgstab, nx, ny, dx, dy, &params);
+    poisson_solver_init(bicgstab, nx, ny, 1, dx, dy, 0.0, &params);
     poisson_solver_stats_t stats_bicgstab = poisson_solver_stats_default();
     poisson_solver_solve(bicgstab, p_bicgstab, NULL, rhs, &stats_bicgstab);
 
@@ -430,7 +430,7 @@ void test_bicgstab_l2_error(void) {
     poisson_solver_t* cg = poisson_solver_create(
         POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(cg);
-    poisson_solver_init(cg, nx, ny, dx, dy, &params);
+    poisson_solver_init(cg, nx, ny, 1, dx, dy, 0.0, &params);
     poisson_solver_stats_t stats_cg = poisson_solver_stats_default();
     poisson_solver_solve(cg, p_cg, NULL, rhs, &stats_cg);
 
@@ -507,7 +507,7 @@ void test_bicgstab_dirichlet(void) {
     params.tolerance = TOLERANCE;
     params.max_iterations = MAX_ITERATIONS;
 
-    cfd_status_t status = poisson_solver_init(solver, nx, ny, dx, dy, &params);
+    cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();

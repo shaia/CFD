@@ -134,11 +134,15 @@ cfd_status_t cfd_init(void);
 void cfd_cleanup(void);
 
 // Simulation
-simulation_data* init_simulation(size_t nx, size_t ny, double xmin, double xmax,
-                                 double ymin, double ymax);
-simulation_data* init_simulation_with_solver(size_t nx, size_t ny, double xmin,
-                                             double xmax, double ymin, double ymax,
-                                             const char* solver_type);
+simulation_data* init_simulation(size_t nx, size_t ny, size_t nz,
+                                  double xmin, double xmax,
+                                  double ymin, double ymax,
+                                  double zmin, double zmax);
+simulation_data* init_simulation_with_solver(size_t nx, size_t ny, size_t nz,
+                                              double xmin, double xmax,
+                                              double ymin, double ymax,
+                                              double zmin, double zmax,
+                                              const char* solver_type);
 cfd_status_t run_simulation_step(simulation_data* sim_data);
 cfd_status_t run_simulation_solve(simulation_data* sim_data);
 void free_simulation(simulation_data* sim_data);

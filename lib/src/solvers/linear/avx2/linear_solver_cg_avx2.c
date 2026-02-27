@@ -344,10 +344,11 @@ static void apply_jacobi_precond_avx2(const double* r, double* z,
 
 static cfd_status_t cg_avx2_init(
     poisson_solver_t* solver,
-    size_t nx, size_t ny,
-    double dx, double dy,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
+    (void)nz; (void)dz;
     /* Use aligned allocation for SIMD context */
     cg_avx2_context_t* ctx = (cg_avx2_context_t*)cfd_aligned_calloc(
         1, sizeof(cg_avx2_context_t));

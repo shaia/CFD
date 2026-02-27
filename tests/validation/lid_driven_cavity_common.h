@@ -101,10 +101,10 @@ static inline cavity_context_t* cavity_context_create(size_t nx, size_t ny) {
 
     ctx->nx = nx;
     ctx->ny = ny;
-    ctx->g = grid_create(nx, ny,
+    ctx->g = grid_create(nx, ny, 1,
                          CAVITY_DOMAIN_XMIN, CAVITY_DOMAIN_XMAX,
-                         CAVITY_DOMAIN_YMIN, CAVITY_DOMAIN_YMAX);
-    ctx->field = flow_field_create(nx, ny);
+                         CAVITY_DOMAIN_YMIN, CAVITY_DOMAIN_YMAX, 0.0, 0.0);
+    ctx->field = flow_field_create(nx, ny, 1);
 
     if (!ctx->g || !ctx->field) {
         if (ctx->g) grid_destroy(ctx->g);

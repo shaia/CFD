@@ -64,8 +64,8 @@ ns_solver_params_t ns_solver_params_default(void) {
                             .pressure_coupling = DEFAULT_PRESSURE_COUPLING};
     return params;
 }
-flow_field* flow_field_create(size_t nx, size_t ny) {
-    if (nx == 0 || ny == 0) {
+flow_field* flow_field_create(size_t nx, size_t ny, size_t nz) {
+    if (nx == 0 || ny == 0 || nz == 0) {
         cfd_set_error(CFD_ERROR_INVALID, "Flow field dimensions must be positive");
         return NULL;
     }
@@ -77,21 +77,19 @@ flow_field* flow_field_create(size_t nx, size_t ny) {
 
     field->nx = nx;
     field->ny = ny;
+    field->nz = nz;
 
-    field->u = NULL;
-    field->v = NULL;
-    field->p = NULL;
-    field->rho = NULL;
-    field->T = NULL;
+    size_t total = nx * ny * nz;
 
     // Allocate 32-byte aligned memory for flow variables (optimized for SIMD operations)
-    field->u = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
-    field->v = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
-    field->p = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
-    field->rho = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
-    field->T = (double*)cfd_aligned_calloc(nx * ny, sizeof(double));
+    field->u = (double*)cfd_aligned_calloc(total, sizeof(double));
+    field->v = (double*)cfd_aligned_calloc(total, sizeof(double));
+    field->w = (double*)cfd_aligned_calloc(total, sizeof(double));
+    field->p = (double*)cfd_aligned_calloc(total, sizeof(double));
+    field->rho = (double*)cfd_aligned_calloc(total, sizeof(double));
+    field->T = (double*)cfd_aligned_calloc(total, sizeof(double));
 
-    if (!field->u || !field->v || !field->p || !field->rho || !field->T) {
+    if (!field->u || !field->v || !field->w || !field->p || !field->rho || !field->T) {
         flow_field_destroy(field);
         return NULL;
     }
@@ -103,6 +101,7 @@ void flow_field_destroy(flow_field* field) {
     if (field != NULL) {
         cfd_aligned_free(field->u);
         cfd_aligned_free(field->v);
+        cfd_aligned_free(field->w);
         cfd_aligned_free(field->p);
         cfd_aligned_free(field->rho);
         cfd_aligned_free(field->T);
@@ -157,6 +156,7 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
     }
 
     // Find maximum wave speed
+    int has_w = (grid->nz > 1 && field->w);
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
             size_t idx = IDX_2D(i, j, field->nx);
@@ -166,6 +166,10 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
 
             // Optimized velocity magnitude calculation - avoid sqrt when possible
             double vel_mag_sq = (u_speed * u_speed) + (v_speed * v_speed);
+            if (has_w) {
+                double w_speed = fabs(field->w[idx]);
+                vel_mag_sq += w_speed * w_speed;
+            }
             double vel_mag = (vel_mag_sq > VELOCITY_EPSILON) ? sqrt(vel_mag_sq) : 0.0;
             double local_speed = vel_mag + sound_speed;
             max_speed = max_double(max_speed, local_speed);
@@ -177,8 +181,18 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
         max_speed = 1.0;  // Use default if speeds are too small
     }
 
+    // Include z-direction in CFL if 3D
+    double dmin = min_double(dx_min, dy_min);
+    if (grid->nz > 1 && grid->dz) {
+        double dz_min = grid->dz[0];
+        for (size_t k = 0; k < grid->nz - 1; k++) {
+            dz_min = min_double(dz_min, grid->dz[k]);
+        }
+        dmin = min_double(dmin, dz_min);
+    }
+
     // Compute time step based on CFL condition with safety factor
-    double dt_cfl = params->cfl * min_double(dx_min, dy_min) / max_speed;
+    double dt_cfl = params->cfl * dmin / max_speed;
 
     // Limit time step to reasonable bounds
     double dt_max = DT_MAX_LIMIT;  // Maximum allowed time step

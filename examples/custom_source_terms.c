@@ -45,10 +45,10 @@ int main(int argc, char* argv[]) {
     double xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 1.0;
 
     // Create grid and flow field
-    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     grid_initialize_uniform(grid);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     initialize_flow_field(field, grid);
 
     // Create solver using modern interface

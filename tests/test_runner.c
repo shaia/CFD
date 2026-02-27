@@ -27,7 +27,7 @@ void test_simulation_basic(void) {
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
     // Initialize simulation
-    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(sim_data);
 
     // Basic validation
@@ -50,7 +50,7 @@ void test_velocity_calculation(void) {
     size_t nx = 3, ny = 3;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
 
     // Set test velocity values
     sim_data->field->u[0] = 3.0;
@@ -71,7 +71,7 @@ void test_simulation_step(void) {
     size_t nx = 4, ny = 4;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
 
     // Test that memory allocation worked and basic properties are valid
     TEST_ASSERT_NOT_NULL(sim_data->field->u);

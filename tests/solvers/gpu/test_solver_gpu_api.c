@@ -147,7 +147,7 @@ void test_gpu_data_transfer(void) {
     gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(field);
 
     // Initialize with known values
@@ -192,11 +192,11 @@ void test_gpu_solver_step_direct(void) {
     size_t nx = 64, ny = 64;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    grid* g = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* g = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(field);
     initialize_flow_field(field, g);
 
@@ -243,11 +243,11 @@ void test_gpu_solver_multiple_steps(void) {
     size_t nx = 64, ny = 64;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    grid* g = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* g = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(field);
     initialize_flow_field(field, g);
 
@@ -299,11 +299,11 @@ void test_gpu_solver_multiple_steps(void) {
 
 // Helper function for grid size tests
 static void run_grid_size_test(size_t nx, size_t ny) {
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(field);
     initialize_flow_field(field, g);
 
@@ -392,11 +392,11 @@ void test_gpu_solver_lid_driven_cavity(void) {
     size_t nx = 64, ny = 64;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    grid* g = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* g = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(field);
 
     // Initialize with zero velocity except top lid
@@ -476,7 +476,7 @@ void test_gpu_solver_error_handling(void) {
     TEST_ASSERT_FALSE(gpu_should_use(NULL, 100, 100, 10));
 
     // Upload/download with NULL context
-    flow_field* field = flow_field_create(32, 32);
+    flow_field* field = flow_field_create(32, 32, 1);
     TEST_ASSERT_NOT_NULL(field);
 
     cfd_status_t status = gpu_solver_upload(NULL, field);
@@ -516,11 +516,11 @@ void test_gpu_solver_execution(void) {
     size_t nx = 100, ny = 50;
     double xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 1.0;
 
-    grid* g = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* g = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(field);
     initialize_flow_field(field, g);
 

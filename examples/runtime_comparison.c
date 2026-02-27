@@ -121,7 +121,7 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
     // Benchmark SIMD solver
     {
         simulation_data* sim =
-            init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, simd_solver);
+            init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, simd_solver);
         if (!sim) {
             fprintf(stderr, "Failed to create SIMD simulation\n");
             return result;
@@ -134,14 +134,14 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
 
         // Reset for actual benchmark
         free_simulation(sim);
-        sim = init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, simd_solver);
+        sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, simd_solver);
 
         // Timed run (average over repeats)
         double total_time = 0.0;
         for (int r = 0; r < REPEAT_COUNT; r++) {
             // Reset simulation
             free_simulation(sim);
-            sim = init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, simd_solver);
+            sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, simd_solver);
 
             double start = get_time_ms();
             for (int i = 0; i < iterations; i++) {
@@ -165,7 +165,7 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
     // Benchmark GPU solver
     {
         simulation_data* sim =
-            init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, gpu_solver);
+            init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, gpu_solver);
         if (!sim) {
             fprintf(stderr, "Failed to create GPU simulation\n");
             return result;
@@ -178,14 +178,14 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
 
         // Reset for actual benchmark
         free_simulation(sim);
-        sim = init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, gpu_solver);
+        sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, gpu_solver);
 
         // Timed run (average over repeats)
         double total_time = 0.0;
         for (int r = 0; r < REPEAT_COUNT; r++) {
             // Reset simulation
             free_simulation(sim);
-            sim = init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, gpu_solver);
+            sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, gpu_solver);
 
             double start = get_time_ms();
             for (int i = 0; i < iterations; i++) {
@@ -328,7 +328,7 @@ static void test_all_solvers(void) {
 
     for (size_t s = 0; s < num_solvers; s++) {
         simulation_data* sim =
-            init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, all_solvers[s]);
+            init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, all_solvers[s]);
         if (!sim) {
             continue;
         }
@@ -340,7 +340,7 @@ static void test_all_solvers(void) {
 
         // Reset
         free_simulation(sim);
-        sim = init_simulation_with_solver(nx, ny, xmin, xmax, ymin, ymax, all_solvers[s]);
+        sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, all_solvers[s]);
 
         // Timed run
         double start = get_time_ms();

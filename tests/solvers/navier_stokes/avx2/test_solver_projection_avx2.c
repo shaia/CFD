@@ -189,8 +189,8 @@ void test_simd_fail_fast_on_divergence(void) {
     // 4. The fail-fast code path exists (early return on Poisson failure)
 
     size_t nx = 16, ny = 16;
-    grid* g = grid_create(nx, ny, 0.0, 1.0, 0.0, 1.0);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
     TEST_ASSERT_NOT_NULL(g);
     TEST_ASSERT_NOT_NULL(field);
 

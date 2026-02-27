@@ -35,11 +35,11 @@ typedef struct {
 
 static cfd_status_t sor_scalar_init(
     poisson_solver_t* solver,
-    size_t nx, size_t ny,
-    double dx, double dy,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)nx; (void)ny;
+    (void)nx; (void)ny; (void)nz; (void)dz;
 
     sor_context_t* ctx = (sor_context_t*)cfd_calloc(1, sizeof(sor_context_t));
     if (!ctx) {

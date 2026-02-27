@@ -34,10 +34,10 @@ void setUp(void) {
     size_t nx = 10, ny = 10;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    test_grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    test_grid = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     grid_initialize_uniform(test_grid);
 
-    test_field = flow_field_create(nx, ny);
+    test_field = flow_field_create(nx, ny, 1);
     initialize_flow_field(test_field, test_grid);
 
     // Set some known values for testing
@@ -50,7 +50,7 @@ void setUp(void) {
     }
 
     // Create derived fields and compute statistics
-    test_derived = derived_fields_create(nx, ny);
+    test_derived = derived_fields_create(nx, ny, 1);
     derived_fields_compute_velocity_magnitude(test_derived, test_field);
     derived_fields_compute_statistics(test_derived, test_field);
 
@@ -328,7 +328,7 @@ void test_csv_statistics_requires_computed(void) {
     remove(filename);
 
     // Create derived fields without computing statistics
-    derived_fields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny);
+    derived_fields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny, 1);
     TEST_ASSERT_NOT_NULL(derived_no_stats);
     TEST_ASSERT_EQUAL_INT(0, derived_no_stats->stats_computed);
 
@@ -349,7 +349,7 @@ void test_csv_timeseries_requires_computed(void) {
     ns_solver_stats_t stats = ns_solver_stats_default();
 
     // Create derived fields without computing statistics
-    derived_fields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny);
+    derived_fields* derived_no_stats = derived_fields_create(test_grid->nx, test_grid->ny, 1);
     TEST_ASSERT_NOT_NULL(derived_no_stats);
 
     // Should not write file when stats_computed is false

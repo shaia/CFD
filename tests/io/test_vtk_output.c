@@ -30,10 +30,10 @@ void setUp(void) {
     size_t nx = 10, ny = 10;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    test_grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    test_grid = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     grid_initialize_uniform(test_grid);
 
-    test_field = flow_field_create(nx, ny);
+    test_field = flow_field_create(nx, ny, 1);
     initialize_flow_field(test_field, test_grid);
 
     // Set some known values for testing

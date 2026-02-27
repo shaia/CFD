@@ -295,7 +295,7 @@ void test_cg_backend_comparison(void) {
         POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
 
     if (solver_scalar) {
-        cfd_status_t status = poisson_solver_init(solver_scalar, nx, ny, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver_scalar, nx, ny, 1, dx, dy, 0.0, &params);
         if (status == CFD_SUCCESS) {
             poisson_solver_stats_t stats = poisson_solver_stats_default();
             poisson_solver_solve(solver_scalar, p_scalar, p_temp, rhs, &stats);
@@ -313,7 +313,7 @@ void test_cg_backend_comparison(void) {
         POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
 
     if (solver_simd) {
-        cfd_status_t status = poisson_solver_init(solver_simd, nx, ny, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver_simd, nx, ny, 1, dx, dy, 0.0, &params);
         if (status == CFD_SUCCESS) {
             poisson_solver_stats_t stats = poisson_solver_stats_default();
             poisson_solver_solve(solver_simd, p_simd, p_temp, rhs, &stats);
@@ -407,7 +407,7 @@ void test_laplacian_via_residual(void) {
         }
 
         poisson_solver_params_t params = poisson_solver_params_default();
-        cfd_status_t status = poisson_solver_init(solver, n, n, dx, dy, &params);
+        cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
 
         /* Compute residual: ||∇²p - rhs||_∞

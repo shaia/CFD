@@ -29,10 +29,10 @@ void test_viscous_diffusion(void) {
     size_t nx = 15, ny = 15;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     grid_initialize_uniform(grid);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     initialize_flow_field(field, grid);
 
     // Create a sharp velocity gradient (should diffuse with viscosity)
@@ -121,10 +121,10 @@ void test_pressure_gradient_effects(void) {
     size_t nx = 10, ny = 10;
     double xmin = 0.0, xmax = 1.0, ymin = 0.0, ymax = 1.0;
 
-    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     grid_initialize_uniform(grid);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
 
     // Set up pressure gradient with zero initial velocity
     for (size_t j = 0; j < ny; j++) {
@@ -208,10 +208,10 @@ void test_conservation_properties(void) {
     size_t nx = 12, ny = 8;
     double xmin = 0.0, xmax = 2.0, ymin = 0.0, ymax = 1.0;
 
-    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
+    grid* grid = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     grid_initialize_uniform(grid);
 
-    flow_field* field = flow_field_create(nx, ny);
+    flow_field* field = flow_field_create(nx, ny, 1);
     initialize_flow_field(field, grid);
 
     // Calculate initial total momentum and mass

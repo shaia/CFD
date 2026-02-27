@@ -13,7 +13,7 @@ void setUp(void) {
     // Create a small simulation for testing
     // This implicitly initializes the library if strictly needed,
     // but we can rely on lazy init too.
-    test_sim = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
+    test_sim = init_simulation(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
 }
 
 void tearDown(void) {
@@ -46,7 +46,7 @@ void test_init_simulation_performs_lazy_initialization(void) {
     TEST_ASSERT_FALSE(cfd_is_initialized());
 
     // 2. Call init_simulation
-    test_sim = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
+    test_sim = init_simulation(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
 
     // 3. Verify it succeeded and initialized the library
     TEST_ASSERT_NOT_NULL(test_sim);
@@ -76,14 +76,14 @@ void test_init_simulation_sets_default_params(void) {
 }
 
 void test_init_simulation_with_solver_creates_valid_structure(void) {
-    simulation_data* sim = init_simulation_with_solver(5, 5, 0.0, 1.0, 0.0, 1.0, "explicit_euler");
+    simulation_data* sim = init_simulation_with_solver(5, 5, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, "explicit_euler");
     TEST_ASSERT_NOT_NULL(sim);
     TEST_ASSERT_NOT_NULL(sim->solver);
     free_simulation(sim);
 }
 
 void test_init_simulation_with_null_solver_uses_default(void) {
-    simulation_data* sim = init_simulation_with_solver(5, 5, 0.0, 1.0, 0.0, 1.0, NULL);
+    simulation_data* sim = init_simulation_with_solver(5, 5, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, NULL);
     TEST_ASSERT_NOT_NULL(sim);
     TEST_ASSERT_NOT_NULL(sim->solver);
     free_simulation(sim);
@@ -91,7 +91,7 @@ void test_init_simulation_with_null_solver_uses_default(void) {
 
 void test_init_simulation_with_invalid_solver_returns_null(void) {
     simulation_data* sim =
-        init_simulation_with_solver(5, 5, 0.0, 1.0, 0.0, 1.0, "nonexistent_solver");
+        init_simulation_with_solver(5, 5, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, "nonexistent_solver");
     TEST_ASSERT_NULL(sim);
 }
 
@@ -181,7 +181,7 @@ void test_simulation_list_solvers_names_usable_for_init(void) {
     TEST_ASSERT_GREATER_THAN(0, count);
 
     // Try to create a simulation with the first solver name
-    simulation_data* sim = init_simulation_with_solver(10, 10, 0.0, 1.0, 0.0, 1.0, names[0]);
+    simulation_data* sim = init_simulation_with_solver(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, names[0]);
     TEST_ASSERT_NOT_NULL(sim);
     free_simulation(sim);
 }

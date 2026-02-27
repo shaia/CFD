@@ -11,7 +11,7 @@ static const size_t NX = 10;
 static const size_t NY = 10;
 
 void setUp(void) {
-    test_field = flow_field_create(NX, NY);
+    test_field = flow_field_create(NX, NY, 1);
 
     // Initialize with known values for testing
     for (size_t i = 0; i < NX * NY; i++) {
@@ -32,7 +32,7 @@ void tearDown(void) {
 //=============================================================================
 
 void test_derived_fields_create(void) {
-    derived_fields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY, 1);
 
     TEST_ASSERT_NOT_NULL(derived);
     TEST_ASSERT_NULL(derived->velocity_magnitude);
@@ -48,7 +48,7 @@ void test_derived_fields_destroy_null(void) {
 }
 
 void test_derived_fields_clear(void) {
-    derived_fields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY, 1);
     derived_fields_compute_velocity_magnitude(derived, test_field);
 
     TEST_ASSERT_NOT_NULL(derived->velocity_magnitude);
@@ -70,7 +70,7 @@ void test_derived_fields_clear_null(void) {
 //=============================================================================
 
 void test_velocity_magnitude_computation(void) {
-    derived_fields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY, 1);
     derived_fields_compute_velocity_magnitude(derived, test_field);
 
     TEST_ASSERT_NOT_NULL(derived->velocity_magnitude);
@@ -90,7 +90,7 @@ void test_velocity_magnitude_varying_values(void) {
         test_field->v[i] = (double)(NX * NY - i);
     }
 
-    derived_fields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY, 1);
     derived_fields_compute_velocity_magnitude(derived, test_field);
 
     // Verify each point
@@ -110,7 +110,7 @@ void test_velocity_magnitude_zero_velocity(void) {
         test_field->v[i] = 0.0;
     }
 
-    derived_fields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY, 1);
     derived_fields_compute_velocity_magnitude(derived, test_field);
 
     for (size_t i = 0; i < NX * NY; i++) {
@@ -121,7 +121,7 @@ void test_velocity_magnitude_zero_velocity(void) {
 }
 
 void test_velocity_magnitude_recompute(void) {
-    derived_fields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY, 1);
 
     // First computation
     derived_fields_compute_velocity_magnitude(derived, test_field);
@@ -150,7 +150,7 @@ void test_velocity_magnitude_null_derived(void) {
 }
 
 void test_velocity_magnitude_null_field(void) {
-    derived_fields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY, 1);
 
     // Should not crash
     derived_fields_compute_velocity_magnitude(derived, NULL);
@@ -160,7 +160,7 @@ void test_velocity_magnitude_null_field(void) {
 }
 
 void test_velocity_magnitude_null_u(void) {
-    derived_fields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY, 1);
 
     // Temporarily set u to NULL
     double* original_u = test_field->u;
@@ -174,7 +174,7 @@ void test_velocity_magnitude_null_u(void) {
 }
 
 void test_velocity_magnitude_null_v(void) {
-    derived_fields* derived = derived_fields_create(NX, NY);
+    derived_fields* derived = derived_fields_create(NX, NY, 1);
 
     // Temporarily set v to NULL
     double* original_v = test_field->v;

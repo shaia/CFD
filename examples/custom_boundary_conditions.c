@@ -101,8 +101,8 @@ int main() {
     printf("grid: %zux%zu, Domain: [%.1f,%.1f] x [%.1f,%.1f]\n", nx, ny, xmin, xmax, ymin, ymax);
 
     // Create grid and flow field
-    grid* grid = grid_create(nx, ny, xmin, xmax, ymin, ymax);
-    flow_field* field = flow_field_create(nx, ny);
+    grid* grid = grid_create(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
+    flow_field* field = flow_field_create(nx, ny, 1);
 
     // Setup initial conditions and cylinder
     setup_cylinder_flow(field, grid);

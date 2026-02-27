@@ -49,7 +49,7 @@ void test_core_basics(void) {
     TEST_ASSERT_NOT_NULL(version);
     printf("CFD Library version: %s\n", version);
 
-    grid* g = grid_create(10, 10, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
     grid_destroy(g);
@@ -145,9 +145,9 @@ void test_simd_euler_solver_conditional(void) {
     TEST_ASSERT_NOT_NULL(solver);
     TEST_ASSERT_EQUAL(NS_SOLVER_BACKEND_SIMD, solver->backend);
 
-    grid* g = grid_create(16, 16, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(16, 16, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
-    flow_field* field = flow_field_create(16, 16);
+    flow_field* field = flow_field_create(16, 16, 1);
     ns_solver_params_t params = ns_solver_params_default();
 
     cfd_status_t status = solver_init(solver, g, &params);
@@ -177,9 +177,9 @@ void test_simd_projection_solver_conditional(void) {
     TEST_ASSERT_NOT_NULL(solver);
     TEST_ASSERT_EQUAL(NS_SOLVER_BACKEND_SIMD, solver->backend);
 
-    grid* g = grid_create(16, 16, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(16, 16, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
-    flow_field* field = flow_field_create(16, 16);
+    flow_field* field = flow_field_create(16, 16, 1);
     ns_solver_params_t params = ns_solver_params_default();
 
     cfd_status_t status = solver_init(solver, g, &params);
@@ -216,9 +216,9 @@ void test_simd_multiple_steps_conditional(void) {
     ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED);
     TEST_ASSERT_NOT_NULL(solver);
 
-    grid* g = grid_create(16, 16, 0.0, 1.0, 0.0, 1.0);
+    grid* g = grid_create(16, 16, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
-    flow_field* field = flow_field_create(16, 16);
+    flow_field* field = flow_field_create(16, 16, 1);
     ns_solver_params_t params = ns_solver_params_default();
 
     cfd_status_t status = solver_init(solver, g, &params);

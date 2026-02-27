@@ -84,7 +84,7 @@ int main() {
 
 
     // Initialize simulation
-    simulation_data* sim_data = init_simulation(nx, ny, xmin, xmax, ymin, ymax);
+    simulation_data* sim_data = init_simulation(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     if (!sim_data) {
         printf("Failed to initialize simulation\n");
         return 1;

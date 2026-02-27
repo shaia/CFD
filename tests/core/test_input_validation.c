@@ -11,65 +11,65 @@ void tearDown(void) {}
 
 void test_grid_creation_zero_width(void) {
     // Zero width
-    grid* grid = grid_create(0, 10, 0.0, 1.0, 0.0, 1.0);
+    grid* grid = grid_create(0, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
 void test_grid_creation_zero_height(void) {
     // Zero height
-    grid* grid = grid_create(10, 0, 0.0, 1.0, 0.0, 1.0);
+    grid* grid = grid_create(10, 0, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
 void test_grid_creation_invalid_bounds(void) {
     // 1. Invalid bounds xmin > xmax
-    grid* grid = grid_create(10, 10, 1.0, 0.0, 0.0, 1.0);
+    grid* grid = grid_create(10, 10, 1, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
     // 2. Invalid bounds ymin > ymax
     cfd_clear_error();
-    grid = grid_create(10, 10, 0.0, 1.0, 1.0, 0.0);
+    grid = grid_create(10, 10, 1, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0);
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
     // 3. Invalid bounds xmin == xmax (Equality check)
     cfd_clear_error();
-    grid = grid_create(10, 10, 1.0, 1.0, 0.0, 1.0);
+    grid = grid_create(10, 10, 1, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
     // 4. Invalid bounds ymin == ymax (Equality check)
     cfd_clear_error();
-    grid = grid_create(10, 10, 0.0, 1.0, 1.0, 1.0);
+    grid = grid_create(10, 10, 1, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(grid);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
 void test_simulation_init_zero_width(void) {
     // Zero dimensions
-    simulation_data* sim = init_simulation(0, 100, 0.0, 1.0, 0.0, 1.0);
+    simulation_data* sim = init_simulation(0, 100, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
 void test_simulation_init_zero_height(void) {
-    simulation_data* sim = init_simulation(100, 0, 0.0, 1.0, 0.0, 1.0);
+    simulation_data* sim = init_simulation(100, 0, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
 
 void test_simulation_init_invalid_bounds(void) {
     // 1. Invalid bounds (min > max)
-    simulation_data* sim = init_simulation(100, 100, 1.0, 0.0, 0.0, 1.0);
+    simulation_data* sim = init_simulation(100, 100, 1, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
     // 2. Equal bounds (min == max)
     cfd_clear_error();
-    sim = init_simulation(100, 100, 1.0, 1.0, 0.0, 1.0);
+    sim = init_simulation(100, 100, 1, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NULL(sim);
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 }
@@ -143,7 +143,7 @@ void test_null_pointer_handling(void) {
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
 
     // 2. Test with partial NULL arguments where applicable
-    simulation_data* sim = init_simulation(10, 10, 0.0, 1.0, 0.0, 1.0);
+    simulation_data* sim = init_simulation(10, 10, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(sim);
 
     // simulation_set_solver: valid sim, NULL solver
