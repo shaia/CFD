@@ -138,8 +138,8 @@ static double compute_l2_error_3d(const double* numerical, const double* analyti
 /* ============================================================================
  * 3D DIRICHLET BC CALLBACK
  *
- * Sets analytical values on all 6 faces.  Stored parameters are passed
- * through solver->context_user (we temporarily repurpose apply_bc).
+ * Sets analytical values on all 6 faces.  Grid dimensions are passed
+ * through the module-level g_bc_ctx struct, set before each solve.
  * ============================================================================ */
 
 typedef struct {
