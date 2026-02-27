@@ -25,7 +25,12 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
+    double inv_dz2;
     double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2)) */
+    size_t stride_z;
+    size_t k_start;
+    size_t k_end;
+    size_t nz;
     int initialized;
 } jacobi_context_t;
 
@@ -39,7 +44,7 @@ static cfd_status_t jacobi_scalar_init(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)nx; (void)ny; (void)nz; (void)dz; (void)params;
+    (void)params;
 
     jacobi_context_t* ctx = (jacobi_context_t*)cfd_calloc(1, sizeof(jacobi_context_t));
     if (!ctx) {
@@ -48,7 +53,12 @@ static cfd_status_t jacobi_scalar_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
-    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2);
+    ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
+    ctx->nz = nz;
+    poisson_solver_compute_3d_bounds(nz, nx, ny,
+        &ctx->stride_z, &ctx->k_start, &ctx->k_end);
+
+    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
     ctx->inv_factor = 1.0 / factor;
     ctx->initialized = 1;
 
@@ -84,24 +94,31 @@ static cfd_status_t jacobi_scalar_iterate(
     double* p_old = x;
     double* p_new = x_temp;
 
+    size_t stride_z = ctx->stride_z;
+    double inv_dz2 = ctx->inv_dz2;
+
     /* Jacobi update: reads from p_old, writes to p_new */
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
+    for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
 
-            double p_result = -(rhs[idx]
-                - (p_old[idx + 1] + p_old[idx - 1]) / dx2
-                - (p_old[idx + nx] + p_old[idx - nx]) / dy2) * inv_factor;
+                double p_result = -(rhs[idx]
+                    - (p_old[idx + 1] + p_old[idx - 1]) / dx2
+                    - (p_old[idx + nx] + p_old[idx - nx]) / dy2
+                    - (p_old[idx + stride_z] + p_old[idx - stride_z]) * inv_dz2
+                    ) * inv_factor;
 
-            p_new[idx] = p_result;
+                p_new[idx] = p_result;
+            }
         }
     }
 
     /* Copy result back to x */
-    memcpy(x, x_temp, nx * ny * sizeof(double));
+    memcpy(x, x_temp, nx * ny * ctx->nz * sizeof(double));
 
     /* Apply boundary conditions */
-    bc_apply_scalar(x, nx, ny, BC_TYPE_NEUMANN);
+    poisson_solver_apply_bc(solver, x);
 
     /* Compute residual if requested */
     if (residual) {

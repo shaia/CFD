@@ -123,6 +123,33 @@ bool poisson_solver_simd_backend_available(void);
 const char* poisson_solver_simd_get_arch_name(void);
 
 /* ============================================================================
+ * 3D LOOP BOUNDS HELPERS
+ *
+ * Centralizes the nz-dependent logic so each solver's init doesn't repeat it.
+ * When nz==1 (2D): stride_z=0, k_start=0, k_end=1 → single k-iteration,
+ * z-stencil terms vanish naturally.
+ * ============================================================================ */
+
+/**
+ * Compute 3D loop bounds from solver dimensions.
+ */
+static inline void poisson_solver_compute_3d_bounds(
+    size_t nz, size_t nx, size_t ny,
+    size_t* stride_z, size_t* k_start, size_t* k_end)
+{
+    *stride_z = (nz > 1) ? (nx * ny) : 0;
+    *k_start  = (nz > 1) ? 1 : 0;
+    *k_end    = (nz > 1) ? (nz - 1) : 1;
+}
+
+/**
+ * Compute inv_dz2 safely (0.0 when dz==0, avoiding division by zero).
+ */
+static inline double poisson_solver_compute_inv_dz2(double dz) {
+    return (dz > 0.0) ? (1.0 / (dz * dz)) : 0.0;
+}
+
+/* ============================================================================
  * INTERNAL HELPER FUNCTIONS
  * ============================================================================ */
 

@@ -643,8 +643,8 @@ Find eigenvalues/eigenvectors for stability analysis.
 **Phases:**
 
 - [x] Phase 0: Introduce `IDX_2D`/`IDX_3D` indexing macros (`lib/include/cfd/core/indexing.h`), replace all inline `j*nx+i` patterns across ~50 files
-- [ ] Phase 1: Extend core data structures (grid: `nz, z[], dz[], stride_z, inv_dz2, k_start, k_end`; flow_field: `w, nz`; BCs: `front/back`)
-- [ ] Phase 2: Add 3D stencils (7-point) and update scalar CPU linear solvers
+- [x] Phase 1: Extend core data structures (grid: `nz, z[], dz[], stride_z, inv_dz2, k_start, k_end`; flow_field: `w, nz`; BCs: `front/back`)
+- [x] Phase 2: Add 3D stencils (7-point) and update scalar CPU linear solvers
 - [ ] Phase 3: Update scalar CPU NS solvers with w-momentum equation
 - [ ] Phase 4: Extend boundary conditions for z-faces (all backends)
 - [ ] Phase 5: Update SIMD backends (AVX2/NEON) for 3D
@@ -1764,8 +1764,9 @@ cfd.run_simulation(output_buffer=buf)
 ### v0.2.0 - 3D Support (In Progress)
 
 - [x] Phase 0: IDX_2D/IDX_3D indexing macros, replace all inline indexing
-- [ ] Phase 1: Extend grid, flow_field, BCs with z-dimension (nz=1 backward compatible)
-- [ ] Phase 2-3: 3D stencils, linear solvers, NS solvers with w-momentum
+- [x] Phase 1: Extend grid, flow_field, BCs with z-dimension (nz=1 backward compatible)
+- [x] Phase 2: 3D stencils (7-point), scalar CPU linear solvers (Jacobi, SOR, Red-Black, CG, BiCGSTAB)
+- [ ] Phase 3: NS solvers with w-momentum
 - [ ] Phase 4: 3D boundary conditions (all backends)
 - [ ] Phase 5-7: SIMD, OMP, CUDA backends for 3D
 - [ ] Phase 8: 3D VTK output, examples, validation (Taylor-Green 3D, Poiseuille 3D)

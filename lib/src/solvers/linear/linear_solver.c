@@ -287,20 +287,30 @@ double poisson_solver_compute_residual(
     size_t ny = solver->ny;
     double dx2 = solver->dx * solver->dx;
     double dy2 = solver->dy * solver->dy;
+    double inv_dz2 = poisson_solver_compute_inv_dz2(solver->dz);
+
+    size_t stride_z, k_start, k_end;
+    poisson_solver_compute_3d_bounds(solver->nz, nx, ny,
+                                     &stride_z, &k_start, &k_end);
 
     double max_residual = 0.0;
 
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
 
-            /* Compute Laplacian: d^2x/dx^2 + d^2x/dy^2 */
-            double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) / dx2
-                             + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) / dy2;
+                /* Compute Laplacian: d^2x/dx^2 + d^2x/dy^2 + d^2x/dz^2 */
+                double laplacian =
+                    (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) / dx2
+                  + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) / dy2
+                  + (x[idx + stride_z] + x[idx - stride_z]
+                     - 2.0 * x[idx]) * inv_dz2;
 
-            double residual = fabs(laplacian - rhs[idx]);
-            if (residual > max_residual) {
-                max_residual = residual;
+                double residual = fabs(laplacian - rhs[idx]);
+                if (residual > max_residual) {
+                    max_residual = residual;
+                }
             }
         }
     }
@@ -318,9 +328,26 @@ void poisson_solver_apply_bc(
 
     if (solver->apply_bc) {
         solver->apply_bc(solver, x);
-    } else {
-        /* Default: Neumann BCs (zero gradient) */
-        bc_apply_scalar(x, solver->nx, solver->ny, BC_TYPE_NEUMANN);
+        return;
+    }
+
+    /* Default: Neumann BCs (zero gradient) on all faces */
+    size_t nx = solver->nx;
+    size_t ny = solver->ny;
+    size_t nz = solver->nz;
+    size_t plane_size = nx * ny;
+
+    /* Z-face Neumann: copy adjacent interior plane to boundary planes */
+    if (nz > 1) {
+        memcpy(x, x + plane_size, plane_size * sizeof(double));
+        memcpy(x + (nz - 1) * plane_size,
+               x + (nz - 2) * plane_size,
+               plane_size * sizeof(double));
+    }
+
+    /* Apply 2D Neumann BCs on each z-plane (x/y faces) */
+    for (size_t k = 0; k < nz; k++) {
+        bc_apply_scalar(x + k * plane_size, nx, ny, BC_TYPE_NEUMANN);
     }
 }
 

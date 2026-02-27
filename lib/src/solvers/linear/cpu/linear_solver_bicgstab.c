@@ -37,7 +37,6 @@
 
 #include "../linear_solver_internal.h"
 
-#include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
@@ -52,6 +51,11 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
+    double inv_dz2;    /* 1/dz^2 (0 for 2D) */
+
+    size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
+    size_t k_start;    /* first interior k index */
+    size_t k_end;      /* one-past-last interior k index */
 
     /* BiCGSTAB working vectors (allocated during init) */
     double* r;         /* Residual vector */
@@ -72,12 +76,15 @@ typedef struct {
  * Compute dot product of two vectors (interior points only)
  */
 static double dot_product(const double* a, const double* b,
-                          size_t nx, size_t ny) {
+                          size_t nx, size_t ny,
+                          size_t k_start, size_t k_end, size_t stride_z) {
     double sum = 0.0;
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            sum += a[idx] * b[idx];
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                sum += a[idx] * b[idx];
+            }
         }
     }
     return sum;
@@ -87,11 +94,14 @@ static double dot_product(const double* a, const double* b,
  * Compute y = y + alpha * x (interior points only)
  */
 static void axpy(double alpha, const double* x, double* y,
-                 size_t nx, size_t ny) {
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            y[idx] += alpha * x[idx];
+                 size_t nx, size_t ny,
+                 size_t k_start, size_t k_end, size_t stride_z) {
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                y[idx] += alpha * x[idx];
+            }
         }
     }
 }
@@ -103,18 +113,22 @@ static void axpy(double alpha, const double* x, double* y,
  */
 static void apply_laplacian(const double* p, double* Ap,
                             size_t nx, size_t ny,
-                            double dx2, double dy2) {
+                            double dx2, double dy2, double inv_dz2,
+                            size_t k_start, size_t k_end, size_t stride_z) {
     double dx2_inv = 1.0 / dx2;
     double dy2_inv = 1.0 / dy2;
 
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
 
-            /* -Laplacian = -(d^2p/dx^2 + d^2p/dy^2) */
-            double laplacian = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv
-                             + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv;
-            Ap[idx] = -laplacian;
+                double laplacian =
+                    (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv
+                  + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv
+                  + (p[idx + stride_z] + p[idx - stride_z] - 2.0 * p[idx]) * inv_dz2;
+                Ap[idx] = -laplacian;
+            }
         }
     }
 }
@@ -125,20 +139,25 @@ static void apply_laplacian(const double* p, double* Ap,
  */
 static void compute_residual(const double* x, const double* rhs, double* r,
                              size_t nx, size_t ny,
-                             double dx2, double dy2) {
+                             double dx2, double dy2, double inv_dz2,
+                             size_t k_start, size_t k_end, size_t stride_z) {
     double dx2_inv = 1.0 / dx2;
     double dy2_inv = 1.0 / dy2;
 
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
 
-            /* Laplacian(x) = d^2x/dx^2 + d^2x/dy^2 */
-            double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv
-                             + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv;
+                /* Laplacian(x) = d^2x/dx^2 + d^2x/dy^2 */
+                double laplacian =
+                    (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv
+                  + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv
+                  + (x[idx + stride_z] + x[idx - stride_z] - 2.0 * x[idx]) * inv_dz2;
 
-            /* r = b - Ax = -rhs - (-laplacian) = -rhs + laplacian */
-            r[idx] = -rhs[idx] + laplacian;
+                /* r = b - Ax = -rhs - (-laplacian) = -rhs + laplacian */
+                r[idx] = -rhs[idx] + laplacian;
+            }
         }
     }
 }
@@ -147,11 +166,14 @@ static void compute_residual(const double* x, const double* rhs, double* r,
  * Copy vector: dst = src (interior points only)
  */
 static void copy_vector(const double* src, double* dst,
-                        size_t nx, size_t ny) {
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            dst[idx] = src[idx];
+                        size_t nx, size_t ny,
+                        size_t k_start, size_t k_end, size_t stride_z) {
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                dst[idx] = src[idx];
+            }
         }
     }
 }
@@ -159,11 +181,14 @@ static void copy_vector(const double* src, double* dst,
 /**
  * Set vector to zero (interior points only)
  */
-static void zero_vector(double* v, size_t nx, size_t ny) {
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            v[idx] = 0.0;
+static void zero_vector(double* v, size_t nx, size_t ny,
+                        size_t k_start, size_t k_end, size_t stride_z) {
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                v[idx] = 0.0;
+            }
         }
     }
 }
@@ -178,7 +203,7 @@ static cfd_status_t bicgstab_scalar_init(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)nz; (void)dz; (void)params;
+    (void)params;
 
     bicgstab_context_t* ctx = (bicgstab_context_t*)cfd_calloc(1, sizeof(bicgstab_context_t));
     if (!ctx) {
@@ -187,9 +212,11 @@ static cfd_status_t bicgstab_scalar_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
+    ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
+    poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
     /* Allocate working vectors */
-    size_t n = nx * ny;
+    size_t n = nx * ny * nz;
     ctx->r = (double*)cfd_calloc(n, sizeof(double));
     ctx->r_hat = (double*)cfd_calloc(n, sizeof(double));
     ctx->p = (double*)cfd_calloc(n, sizeof(double));
@@ -249,6 +276,10 @@ static cfd_status_t bicgstab_scalar_solve(
     size_t ny = solver->ny;
     double dx2 = ctx->dx2;
     double dy2 = ctx->dy2;
+    size_t stride_z = ctx->stride_z;
+    size_t k_start = ctx->k_start;
+    size_t k_end = ctx->k_end;
+    double inv_dz2 = ctx->inv_dz2;
 
     double* r = ctx->r;
     double* r_hat = ctx->r_hat;
@@ -261,23 +292,23 @@ static cfd_status_t bicgstab_scalar_solve(
     double start_time = poisson_solver_get_time_ms();
 
     /* Apply initial boundary conditions */
-    bc_apply_scalar(x, nx, ny, BC_TYPE_NEUMANN);
+    poisson_solver_apply_bc(solver, x);
 
     /* Compute initial residual: r_0 = b - A*x_0 */
-    compute_residual(x, rhs, r, nx, ny, dx2, dy2);
+    compute_residual(x, rhs, r, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
     /* r_hat = r_0 (shadow residual) */
-    copy_vector(r, r_hat, nx, ny);
+    copy_vector(r, r_hat, nx, ny, k_start, k_end, stride_z);
 
     /* Initialize: rho = alpha = omega = 1, v = p = 0 */
     double rho = 1.0;
     double alpha = 1.0;
     double omega = 1.0;
-    zero_vector(v, nx, ny);
-    zero_vector(p, nx, ny);
+    zero_vector(v, nx, ny, k_start, k_end, stride_z);
+    zero_vector(p, nx, ny, k_start, k_end, stride_z);
 
     /* Compute initial residual norm */
-    double r_dot_r = dot_product(r, r, nx, ny);
+    double r_dot_r = dot_product(r, r, nx, ny, k_start, k_end, stride_z);
     double initial_res = sqrt(r_dot_r);
 
     if (stats) {
@@ -306,7 +337,7 @@ static cfd_status_t bicgstab_scalar_solve(
 
     for (iter = 0; iter < params->max_iterations; iter++) {
         /* rho_new = (r_hat, r) */
-        double rho_new = dot_product(r_hat, r, nx, ny);
+        double rho_new = dot_product(r_hat, r, nx, ny, k_start, k_end, stride_z);
 
         /* Check for breakdown */
         if (fabs(rho_new) < BICGSTAB_BREAKDOWN_THRESHOLD) {
@@ -323,18 +354,20 @@ static cfd_status_t bicgstab_scalar_solve(
         double beta = (rho_new / rho) * (alpha / omega);
 
         /* p = r + beta * (p - omega * v) */
-        for (size_t j = 1; j < ny - 1; j++) {
-            for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = IDX_2D(i, j, nx);
-                p[idx] = r[idx] + beta * (p[idx] - omega * v[idx]);
+        for (size_t k = k_start; k < k_end; k++) {
+            for (size_t j = 1; j < ny - 1; j++) {
+                for (size_t i = 1; i < nx - 1; i++) {
+                    size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                    p[idx] = r[idx] + beta * (p[idx] - omega * v[idx]);
+                }
             }
         }
 
         /* v = A * p */
-        apply_laplacian(p, v, nx, ny, dx2, dy2);
+        apply_laplacian(p, v, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
         /* alpha = rho_new / (r_hat, v) */
-        double r_hat_dot_v = dot_product(r_hat, v, nx, ny);
+        double r_hat_dot_v = dot_product(r_hat, v, nx, ny, k_start, k_end, stride_z);
 
         /* Check for breakdown */
         if (fabs(r_hat_dot_v) < BICGSTAB_BREAKDOWN_THRESHOLD) {
@@ -350,34 +383,36 @@ static cfd_status_t bicgstab_scalar_solve(
         alpha = rho_new / r_hat_dot_v;
 
         /* s = r - alpha * v */
-        for (size_t j = 1; j < ny - 1; j++) {
-            for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = IDX_2D(i, j, nx);
-                s[idx] = r[idx] - alpha * v[idx];
+        for (size_t k = k_start; k < k_end; k++) {
+            for (size_t j = 1; j < ny - 1; j++) {
+                for (size_t i = 1; i < nx - 1; i++) {
+                    size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                    s[idx] = r[idx] - alpha * v[idx];
+                }
             }
         }
 
         /* Check for early convergence on s */
-        double s_norm = sqrt(dot_product(s, s, nx, ny));
+        double s_norm = sqrt(dot_product(s, s, nx, ny, k_start, k_end, stride_z));
         if (s_norm < tolerance || s_norm < params->absolute_tolerance) {
             /* Update x and return */
-            axpy(alpha, p, x, nx, ny);
+            axpy(alpha, p, x, nx, ny, k_start, k_end, stride_z);
             res_norm = s_norm;
             converged = 1;
             break;
         }
 
         /* t = A * s */
-        apply_laplacian(s, t, nx, ny, dx2, dy2);
+        apply_laplacian(s, t, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
         /* omega = (t, s) / (t, t) */
-        double t_dot_s = dot_product(t, s, nx, ny);
-        double t_dot_t = dot_product(t, t, nx, ny);
+        double t_dot_s = dot_product(t, s, nx, ny, k_start, k_end, stride_z);
+        double t_dot_t = dot_product(t, t, nx, ny, k_start, k_end, stride_z);
 
         /* Check for breakdown */
         if (fabs(t_dot_t) < BICGSTAB_BREAKDOWN_THRESHOLD) {
             /* Update x with available progress */
-            axpy(alpha, p, x, nx, ny);
+            axpy(alpha, p, x, nx, ny, k_start, k_end, stride_z);
             if (stats) {
                 stats->status = POISSON_STAGNATED;
                 stats->iterations = iter + 1;
@@ -390,18 +425,22 @@ static cfd_status_t bicgstab_scalar_solve(
         omega = t_dot_s / t_dot_t;
 
         /* x = x + alpha * p + omega * s */
-        for (size_t j = 1; j < ny - 1; j++) {
-            for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = IDX_2D(i, j, nx);
-                x[idx] += alpha * p[idx] + omega * s[idx];
+        for (size_t k = k_start; k < k_end; k++) {
+            for (size_t j = 1; j < ny - 1; j++) {
+                for (size_t i = 1; i < nx - 1; i++) {
+                    size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                    x[idx] += alpha * p[idx] + omega * s[idx];
+                }
             }
         }
 
         /* r = s - omega * t */
-        for (size_t j = 1; j < ny - 1; j++) {
-            for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = IDX_2D(i, j, nx);
-                r[idx] = s[idx] - omega * t[idx];
+        for (size_t k = k_start; k < k_end; k++) {
+            for (size_t j = 1; j < ny - 1; j++) {
+                for (size_t i = 1; i < nx - 1; i++) {
+                    size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                    r[idx] = s[idx] - omega * t[idx];
+                }
             }
         }
 
@@ -409,7 +448,7 @@ static cfd_status_t bicgstab_scalar_solve(
         rho = rho_new;
 
         /* Compute residual norm */
-        res_norm = sqrt(dot_product(r, r, nx, ny));
+        res_norm = sqrt(dot_product(r, r, nx, ny, k_start, k_end, stride_z));
 
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {
@@ -441,7 +480,7 @@ static cfd_status_t bicgstab_scalar_solve(
     }
 
     /* Apply final boundary conditions */
-    bc_apply_scalar(x, nx, ny, BC_TYPE_NEUMANN);
+    poisson_solver_apply_bc(solver, x);
 
     double end_time = poisson_solver_get_time_ms();
 
