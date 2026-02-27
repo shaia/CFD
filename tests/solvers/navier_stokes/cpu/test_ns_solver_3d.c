@@ -210,10 +210,24 @@ void test_3d_rk2_quiescent(void) {
  * ======================================================================== */
 
 /**
- * Helper: run solver on 2D (nz=1) grid and compare results.
- * Sets a simple sinusoidal initial condition and runs a few steps.
+ * Helper: compute RMS (L2 norm) of an array.
  */
-static void run_backward_compat_test(const char* solver_name) {
+static double compute_l2_norm(const double* arr, size_t n) {
+    double sum = 0.0;
+    for (size_t i = 0; i < n; i++) {
+        sum += arr[i] * arr[i];
+    }
+    return sqrt(sum / n);
+}
+
+/**
+ * Helper: run solver on 2D (nz=1) grid and verify results match golden L2
+ * norms. This guards the "nz=1 produces bit-identical 2D results" invariant.
+ * Sets a simple sinusoidal initial condition and runs 3 steps.
+ */
+static void run_backward_compat_test(const char* solver_name,
+                                     double golden_l2_u, double golden_l2_v,
+                                     double golden_l2_p) {
     size_t nx = 16, ny = 16;
 
     /* Create nz=1 grid (the 3D code path with nz==1 should produce 2D results) */
@@ -247,8 +261,9 @@ static void run_backward_compat_test(const char* solver_name) {
     cfd_status_t status = run_solver_steps(solver_name, field, g, &params, 3);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
-    /* w should remain identically zero when nz=1 (no z-momentum) */
     size_t total = nx * ny;
+
+    /* w should remain identically zero when nz=1 (no z-momentum) */
     double max_w = 0.0;
     for (size_t i = 0; i < total; i++) {
         double aw = fabs(field->w[i]);
@@ -257,20 +272,6 @@ static void run_backward_compat_test(const char* solver_name) {
     printf("  Max |w| with nz=1: %.2e (expect 0)\n", max_w);
     TEST_ASSERT_DOUBLE_WITHIN(1e-15, 0.0, max_w);
 
-    /* u and v should have evolved (not still initial condition) */
-    int u_changed = 0;
-    for (size_t j = 1; j < ny - 1; j++) {
-        for (size_t i = 1; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            if (fabs(field->u[idx] - 0.1 * sin(M_PI * g->y[j])) > 1e-15) {
-                u_changed = 1;
-                break;
-            }
-        }
-        if (u_changed) break;
-    }
-    TEST_ASSERT_TRUE_MESSAGE(u_changed, "u-velocity did not evolve — solver may not be running");
-
     /* All values should be finite */
     for (size_t i = 0; i < total; i++) {
         TEST_ASSERT_TRUE(isfinite(field->u[i]));
@@ -278,25 +279,43 @@ static void run_backward_compat_test(const char* solver_name) {
         TEST_ASSERT_TRUE(isfinite(field->p[i]));
     }
 
+    /* Verify L2 norms match golden values (guards bit-identical 2D output) */
+    double l2_u = compute_l2_norm(field->u, total);
+    double l2_v = compute_l2_norm(field->v, total);
+    double l2_p = compute_l2_norm(field->p, total);
+    printf("  L2(u)=%.17e  L2(v)=%.17e  L2(p)=%.17e\n", l2_u, l2_v, l2_p);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, golden_l2_u, l2_u);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, golden_l2_v, l2_v);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, golden_l2_p, l2_p);
+
     flow_field_destroy(field);
     grid_destroy(g);
 }
 
 void test_3d_explicit_euler_backward_compat(void) {
     printf("\n=== Test: 3D Explicit Euler Backward Compat (nz=1) ===\n");
-    run_backward_compat_test(NS_SOLVER_TYPE_EXPLICIT_EULER);
+    run_backward_compat_test(NS_SOLVER_TYPE_EXPLICIT_EULER,
+                             6.84647305901105868e-02,
+                             3.42314945425199885e-02,
+                             1.00000000000000000e+00);
     printf("PASSED\n");
 }
 
 void test_3d_projection_backward_compat(void) {
     printf("\n=== Test: 3D Projection Backward Compat (nz=1) ===\n");
-    run_backward_compat_test(NS_SOLVER_TYPE_PROJECTION);
+    run_backward_compat_test(NS_SOLVER_TYPE_PROJECTION,
+                             6.84647639323831686e-02,
+                             3.42315494726977212e-02,
+                             1.00000039251590289e+00);
     printf("PASSED\n");
 }
 
 void test_3d_rk2_backward_compat(void) {
     printf("\n=== Test: 3D RK2 Backward Compat (nz=1) ===\n");
-    run_backward_compat_test(NS_SOLVER_TYPE_RK2);
+    run_backward_compat_test(NS_SOLVER_TYPE_RK2,
+                             6.88584742267375205e-02,
+                             3.49775875753182836e-02,
+                             1.00000000000000044e+00);
     printf("PASSED\n");
 }
 
