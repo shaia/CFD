@@ -55,6 +55,7 @@ typedef struct {
     size_t nx;
     size_t ny;
     int initialized;
+    int iter_count;
 } projection_simd_context;
 
 // Public API
@@ -218,16 +219,19 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
             double source_u = 0.0;
             double source_v = 0.0;
             double source_w = 0.0;
+            double t = ctx->iter_count * dt;
             if (params->source_func) {
                 double x = grid->x[i];
                 double y = grid->y[j];
-                params->source_func(x, y, 0.0, 0.0, params->source_context,
+                params->source_func(x, y, 0.0, t, params->source_context,
                                     &source_u, &source_v, &source_w);
             } else if (params->source_amplitude_u > 0) {
                 double x = grid->x[i];
                 double y = grid->y[j];
-                source_u = params->source_amplitude_u * sin(M_PI * y);
-                source_v = params->source_amplitude_v * sin(2.0 * M_PI * x);
+                source_u = params->source_amplitude_u * sin(M_PI * y) *
+                           exp(-params->source_decay_rate * t);
+                source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) *
+                           exp(-params->source_decay_rate * t);
             }
 
             // Intermediate velocity (without pressure gradient)
@@ -368,6 +372,8 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
             return CFD_ERROR_DIVERGED;
         }
     }
+
+    ctx->iter_count++;
 
     if (stats) {
         stats->iterations = 1;
