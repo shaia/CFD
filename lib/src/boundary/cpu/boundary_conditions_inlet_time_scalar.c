@@ -56,6 +56,9 @@ cfd_status_t bc_apply_inlet_time_scalar_impl(double* u, double* v, double* w,
     if (!u || !v || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
+    if (nz == 0 || nz == 2 || (nz > 1 && stride_z < nx * ny)) {
+        return CFD_ERROR_INVALID;
+    }
 
     if (!time_ctx) {
         /* If no time context provided, use time=0, dt=0 */

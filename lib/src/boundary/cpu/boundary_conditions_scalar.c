@@ -25,6 +25,9 @@ cfd_status_t bc_apply_symmetry_scalar_impl(double* u, double* v, double* w,
     if (nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
+    if (nz == 0 || nz == 2 || (nz > 1 && stride_z < nx * ny)) {
+        return CFD_ERROR_INVALID;
+    }
 
     size_t j, i, k;
     bc_edge_t edges = config->edges;

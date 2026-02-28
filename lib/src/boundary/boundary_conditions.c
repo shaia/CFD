@@ -156,10 +156,11 @@ bool bc_set_backend(bc_backend_t backend) {
  * ============================================================================ */
 
 /** Validate 3D layout parameters.
- *  nz must be >= 1; for nz > 1, stride_z must be >= nx*ny to prevent aliasing. */
+ *  nz must be 1 (2D) or >= 3 (true 3D); for nz > 1, stride_z must be >= nx*ny
+ *  to prevent aliasing. nz==2 is rejected as degenerate (consistent with NS solvers). */
 static inline bool validate_3d_layout(size_t nx, size_t ny,
                                        size_t nz, size_t stride_z) {
-    if (nz == 0) return false;
+    if (nz == 0 || nz == 2) return false;
     if (nz > 1 && stride_z < nx * ny) return false;
     return true;
 }
@@ -1286,7 +1287,8 @@ cfd_status_t bc_apply_inlet_time_3d(
     size_t nx, size_t ny, size_t nz, size_t stride_z,
     const bc_inlet_config_t* config,
     const bc_time_context_t* time_ctx) {
-    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    if (!u || !v || !config || nx < 3 || ny < 3 || !validate_3d_layout(nx, ny, nz, stride_z))
+        return CFD_ERROR_INVALID;
     if (config->time_config.profile == BC_TIME_PROFILE_CONSTANT &&
         config->custom_profile_time == NULL) {
         return bc_apply_inlet_3d(u, v, w, nx, ny, nz, stride_z, config);
@@ -1299,6 +1301,8 @@ cfd_status_t bc_apply_inlet_time_cpu_3d(
     size_t nx, size_t ny, size_t nz, size_t stride_z,
     const bc_inlet_config_t* config,
     const bc_time_context_t* time_ctx) {
+    if (!u || !v || !config || nx < 3 || ny < 3 || !validate_3d_layout(nx, ny, nz, stride_z))
+        return CFD_ERROR_INVALID;
     return bc_apply_inlet_time_scalar_impl(u, v, w, nx, ny, nz, stride_z, config, time_ctx);
 }
 
@@ -1307,6 +1311,8 @@ cfd_status_t bc_apply_inlet_time_simd_3d(
     size_t nx, size_t ny, size_t nz, size_t stride_z,
     const bc_inlet_config_t* config,
     const bc_time_context_t* time_ctx) {
+    if (!u || !v || !config || nx < 3 || ny < 3 || !validate_3d_layout(nx, ny, nz, stride_z))
+        return CFD_ERROR_INVALID;
     return bc_apply_inlet_time_scalar_impl(u, v, w, nx, ny, nz, stride_z, config, time_ctx);
 }
 
@@ -1315,6 +1321,8 @@ cfd_status_t bc_apply_inlet_time_omp_3d(
     size_t nx, size_t ny, size_t nz, size_t stride_z,
     const bc_inlet_config_t* config,
     const bc_time_context_t* time_ctx) {
+    if (!u || !v || !config || nx < 3 || ny < 3 || !validate_3d_layout(nx, ny, nz, stride_z))
+        return CFD_ERROR_INVALID;
     return bc_apply_inlet_time_scalar_impl(u, v, w, nx, ny, nz, stride_z, config, time_ctx);
 }
 
@@ -1425,11 +1433,7 @@ cfd_status_t bc_apply_symmetry_3d(double* u, double* v, double* w,
                                    const bc_symmetry_config_t* config) {
     if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
     const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
-    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
-    if (impl->apply_symmetry == NULL) {
-        return bc_apply_symmetry_scalar_impl(u, v, w, nx, ny, nz, stride_z, config);
-    }
-    return impl->apply_symmetry(u, v, w, nx, ny, nz, stride_z, config);
+    return apply_symmetry_with_backend(u, v, w, nx, ny, nz, stride_z, config, impl);
 }
 
 cfd_status_t bc_apply_symmetry_cpu_3d(double* u, double* v, double* w,
@@ -1437,7 +1441,7 @@ cfd_status_t bc_apply_symmetry_cpu_3d(double* u, double* v, double* w,
                                        size_t nz, size_t stride_z,
                                        const bc_symmetry_config_t* config) {
     if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
-    return bc_apply_symmetry_scalar_impl(u, v, w, nx, ny, nz, stride_z, config);
+    return apply_symmetry_with_backend(u, v, w, nx, ny, nz, stride_z, config, &bc_impl_scalar);
 }
 
 cfd_status_t bc_apply_symmetry_simd_3d(double* u, double* v, double* w,
