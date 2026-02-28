@@ -66,14 +66,17 @@ typedef struct {
  * Custom source term callback function
  * @param x X coordinate
  * @param y Y coordinate
+ * @param z Z coordinate (0.0 for 2D)
  * @param t Physical time
  * @param context User-provided context pointer
  * @param source_u Output: u-velocity source term
  * @param source_v Output: v-velocity source term
+ * @param source_w Output: w-velocity source term (set to 0.0 for 2D)
  */
-typedef void (*ns_source_func_t)(double x, double y, double t,
+typedef void (*ns_source_func_t)(double x, double y, double z, double t,
                                   void* context,
-                                  double* source_u, double* source_v);
+                                  double* source_u, double* source_v,
+                                  double* source_w);
 
 /**
  * Navier-Stokes solver parameters
@@ -355,9 +358,9 @@ CFD_LIBRARY_EXPORT void initialize_flow_field(flow_field* field, const grid* gri
 CFD_LIBRARY_EXPORT void apply_boundary_conditions(flow_field* field, const grid* grid);
 
 /** Source term computation */
-CFD_LIBRARY_EXPORT void compute_source_terms(double x, double y, int iter, double dt,
+CFD_LIBRARY_EXPORT void compute_source_terms(double x, double y, double z, int iter, double dt,
                                              const ns_solver_params_t* params, double* source_u,
-                                             double* source_v);
+                                             double* source_v, double* source_w);
 
 /** Time step computation */
 CFD_LIBRARY_EXPORT void compute_time_step(flow_field* field, const grid* grid,

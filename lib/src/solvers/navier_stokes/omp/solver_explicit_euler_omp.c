@@ -91,9 +91,12 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
                 // Source terms
                 double source_u = 0.0;
                 double source_v = 0.0;
+                double source_w = 0.0;
                 if (params->source_func) {
-                    params->source_func(grid->x[i], grid->y[j], iter * conservative_dt,
-                                        params->source_context, &source_u, &source_v);
+                    params->source_func(grid->x[i], grid->y[j], 0.0,
+                                        iter * conservative_dt,
+                                        params->source_context,
+                                        &source_u, &source_v, &source_w);
                 } else {
                     source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]) *
                                exp(-params->source_decay_rate * iter * conservative_dt);

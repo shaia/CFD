@@ -7,6 +7,9 @@
 
 
 #include "cfd/solvers/navier_stokes_solver.h"
+
+#include "../boundary_copy_utils.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -110,33 +113,38 @@ void flow_field_destroy(flow_field* field) {
 }
 
 void initialize_flow_field(flow_field* field, const grid* grid) {
-    // Initialize with a more stable flow field
-    for (size_t j = 0; j < field->ny; j++) {
-        for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = IDX_2D(i, j, field->nx);
-            double x = grid->x[i];
-            double y = grid->y[j];
+    size_t nx = field->nx;
+    size_t ny = field->ny;
+    size_t nz = field->nz;
+    size_t plane = nx * ny;
 
-            // Set initial conditions with more interesting flow
-            field->u[idx] =
-                INIT_U_BASE + (INIT_U_VAR * sin(M_PI * y));    // Slightly varying u-velocity
-            field->v[idx] = INIT_V_VAR * sin(2.0 * M_PI * x);  // Small v-velocity variation
-            field->p[idx] = INIT_PRESSURE;                     // Reference pressure
-            field->rho[idx] = INIT_DENSITY;                    // Reference density
-            field->T[idx] = INIT_TEMP;                         // Reference temperature (K)
+    for (size_t k = 0; k < nz; k++) {
+        size_t base = k * plane;
+        for (size_t j = 0; j < ny; j++) {
+            for (size_t i = 0; i < nx; i++) {
+                size_t idx = base + IDX_2D(i, j, nx);
+                double x = grid->x[i];
+                double y = grid->y[j];
 
-            // Add a pressure perturbation for interesting flow
-            double cx = PERTURB_CENTER_X, cy = PERTURB_CENTER_Y;  // Center of perturbation
-            double r = sqrt(((x - cx) * (x - cx)) + ((y - cy) * (y - cy)));
-            if (r < PERTURB_RADIUS) {
-                field->p[idx] += PERTURB_MAG * exp(-r * r / PERTURB_WIDTH_SQ);
-                // Adjust velocities based on pressure gradient
-                double dp_dx = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (x - cx) / PERTURB_WIDTH_SQ *
-                               exp(-r * r / PERTURB_WIDTH_SQ);
-                double dp_dy = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (y - cy) / PERTURB_WIDTH_SQ *
-                               exp(-r * r / PERTURB_WIDTH_SQ);
-                field->u[idx] += -PERTURB_MAG * dp_dx;  // Simple pressure-velocity coupling
-                field->v[idx] += -PERTURB_MAG * dp_dy;
+                field->u[idx] =
+                    INIT_U_BASE + (INIT_U_VAR * sin(M_PI * y));
+                field->v[idx] = INIT_V_VAR * sin(2.0 * M_PI * x);
+                field->w[idx] = 0.0;
+                field->p[idx] = INIT_PRESSURE;
+                field->rho[idx] = INIT_DENSITY;
+                field->T[idx] = INIT_TEMP;
+
+                double cx = PERTURB_CENTER_X, cy = PERTURB_CENTER_Y;
+                double r = sqrt(((x - cx) * (x - cx)) + ((y - cy) * (y - cy)));
+                if (r < PERTURB_RADIUS) {
+                    field->p[idx] += PERTURB_MAG * exp(-r * r / PERTURB_WIDTH_SQ);
+                    double dp_dx = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (x - cx) / PERTURB_WIDTH_SQ *
+                                   exp(-r * r / PERTURB_WIDTH_SQ);
+                    double dp_dy = -PERTURB_MAG * PERTURB_GRAD_FACTOR * (y - cy) / PERTURB_WIDTH_SQ *
+                                   exp(-r * r / PERTURB_WIDTH_SQ);
+                    field->u[idx] += -PERTURB_MAG * dp_dx;
+                    field->v[idx] += -PERTURB_MAG * dp_dy;
+                }
             }
         }
     }
@@ -203,265 +211,328 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
 
 void apply_boundary_conditions(flow_field* field, const grid* grid) {
     (void)grid;
-    // Apply periodic boundary conditions in x-direction
-    for (size_t j = 0; j < field->ny; j++) {
-        field->u[IDX_2D(0, j, field->nx)] = field->u[IDX_2D(field->nx - 2, j, field->nx)];
-        field->v[IDX_2D(0, j, field->nx)] = field->v[IDX_2D(field->nx - 2, j, field->nx)];
-        field->p[IDX_2D(0, j, field->nx)] = field->p[IDX_2D(field->nx - 2, j, field->nx)];
-        field->rho[IDX_2D(0, j, field->nx)] = field->rho[IDX_2D(field->nx - 2, j, field->nx)];
-        field->T[IDX_2D(0, j, field->nx)] = field->T[IDX_2D(field->nx - 2, j, field->nx)];
+    size_t nx = field->nx;
+    size_t ny = field->ny;
+    size_t nz = field->nz;
+    size_t plane = nx * ny;
 
-        field->u[IDX_2D(field->nx - 1, j, field->nx)] = field->u[IDX_2D(1, j, field->nx)];
-        field->v[IDX_2D(field->nx - 1, j, field->nx)] = field->v[IDX_2D(1, j, field->nx)];
-        field->p[IDX_2D(field->nx - 1, j, field->nx)] = field->p[IDX_2D(1, j, field->nx)];
-        field->rho[IDX_2D(field->nx - 1, j, field->nx)] = field->rho[IDX_2D(1, j, field->nx)];
-        field->T[IDX_2D(field->nx - 1, j, field->nx)] = field->T[IDX_2D(1, j, field->nx)];
+    /* Apply periodic BCs in x and y for each z-plane */
+    for (size_t k = 0; k < nz; k++) {
+        size_t base = k * plane;
+
+        /* x-direction periodic */
+        for (size_t j = 0; j < ny; j++) {
+            size_t left = base + IDX_2D(0, j, nx);
+            size_t right = base + IDX_2D(nx - 1, j, nx);
+            size_t src_left = base + IDX_2D(nx - 2, j, nx);
+            size_t src_right = base + IDX_2D(1, j, nx);
+
+            field->u[left] = field->u[src_left];
+            field->v[left] = field->v[src_left];
+            field->w[left] = field->w[src_left];
+            field->p[left] = field->p[src_left];
+            field->rho[left] = field->rho[src_left];
+            field->T[left] = field->T[src_left];
+
+            field->u[right] = field->u[src_right];
+            field->v[right] = field->v[src_right];
+            field->w[right] = field->w[src_right];
+            field->p[right] = field->p[src_right];
+            field->rho[right] = field->rho[src_right];
+            field->T[right] = field->T[src_right];
+        }
+
+        /* y-direction periodic */
+        for (size_t i = 0; i < nx; i++) {
+            size_t bot = base + i;
+            size_t top = base + IDX_2D(i, ny - 1, nx);
+            size_t src_bot = base + IDX_2D(i, ny - 2, nx);
+            size_t src_top = base + IDX_2D(i, 1, nx);
+
+            field->u[bot] = field->u[src_bot];
+            field->v[bot] = field->v[src_bot];
+            field->w[bot] = field->w[src_bot];
+            field->p[bot] = field->p[src_bot];
+            field->rho[bot] = field->rho[src_bot];
+            field->T[bot] = field->T[src_bot];
+
+            field->u[top] = field->u[src_top];
+            field->v[top] = field->v[src_top];
+            field->w[top] = field->w[src_top];
+            field->p[top] = field->p[src_top];
+            field->rho[top] = field->rho[src_top];
+            field->T[top] = field->T[src_top];
+        }
     }
 
-    // Apply periodic boundary conditions in y-direction (instead of walls)
-    for (size_t i = 0; i < field->nx; i++) {
-        // Bottom boundary = top interior
-        field->u[i] = field->u[IDX_2D(i, field->ny - 2, field->nx)];
-        field->v[i] = field->v[IDX_2D(i, field->ny - 2, field->nx)];
-        field->p[i] = field->p[IDX_2D(i, field->ny - 2, field->nx)];
-        field->rho[i] = field->rho[IDX_2D(i, field->ny - 2, field->nx)];
-        field->T[i] = field->T[IDX_2D(i, field->ny - 2, field->nx)];
+    /* z-direction periodic (only when nz > 1) */
+    if (nz > 1) {
+        size_t front_base = 0;
+        size_t back_base = (nz - 1) * plane;
+        size_t src_front = (nz - 2) * plane;
+        size_t src_back = 1 * plane;
 
-        // Top boundary = bottom interior
-        size_t top_idx = IDX_2D(i, field->ny - 1, field->nx);
-        field->u[top_idx] = field->u[field->nx + i];
-        field->v[top_idx] = field->v[field->nx + i];
-        field->p[top_idx] = field->p[field->nx + i];
-        field->rho[top_idx] = field->rho[field->nx + i];
-        field->T[top_idx] = field->T[field->nx + i];
+        for (size_t j = 0; j < ny; j++) {
+            for (size_t i = 0; i < nx; i++) {
+                size_t off = IDX_2D(i, j, nx);
+
+                field->u[front_base + off] = field->u[src_front + off];
+                field->v[front_base + off] = field->v[src_front + off];
+                field->w[front_base + off] = field->w[src_front + off];
+                field->p[front_base + off] = field->p[src_front + off];
+                field->rho[front_base + off] = field->rho[src_front + off];
+                field->T[front_base + off] = field->T[src_front + off];
+
+                field->u[back_base + off] = field->u[src_back + off];
+                field->v[back_base + off] = field->v[src_back + off];
+                field->w[back_base + off] = field->w[src_back + off];
+                field->p[back_base + off] = field->p[src_back + off];
+                field->rho[back_base + off] = field->rho[src_back + off];
+                field->T[back_base + off] = field->T[src_back + off];
+            }
+        }
     }
 }
 
 // Helper function to compute source terms consistently across all solvers
-void compute_source_terms(double x, double y, int iter, double dt, const ns_solver_params_t* params,
-                          double* source_u, double* source_v) {
+void compute_source_terms(double x, double y, double z, int iter, double dt,
+                          const ns_solver_params_t* params,
+                          double* source_u, double* source_v, double* source_w) {
     // Use custom source function if provided
     if (params->source_func) {
         double t = iter * dt;
-        params->source_func(x, y, t, params->source_context, source_u, source_v);
+        params->source_func(x, y, z, t, params->source_context, source_u, source_v, source_w);
         return;
     }
 
-    // Default source term implementation
+    // Default source term implementation (no default w-source)
     *source_u =
         params->source_amplitude_u * sin(M_PI * y) * exp(-params->source_decay_rate * iter * dt);
     *source_v = params->source_amplitude_v * sin(2.0 * M_PI * x) *
                 exp(-params->source_decay_rate * iter * dt);
+    *source_w = 0.0;
 }
 
 // Internal explicit Euler implementation
 // This is called by the solver registry - not part of public API
 cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params) {
-    // Check for minimum grid size - prevent crashes on small grids
-    if (field->nx < 3 || field->ny < 3) {
-        return CFD_ERROR_INVALID;  // Skip solver for grids too small for finite differences
+    if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
+        return CFD_ERROR_INVALID;
     }
 
-    // Allocate temporary arrays for the solution update
-    double* u_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
-    double* v_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
-    double* p_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
-    double* rho_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
-    double* t_new = (double*)cfd_calloc(field->nx * field->ny, sizeof(double));
+    size_t nx = field->nx;
+    size_t ny = field->ny;
+    size_t nz = field->nz;
 
-    if (!u_new || !v_new || !p_new || !rho_new || !t_new) {
-        cfd_free(u_new);
-        cfd_free(v_new);
-        cfd_free(p_new);
-        cfd_free(rho_new);
-        cfd_free(t_new);
+    /* Reject non-uniform z-spacing (solver uses constant inv_2dz/inv_dz2) */
+    if (nz > 1 && grid->dz) {
+        for (size_t k = 1; k < nz - 1; k++) {
+            if (fabs(grid->dz[k] - grid->dz[0]) > 1e-14) {
+                return CFD_ERROR_INVALID;
+            }
+        }
+    }
+
+    size_t plane = nx * ny;
+    size_t total = plane * nz;
+    size_t bytes = total * sizeof(double);
+
+    /* Branch-free 3D constants: when nz==1, stride_z=0, inv_2dz=0, inv_dz2=0
+     * so all z-terms vanish, producing identical results to 2D. */
+    size_t stride_z = (nz > 1) ? plane : 0;
+    size_t k_start = (nz > 1) ? 1 : 0;
+    size_t k_end   = (nz > 1) ? (nz - 1) : 1;
+    double inv_2dz = (nz > 1 && grid->dz) ? 1.0 / (2.0 * grid->dz[0]) : 0.0;
+    double inv_dz2 = (nz > 1 && grid->dz) ? 1.0 / (grid->dz[0] * grid->dz[0]) : 0.0;
+
+    double* u_new = (double*)cfd_calloc(total, sizeof(double));
+    double* v_new = (double*)cfd_calloc(total, sizeof(double));
+    double* w_new = (double*)cfd_calloc(total, sizeof(double));
+    double* p_new = (double*)cfd_calloc(total, sizeof(double));
+    double* rho_new = (double*)cfd_calloc(total, sizeof(double));
+    double* t_new = (double*)cfd_calloc(total, sizeof(double));
+
+    if (!u_new || !v_new || !w_new || !p_new || !rho_new || !t_new) {
+        cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
+        cfd_free(p_new); cfd_free(rho_new); cfd_free(t_new);
         return CFD_ERROR_NOMEM;
     }
 
-    // Initialize with current values to prevent uninitialized memory
-    memcpy(u_new, field->u, field->nx * field->ny * sizeof(double));
-    memcpy(v_new, field->v, field->nx * field->ny * sizeof(double));
-    memcpy(p_new, field->p, field->nx * field->ny * sizeof(double));
-    memcpy(rho_new, field->rho, field->nx * field->ny * sizeof(double));
-    memcpy(t_new, field->T, field->nx * field->ny * sizeof(double));
+    memcpy(u_new, field->u, bytes);
+    memcpy(v_new, field->v, bytes);
+    memcpy(w_new, field->w, bytes);
+    memcpy(p_new, field->p, bytes);
+    memcpy(rho_new, field->rho, bytes);
+    memcpy(t_new, field->T, bytes);
 
-    // Use conservative time step to prevent instabilities
     double conservative_dt = fmin(params->dt, DT_CONSERVATIVE_LIMIT);
 
-    // Main time-stepping loop
     for (int iter = 0; iter < params->max_iter; iter++) {
-        // Update solution using explicit Euler method
-        for (size_t j = 1; j < field->ny - 1; j++) {
-            for (size_t i = 1; i < field->nx - 1; i++) {
-                size_t idx = IDX_2D(i, j, field->nx);
+        for (size_t k = k_start; k < k_end; k++) {
+            for (size_t j = 1; j < ny - 1; j++) {
+                for (size_t i = 1; i < nx - 1; i++) {
+                    size_t idx = k * stride_z + IDX_2D(i, j, nx);
 
-                // Compute spatial derivatives
-                double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
-                double du_dy =
-                    (field->u[idx + field->nx] - field->u[idx - field->nx]) / (2.0 * grid->dy[j]);
-                double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) / (2.0 * grid->dx[i]);
-                double dv_dy =
-                    (field->v[idx + field->nx] - field->v[idx - field->nx]) / (2.0 * grid->dy[j]);
+                    if (field->rho[idx] <= 1e-10) {
+                        continue;
+                    }
+                    if (fabs(grid->dx[i]) < 1e-10 || fabs(grid->dy[j]) < 1e-10) {
+                        continue;
+                    }
 
-                // Pressure gradients
-                double dp_dx = (field->p[idx + 1] - field->p[idx - 1]) / (2.0 * grid->dx[i]);
-                double dp_dy =
-                    (field->p[idx + field->nx] - field->p[idx - field->nx]) / (2.0 * grid->dy[j]);
+                    double u_c = field->u[idx];
+                    double v_c = field->v[idx];
+                    double w_c = field->w[idx];
 
-                // Second derivatives for viscous terms
-                double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) /
-                                 (grid->dx[i] * grid->dx[i]);
-                double d2u_dy2 =
-                    (field->u[idx + field->nx] - 2.0 * field->u[idx] + field->u[idx - field->nx]) /
-                    (grid->dy[j] * grid->dy[j]);
-                double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) /
-                                 (grid->dx[i] * grid->dx[i]);
-                double d2v_dy2 =
-                    (field->v[idx + field->nx] - 2.0 * field->v[idx] + field->v[idx - field->nx]) /
-                    (grid->dy[j] * grid->dy[j]);
+                    /* First derivatives (central differences) */
+                    double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
+                    double du_dy = (field->u[idx + nx] - field->u[idx - nx]) / (2.0 * grid->dy[j]);
+                    double du_dz = (field->u[idx + stride_z] - field->u[idx - stride_z]) * inv_2dz;
 
-                // Safety checks to prevent division by zero
-                if (field->rho[idx] <= 1e-10) {
-                    continue;
+                    double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) / (2.0 * grid->dx[i]);
+                    double dv_dy = (field->v[idx + nx] - field->v[idx - nx]) / (2.0 * grid->dy[j]);
+                    double dv_dz = (field->v[idx + stride_z] - field->v[idx - stride_z]) * inv_2dz;
+
+                    double dw_dx = (field->w[idx + 1] - field->w[idx - 1]) / (2.0 * grid->dx[i]);
+                    double dw_dy = (field->w[idx + nx] - field->w[idx - nx]) / (2.0 * grid->dy[j]);
+                    double dw_dz = (field->w[idx + stride_z] - field->w[idx - stride_z]) * inv_2dz;
+
+                    /* Pressure gradients */
+                    double dp_dx = (field->p[idx + 1] - field->p[idx - 1]) / (2.0 * grid->dx[i]);
+                    double dp_dy = (field->p[idx + nx] - field->p[idx - nx]) / (2.0 * grid->dy[j]);
+                    double dp_dz = (field->p[idx + stride_z] - field->p[idx - stride_z]) * inv_2dz;
+
+                    /* Second derivatives (viscous terms) */
+                    double d2u_dx2 = (field->u[idx + 1] - 2.0 * u_c + field->u[idx - 1]) /
+                                     (grid->dx[i] * grid->dx[i]);
+                    double d2u_dy2 = (field->u[idx + nx] - 2.0 * u_c + field->u[idx - nx]) /
+                                     (grid->dy[j] * grid->dy[j]);
+                    double d2u_dz2 = (field->u[idx + stride_z] - 2.0 * u_c +
+                                      field->u[idx - stride_z]) * inv_dz2;
+
+                    double d2v_dx2 = (field->v[idx + 1] - 2.0 * v_c + field->v[idx - 1]) /
+                                     (grid->dx[i] * grid->dx[i]);
+                    double d2v_dy2 = (field->v[idx + nx] - 2.0 * v_c + field->v[idx - nx]) /
+                                     (grid->dy[j] * grid->dy[j]);
+                    double d2v_dz2 = (field->v[idx + stride_z] - 2.0 * v_c +
+                                      field->v[idx - stride_z]) * inv_dz2;
+
+                    double d2w_dx2 = (field->w[idx + 1] - 2.0 * w_c + field->w[idx - 1]) /
+                                     (grid->dx[i] * grid->dx[i]);
+                    double d2w_dy2 = (field->w[idx + nx] - 2.0 * w_c + field->w[idx - nx]) /
+                                     (grid->dy[j] * grid->dy[j]);
+                    double d2w_dz2 = (field->w[idx + stride_z] - 2.0 * w_c +
+                                      field->w[idx - stride_z]) * inv_dz2;
+
+                    double nu = params->mu / fmax(field->rho[idx], 1e-10);
+                    nu = fmin(nu, 1.0);
+
+                    /* Clamp derivatives */
+                    du_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dx));
+                    du_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dy));
+                    du_dz = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dz));
+                    dv_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dx));
+                    dv_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dy));
+                    dv_dz = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dz));
+                    dw_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dw_dx));
+                    dw_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dw_dy));
+                    dw_dz = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dw_dz));
+                    dp_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dx));
+                    dp_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dy));
+                    dp_dz = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dz));
+                    d2u_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dx2));
+                    d2u_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dy2));
+                    d2u_dz2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dz2));
+                    d2v_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
+                    d2v_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
+                    d2v_dz2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dz2));
+                    d2w_dx2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2w_dx2));
+                    d2w_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2w_dy2));
+                    d2w_dz2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2w_dz2));
+
+                    /* Source terms */
+                    double x = grid->x[i];
+                    double y = grid->y[j];
+                    double z = (nz > 1 && grid->z) ? grid->z[k] : 0.0;
+                    double source_u, source_v, source_w;
+                    compute_source_terms(x, y, z, iter, conservative_dt, params,
+                                         &source_u, &source_v, &source_w);
+
+                    /* u-momentum */
+                    double du = conservative_dt *
+                        (-u_c * du_dx - v_c * du_dy - w_c * du_dz
+                         - dp_dx / field->rho[idx]
+                         + nu * (d2u_dx2 + d2u_dy2 + d2u_dz2)
+                         + source_u);
+
+                    /* v-momentum */
+                    double dv = conservative_dt *
+                        (-u_c * dv_dx - v_c * dv_dy - w_c * dv_dz
+                         - dp_dy / field->rho[idx]
+                         + nu * (d2v_dx2 + d2v_dy2 + d2v_dz2)
+                         + source_v);
+
+                    /* w-momentum */
+                    double dw = conservative_dt *
+                        (-u_c * dw_dx - v_c * dw_dy - w_c * dw_dz
+                         - dp_dz / field->rho[idx]
+                         + nu * (d2w_dx2 + d2w_dy2 + d2w_dz2)
+                         + source_w);
+
+                    du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));
+                    dv = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dv));
+                    dw = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dw));
+
+                    u_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, u_c + du));
+                    v_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, v_c + dv));
+                    w_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, w_c + dw));
+
+                    /* Pressure update from divergence */
+                    double divergence = du_dx + dv_dy + dw_dz;
+                    divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
+                    double dp = -PRESSURE_UPDATE_FACTOR * conservative_dt * field->rho[idx] * divergence;
+                    dp = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dp));
+                    p_new[idx] = field->p[idx] + dp;
+
+                    rho_new[idx] = field->rho[idx];
+                    t_new[idx] = field->T[idx];
                 }
-                if (fabs(grid->dx[i]) < 1e-10 || fabs(grid->dy[j]) < 1e-10) {
-                    continue;
-                }
-
-                // Viscosity coefficient (kinematic viscosity = dynamic viscosity / density) with
-                // safety
-                double nu = params->mu / fmax(field->rho[idx], 1e-10);
-                nu = fmin(nu, 1.0);  // Limit maximum viscosity
-
-                // Limit derivatives to prevent instabilities
-                du_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dx));
-                du_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dy));
-                dv_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dx));
-                dv_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dy));
-                dp_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dx));
-                dp_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dy));
-                d2u_dx2 =
-                    fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dx2));
-                d2u_dy2 =
-                    fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2u_dy2));
-                d2v_dx2 =
-                    fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dx2));
-                d2v_dy2 =
-                    fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2v_dy2));
-
-                // Source terms to maintain flow (prevents decay)
-                double x = grid->x[i];
-                double y = grid->y[j];
-                double source_u, source_v;
-                compute_source_terms(x, y, iter, conservative_dt, params, &source_u, &source_v);
-
-                // Conservative velocity updates with limited changes
-                double du =
-                    conservative_dt * (-field->u[idx] * du_dx - field->v[idx] * du_dy  // Convection
-                                       - dp_dx / field->rho[idx]   // Pressure gradient
-                                       + nu * (d2u_dx2 + d2u_dy2)  // Viscous diffusion
-                                       + source_u                  // Source term
-                                      );
-
-                double dv =
-                    conservative_dt * (-field->u[idx] * dv_dx - field->v[idx] * dv_dy  // Convection
-                                       - dp_dy / field->rho[idx]   // Pressure gradient
-                                       + nu * (d2v_dx2 + d2v_dy2)  // Viscous diffusion
-                                       + source_v                  // Source term
-                                      );
-
-                // Limit velocity changes
-                du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));
-                dv = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dv));
-
-                u_new[idx] = field->u[idx] + du;
-                v_new[idx] = field->v[idx] + dv;
-
-                // Limit velocity magnitudes
-                u_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, u_new[idx]));
-                v_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, v_new[idx]));
-
-                // Simplified stable pressure update
-                double divergence = du_dx + dv_dy;
-                divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
-
-                double dp =
-                    -PRESSURE_UPDATE_FACTOR * conservative_dt * field->rho[idx] * divergence;
-                dp = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dp));  // Limit pressure changes
-                p_new[idx] = field->p[idx] + dp;
-
-                // Keep density and temperature constant for this simplified model
-                rho_new[idx] = field->rho[idx];
-                t_new[idx] = field->T[idx];
             }
         }
 
-        // Copy new solution to old solution
-        memcpy(field->u, u_new, field->nx * field->ny * sizeof(double));
-        memcpy(field->v, v_new, field->nx * field->ny * sizeof(double));
-        memcpy(field->p, p_new, field->nx * field->ny * sizeof(double));
-        memcpy(field->rho, rho_new, field->nx * field->ny * sizeof(double));
-        memcpy(field->T, t_new, field->nx * field->ny * sizeof(double));
+        /* Copy new solution */
+        memcpy(field->u, u_new, bytes);
+        memcpy(field->v, v_new, bytes);
+        memcpy(field->w, w_new, bytes);
+        memcpy(field->p, p_new, bytes);
+        memcpy(field->rho, rho_new, bytes);
+        memcpy(field->T, t_new, bytes);
 
-        // Copy caller-set boundary values to preserve them (e.g., lid-driven cavity BCs)
-        // We store boundaries before apply_boundary_conditions overwrites them
-        size_t nx = field->nx;
-        size_t ny = field->ny;
-
-        // Store boundary values from u_new/v_new (which have the correct caller BCs)
-        for (size_t i = 0; i < nx; i++) {
-            // Bottom and top boundaries
-            u_new[i] = field->u[i];
-            v_new[i] = field->v[i];
-            u_new[IDX_2D(i, ny - 1, nx)] = field->u[IDX_2D(i, ny - 1, nx)];
-            v_new[IDX_2D(i, ny - 1, nx)] = field->v[IDX_2D(i, ny - 1, nx)];
-        }
-        for (size_t jj = 0; jj < ny; jj++) {
-            // Left and right boundaries
-            u_new[IDX_2D(0, jj, nx)] = field->u[IDX_2D(0, jj, nx)];
-            v_new[IDX_2D(0, jj, nx)] = field->v[IDX_2D(0, jj, nx)];
-            u_new[IDX_2D(nx - 1, jj, nx)] = field->u[IDX_2D(nx - 1, jj, nx)];
-            v_new[IDX_2D(nx - 1, jj, nx)] = field->v[IDX_2D(nx - 1, jj, nx)];
-        }
-
-        // Apply boundary conditions (this applies periodic BCs)
+        /* Save caller BCs, apply periodic BCs, restore caller BCs.
+         * Use _3d helper for 6-face copy when nz > 1. */
+        copy_boundary_velocities_3d(u_new, v_new, w_new,
+                                    field->u, field->v, field->w, nx, ny, nz);
         apply_boundary_conditions(field, grid);
+        copy_boundary_velocities_3d(field->u, field->v, field->w,
+                                    u_new, v_new, w_new, nx, ny, nz);
 
-        // Restore caller-set velocity boundary values
-        for (size_t i = 0; i < nx; i++) {
-            field->u[i] = u_new[i];
-            field->v[i] = v_new[i];
-            field->u[IDX_2D(i, ny - 1, nx)] = u_new[IDX_2D(i, ny - 1, nx)];
-            field->v[IDX_2D(i, ny - 1, nx)] = v_new[IDX_2D(i, ny - 1, nx)];
-        }
-        for (size_t jj = 0; jj < ny; jj++) {
-            field->u[IDX_2D(0, jj, nx)] = u_new[IDX_2D(0, jj, nx)];
-            field->v[IDX_2D(0, jj, nx)] = v_new[IDX_2D(0, jj, nx)];
-            field->u[IDX_2D(nx - 1, jj, nx)] = u_new[IDX_2D(nx - 1, jj, nx)];
-            field->v[IDX_2D(nx - 1, jj, nx)] = v_new[IDX_2D(nx - 1, jj, nx)];
-        }
-
-        // Check for NaN/Inf values and stop if found
+        /* NaN/Inf check */
         int has_nan = 0;
-        for (size_t k = 0; k < field->nx * field->ny; k++) {
-            if (!isfinite(field->u[k]) || !isfinite(field->v[k]) || !isfinite(field->p[k])) {
+        for (size_t n = 0; n < total; n++) {
+            if (!isfinite(field->u[n]) || !isfinite(field->v[n]) ||
+                !isfinite(field->w[n]) || !isfinite(field->p[n])) {
                 has_nan = 1;
                 break;
             }
         }
-
         if (has_nan) {
             printf("Warning: NaN/Inf detected in iteration %d, stopping solver\n", iter);
             break;
         }
     }
 
-    // Free temporary arrays
-    cfd_free(u_new);
-    cfd_free(v_new);
-    cfd_free(p_new);
-    cfd_free(rho_new);
-    cfd_free(t_new);
+    cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
+    cfd_free(p_new); cfd_free(rho_new); cfd_free(t_new);
 
     return CFD_SUCCESS;
 }

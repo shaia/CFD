@@ -88,9 +88,11 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 
                 double source_u = 0.0;
                 double source_v = 0.0;
+                double source_w = 0.0;
                 if (params->source_func) {
-                    params->source_func(grid->x[i], grid->y[j], iter * dt,
-                                        params->source_context, &source_u, &source_v);
+                    params->source_func(grid->x[i], grid->y[j], 0.0, iter * dt,
+                                        params->source_context,
+                                        &source_u, &source_v, &source_w);
                 } else if (params->source_amplitude_u > 0) {
                     source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]) *
                                exp(-params->source_decay_rate * iter * dt);

@@ -547,9 +547,10 @@ static void cleanup_cached_solvers(void) {
     }
 }
 
-int poisson_solve(
+int poisson_solve_3d(
     double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
     poisson_solver_type solver_type)
 {
     poisson_solver_t** solver_ptr;
@@ -606,7 +607,7 @@ int poisson_solve(
             break;
 
         default:
-            fprintf(stderr, "poisson_solve: Unknown solver type %d\n", solver_type);
+            fprintf(stderr, "poisson_solve_3d: Unknown solver type %d\n", solver_type);
             return -1;
     }
 
@@ -615,7 +616,9 @@ int poisson_solve(
      * because each solver type is cached independently. */
     if (*solver_ptr == NULL
         || (*solver_ptr)->nx != nx || (*solver_ptr)->ny != ny
-        || (*solver_ptr)->dx != dx || (*solver_ptr)->dy != dy) {
+        || (*solver_ptr)->nz != nz
+        || (*solver_ptr)->dx != dx || (*solver_ptr)->dy != dy
+        || (*solver_ptr)->dz != dz) {
         /* Register cleanup on first use */
         static int cleanup_registered = 0;
         if (!cleanup_registered) {
@@ -633,7 +636,7 @@ int poisson_solve(
         *solver_ptr = poisson_solver_create(method, backend);
 
         if (*solver_ptr) {
-            poisson_solver_init(*solver_ptr, nx, ny, 1, dx, dy, 0.0, NULL);
+            poisson_solver_init(*solver_ptr, nx, ny, nz, dx, dy, dz, NULL);
         }
     }
 
@@ -654,6 +657,14 @@ int poisson_solve(
     }
 
     return -1;
+}
+
+int poisson_solve(
+    double* p, double* p_temp, const double* rhs,
+    size_t nx, size_t ny, double dx, double dy,
+    poisson_solver_type solver_type)
+{
+    return poisson_solve_3d(p, p_temp, rhs, nx, ny, 1, dx, dy, 0.0, solver_type);
 }
 
 /* Direct solver functions - delegate to unified interface */

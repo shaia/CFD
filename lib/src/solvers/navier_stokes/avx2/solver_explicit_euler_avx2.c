@@ -338,9 +338,11 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
 
         double source_u = 0.0;
         double source_v = 0.0;
+        double source_w = 0.0;
         if (params->source_func) {
-            params->source_func(grid->x[i], grid->y[j], t,
-                                params->source_context, &source_u, &source_v);
+            params->source_func(grid->x[i], grid->y[j], 0.0, t,
+                                params->source_context,
+                                &source_u, &source_v, &source_w);
         } else if (params->source_amplitude_u > 0) {
             source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]);
             source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]);
