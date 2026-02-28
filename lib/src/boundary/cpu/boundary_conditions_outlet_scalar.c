@@ -7,11 +7,13 @@
  * Supports:
  * - Zero-gradient (Neumann) outlet
  * - Convective outlet (advection-based)
+ * - 3D z-face outlets (FRONT/BACK edges)
  */
 
 #include "../boundary_conditions_outlet_common.h"
 
 cfd_status_t bc_apply_outlet_scalar_impl(double* field, size_t nx, size_t ny,
+                                          size_t nz, size_t stride_z,
                                           const bc_outlet_config_t* config) {
     if (!field || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
@@ -27,29 +29,42 @@ cfd_status_t bc_apply_outlet_scalar_impl(double* field, size_t nx, size_t ny,
 
     int edge_idx = bc_outlet_edge_to_index(config->edge);
     const bc_outlet_edge_loop_t* loop = &bc_outlet_edge_loops[edge_idx];
-    size_t count = loop->use_ny_for_count ? ny : nx;
 
     switch (config->type) {
         case BC_OUTLET_ZERO_GRADIENT:
-            /* Zero-gradient: boundary = adjacent interior value */
-            for (size_t i = 0; i < count; i++) {
-                size_t dst_idx = loop->dst_fn(i, nx, ny);
-                size_t src_idx = loop->src_fn(i, nx, ny);
-                field[dst_idx] = field[src_idx];
-            }
-            break;
-
         case BC_OUTLET_CONVECTIVE:
-            /* Convective outlet: du/dt + U*du/dn = 0
-             * For steady-state or when applied at each timestep without dt,
-             * this reduces to zero-gradient as a first-order approximation.
-             * Full convective BC requires temporal information (dt, previous values)
-             * which would need to be added to the config structure.
-             * For now, fall back to zero-gradient behavior. */
-            for (size_t i = 0; i < count; i++) {
-                size_t dst_idx = loop->dst_fn(i, nx, ny);
-                size_t src_idx = loop->src_fn(i, nx, ny);
-                field[dst_idx] = field[src_idx];
+            /* Both types use zero-gradient for now.
+             * Full convective BC would require temporal information. */
+            if (loop->is_z_face) {
+                /* Z-face outlet (FRONT or BACK): copy entire xy-plane from adjacent interior */
+                if (nz <= 1) {
+                    return CFD_ERROR_INVALID;
+                }
+                size_t dst_plane, src_plane;
+                if (config->edge == BC_EDGE_FRONT) {
+                    dst_plane = (nz - 1) * stride_z;
+                    src_plane = ((nz - 2) * stride_z);
+                } else { /* BC_EDGE_BACK */
+                    dst_plane = 0;
+                    src_plane = stride_z;
+                }
+                for (size_t j = 0; j < ny; j++) {
+                    for (size_t i = 0; i < nx; i++) {
+                        size_t offset = IDX_2D(i, j, nx);
+                        field[dst_plane + offset] = field[src_plane + offset];
+                    }
+                }
+            } else {
+                /* X/Y-face outlet: loop over each z-plane */
+                size_t count = loop->use_ny_for_count ? ny : nx;
+                for (size_t k = 0; k < nz; k++) {
+                    size_t base = k * stride_z;
+                    for (size_t i = 0; i < count; i++) {
+                        size_t dst_idx = base + loop->dst_fn(i, nx, ny);
+                        size_t src_idx = base + loop->src_fn(i, nx, ny);
+                        field[dst_idx] = field[src_idx];
+                    }
+                }
             }
             break;
 

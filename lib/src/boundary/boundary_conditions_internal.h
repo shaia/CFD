@@ -19,23 +19,33 @@
  * it provides NULL pointers instead.
  * ============================================================================ */
 
-/** Function type for applying Neumann/Periodic BCs to a scalar field */
-typedef void (*bc_apply_scalar_fn)(double* field, size_t nx, size_t ny);
+/** Function type for applying Neumann/Periodic BCs to a scalar field.
+ *  For 2D fields: nz=1, stride_z=0. Z-face loops are skipped when nz <= 1. */
+typedef void (*bc_apply_scalar_fn)(double* field, size_t nx, size_t ny,
+                                    size_t nz, size_t stride_z);
 
 /** Function type for applying Dirichlet BCs to a scalar field */
 typedef void (*bc_apply_dirichlet_fn)(double* field, size_t nx, size_t ny,
+                                       size_t nz, size_t stride_z,
                                        const bc_dirichlet_values_t* values);
 
-/** Function type for applying inlet BCs to velocity fields */
-typedef cfd_status_t (*bc_apply_inlet_fn)(double* u, double* v, size_t nx, size_t ny,
+/** Function type for applying inlet BCs to velocity fields.
+ *  w may be NULL for 2D fields (nz==1). */
+typedef cfd_status_t (*bc_apply_inlet_fn)(double* u, double* v, double* w,
+                                           size_t nx, size_t ny,
+                                           size_t nz, size_t stride_z,
                                            const bc_inlet_config_t* config);
 
 /** Function type for applying outlet BCs to a scalar field */
 typedef cfd_status_t (*bc_apply_outlet_fn)(double* field, size_t nx, size_t ny,
+                                            size_t nz, size_t stride_z,
                                             const bc_outlet_config_t* config);
 
-/** Function type for applying symmetry BCs to velocity fields */
-typedef cfd_status_t (*bc_apply_symmetry_fn)(double* u, double* v, size_t nx, size_t ny,
+/** Function type for applying symmetry BCs to velocity fields.
+ *  w may be NULL for 2D fields (nz==1). */
+typedef cfd_status_t (*bc_apply_symmetry_fn)(double* u, double* v, double* w,
+                                              size_t nx, size_t ny,
+                                              size_t nz, size_t stride_z,
                                               const bc_symmetry_config_t* config);
 
 /**
@@ -114,31 +124,49 @@ void bc_report_error(bc_error_code_t error_code, const char* function, const cha
  * These are the actual baseline implementations.
  * ============================================================================ */
 
-void bc_apply_neumann_scalar_impl(double* field, size_t nx, size_t ny);
-void bc_apply_periodic_scalar_impl(double* field, size_t nx, size_t ny);
+void bc_apply_neumann_scalar_impl(double* field, size_t nx, size_t ny,
+                                   size_t nz, size_t stride_z);
+void bc_apply_periodic_scalar_impl(double* field, size_t nx, size_t ny,
+                                    size_t nz, size_t stride_z);
 void bc_apply_dirichlet_scalar_impl(double* field, size_t nx, size_t ny,
+                                     size_t nz, size_t stride_z,
                                      const bc_dirichlet_values_t* values);
-cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, size_t nx, size_t ny,
+cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, double* w,
+                                         size_t nx, size_t ny,
+                                         size_t nz, size_t stride_z,
                                          const bc_inlet_config_t* config);
 
 /* Outlet implementations */
 cfd_status_t bc_apply_outlet_scalar_impl(double* field, size_t nx, size_t ny,
+                                          size_t nz, size_t stride_z,
                                           const bc_outlet_config_t* config);
 
 /* OpenMP outlet implementation - defined in omp/boundary_conditions_outlet_omp.c */
 cfd_status_t bc_apply_outlet_omp_impl(double* field, size_t nx, size_t ny,
+                                       size_t nz, size_t stride_z,
                                        const bc_outlet_config_t* config);
 
 /* AVX2 outlet implementation - defined in avx2/boundary_conditions_outlet_avx2.c */
 cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
+                                        size_t nz, size_t stride_z,
                                         const bc_outlet_config_t* config);
 
 /* NEON outlet implementation - defined in neon/boundary_conditions_outlet_neon.c */
 cfd_status_t bc_apply_outlet_neon_impl(double* field, size_t nx, size_t ny,
+                                        size_t nz, size_t stride_z,
                                         const bc_outlet_config_t* config);
 
+/* Time-varying inlet implementation */
+cfd_status_t bc_apply_inlet_time_scalar_impl(double* u, double* v, double* w,
+                                              size_t nx, size_t ny,
+                                              size_t nz, size_t stride_z,
+                                              const bc_inlet_config_t* config,
+                                              const bc_time_context_t* time_ctx);
+
 /* Symmetry implementations */
-cfd_status_t bc_apply_symmetry_scalar_impl(double* u, double* v, size_t nx, size_t ny,
+cfd_status_t bc_apply_symmetry_scalar_impl(double* u, double* v, double* w,
+                                            size_t nx, size_t ny,
+                                            size_t nz, size_t stride_z,
                                             const bc_symmetry_config_t* config);
 
 #endif /* CFD_BOUNDARY_CONDITIONS_INTERNAL_H */

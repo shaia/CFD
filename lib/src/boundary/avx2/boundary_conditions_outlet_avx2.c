@@ -23,8 +23,9 @@
 #include "../boundary_conditions_outlet_common.h"
 
 cfd_status_t bc_apply_outlet_avx2_impl(double* field, size_t nx, size_t ny,
-                                            const bc_outlet_config_t* config) {
-    (void)field; (void)nx; (void)ny; (void)config;
+                                        size_t nz, size_t stride_z,
+                                        const bc_outlet_config_t* config) {
+    (void)field; (void)nx; (void)ny; (void)nz; (void)stride_z; (void)config;
     return CFD_ERROR_UNSUPPORTED;
 }
 

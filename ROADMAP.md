@@ -80,6 +80,20 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 
 **Workaround:** Use CG or switch to AVX2/CPU backends for production
 
+#### OMP Loop Variable int Overflow for Large Grids (P3)
+
+**Status:** Deferred — low risk, no practical impact yet
+
+**Issue:** OMP backends cast `size_t` loop variables to `int` for MSVC OpenMP 2.0 compatibility. For grids where `nx * ny > INT_MAX` (~2.1 billion), this overflows and causes incorrect loop bounds or out-of-bounds writes.
+
+**Impact:** Requires grids larger than ~46K × 46K (~16 GB per field), which is beyond the current practical scope of the library. Affects `boundary_conditions_outlet_omp.c` and potentially other OMP backends with similar casts.
+
+**Action Items:**
+
+- [ ] Audit all OMP backends for `size_t` → `int` casts
+- [ ] Add `CFD_ASSERT(nx * ny <= INT_MAX)` guards if targeting large grids
+- [ ] Consider requiring OpenMP 3.0+ (unsigned loop vars) when dropping MSVC OMP 2.0 support
+
 #### ~~Stretched Grid Formula Bug~~ (FIXED in v0.1.7)
 
 **File:** `lib/src/core/grid.c` (`grid_initialize_stretched`)
@@ -646,7 +660,7 @@ Find eigenvalues/eigenvectors for stability analysis.
 - [x] Phase 1: Extend core data structures (grid: `nz, z[], dz[], stride_z, inv_dz2, k_start, k_end`; flow_field: `w, nz`; BCs: `front/back`)
 - [x] Phase 2: Add 3D stencils (7-point) and update scalar CPU linear solvers
 - [x] Phase 3: Update scalar CPU NS solvers with w-momentum equation
-- [ ] Phase 4: Extend boundary conditions for z-faces (all backends)
+- [x] Phase 4: Extend boundary conditions for z-faces (all backends)
 - [ ] Phase 5: Update SIMD backends (AVX2/NEON) for 3D
 - [ ] Phase 6: Update OMP backends for 3D
 - [ ] Phase 7: Update CUDA backend for 3D
@@ -1767,7 +1781,7 @@ cfd.run_simulation(output_buffer=buf)
 - [x] Phase 1: Extend grid, flow_field, BCs with z-dimension (nz=1 backward compatible)
 - [x] Phase 2: 3D stencils (7-point), scalar CPU linear solvers (Jacobi, SOR, Red-Black, CG, BiCGSTAB)
 - [x] Phase 3: NS solvers with w-momentum
-- [ ] Phase 4: 3D boundary conditions (all backends)
+- [x] Phase 4: 3D boundary conditions (all backends)
 - [ ] Phase 5-7: SIMD, OMP, CUDA backends for 3D
 - [ ] Phase 8: 3D VTK output, examples, validation (Taylor-Green 3D, Poiseuille 3D)
 
