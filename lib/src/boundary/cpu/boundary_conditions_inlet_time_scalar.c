@@ -85,13 +85,15 @@ cfd_status_t bc_apply_inlet_time_scalar_impl(double* u, double* v, double* w,
                                                   time_ctx->time, time_ctx->dt);
         w_val *= modulator;
 
+        /* Velocity is uniform across the z-face — compute once. */
+        double u_val, v_val;
+        bc_inlet_compute_velocity_time(config, 0.5,
+                                        time_ctx->time, time_ctx->dt,
+                                        &u_val, &v_val);
+
         for (size_t j = 0; j < ny; j++) {
             for (size_t i = 0; i < nx; i++) {
                 size_t idx = z_plane + IDX_2D(i, j, nx);
-                double u_val, v_val;
-                bc_inlet_compute_velocity_time(config, 0.5,
-                                                time_ctx->time, time_ctx->dt,
-                                                &u_val, &v_val);
                 u[idx] = u_val;
                 v[idx] = v_val;
                 w[idx] = w_val;

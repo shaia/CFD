@@ -40,13 +40,14 @@ cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, double* w,
                          : 0;
         double w_val = bc_inlet_compute_w(config);
 
+        /* For z-face inlets, 1D profiles are not meaningful.
+         * Velocity is uniform across the plane — compute once. */
+        double u_val, v_val;
+        bc_inlet_compute_velocity(config, 0.5, &u_val, &v_val);
+
         for (size_t j = 0; j < ny; j++) {
             for (size_t i = 0; i < nx; i++) {
                 size_t idx = z_plane + IDX_2D(i, j, nx);
-                double u_val, v_val;
-                /* For z-face inlets, 1D profiles are not meaningful.
-                 * Use uniform velocity (position=0.5). */
-                bc_inlet_compute_velocity(config, 0.5, &u_val, &v_val);
                 u[idx] = u_val;
                 v[idx] = v_val;
                 w[idx] = w_val;

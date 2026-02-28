@@ -191,6 +191,9 @@ static cfd_status_t apply_dirichlet_with_backend(double* field, size_t nx, size_
     if (impl == NULL || impl->apply_dirichlet == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
+    if (!validate_3d_layout(nx, ny, nz, stride_z)) {
+        return CFD_ERROR_INVALID;
+    }
     impl->apply_dirichlet(field, nx, ny, nz, stride_z, values);
     return CFD_SUCCESS;
 }
