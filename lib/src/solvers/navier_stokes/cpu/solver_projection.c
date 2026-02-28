@@ -53,11 +53,21 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     size_t nx = field->nx;
     size_t ny = field->ny;
     size_t nz = field->nz;
+
+    /* Reject non-uniform z-spacing (solver uses constant dz) */
+    if (nz > 1 && grid->dz) {
+        for (size_t k = 1; k < nz - 1; k++) {
+            if (fabs(grid->dz[k] - grid->dz[0]) > 1e-14) {
+                return CFD_ERROR_INVALID;
+            }
+        }
+    }
+
     size_t plane = nx * ny;
     size_t total = plane * nz;
     size_t bytes = total * sizeof(double);
 
-    /* Grid spacing (assume uniform grid) */
+    /* Grid spacing (uniform grid) */
     double dx = grid->dx[0];
     double dy = grid->dy[0];
     double dz = (nz > 1 && grid->dz) ? grid->dz[0] : 0.0;

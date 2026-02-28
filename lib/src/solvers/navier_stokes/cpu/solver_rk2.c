@@ -204,6 +204,16 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
     size_t nx = field->nx;
     size_t ny = field->ny;
     size_t nz = field->nz;
+
+    /* Reject non-uniform z-spacing (solver uses constant inv_2dz/inv_dz2) */
+    if (nz > 1 && grid->dz) {
+        for (size_t k = 1; k < nz - 1; k++) {
+            if (fabs(grid->dz[k] - grid->dz[0]) > 1e-14) {
+                return CFD_ERROR_INVALID;
+            }
+        }
+    }
+
     size_t plane = nx * ny;
     size_t total = plane * nz;
     size_t bytes = total * sizeof(double);
