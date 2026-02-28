@@ -224,7 +224,8 @@ static double compute_l2_norm(const double* arr, size_t n) {
 
 /**
  * Helper: run solver on 2D (nz=1) grid and verify results match golden L2
- * norms. This guards the "nz=1 produces bit-identical 2D results" invariant.
+ * norms. This is a tolerance-based regression check (1e-12) that catches
+ * accidental changes to the nz=1 code path.
  * Sets a simple sinusoidal initial condition and runs 3 steps.
  */
 static void run_backward_compat_test(const char* solver_name,
@@ -281,7 +282,7 @@ static void run_backward_compat_test(const char* solver_name,
         TEST_ASSERT_TRUE(isfinite(field->p[i]));
     }
 
-    /* Verify L2 norms match golden values (guards bit-identical 2D output) */
+    /* Verify L2 norms match golden values (tolerance-based regression check) */
     double l2_u = compute_l2_norm(field->u, total);
     double l2_v = compute_l2_norm(field->v, total);
     double l2_p = compute_l2_norm(field->p, total);
