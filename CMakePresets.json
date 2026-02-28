@@ -39,7 +39,7 @@
         {
             "name": "windows-ninja",
             "displayName": "Windows Ninja",
-            "description": "Windows build with Ninja, MSVC, OpenMP and CUDA",
+            "description": "Windows build with Ninja and MSVC (generates compile_commands.json for clangd)",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build-ninja",
             "condition": {
@@ -53,13 +53,21 @@
                 "CMAKE_C_COMPILER": "cl.exe",
                 "CMAKE_CXX_COMPILER": "cl.exe",
                 "BUILD_EXAMPLES": "ON",
-                "BUILD_TESTS": "ON",
-                "CFD_ENABLE_CUDA": "ON"
+                "BUILD_TESTS": "ON"
             },
             "vendor": {
                 "microsoft.com/VisualStudioSettings/CMake/1.0": {
                     "hostOS": ["Windows"]
                 }
+            }
+        },
+        {
+            "name": "windows-ninja-cuda",
+            "displayName": "Windows Ninja + CUDA",
+            "description": "Windows Ninja build with CUDA support (requires CUDA Toolkit)",
+            "inherits": "windows-ninja",
+            "cacheVariables": {
+                "CFD_ENABLE_CUDA": "ON"
             }
         },
         {

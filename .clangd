@@ -1,0 +1,25 @@
+# clangd configuration for CFD Framework
+# https://clangd.llvm.org/config
+#
+# Requires: cmake --preset windows-ninja (or any Ninja/Makefile configure)
+# to generate build-ninja/compile_commands.json
+
+CompileFlags:
+  CompilationDatabase: build-ninja/
+
+Diagnostics:
+  UnusedIncludes: Strict
+  ClangTidy:
+    FastCheckFilter: None
+  Suppress:
+    - pp_hash_error
+
+---
+
+# SIMD template headers are included by avx2/neon .c files that define
+# required macros (SIMD_VEC, SIMD_WIDTH, etc.). They cannot be parsed
+# standalone, so suppress all diagnostics for them.
+If:
+  PathMatch: .*/simd_template/.*
+Diagnostics:
+  Suppress: ['*']
