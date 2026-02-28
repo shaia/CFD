@@ -11,18 +11,20 @@
  *   to the 2D code path.
  */
 
-#include "../test_solver_helpers.h"
 #include "cfd/core/cfd_init.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/indexing.h"
-#include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 void setUp(void) {
     cfd_init();
