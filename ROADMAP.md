@@ -80,6 +80,20 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 
 **Workaround:** Use CG or switch to AVX2/CPU backends for production
 
+#### OMP Loop Variable int Overflow for Large Grids (P3)
+
+**Status:** Deferred — low risk, no practical impact yet
+
+**Issue:** OMP backends cast `size_t` loop variables to `int` for MSVC OpenMP 2.0 compatibility. For grids where `nx * ny > INT_MAX` (~2.1 billion), this overflows and causes incorrect loop bounds or out-of-bounds writes.
+
+**Impact:** Requires grids larger than ~46K × 46K (~16 GB per field), which is beyond the current practical scope of the library. Affects `boundary_conditions_outlet_omp.c` and potentially other OMP backends with similar casts.
+
+**Action Items:**
+
+- [ ] Audit all OMP backends for `size_t` → `int` casts
+- [ ] Add `CFD_ASSERT(nx * ny <= INT_MAX)` guards if targeting large grids
+- [ ] Consider requiring OpenMP 3.0+ (unsigned loop vars) when dropping MSVC OMP 2.0 support
+
 #### ~~Stretched Grid Formula Bug~~ (FIXED in v0.1.7)
 
 **File:** `lib/src/core/grid.c` (`grid_initialize_stretched`)
