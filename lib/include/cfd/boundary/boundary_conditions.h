@@ -291,6 +291,7 @@ typedef struct {
  *
  * For X-symmetry plane (left/right edge): u = 0, dv/dx = 0
  * For Y-symmetry plane (top/bottom edge): v = 0, du/dy = 0
+ * For Z-symmetry plane (front/back edge): w = 0, du/dz = 0, dv/dz = 0
  */
 typedef struct {
     bc_edge_t edges;    // Bitmask of edges with symmetry BC (can combine with |)
@@ -1203,6 +1204,204 @@ CFD_LIBRARY_EXPORT cfd_status_t bc_apply_symmetry_omp(double* u, double* v, size
 #define bc_apply_symmetry_all(u, v, nx, ny) \
     bc_apply_symmetry((u), (v), (nx), (ny), \
         &(bc_symmetry_config_t){.edges = BC_EDGE_LEFT | BC_EDGE_RIGHT | BC_EDGE_TOP | BC_EDGE_BOTTOM})
+
+/* ============================================================================
+ * 3D Boundary Conditions API
+ *
+ * These functions extend the 2D API to support 3D fields with z-dimension.
+ * Fields are stored as contiguous z-planes: field[k * stride_z + j * nx + i].
+ *
+ * When nz == 1 and stride_z == 0, behavior is identical to the 2D API.
+ * Z-face boundary conditions (FRONT/BACK) are only applied when nz > 1.
+ *
+ * For velocity BCs, w is the z-velocity component (NULL when nz == 1).
+ * ============================================================================ */
+
+/* --- 3D Scalar / Velocity Field BCs --- */
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_3d(double* field, size_t nx, size_t ny,
+                                                    size_t nz, size_t stride_z, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_3d(double* u, double* v, double* w,
+                                                      size_t nx, size_t ny,
+                                                      size_t nz, size_t stride_z, bc_type_t type);
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_cpu_3d(double* field, size_t nx, size_t ny,
+                                                        size_t nz, size_t stride_z, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_simd_3d(double* field, size_t nx, size_t ny,
+                                                         size_t nz, size_t stride_z, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_scalar_omp_3d(double* field, size_t nx, size_t ny,
+                                                        size_t nz, size_t stride_z, bc_type_t type);
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_cpu_3d(double* u, double* v, double* w,
+                                                          size_t nx, size_t ny,
+                                                          size_t nz, size_t stride_z, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_simd_3d(double* u, double* v, double* w,
+                                                           size_t nx, size_t ny,
+                                                           size_t nz, size_t stride_z, bc_type_t type);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_velocity_omp_3d(double* u, double* v, double* w,
+                                                          size_t nx, size_t ny,
+                                                          size_t nz, size_t stride_z, bc_type_t type);
+
+/* --- 3D Dirichlet BCs --- */
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_3d(double* field, size_t nx, size_t ny,
+                                                              size_t nz, size_t stride_z,
+                                                              const bc_dirichlet_values_t* values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_3d(double* u, double* v, double* w,
+                                                                size_t nx, size_t ny,
+                                                                size_t nz, size_t stride_z,
+                                                                const bc_dirichlet_values_t* u_values,
+                                                                const bc_dirichlet_values_t* v_values,
+                                                                const bc_dirichlet_values_t* w_values);
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_cpu_3d(double* field, size_t nx, size_t ny,
+                                                                  size_t nz, size_t stride_z,
+                                                                  const bc_dirichlet_values_t* values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_simd_3d(double* field, size_t nx, size_t ny,
+                                                                   size_t nz, size_t stride_z,
+                                                                   const bc_dirichlet_values_t* values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_scalar_omp_3d(double* field, size_t nx, size_t ny,
+                                                                  size_t nz, size_t stride_z,
+                                                                  const bc_dirichlet_values_t* values);
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_cpu_3d(double* u, double* v, double* w,
+                                                                    size_t nx, size_t ny,
+                                                                    size_t nz, size_t stride_z,
+                                                                    const bc_dirichlet_values_t* u_values,
+                                                                    const bc_dirichlet_values_t* v_values,
+                                                                    const bc_dirichlet_values_t* w_values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_simd_3d(double* u, double* v, double* w,
+                                                                     size_t nx, size_t ny,
+                                                                     size_t nz, size_t stride_z,
+                                                                     const bc_dirichlet_values_t* u_values,
+                                                                     const bc_dirichlet_values_t* v_values,
+                                                                     const bc_dirichlet_values_t* w_values);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_dirichlet_velocity_omp_3d(double* u, double* v, double* w,
+                                                                    size_t nx, size_t ny,
+                                                                    size_t nz, size_t stride_z,
+                                                                    const bc_dirichlet_values_t* u_values,
+                                                                    const bc_dirichlet_values_t* v_values,
+                                                                    const bc_dirichlet_values_t* w_values);
+
+/* --- 3D No-Slip Wall BCs --- */
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_3d(double* u, double* v, double* w,
+                                                    size_t nx, size_t ny,
+                                                    size_t nz, size_t stride_z);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_cpu_3d(double* u, double* v, double* w,
+                                                        size_t nx, size_t ny,
+                                                        size_t nz, size_t stride_z);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_simd_3d(double* u, double* v, double* w,
+                                                         size_t nx, size_t ny,
+                                                         size_t nz, size_t stride_z);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_noslip_omp_3d(double* u, double* v, double* w,
+                                                        size_t nx, size_t ny,
+                                                        size_t nz, size_t stride_z);
+
+/* --- 3D Inlet BCs --- */
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_3d(double* u, double* v, double* w,
+                                                    size_t nx, size_t ny,
+                                                    size_t nz, size_t stride_z,
+                                                    const bc_inlet_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_cpu_3d(double* u, double* v, double* w,
+                                                       size_t nx, size_t ny,
+                                                       size_t nz, size_t stride_z,
+                                                       const bc_inlet_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_simd_3d(double* u, double* v, double* w,
+                                                        size_t nx, size_t ny,
+                                                        size_t nz, size_t stride_z,
+                                                        const bc_inlet_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_omp_3d(double* u, double* v, double* w,
+                                                       size_t nx, size_t ny,
+                                                       size_t nz, size_t stride_z,
+                                                       const bc_inlet_config_t* config);
+
+/* --- 3D Time-Varying Inlet BCs --- */
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_time_3d(
+    double* u, double* v, double* w,
+    size_t nx, size_t ny, size_t nz, size_t stride_z,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx);
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_time_cpu_3d(
+    double* u, double* v, double* w,
+    size_t nx, size_t ny, size_t nz, size_t stride_z,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx);
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_time_simd_3d(
+    double* u, double* v, double* w,
+    size_t nx, size_t ny, size_t nz, size_t stride_z,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx);
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_inlet_time_omp_3d(
+    double* u, double* v, double* w,
+    size_t nx, size_t ny, size_t nz, size_t stride_z,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx);
+
+/* --- 3D Outlet BCs --- */
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar_3d(double* field, size_t nx, size_t ny,
+                                                           size_t nz, size_t stride_z,
+                                                           const bc_outlet_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_3d(double* u, double* v, double* w,
+                                                             size_t nx, size_t ny,
+                                                             size_t nz, size_t stride_z,
+                                                             const bc_outlet_config_t* config);
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar_cpu_3d(double* field, size_t nx, size_t ny,
+                                                               size_t nz, size_t stride_z,
+                                                               const bc_outlet_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar_simd_3d(double* field, size_t nx, size_t ny,
+                                                                size_t nz, size_t stride_z,
+                                                                const bc_outlet_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_scalar_omp_3d(double* field, size_t nx, size_t ny,
+                                                               size_t nz, size_t stride_z,
+                                                               const bc_outlet_config_t* config);
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_cpu_3d(double* u, double* v, double* w,
+                                                                 size_t nx, size_t ny,
+                                                                 size_t nz, size_t stride_z,
+                                                                 const bc_outlet_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_simd_3d(double* u, double* v, double* w,
+                                                                  size_t nx, size_t ny,
+                                                                  size_t nz, size_t stride_z,
+                                                                  const bc_outlet_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_outlet_velocity_omp_3d(double* u, double* v, double* w,
+                                                                 size_t nx, size_t ny,
+                                                                 size_t nz, size_t stride_z,
+                                                                 const bc_outlet_config_t* config);
+
+/* --- 3D Symmetry BCs --- */
+
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_symmetry_3d(double* u, double* v, double* w,
+                                                      size_t nx, size_t ny,
+                                                      size_t nz, size_t stride_z,
+                                                      const bc_symmetry_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_symmetry_cpu_3d(double* u, double* v, double* w,
+                                                          size_t nx, size_t ny,
+                                                          size_t nz, size_t stride_z,
+                                                          const bc_symmetry_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_symmetry_simd_3d(double* u, double* v, double* w,
+                                                           size_t nx, size_t ny,
+                                                           size_t nz, size_t stride_z,
+                                                           const bc_symmetry_config_t* config);
+CFD_LIBRARY_EXPORT cfd_status_t bc_apply_symmetry_omp_3d(double* u, double* v, double* w,
+                                                          size_t nx, size_t ny,
+                                                          size_t nz, size_t stride_z,
+                                                          const bc_symmetry_config_t* config);
+
+/**
+ * Convenience macro for applying symmetry BC to all 6 boundaries (3D).
+ */
+#define bc_apply_symmetry_all_3d(u, v, w, nx, ny, nz, stride_z) \
+    bc_apply_symmetry_3d((u), (v), (w), (nx), (ny), (nz), (stride_z), \
+        &(bc_symmetry_config_t){.edges = BC_EDGE_LEFT | BC_EDGE_RIGHT | \
+            BC_EDGE_TOP | BC_EDGE_BOTTOM | BC_EDGE_FRONT | BC_EDGE_BACK})
 
 #ifdef __cplusplus
 }

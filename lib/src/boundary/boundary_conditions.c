@@ -150,37 +150,44 @@ bool bc_set_backend(bc_backend_t backend) {
 
 /* ============================================================================
  * Internal Dispatch Helpers
+ *
+ * All helpers accept 3D parameters (nz, stride_z).
+ * 2D public API functions call these with nz=1, stride_z=0.
  * ============================================================================ */
 
 static cfd_status_t apply_neumann_with_backend(double* field, size_t nx, size_t ny,
+                                                size_t nz, size_t stride_z,
                                                 const bc_backend_impl_t* impl) {
     if (impl == NULL || impl->apply_neumann == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    impl->apply_neumann(field, nx, ny);
+    impl->apply_neumann(field, nx, ny, nz, stride_z);
     return CFD_SUCCESS;
 }
 
 static cfd_status_t apply_periodic_with_backend(double* field, size_t nx, size_t ny,
+                                                 size_t nz, size_t stride_z,
                                                  const bc_backend_impl_t* impl) {
     if (impl == NULL || impl->apply_periodic == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    impl->apply_periodic(field, nx, ny);
+    impl->apply_periodic(field, nx, ny, nz, stride_z);
     return CFD_SUCCESS;
 }
 
 static cfd_status_t apply_dirichlet_with_backend(double* field, size_t nx, size_t ny,
+                                                  size_t nz, size_t stride_z,
                                                   const bc_dirichlet_values_t* values,
                                                   const bc_backend_impl_t* impl) {
     if (impl == NULL || impl->apply_dirichlet == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    impl->apply_dirichlet(field, nx, ny, values);
+    impl->apply_dirichlet(field, nx, ny, nz, stride_z, values);
     return CFD_SUCCESS;
 }
 
 static cfd_status_t apply_scalar_field_bc(double* field, size_t nx, size_t ny,
+                                           size_t nz, size_t stride_z,
                                            bc_type_t type, const bc_backend_impl_t* impl) {
     if (!field || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
@@ -188,10 +195,10 @@ static cfd_status_t apply_scalar_field_bc(double* field, size_t nx, size_t ny,
 
     switch (type) {
         case BC_TYPE_NEUMANN:
-            return apply_neumann_with_backend(field, nx, ny, impl);
+            return apply_neumann_with_backend(field, nx, ny, nz, stride_z, impl);
 
         case BC_TYPE_PERIODIC:
-            return apply_periodic_with_backend(field, nx, ny, impl);
+            return apply_periodic_with_backend(field, nx, ny, nz, stride_z, impl);
 
         case BC_TYPE_DIRICHLET:
             cfd_warning("BC_TYPE_DIRICHLET requires bc_apply_dirichlet_*() functions with values");
@@ -217,12 +224,12 @@ static cfd_status_t apply_scalar_field_bc(double* field, size_t nx, size_t ny,
 }
 
 /* ============================================================================
- * Public API - Global Backend
+ * Public API - Global Backend (2D)
  * ============================================================================ */
 
 cfd_status_t bc_apply_scalar(double* field, size_t nx, size_t ny, bc_type_t type) {
     const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
-    return apply_scalar_field_bc(field, nx, ny, type, impl);
+    return apply_scalar_field_bc(field, nx, ny, 1, 0, type, impl);
 }
 
 cfd_status_t bc_apply_velocity(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
@@ -230,19 +237,19 @@ cfd_status_t bc_apply_velocity(double* u, double* v, size_t nx, size_t ny, bc_ty
         return CFD_ERROR_INVALID;
     }
     const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
-    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, type, impl);
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, 1, 0, type, impl);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_scalar_field_bc(v, nx, ny, type, impl);
+    return apply_scalar_field_bc(v, nx, ny, 1, 0, type, impl);
 }
 
 /* ============================================================================
- * Public API - Explicit Backend Selection
+ * Public API - Explicit Backend Selection (2D)
  * ============================================================================ */
 
 cfd_status_t bc_apply_scalar_cpu(double* field, size_t nx, size_t ny, bc_type_t type) {
-    return apply_scalar_field_bc(field, nx, ny, type, &bc_impl_scalar);
+    return apply_scalar_field_bc(field, nx, ny, 1, 0, type, &bc_impl_scalar);
 }
 
 cfd_status_t bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t type) {
@@ -250,7 +257,7 @@ cfd_status_t bc_apply_scalar_simd(double* field, size_t nx, size_t ny, bc_type_t
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_scalar_field_bc(field, nx, ny, type, impl);
+    return apply_scalar_field_bc(field, nx, ny, 1, 0, type, impl);
 }
 
 cfd_status_t bc_apply_scalar_omp(double* field, size_t nx, size_t ny, bc_type_t type) {
@@ -258,18 +265,18 @@ cfd_status_t bc_apply_scalar_omp(double* field, size_t nx, size_t ny, bc_type_t 
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_scalar_field_bc(field, nx, ny, type, impl);
+    return apply_scalar_field_bc(field, nx, ny, 1, 0, type, impl);
 }
 
 cfd_status_t bc_apply_velocity_cpu(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
     if (!u || !v || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, type, &bc_impl_scalar);
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, 1, 0, type, &bc_impl_scalar);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_scalar_field_bc(v, nx, ny, type, &bc_impl_scalar);
+    return apply_scalar_field_bc(v, nx, ny, 1, 0, type, &bc_impl_scalar);
 }
 
 cfd_status_t bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
@@ -280,11 +287,11 @@ cfd_status_t bc_apply_velocity_simd(double* u, double* v, size_t nx, size_t ny, 
     if (!u || !v || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, type, impl);
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, 1, 0, type, impl);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_scalar_field_bc(v, nx, ny, type, impl);
+    return apply_scalar_field_bc(v, nx, ny, 1, 0, type, impl);
 }
 
 cfd_status_t bc_apply_velocity_omp(double* u, double* v, size_t nx, size_t ny, bc_type_t type) {
@@ -295,15 +302,15 @@ cfd_status_t bc_apply_velocity_omp(double* u, double* v, size_t nx, size_t ny, b
     if (!u || !v || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, type, impl);
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, 1, 0, type, impl);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_scalar_field_bc(v, nx, ny, type, impl);
+    return apply_scalar_field_bc(v, nx, ny, 1, 0, type, impl);
 }
 
 /* ============================================================================
- * Public API - Dirichlet Boundary Conditions
+ * Public API - Dirichlet Boundary Conditions (2D)
  * ============================================================================ */
 
 cfd_status_t bc_apply_dirichlet_scalar(double* field, size_t nx, size_t ny,
@@ -312,7 +319,7 @@ cfd_status_t bc_apply_dirichlet_scalar(double* field, size_t nx, size_t ny,
         return CFD_ERROR_INVALID;
     }
     const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
-    return apply_dirichlet_with_backend(field, nx, ny, values, impl);
+    return apply_dirichlet_with_backend(field, nx, ny, 1, 0, values, impl);
 }
 
 cfd_status_t bc_apply_dirichlet_velocity(double* u, double* v, size_t nx, size_t ny,
@@ -322,21 +329,21 @@ cfd_status_t bc_apply_dirichlet_velocity(double* u, double* v, size_t nx, size_t
         return CFD_ERROR_INVALID;
     }
     const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
-    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, u_values, impl);
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, 1, 0, u_values, impl);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_dirichlet_with_backend(v, nx, ny, v_values, impl);
+    return apply_dirichlet_with_backend(v, nx, ny, 1, 0, v_values, impl);
 }
 
-/* Backend-specific Dirichlet implementations */
+/* Backend-specific Dirichlet implementations (2D) */
 
 cfd_status_t bc_apply_dirichlet_scalar_cpu(double* field, size_t nx, size_t ny,
                                             const bc_dirichlet_values_t* values) {
     if (!field || !values || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    return apply_dirichlet_with_backend(field, nx, ny, values, &bc_impl_scalar);
+    return apply_dirichlet_with_backend(field, nx, ny, 1, 0, values, &bc_impl_scalar);
 }
 
 cfd_status_t bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
@@ -348,7 +355,7 @@ cfd_status_t bc_apply_dirichlet_scalar_simd(double* field, size_t nx, size_t ny,
     if (!field || !values || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    return apply_dirichlet_with_backend(field, nx, ny, values, impl);
+    return apply_dirichlet_with_backend(field, nx, ny, 1, 0, values, impl);
 }
 
 cfd_status_t bc_apply_dirichlet_scalar_omp(double* field, size_t nx, size_t ny,
@@ -360,7 +367,7 @@ cfd_status_t bc_apply_dirichlet_scalar_omp(double* field, size_t nx, size_t ny,
     if (!field || !values || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    return apply_dirichlet_with_backend(field, nx, ny, values, impl);
+    return apply_dirichlet_with_backend(field, nx, ny, 1, 0, values, impl);
 }
 
 cfd_status_t bc_apply_dirichlet_velocity_cpu(double* u, double* v, size_t nx, size_t ny,
@@ -369,11 +376,11 @@ cfd_status_t bc_apply_dirichlet_velocity_cpu(double* u, double* v, size_t nx, si
     if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, u_values, &bc_impl_scalar);
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, 1, 0, u_values, &bc_impl_scalar);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_dirichlet_with_backend(v, nx, ny, v_values, &bc_impl_scalar);
+    return apply_dirichlet_with_backend(v, nx, ny, 1, 0, v_values, &bc_impl_scalar);
 }
 
 cfd_status_t bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
@@ -386,11 +393,11 @@ cfd_status_t bc_apply_dirichlet_velocity_simd(double* u, double* v, size_t nx, s
     if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, u_values, impl);
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, 1, 0, u_values, impl);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_dirichlet_with_backend(v, nx, ny, v_values, impl);
+    return apply_dirichlet_with_backend(v, nx, ny, 1, 0, v_values, impl);
 }
 
 cfd_status_t bc_apply_dirichlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
@@ -403,15 +410,15 @@ cfd_status_t bc_apply_dirichlet_velocity_omp(double* u, double* v, size_t nx, si
     if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, u_values, impl);
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, 1, 0, u_values, impl);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_dirichlet_with_backend(v, nx, ny, v_values, impl);
+    return apply_dirichlet_with_backend(v, nx, ny, 1, 0, v_values, impl);
 }
 
 /* ============================================================================
- * Public API - No-Slip Wall Boundary Conditions
+ * Public API - No-Slip Wall Boundary Conditions (2D)
  *
  * No-slip conditions set velocity to zero at all boundaries.
  * Implemented using Dirichlet BCs with zero values for efficiency.
@@ -422,31 +429,42 @@ static const bc_dirichlet_values_t g_noslip_zero = {
     .left = 0.0,
     .right = 0.0,
     .top = 0.0,
-    .bottom = 0.0
+    .bottom = 0.0,
+    .front = 0.0,
+    .back = 0.0
 };
 
-/** Helper: apply no-slip to both velocity components using specified backend */
-static cfd_status_t apply_noslip_with_backend(double* u, double* v, size_t nx, size_t ny,
+/** Helper: apply no-slip to velocity components using specified backend */
+static cfd_status_t apply_noslip_with_backend(double* u, double* v, double* w,
+                                               size_t nx, size_t ny,
+                                               size_t nz, size_t stride_z,
                                                const bc_backend_impl_t* impl) {
-    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, &g_noslip_zero, impl);
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, nz, stride_z, &g_noslip_zero, impl);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_dirichlet_with_backend(v, nx, ny, &g_noslip_zero, impl);
+    status = apply_dirichlet_with_backend(v, nx, ny, nz, stride_z, &g_noslip_zero, impl);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    if (w && nz > 1) {
+        status = apply_dirichlet_with_backend(w, nx, ny, nz, stride_z, &g_noslip_zero, impl);
+    }
+    return status;
 }
 
 cfd_status_t bc_apply_noslip(double* u, double* v, size_t nx, size_t ny) {
     if (!u || !v || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    return apply_noslip_with_backend(u, v, nx, ny, get_backend_impl(g_current_backend));
+    return apply_noslip_with_backend(u, v, NULL, nx, ny, 1, 0, get_backend_impl(g_current_backend));
 }
 
 cfd_status_t bc_apply_noslip_cpu(double* u, double* v, size_t nx, size_t ny) {
     if (!u || !v || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    return apply_noslip_with_backend(u, v, nx, ny, &bc_impl_scalar);
+    return apply_noslip_with_backend(u, v, NULL, nx, ny, 1, 0, &bc_impl_scalar);
 }
 
 cfd_status_t bc_apply_noslip_simd(double* u, double* v, size_t nx, size_t ny) {
@@ -457,7 +475,7 @@ cfd_status_t bc_apply_noslip_simd(double* u, double* v, size_t nx, size_t ny) {
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_noslip_with_backend(u, v, nx, ny, impl);
+    return apply_noslip_with_backend(u, v, NULL, nx, ny, 1, 0, impl);
 }
 
 cfd_status_t bc_apply_noslip_omp(double* u, double* v, size_t nx, size_t ny) {
@@ -468,23 +486,25 @@ cfd_status_t bc_apply_noslip_omp(double* u, double* v, size_t nx, size_t ny) {
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_noslip_with_backend(u, v, nx, ny, impl);
+    return apply_noslip_with_backend(u, v, NULL, nx, ny, 1, 0, impl);
 }
 
 /* ============================================================================
- * Public API - Inlet Velocity Boundary Conditions
+ * Public API - Inlet Velocity Boundary Conditions (2D)
  *
  * Inlet conditions specify velocity at inflow boundaries.
  * ============================================================================ */
 
 /** Helper: apply inlet BC with specified backend */
-static cfd_status_t apply_inlet_with_backend(double* u, double* v, size_t nx, size_t ny,
+static cfd_status_t apply_inlet_with_backend(double* u, double* v, double* w,
+                                              size_t nx, size_t ny,
+                                              size_t nz, size_t stride_z,
                                               const bc_inlet_config_t* config,
                                               const bc_backend_impl_t* impl) {
     if (impl == NULL || impl->apply_inlet == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return impl->apply_inlet(u, v, nx, ny, config);
+    return impl->apply_inlet(u, v, w, nx, ny, nz, stride_z, config);
 }
 
 /* Inlet configuration factory functions */
@@ -557,14 +577,14 @@ void bc_inlet_set_edge(bc_inlet_config_t* config, bc_edge_t edge) {
     }
 }
 
-/* Inlet BC application functions */
+/* Inlet BC application functions (2D) */
 
 cfd_status_t bc_apply_inlet(double* u, double* v, size_t nx, size_t ny,
                              const bc_inlet_config_t* config) {
     if (!u || !v || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    return apply_inlet_with_backend(u, v, nx, ny, config, get_backend_impl(g_current_backend));
+    return apply_inlet_with_backend(u, v, NULL, nx, ny, 1, 0, config, get_backend_impl(g_current_backend));
 }
 
 cfd_status_t bc_apply_inlet_cpu(double* u, double* v, size_t nx, size_t ny,
@@ -572,7 +592,7 @@ cfd_status_t bc_apply_inlet_cpu(double* u, double* v, size_t nx, size_t ny,
     if (!u || !v || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    return apply_inlet_with_backend(u, v, nx, ny, config, &bc_impl_scalar);
+    return apply_inlet_with_backend(u, v, NULL, nx, ny, 1, 0, config, &bc_impl_scalar);
 }
 
 cfd_status_t bc_apply_inlet_simd(double* u, double* v, size_t nx, size_t ny,
@@ -584,7 +604,7 @@ cfd_status_t bc_apply_inlet_simd(double* u, double* v, size_t nx, size_t ny,
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_inlet_with_backend(u, v, nx, ny, config, impl);
+    return apply_inlet_with_backend(u, v, NULL, nx, ny, 1, 0, config, impl);
 }
 
 cfd_status_t bc_apply_inlet_omp(double* u, double* v, size_t nx, size_t ny,
@@ -596,7 +616,7 @@ cfd_status_t bc_apply_inlet_omp(double* u, double* v, size_t nx, size_t ny,
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_inlet_with_backend(u, v, nx, ny, config, impl);
+    return apply_inlet_with_backend(u, v, NULL, nx, ny, 1, 0, config, impl);
 }
 
 /* ============================================================================
@@ -622,23 +642,23 @@ bc_inlet_config_t bc_inlet_config_time_ramp(
     double t_start, double t_end,
     double value_start, double value_end) {
     bc_inlet_config_t config = bc_inlet_config_uniform(u_velocity, v_velocity);
-    
+
     // Validate that t_end > t_start to prevent division by zero
     if (t_end <= t_start) {
         // Swap values if they are in wrong order
         double temp = t_start;
         t_start = t_end;
         t_end = temp;
-        
+
         // Also swap corresponding values to maintain the intended behavior
         temp = value_start;
         value_start = value_end;
         value_end = temp;
-        
-        bc_report_error(BC_ERROR_INVALID, "bc_inlet_config_time_ramp", 
+
+        bc_report_error(BC_ERROR_INVALID, "bc_inlet_config_time_ramp",
                        "t_start >= t_end: parameters have been swapped to ensure t_end > t_start");
     }
-    
+
     config.time_config.profile = BC_TIME_PROFILE_RAMP;
     config.time_config.params.ramp.t_start = t_start;
     config.time_config.params.ramp.t_end = t_end;
@@ -707,7 +727,7 @@ void bc_inlet_set_time_step(
     }
 }
 
-/* Time-varying inlet application functions */
+/* Time-varying inlet application functions (2D) */
 
 cfd_status_t bc_apply_inlet_time(
     double* u, double* v, size_t nx, size_t ny,
@@ -721,8 +741,14 @@ cfd_status_t bc_apply_inlet_time(
         config->custom_profile_time == NULL) {
         return bc_apply_inlet(u, v, nx, ny, config);
     }
-    /* For now, use scalar implementation for time-varying BCs */
-    return bc_apply_inlet_time_cpu(u, v, nx, ny, config, time_ctx);
+    return bc_apply_inlet_time_scalar_impl(u, v, NULL, nx, ny, 1, 0, config, time_ctx);
+}
+
+cfd_status_t bc_apply_inlet_time_cpu(
+    double* u, double* v, size_t nx, size_t ny,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx) {
+    return bc_apply_inlet_time_scalar_impl(u, v, NULL, nx, ny, 1, 0, config, time_ctx);
 }
 
 cfd_status_t bc_apply_inlet_time_simd(
@@ -730,7 +756,7 @@ cfd_status_t bc_apply_inlet_time_simd(
     const bc_inlet_config_t* config,
     const bc_time_context_t* time_ctx) {
     /* SIMD implementation not yet available, fall back to CPU */
-    return bc_apply_inlet_time_cpu(u, v, nx, ny, config, time_ctx);
+    return bc_apply_inlet_time_scalar_impl(u, v, NULL, nx, ny, 1, 0, config, time_ctx);
 }
 
 cfd_status_t bc_apply_inlet_time_omp(
@@ -738,11 +764,11 @@ cfd_status_t bc_apply_inlet_time_omp(
     const bc_inlet_config_t* config,
     const bc_time_context_t* time_ctx) {
     /* OpenMP implementation not yet available, fall back to CPU */
-    return bc_apply_inlet_time_cpu(u, v, nx, ny, config, time_ctx);
+    return bc_apply_inlet_time_scalar_impl(u, v, NULL, nx, ny, 1, 0, config, time_ctx);
 }
 
 /* ============================================================================
- * Public API - Outlet Boundary Conditions
+ * Public API - Outlet Boundary Conditions (2D)
  *
  * Outlet conditions specify conditions at outflow boundaries.
  * Supports zero-gradient (Neumann) and convective outlet types.
@@ -750,12 +776,13 @@ cfd_status_t bc_apply_inlet_time_omp(
 
 /** Helper: apply outlet BC with specified backend */
 static cfd_status_t apply_outlet_with_backend(double* field, size_t nx, size_t ny,
+                                               size_t nz, size_t stride_z,
                                                const bc_outlet_config_t* config,
                                                const bc_backend_impl_t* impl) {
     if (impl == NULL || impl->apply_outlet == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return impl->apply_outlet(field, nx, ny, config);
+    return impl->apply_outlet(field, nx, ny, nz, stride_z, config);
 }
 
 /* Outlet configuration factory functions */
@@ -782,14 +809,14 @@ void bc_outlet_set_edge(bc_outlet_config_t* config, bc_edge_t edge) {
     }
 }
 
-/* Outlet BC application functions */
+/* Outlet BC application functions (2D) */
 
 cfd_status_t bc_apply_outlet_scalar(double* field, size_t nx, size_t ny,
                                      const bc_outlet_config_t* config) {
     if (!field || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    return apply_outlet_with_backend(field, nx, ny, config, get_backend_impl(g_current_backend));
+    return apply_outlet_with_backend(field, nx, ny, 1, 0, config, get_backend_impl(g_current_backend));
 }
 
 cfd_status_t bc_apply_outlet_velocity(double* u, double* v, size_t nx, size_t ny,
@@ -797,11 +824,11 @@ cfd_status_t bc_apply_outlet_velocity(double* u, double* v, size_t nx, size_t ny
     if (!u || !v || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, config, get_backend_impl(g_current_backend));
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, 1, 0, config, get_backend_impl(g_current_backend));
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_outlet_with_backend(v, nx, ny, config, get_backend_impl(g_current_backend));
+    return apply_outlet_with_backend(v, nx, ny, 1, 0, config, get_backend_impl(g_current_backend));
 }
 
 cfd_status_t bc_apply_outlet_scalar_cpu(double* field, size_t nx, size_t ny,
@@ -809,7 +836,7 @@ cfd_status_t bc_apply_outlet_scalar_cpu(double* field, size_t nx, size_t ny,
     if (!field || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    return apply_outlet_with_backend(field, nx, ny, config, &bc_impl_scalar);
+    return apply_outlet_with_backend(field, nx, ny, 1, 0, config, &bc_impl_scalar);
 }
 
 cfd_status_t bc_apply_outlet_scalar_simd(double* field, size_t nx, size_t ny,
@@ -821,7 +848,7 @@ cfd_status_t bc_apply_outlet_scalar_simd(double* field, size_t nx, size_t ny,
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_outlet_with_backend(field, nx, ny, config, impl);
+    return apply_outlet_with_backend(field, nx, ny, 1, 0, config, impl);
 }
 
 cfd_status_t bc_apply_outlet_scalar_omp(double* field, size_t nx, size_t ny,
@@ -833,7 +860,7 @@ cfd_status_t bc_apply_outlet_scalar_omp(double* field, size_t nx, size_t ny,
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_outlet_with_backend(field, nx, ny, config, impl);
+    return apply_outlet_with_backend(field, nx, ny, 1, 0, config, impl);
 }
 
 cfd_status_t bc_apply_outlet_velocity_cpu(double* u, double* v, size_t nx, size_t ny,
@@ -841,11 +868,11 @@ cfd_status_t bc_apply_outlet_velocity_cpu(double* u, double* v, size_t nx, size_
     if (!u || !v || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, config, &bc_impl_scalar);
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, 1, 0, config, &bc_impl_scalar);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_outlet_with_backend(v, nx, ny, config, &bc_impl_scalar);
+    return apply_outlet_with_backend(v, nx, ny, 1, 0, config, &bc_impl_scalar);
 }
 
 cfd_status_t bc_apply_outlet_velocity_simd(double* u, double* v, size_t nx, size_t ny,
@@ -857,11 +884,11 @@ cfd_status_t bc_apply_outlet_velocity_simd(double* u, double* v, size_t nx, size
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, config, impl);
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, 1, 0, config, impl);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_outlet_with_backend(v, nx, ny, config, impl);
+    return apply_outlet_with_backend(v, nx, ny, 1, 0, config, impl);
 }
 
 cfd_status_t bc_apply_outlet_velocity_omp(double* u, double* v, size_t nx, size_t ny,
@@ -873,25 +900,27 @@ cfd_status_t bc_apply_outlet_velocity_omp(double* u, double* v, size_t nx, size_
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, config, impl);
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, 1, 0, config, impl);
     if (status != CFD_SUCCESS) {
         return status;
     }
-    return apply_outlet_with_backend(v, nx, ny, config, impl);
+    return apply_outlet_with_backend(v, nx, ny, 1, 0, config, impl);
 }
 
 /* ============================================================================
- * Symmetry Boundary Condition API
+ * Public API - Symmetry Boundary Conditions (2D)
  * ============================================================================ */
 
 /** Helper: apply symmetry BC with specified backend */
-static cfd_status_t apply_symmetry_with_backend(double* u, double* v, size_t nx, size_t ny,
+static cfd_status_t apply_symmetry_with_backend(double* u, double* v, double* w,
+                                                 size_t nx, size_t ny,
+                                                 size_t nz, size_t stride_z,
                                                  const bc_symmetry_config_t* config,
                                                  const bc_backend_impl_t* impl) {
     if (impl == NULL || impl->apply_symmetry == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return impl->apply_symmetry(u, v, nx, ny, config);
+    return impl->apply_symmetry(u, v, w, nx, ny, nz, stride_z, config);
 }
 
 cfd_status_t bc_apply_symmetry(double* u, double* v, size_t nx, size_t ny,
@@ -905,9 +934,9 @@ cfd_status_t bc_apply_symmetry(double* u, double* v, size_t nx, size_t ny,
     }
     /* If selected backend doesn't support symmetry, fall back to scalar */
     if (impl->apply_symmetry == NULL) {
-        return bc_apply_symmetry_scalar_impl(u, v, nx, ny, config);
+        return bc_apply_symmetry_scalar_impl(u, v, NULL, nx, ny, 1, 0, config);
     }
-    return impl->apply_symmetry(u, v, nx, ny, config);
+    return impl->apply_symmetry(u, v, NULL, nx, ny, 1, 0, config);
 }
 
 cfd_status_t bc_apply_symmetry_cpu(double* u, double* v, size_t nx, size_t ny,
@@ -915,7 +944,7 @@ cfd_status_t bc_apply_symmetry_cpu(double* u, double* v, size_t nx, size_t ny,
     if (!u || !v || !config || nx < 3 || ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    return bc_apply_symmetry_scalar_impl(u, v, nx, ny, config);
+    return bc_apply_symmetry_scalar_impl(u, v, NULL, nx, ny, 1, 0, config);
 }
 
 cfd_status_t bc_apply_symmetry_simd(double* u, double* v, size_t nx, size_t ny,
@@ -927,7 +956,7 @@ cfd_status_t bc_apply_symmetry_simd(double* u, double* v, size_t nx, size_t ny,
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_symmetry_with_backend(u, v, nx, ny, config, impl);
+    return apply_symmetry_with_backend(u, v, NULL, nx, ny, 1, 0, config, impl);
 }
 
 cfd_status_t bc_apply_symmetry_omp(double* u, double* v, size_t nx, size_t ny,
@@ -939,5 +968,473 @@ cfd_status_t bc_apply_symmetry_omp(double* u, double* v, size_t nx, size_t ny,
     if (impl == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
-    return apply_symmetry_with_backend(u, v, nx, ny, config, impl);
+    return apply_symmetry_with_backend(u, v, NULL, nx, ny, 1, 0, config, impl);
+}
+
+/* ============================================================================
+ * Public API - 3D Boundary Conditions
+ *
+ * These functions support 3D fields with z-dimension.
+ * Fields are stored as contiguous z-planes: field[k * stride_z + j * nx + i].
+ * ============================================================================ */
+
+/* --- 3D Scalar / Velocity Field BCs --- */
+
+cfd_status_t bc_apply_scalar_3d(double* field, size_t nx, size_t ny,
+                                 size_t nz, size_t stride_z, bc_type_t type) {
+    const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
+    return apply_scalar_field_bc(field, nx, ny, nz, stride_z, type, impl);
+}
+
+cfd_status_t bc_apply_velocity_3d(double* u, double* v, double* w,
+                                   size_t nx, size_t ny,
+                                   size_t nz, size_t stride_z, bc_type_t type) {
+    if (!u || !v || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, nz, stride_z, type, impl);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    status = apply_scalar_field_bc(v, nx, ny, nz, stride_z, type, impl);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    if (w && nz > 1) {
+        status = apply_scalar_field_bc(w, nx, ny, nz, stride_z, type, impl);
+    }
+    return status;
+}
+
+cfd_status_t bc_apply_scalar_cpu_3d(double* field, size_t nx, size_t ny,
+                                     size_t nz, size_t stride_z, bc_type_t type) {
+    return apply_scalar_field_bc(field, nx, ny, nz, stride_z, type, &bc_impl_scalar);
+}
+
+cfd_status_t bc_apply_scalar_simd_3d(double* field, size_t nx, size_t ny,
+                                      size_t nz, size_t stride_z, bc_type_t type) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return apply_scalar_field_bc(field, nx, ny, nz, stride_z, type, impl);
+}
+
+cfd_status_t bc_apply_scalar_omp_3d(double* field, size_t nx, size_t ny,
+                                     size_t nz, size_t stride_z, bc_type_t type) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) {
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return apply_scalar_field_bc(field, nx, ny, nz, stride_z, type, impl);
+}
+
+cfd_status_t bc_apply_velocity_cpu_3d(double* u, double* v, double* w,
+                                       size_t nx, size_t ny,
+                                       size_t nz, size_t stride_z, bc_type_t type) {
+    if (!u || !v || nx < 3 || ny < 3) {
+        return CFD_ERROR_INVALID;
+    }
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, nz, stride_z, type, &bc_impl_scalar);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_scalar_field_bc(v, nx, ny, nz, stride_z, type, &bc_impl_scalar);
+    if (status != CFD_SUCCESS) return status;
+    if (w && nz > 1) {
+        status = apply_scalar_field_bc(w, nx, ny, nz, stride_z, type, &bc_impl_scalar);
+    }
+    return status;
+}
+
+cfd_status_t bc_apply_velocity_simd_3d(double* u, double* v, double* w,
+                                        size_t nx, size_t ny,
+                                        size_t nz, size_t stride_z, bc_type_t type) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    if (!u || !v || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, nz, stride_z, type, impl);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_scalar_field_bc(v, nx, ny, nz, stride_z, type, impl);
+    if (status != CFD_SUCCESS) return status;
+    if (w && nz > 1) {
+        status = apply_scalar_field_bc(w, nx, ny, nz, stride_z, type, impl);
+    }
+    return status;
+}
+
+cfd_status_t bc_apply_velocity_omp_3d(double* u, double* v, double* w,
+                                       size_t nx, size_t ny,
+                                       size_t nz, size_t stride_z, bc_type_t type) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    if (!u || !v || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    cfd_status_t status = apply_scalar_field_bc(u, nx, ny, nz, stride_z, type, impl);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_scalar_field_bc(v, nx, ny, nz, stride_z, type, impl);
+    if (status != CFD_SUCCESS) return status;
+    if (w && nz > 1) {
+        status = apply_scalar_field_bc(w, nx, ny, nz, stride_z, type, impl);
+    }
+    return status;
+}
+
+/* --- 3D Dirichlet BCs --- */
+
+cfd_status_t bc_apply_dirichlet_scalar_3d(double* field, size_t nx, size_t ny,
+                                           size_t nz, size_t stride_z,
+                                           const bc_dirichlet_values_t* values) {
+    if (!field || !values || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
+    return apply_dirichlet_with_backend(field, nx, ny, nz, stride_z, values, impl);
+}
+
+cfd_status_t bc_apply_dirichlet_velocity_3d(double* u, double* v, double* w,
+                                             size_t nx, size_t ny,
+                                             size_t nz, size_t stride_z,
+                                             const bc_dirichlet_values_t* u_values,
+                                             const bc_dirichlet_values_t* v_values,
+                                             const bc_dirichlet_values_t* w_values) {
+    if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, nz, stride_z, u_values, impl);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_dirichlet_with_backend(v, nx, ny, nz, stride_z, v_values, impl);
+    if (status != CFD_SUCCESS) return status;
+    if (w && w_values && nz > 1) {
+        status = apply_dirichlet_with_backend(w, nx, ny, nz, stride_z, w_values, impl);
+    }
+    return status;
+}
+
+cfd_status_t bc_apply_dirichlet_scalar_cpu_3d(double* field, size_t nx, size_t ny,
+                                               size_t nz, size_t stride_z,
+                                               const bc_dirichlet_values_t* values) {
+    if (!field || !values || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    return apply_dirichlet_with_backend(field, nx, ny, nz, stride_z, values, &bc_impl_scalar);
+}
+
+cfd_status_t bc_apply_dirichlet_scalar_simd_3d(double* field, size_t nx, size_t ny,
+                                                size_t nz, size_t stride_z,
+                                                const bc_dirichlet_values_t* values) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    if (!field || !values || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    return apply_dirichlet_with_backend(field, nx, ny, nz, stride_z, values, impl);
+}
+
+cfd_status_t bc_apply_dirichlet_scalar_omp_3d(double* field, size_t nx, size_t ny,
+                                               size_t nz, size_t stride_z,
+                                               const bc_dirichlet_values_t* values) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    if (!field || !values || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    return apply_dirichlet_with_backend(field, nx, ny, nz, stride_z, values, impl);
+}
+
+cfd_status_t bc_apply_dirichlet_velocity_cpu_3d(double* u, double* v, double* w,
+                                                 size_t nx, size_t ny,
+                                                 size_t nz, size_t stride_z,
+                                                 const bc_dirichlet_values_t* u_values,
+                                                 const bc_dirichlet_values_t* v_values,
+                                                 const bc_dirichlet_values_t* w_values) {
+    if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, nz, stride_z, u_values, &bc_impl_scalar);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_dirichlet_with_backend(v, nx, ny, nz, stride_z, v_values, &bc_impl_scalar);
+    if (status != CFD_SUCCESS) return status;
+    if (w && w_values && nz > 1) {
+        status = apply_dirichlet_with_backend(w, nx, ny, nz, stride_z, w_values, &bc_impl_scalar);
+    }
+    return status;
+}
+
+cfd_status_t bc_apply_dirichlet_velocity_simd_3d(double* u, double* v, double* w,
+                                                  size_t nx, size_t ny,
+                                                  size_t nz, size_t stride_z,
+                                                  const bc_dirichlet_values_t* u_values,
+                                                  const bc_dirichlet_values_t* v_values,
+                                                  const bc_dirichlet_values_t* w_values) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, nz, stride_z, u_values, impl);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_dirichlet_with_backend(v, nx, ny, nz, stride_z, v_values, impl);
+    if (status != CFD_SUCCESS) return status;
+    if (w && w_values && nz > 1) {
+        status = apply_dirichlet_with_backend(w, nx, ny, nz, stride_z, w_values, impl);
+    }
+    return status;
+}
+
+cfd_status_t bc_apply_dirichlet_velocity_omp_3d(double* u, double* v, double* w,
+                                                 size_t nx, size_t ny,
+                                                 size_t nz, size_t stride_z,
+                                                 const bc_dirichlet_values_t* u_values,
+                                                 const bc_dirichlet_values_t* v_values,
+                                                 const bc_dirichlet_values_t* w_values) {
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    if (!u || !v || !u_values || !v_values || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    cfd_status_t status = apply_dirichlet_with_backend(u, nx, ny, nz, stride_z, u_values, impl);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_dirichlet_with_backend(v, nx, ny, nz, stride_z, v_values, impl);
+    if (status != CFD_SUCCESS) return status;
+    if (w && w_values && nz > 1) {
+        status = apply_dirichlet_with_backend(w, nx, ny, nz, stride_z, w_values, impl);
+    }
+    return status;
+}
+
+/* --- 3D No-Slip Wall BCs --- */
+
+cfd_status_t bc_apply_noslip_3d(double* u, double* v, double* w,
+                                 size_t nx, size_t ny,
+                                 size_t nz, size_t stride_z) {
+    if (!u || !v || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    return apply_noslip_with_backend(u, v, w, nx, ny, nz, stride_z, get_backend_impl(g_current_backend));
+}
+
+cfd_status_t bc_apply_noslip_cpu_3d(double* u, double* v, double* w,
+                                     size_t nx, size_t ny,
+                                     size_t nz, size_t stride_z) {
+    if (!u || !v || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    return apply_noslip_with_backend(u, v, w, nx, ny, nz, stride_z, &bc_impl_scalar);
+}
+
+cfd_status_t bc_apply_noslip_simd_3d(double* u, double* v, double* w,
+                                      size_t nx, size_t ny,
+                                      size_t nz, size_t stride_z) {
+    if (!u || !v || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    return apply_noslip_with_backend(u, v, w, nx, ny, nz, stride_z, impl);
+}
+
+cfd_status_t bc_apply_noslip_omp_3d(double* u, double* v, double* w,
+                                     size_t nx, size_t ny,
+                                     size_t nz, size_t stride_z) {
+    if (!u || !v || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    return apply_noslip_with_backend(u, v, w, nx, ny, nz, stride_z, impl);
+}
+
+/* --- 3D Inlet BCs --- */
+
+cfd_status_t bc_apply_inlet_3d(double* u, double* v, double* w,
+                                size_t nx, size_t ny,
+                                size_t nz, size_t stride_z,
+                                const bc_inlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    return apply_inlet_with_backend(u, v, w, nx, ny, nz, stride_z, config, get_backend_impl(g_current_backend));
+}
+
+cfd_status_t bc_apply_inlet_cpu_3d(double* u, double* v, double* w,
+                                    size_t nx, size_t ny,
+                                    size_t nz, size_t stride_z,
+                                    const bc_inlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    return apply_inlet_with_backend(u, v, w, nx, ny, nz, stride_z, config, &bc_impl_scalar);
+}
+
+cfd_status_t bc_apply_inlet_simd_3d(double* u, double* v, double* w,
+                                     size_t nx, size_t ny,
+                                     size_t nz, size_t stride_z,
+                                     const bc_inlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    return apply_inlet_with_backend(u, v, w, nx, ny, nz, stride_z, config, impl);
+}
+
+cfd_status_t bc_apply_inlet_omp_3d(double* u, double* v, double* w,
+                                    size_t nx, size_t ny,
+                                    size_t nz, size_t stride_z,
+                                    const bc_inlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    return apply_inlet_with_backend(u, v, w, nx, ny, nz, stride_z, config, impl);
+}
+
+/* --- 3D Time-Varying Inlet BCs --- */
+
+cfd_status_t bc_apply_inlet_time_3d(
+    double* u, double* v, double* w,
+    size_t nx, size_t ny, size_t nz, size_t stride_z,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    if (config->time_config.profile == BC_TIME_PROFILE_CONSTANT &&
+        config->custom_profile_time == NULL) {
+        return bc_apply_inlet_3d(u, v, w, nx, ny, nz, stride_z, config);
+    }
+    return bc_apply_inlet_time_scalar_impl(u, v, w, nx, ny, nz, stride_z, config, time_ctx);
+}
+
+cfd_status_t bc_apply_inlet_time_cpu_3d(
+    double* u, double* v, double* w,
+    size_t nx, size_t ny, size_t nz, size_t stride_z,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx) {
+    return bc_apply_inlet_time_scalar_impl(u, v, w, nx, ny, nz, stride_z, config, time_ctx);
+}
+
+cfd_status_t bc_apply_inlet_time_simd_3d(
+    double* u, double* v, double* w,
+    size_t nx, size_t ny, size_t nz, size_t stride_z,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx) {
+    return bc_apply_inlet_time_scalar_impl(u, v, w, nx, ny, nz, stride_z, config, time_ctx);
+}
+
+cfd_status_t bc_apply_inlet_time_omp_3d(
+    double* u, double* v, double* w,
+    size_t nx, size_t ny, size_t nz, size_t stride_z,
+    const bc_inlet_config_t* config,
+    const bc_time_context_t* time_ctx) {
+    return bc_apply_inlet_time_scalar_impl(u, v, w, nx, ny, nz, stride_z, config, time_ctx);
+}
+
+/* --- 3D Outlet BCs --- */
+
+cfd_status_t bc_apply_outlet_scalar_3d(double* field, size_t nx, size_t ny,
+                                        size_t nz, size_t stride_z,
+                                        const bc_outlet_config_t* config) {
+    if (!field || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    return apply_outlet_with_backend(field, nx, ny, nz, stride_z, config, get_backend_impl(g_current_backend));
+}
+
+cfd_status_t bc_apply_outlet_velocity_3d(double* u, double* v, double* w,
+                                          size_t nx, size_t ny,
+                                          size_t nz, size_t stride_z,
+                                          const bc_outlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, nz, stride_z, config, impl);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_outlet_with_backend(v, nx, ny, nz, stride_z, config, impl);
+    if (status != CFD_SUCCESS) return status;
+    if (w && nz > 1) {
+        status = apply_outlet_with_backend(w, nx, ny, nz, stride_z, config, impl);
+    }
+    return status;
+}
+
+cfd_status_t bc_apply_outlet_scalar_cpu_3d(double* field, size_t nx, size_t ny,
+                                            size_t nz, size_t stride_z,
+                                            const bc_outlet_config_t* config) {
+    if (!field || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    return apply_outlet_with_backend(field, nx, ny, nz, stride_z, config, &bc_impl_scalar);
+}
+
+cfd_status_t bc_apply_outlet_scalar_simd_3d(double* field, size_t nx, size_t ny,
+                                             size_t nz, size_t stride_z,
+                                             const bc_outlet_config_t* config) {
+    if (!field || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    return apply_outlet_with_backend(field, nx, ny, nz, stride_z, config, impl);
+}
+
+cfd_status_t bc_apply_outlet_scalar_omp_3d(double* field, size_t nx, size_t ny,
+                                            size_t nz, size_t stride_z,
+                                            const bc_outlet_config_t* config) {
+    if (!field || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    return apply_outlet_with_backend(field, nx, ny, nz, stride_z, config, impl);
+}
+
+cfd_status_t bc_apply_outlet_velocity_cpu_3d(double* u, double* v, double* w,
+                                              size_t nx, size_t ny,
+                                              size_t nz, size_t stride_z,
+                                              const bc_outlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, nz, stride_z, config, &bc_impl_scalar);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_outlet_with_backend(v, nx, ny, nz, stride_z, config, &bc_impl_scalar);
+    if (status != CFD_SUCCESS) return status;
+    if (w && nz > 1) {
+        status = apply_outlet_with_backend(w, nx, ny, nz, stride_z, config, &bc_impl_scalar);
+    }
+    return status;
+}
+
+cfd_status_t bc_apply_outlet_velocity_simd_3d(double* u, double* v, double* w,
+                                               size_t nx, size_t ny,
+                                               size_t nz, size_t stride_z,
+                                               const bc_outlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, nz, stride_z, config, impl);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_outlet_with_backend(v, nx, ny, nz, stride_z, config, impl);
+    if (status != CFD_SUCCESS) return status;
+    if (w && nz > 1) {
+        status = apply_outlet_with_backend(w, nx, ny, nz, stride_z, config, impl);
+    }
+    return status;
+}
+
+cfd_status_t bc_apply_outlet_velocity_omp_3d(double* u, double* v, double* w,
+                                              size_t nx, size_t ny,
+                                              size_t nz, size_t stride_z,
+                                              const bc_outlet_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    cfd_status_t status = apply_outlet_with_backend(u, nx, ny, nz, stride_z, config, impl);
+    if (status != CFD_SUCCESS) return status;
+    status = apply_outlet_with_backend(v, nx, ny, nz, stride_z, config, impl);
+    if (status != CFD_SUCCESS) return status;
+    if (w && nz > 1) {
+        status = apply_outlet_with_backend(w, nx, ny, nz, stride_z, config, impl);
+    }
+    return status;
+}
+
+/* --- 3D Symmetry BCs --- */
+
+cfd_status_t bc_apply_symmetry_3d(double* u, double* v, double* w,
+                                   size_t nx, size_t ny,
+                                   size_t nz, size_t stride_z,
+                                   const bc_symmetry_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    if (impl->apply_symmetry == NULL) {
+        return bc_apply_symmetry_scalar_impl(u, v, w, nx, ny, nz, stride_z, config);
+    }
+    return impl->apply_symmetry(u, v, w, nx, ny, nz, stride_z, config);
+}
+
+cfd_status_t bc_apply_symmetry_cpu_3d(double* u, double* v, double* w,
+                                       size_t nx, size_t ny,
+                                       size_t nz, size_t stride_z,
+                                       const bc_symmetry_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    return bc_apply_symmetry_scalar_impl(u, v, w, nx, ny, nz, stride_z, config);
+}
+
+cfd_status_t bc_apply_symmetry_simd_3d(double* u, double* v, double* w,
+                                        size_t nx, size_t ny,
+                                        size_t nz, size_t stride_z,
+                                        const bc_symmetry_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_SIMD);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    return apply_symmetry_with_backend(u, v, w, nx, ny, nz, stride_z, config, impl);
+}
+
+cfd_status_t bc_apply_symmetry_omp_3d(double* u, double* v, double* w,
+                                       size_t nx, size_t ny,
+                                       size_t nz, size_t stride_z,
+                                       const bc_symmetry_config_t* config) {
+    if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    const bc_backend_impl_t* impl = get_backend_impl(BC_BACKEND_OMP);
+    if (impl == NULL) return CFD_ERROR_UNSUPPORTED;
+    return apply_symmetry_with_backend(u, v, w, nx, ny, nz, stride_z, config, impl);
 }

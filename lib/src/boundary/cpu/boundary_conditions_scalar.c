@@ -15,7 +15,9 @@
 #define BC_CORE_USE_OMP 0
 #include "../boundary_conditions_core_impl.h"
 
-cfd_status_t bc_apply_symmetry_scalar_impl(double* u, double* v, size_t nx, size_t ny,
+cfd_status_t bc_apply_symmetry_scalar_impl(double* u, double* v, double* w,
+                                            size_t nx, size_t ny,
+                                            size_t nz, size_t stride_z,
                                             const bc_symmetry_config_t* config) {
     if (!u || !v || !config) {
         return CFD_ERROR_INVALID;
@@ -24,49 +26,115 @@ cfd_status_t bc_apply_symmetry_scalar_impl(double* u, double* v, size_t nx, size
         return CFD_ERROR_INVALID;
     }
 
-    size_t j, i;
+    size_t j, i, k;
     bc_edge_t edges = config->edges;
 
     /* Left boundary (X-symmetry plane at x=0):
      * - u = 0 (normal velocity is zero)
-     * - dv/dx = 0 (tangential gradient is zero, copy from interior) */
+     * - dv/dx = 0 (tangential gradient is zero, copy from interior)
+     * - dw/dx = 0 (tangential gradient is zero, copy from interior) */
     if (edges & BC_EDGE_LEFT) {
-        for (j = 0; j < ny; j++) {
-            u[IDX_2D(0, j, nx)] = 0.0;
-            v[IDX_2D(0, j, nx)] = v[IDX_2D(1, j, nx)];
+        for (k = 0; k < nz; k++) {
+            size_t base = k * stride_z;
+            for (j = 0; j < ny; j++) {
+                u[base + IDX_2D(0, j, nx)] = 0.0;
+                v[base + IDX_2D(0, j, nx)] = v[base + IDX_2D(1, j, nx)];
+            }
+            if (w) {
+                for (j = 0; j < ny; j++) {
+                    w[base + IDX_2D(0, j, nx)] = w[base + IDX_2D(1, j, nx)];
+                }
+            }
         }
     }
 
     /* Right boundary (X-symmetry plane at x=Lx):
      * - u = 0 (normal velocity is zero)
-     * - dv/dx = 0 (tangential gradient is zero, copy from interior) */
+     * - dv/dx = 0 (tangential gradient is zero, copy from interior)
+     * - dw/dx = 0 (tangential gradient is zero, copy from interior) */
     if (edges & BC_EDGE_RIGHT) {
-        for (j = 0; j < ny; j++) {
-            u[IDX_2D(nx - 1, j, nx)] = 0.0;
-            v[IDX_2D(nx - 1, j, nx)] = v[IDX_2D(nx - 2, j, nx)];
+        for (k = 0; k < nz; k++) {
+            size_t base = k * stride_z;
+            for (j = 0; j < ny; j++) {
+                u[base + IDX_2D(nx - 1, j, nx)] = 0.0;
+                v[base + IDX_2D(nx - 1, j, nx)] = v[base + IDX_2D(nx - 2, j, nx)];
+            }
+            if (w) {
+                for (j = 0; j < ny; j++) {
+                    w[base + IDX_2D(nx - 1, j, nx)] = w[base + IDX_2D(nx - 2, j, nx)];
+                }
+            }
         }
     }
 
     /* Bottom boundary (Y-symmetry plane at y=0):
      * - v = 0 (normal velocity is zero)
-     * - du/dy = 0 (tangential gradient is zero, copy from interior) */
+     * - du/dy = 0 (tangential gradient is zero, copy from interior)
+     * - dw/dy = 0 (tangential gradient is zero, copy from interior) */
     if (edges & BC_EDGE_BOTTOM) {
-        for (i = 0; i < nx; i++) {
-            v[i] = 0.0;
-            u[i] = u[nx + i];
+        for (k = 0; k < nz; k++) {
+            size_t base = k * stride_z;
+            for (i = 0; i < nx; i++) {
+                v[base + i] = 0.0;
+                u[base + i] = u[base + nx + i];
+            }
+            if (w) {
+                for (i = 0; i < nx; i++) {
+                    w[base + i] = w[base + nx + i];
+                }
+            }
         }
     }
 
     /* Top boundary (Y-symmetry plane at y=Ly):
      * - v = 0 (normal velocity is zero)
-     * - du/dy = 0 (tangential gradient is zero, copy from interior) */
+     * - du/dy = 0 (tangential gradient is zero, copy from interior)
+     * - dw/dy = 0 (tangential gradient is zero, copy from interior) */
     if (edges & BC_EDGE_TOP) {
-        double* u_top = u + (ny - 1) * nx;
-        double* v_top = v + (ny - 1) * nx;
-        double* u_interior = u + (ny - 2) * nx;
-        for (i = 0; i < nx; i++) {
-            v_top[i] = 0.0;
-            u_top[i] = u_interior[i];
+        for (k = 0; k < nz; k++) {
+            size_t base = k * stride_z;
+            double* u_top = u + base + ((ny - 1) * nx);
+            double* v_top = v + base + ((ny - 1) * nx);
+            double* u_interior = u + base + ((ny - 2) * nx);
+            for (i = 0; i < nx; i++) {
+                v_top[i] = 0.0;
+                u_top[i] = u_interior[i];
+            }
+            if (w) {
+                double* w_top = w + base + ((ny - 1) * nx);
+                double* w_interior = w + base + ((ny - 2) * nx);
+                for (i = 0; i < nx; i++) {
+                    w_top[i] = w_interior[i];
+                }
+            }
+        }
+    }
+
+    /* Back boundary (Z-symmetry plane at z=0):
+     * - w = 0 (normal velocity is zero)
+     * - du/dz = 0 (tangential gradient is zero, copy from interior)
+     * - dv/dz = 0 (tangential gradient is zero, copy from interior) */
+    if ((edges & BC_EDGE_BACK) && nz > 1 && w) {
+        size_t plane_size = nx * ny;
+        for (i = 0; i < plane_size; i++) {
+            w[i] = 0.0;
+            u[i] = u[stride_z + i];
+            v[i] = v[stride_z + i];
+        }
+    }
+
+    /* Front boundary (Z-symmetry plane at z=Lz):
+     * - w = 0 (normal velocity is zero)
+     * - du/dz = 0 (tangential gradient is zero, copy from interior)
+     * - dv/dz = 0 (tangential gradient is zero, copy from interior) */
+    if ((edges & BC_EDGE_FRONT) && nz > 1 && w) {
+        size_t plane_size = nx * ny;
+        size_t front = (nz - 1) * stride_z;
+        size_t interior = (nz - 2) * stride_z;
+        for (i = 0; i < plane_size; i++) {
+            w[front + i] = 0.0;
+            u[front + i] = u[interior + i];
+            v[front + i] = v[interior + i];
         }
     }
 

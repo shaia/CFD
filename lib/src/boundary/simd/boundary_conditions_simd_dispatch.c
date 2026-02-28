@@ -139,51 +139,57 @@ static void report_no_simd_error(const char* function) {
  * These functions use get_simd_backend() for unified dispatch logic.
  * ============================================================================ */
 
-static void bc_simd_neumann(double* field, size_t nx, size_t ny) {
+static void bc_simd_neumann(double* field, size_t nx, size_t ny,
+                             size_t nz, size_t stride_z) {
     const bc_backend_impl_t* impl = get_simd_backend();
     if (impl != NULL) {
-        impl->apply_neumann(field, nx, ny);
+        impl->apply_neumann(field, nx, ny, nz, stride_z);
         return;
     }
     report_no_simd_error("bc_simd_neumann");
-    bc_apply_neumann_scalar_impl(field, nx, ny);
+    bc_apply_neumann_scalar_impl(field, nx, ny, nz, stride_z);
 }
 
-static void bc_simd_periodic(double* field, size_t nx, size_t ny) {
+static void bc_simd_periodic(double* field, size_t nx, size_t ny,
+                              size_t nz, size_t stride_z) {
     const bc_backend_impl_t* impl = get_simd_backend();
     if (impl != NULL) {
-        impl->apply_periodic(field, nx, ny);
+        impl->apply_periodic(field, nx, ny, nz, stride_z);
         return;
     }
     report_no_simd_error("bc_simd_periodic");
-    bc_apply_periodic_scalar_impl(field, nx, ny);
+    bc_apply_periodic_scalar_impl(field, nx, ny, nz, stride_z);
 }
 
 static void bc_simd_dirichlet(double* field, size_t nx, size_t ny,
+                               size_t nz, size_t stride_z,
                                const bc_dirichlet_values_t* values) {
     const bc_backend_impl_t* impl = get_simd_backend();
     if (impl != NULL) {
-        impl->apply_dirichlet(field, nx, ny, values);
+        impl->apply_dirichlet(field, nx, ny, nz, stride_z, values);
         return;
     }
     report_no_simd_error("bc_simd_dirichlet");
-    bc_apply_dirichlet_scalar_impl(field, nx, ny, values);
+    bc_apply_dirichlet_scalar_impl(field, nx, ny, nz, stride_z, values);
 }
 
-static cfd_status_t bc_simd_inlet(double* u, double* v, size_t nx, size_t ny,
+static cfd_status_t bc_simd_inlet(double* u, double* v, double* w,
+                                   size_t nx, size_t ny,
+                                   size_t nz, size_t stride_z,
                                    const bc_inlet_config_t* config) {
     /* Inlet BCs operate on 1D boundaries - SIMD provides limited benefit.
      * Delegate to the architecture-specific backend if available, otherwise
      * fall back to scalar implementation. */
     const bc_backend_impl_t* impl = get_simd_backend();
     if (impl != NULL && impl->apply_inlet != NULL) {
-        return impl->apply_inlet(u, v, nx, ny, config);
+        return impl->apply_inlet(u, v, w, nx, ny, nz, stride_z, config);
     }
     /* Fall back to scalar implementation for inlet */
-    return bc_apply_inlet_scalar_impl(u, v, nx, ny, config);
+    return bc_apply_inlet_scalar_impl(u, v, w, nx, ny, nz, stride_z, config);
 }
 
 static cfd_status_t bc_simd_outlet(double* field, size_t nx, size_t ny,
+                                    size_t nz, size_t stride_z,
                                     const bc_outlet_config_t* config) {
     /* Outlet BCs operate on 1D boundaries - SIMD provides limited benefit
      * except for top/bottom edges where memory is contiguous.
@@ -191,23 +197,25 @@ static cfd_status_t bc_simd_outlet(double* field, size_t nx, size_t ny,
      * fall back to scalar implementation. */
     const bc_backend_impl_t* impl = get_simd_backend();
     if (impl != NULL && impl->apply_outlet != NULL) {
-        return impl->apply_outlet(field, nx, ny, config);
+        return impl->apply_outlet(field, nx, ny, nz, stride_z, config);
     }
     /* Fall back to scalar implementation for outlet */
-    return bc_apply_outlet_scalar_impl(field, nx, ny, config);
+    return bc_apply_outlet_scalar_impl(field, nx, ny, nz, stride_z, config);
 }
 
-static cfd_status_t bc_simd_symmetry(double* u, double* v, size_t nx, size_t ny,
+static cfd_status_t bc_simd_symmetry(double* u, double* v, double* w,
+                                      size_t nx, size_t ny,
+                                      size_t nz, size_t stride_z,
                                       const bc_symmetry_config_t* config) {
     /* Symmetry BCs operate on 1D boundaries - SIMD provides limited benefit.
      * Delegate to the architecture-specific backend if available, otherwise
      * fall back to scalar implementation. */
     const bc_backend_impl_t* impl = get_simd_backend();
     if (impl != NULL && impl->apply_symmetry != NULL) {
-        return impl->apply_symmetry(u, v, nx, ny, config);
+        return impl->apply_symmetry(u, v, w, nx, ny, nz, stride_z, config);
     }
     /* Fall back to scalar implementation for symmetry */
-    return bc_apply_symmetry_scalar_impl(u, v, nx, ny, config);
+    return bc_apply_symmetry_scalar_impl(u, v, w, nx, ny, nz, stride_z, config);
 }
 
 /* ============================================================================
