@@ -428,10 +428,15 @@ void test_symmetry_z_planes(void) {
 void test_inlet_z_face(void) {
     double* u = (double*)calloc(FIELD_SIZE, sizeof(double));
     double* v = (double*)calloc(FIELD_SIZE, sizeof(double));
-    double* w = (double*)calloc(FIELD_SIZE, sizeof(double));
+    double* w = (double*)malloc(FIELD_SIZE * sizeof(double));
     TEST_ASSERT_NOT_NULL_MESSAGE(u, "Failed to allocate u");
     TEST_ASSERT_NOT_NULL_MESSAGE(v, "Failed to allocate v");
     TEST_ASSERT_NOT_NULL_MESSAGE(w, "Failed to allocate w");
+
+    /* Initialize w to sentinel so we can detect modification */
+    for (size_t n = 0; n < FIELD_SIZE; n++) {
+        w[n] = -999.0;
+    }
 
     bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.0);
     bc_inlet_set_edge(&config, BC_EDGE_FRONT);
@@ -439,13 +444,23 @@ void test_inlet_z_face(void) {
     cfd_status_t status = bc_apply_inlet_3d(u, v, w, NX, NY, NZ, STRIDE_Z, &config);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
-    /* Verify u=1.0 and v=0.0 on front face (k=NZ-1) */
+    /* Verify u=1.0, v=0.0, w=0.0 on front face (k=NZ-1) */
     for (size_t j = 0; j < NY; j++) {
         for (size_t i = 0; i < NX; i++) {
-            TEST_ASSERT_DOUBLE_WITHIN(TOL, 1.0,
-                u[(NZ - 1) * STRIDE_Z + j * NX + i]);
-            TEST_ASSERT_DOUBLE_WITHIN(TOL, 0.0,
-                v[(NZ - 1) * STRIDE_Z + j * NX + i]);
+            size_t idx = (NZ - 1) * STRIDE_Z + j * NX + i;
+            TEST_ASSERT_DOUBLE_WITHIN(TOL, 1.0, u[idx]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOL, 0.0, v[idx]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOL, 0.0, w[idx]);
+        }
+    }
+
+    /* Verify w on interior planes was NOT modified */
+    for (size_t k = 0; k < NZ - 1; k++) {
+        for (size_t j = 0; j < NY; j++) {
+            for (size_t i = 0; i < NX; i++) {
+                TEST_ASSERT_DOUBLE_WITHIN(TOL, -999.0,
+                    w[k * STRIDE_Z + j * NX + i]);
+            }
         }
     }
 
