@@ -111,28 +111,32 @@ cfd_status_t bc_apply_symmetry_scalar_impl(double* u, double* v, double* w,
     }
 
     /* Back boundary (Z-symmetry plane at z=0):
-     * - w = 0 (normal velocity is zero)
+     * - w = 0 (normal velocity is zero, only when w is provided)
      * - du/dz = 0 (tangential gradient is zero, copy from interior)
      * - dv/dz = 0 (tangential gradient is zero, copy from interior) */
-    if ((edges & BC_EDGE_BACK) && nz > 1 && w) {
+    if ((edges & BC_EDGE_BACK) && nz > 1) {
         size_t plane_size = nx * ny;
         for (i = 0; i < plane_size; i++) {
-            w[i] = 0.0;
+            if (w) {
+                w[i] = 0.0;
+            }
             u[i] = u[stride_z + i];
             v[i] = v[stride_z + i];
         }
     }
 
     /* Front boundary (Z-symmetry plane at z=Lz):
-     * - w = 0 (normal velocity is zero)
+     * - w = 0 (normal velocity is zero, only when w is provided)
      * - du/dz = 0 (tangential gradient is zero, copy from interior)
      * - dv/dz = 0 (tangential gradient is zero, copy from interior) */
-    if ((edges & BC_EDGE_FRONT) && nz > 1 && w) {
+    if ((edges & BC_EDGE_FRONT) && nz > 1) {
         size_t plane_size = nx * ny;
         size_t front = (nz - 1) * stride_z;
         size_t interior = (nz - 2) * stride_z;
         for (i = 0; i < plane_size; i++) {
-            w[front + i] = 0.0;
+            if (w) {
+                w[front + i] = 0.0;
+            }
             u[front + i] = u[interior + i];
             v[front + i] = v[interior + i];
         }

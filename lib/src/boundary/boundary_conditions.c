@@ -155,6 +155,15 @@ bool bc_set_backend(bc_backend_t backend) {
  * 2D public API functions call these with nz=1, stride_z=0.
  * ============================================================================ */
 
+/** Validate 3D layout parameters.
+ *  nz must be >= 1; for nz > 1, stride_z must be >= nx*ny to prevent aliasing. */
+static inline bool validate_3d_layout(size_t nx, size_t ny,
+                                       size_t nz, size_t stride_z) {
+    if (nz == 0) return false;
+    if (nz > 1 && stride_z < nx * ny) return false;
+    return true;
+}
+
 static cfd_status_t apply_neumann_with_backend(double* field, size_t nx, size_t ny,
                                                 size_t nz, size_t stride_z,
                                                 const bc_backend_impl_t* impl) {
@@ -189,7 +198,7 @@ static cfd_status_t apply_dirichlet_with_backend(double* field, size_t nx, size_
 static cfd_status_t apply_scalar_field_bc(double* field, size_t nx, size_t ny,
                                            size_t nz, size_t stride_z,
                                            bc_type_t type, const bc_backend_impl_t* impl) {
-    if (!field || nx < 3 || ny < 3) {
+    if (!field || nx < 3 || ny < 3 || !validate_3d_layout(nx, ny, nz, stride_z)) {
         return CFD_ERROR_INVALID;
     }
 
@@ -504,6 +513,9 @@ static cfd_status_t apply_inlet_with_backend(double* u, double* v, double* w,
     if (impl == NULL || impl->apply_inlet == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
+    if (!validate_3d_layout(nx, ny, nz, stride_z)) {
+        return CFD_ERROR_INVALID;
+    }
     return impl->apply_inlet(u, v, w, nx, ny, nz, stride_z, config);
 }
 
@@ -782,6 +794,9 @@ static cfd_status_t apply_outlet_with_backend(double* field, size_t nx, size_t n
     if (impl == NULL || impl->apply_outlet == NULL) {
         return CFD_ERROR_UNSUPPORTED;
     }
+    if (!validate_3d_layout(nx, ny, nz, stride_z)) {
+        return CFD_ERROR_INVALID;
+    }
     return impl->apply_outlet(field, nx, ny, nz, stride_z, config);
 }
 
@@ -919,6 +934,9 @@ static cfd_status_t apply_symmetry_with_backend(double* u, double* v, double* w,
                                                  const bc_backend_impl_t* impl) {
     if (impl == NULL || impl->apply_symmetry == NULL) {
         return CFD_ERROR_UNSUPPORTED;
+    }
+    if (!validate_3d_layout(nx, ny, nz, stride_z)) {
+        return CFD_ERROR_INVALID;
     }
     return impl->apply_symmetry(u, v, w, nx, ny, nz, stride_z, config);
 }
