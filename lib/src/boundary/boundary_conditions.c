@@ -1432,8 +1432,13 @@ cfd_status_t bc_apply_symmetry_3d(double* u, double* v, double* w,
                                    size_t nz, size_t stride_z,
                                    const bc_symmetry_config_t* config) {
     if (!u || !v || !config || nx < 3 || ny < 3) return CFD_ERROR_INVALID;
+    if (!validate_3d_layout(nx, ny, nz, stride_z)) return CFD_ERROR_INVALID;
     const bc_backend_impl_t* impl = get_backend_impl(g_current_backend);
-    return apply_symmetry_with_backend(u, v, w, nx, ny, nz, stride_z, config, impl);
+    if (impl == NULL || impl->apply_symmetry == NULL) {
+        /* Fall back to scalar implementation when backend lacks symmetry */
+        return bc_apply_symmetry_scalar_impl(u, v, w, nx, ny, nz, stride_z, config);
+    }
+    return impl->apply_symmetry(u, v, w, nx, ny, nz, stride_z, config);
 }
 
 cfd_status_t bc_apply_symmetry_cpu_3d(double* u, double* v, double* w,
