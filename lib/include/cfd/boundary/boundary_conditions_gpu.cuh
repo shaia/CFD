@@ -108,6 +108,45 @@ cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, size_t ny,
                                  const bc_inlet_config_t* config,
                                  cudaStream_t stream);
 
+// ============================================================================
+// 3D Boundary Conditions
+// ============================================================================
+
+/**
+ * Apply boundary conditions to a 3D scalar field on GPU
+ *
+ * Applies per-plane x/y BCs for each k-plane and Neumann BCs on z-faces.
+ * For nz==1, behaves identically to bc_apply_scalar_gpu().
+ *
+ * @param d_field  Device pointer to scalar field (size nx*ny*nz)
+ * @param nx       Number of grid points in x-direction
+ * @param ny       Number of grid points in y-direction
+ * @param nz       Number of grid points in z-direction (1 for 2D)
+ * @param type     Type of boundary condition to apply
+ * @param stream   CUDA stream for async execution (0 for default)
+ */
+void bc_apply_scalar_3d_gpu(double* d_field, size_t nx, size_t ny, size_t nz,
+                             bc_type_t type, cudaStream_t stream);
+
+/**
+ * Apply boundary conditions to 3D velocity components on GPU
+ *
+ * Applies per-plane x/y BCs for each k-plane and Neumann BCs on z-faces.
+ * For nz==1, behaves identically to bc_apply_velocity_gpu() (w is ignored).
+ *
+ * @param d_u      Device pointer to x-velocity array (size nx*ny*nz)
+ * @param d_v      Device pointer to y-velocity array (size nx*ny*nz)
+ * @param d_w      Device pointer to z-velocity array (size nx*ny*nz, may be NULL for 2D)
+ * @param nx       Number of grid points in x-direction
+ * @param ny       Number of grid points in y-direction
+ * @param nz       Number of grid points in z-direction (1 for 2D)
+ * @param type     Type of boundary condition to apply
+ * @param stream   CUDA stream for async execution (0 for default)
+ */
+void bc_apply_velocity_3d_gpu(double* d_u, double* d_v, double* d_w,
+                               size_t nx, size_t ny, size_t nz,
+                               bc_type_t type, cudaStream_t stream);
+
 #ifdef __cplusplus
 }
 #endif

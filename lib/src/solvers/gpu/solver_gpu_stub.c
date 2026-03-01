@@ -45,17 +45,19 @@ cfd_status_t gpu_select_device(int device_id) {
     return CFD_ERROR_UNSUPPORTED;
 }
 
-int gpu_should_use(const gpu_config_t* config, size_t nx, size_t ny, int num_steps) {
+int gpu_should_use(const gpu_config_t* config, size_t nx, size_t ny, size_t nz, int num_steps) {
     (void)config;
     (void)nx;
     (void)ny;
+    (void)nz;
     (void)num_steps;
     return 0;  // Never use GPU (not available)
 }
 
-gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, const gpu_config_t* config) {
+gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, size_t nz, const gpu_config_t* config) {
     (void)nx;
     (void)ny;
+    (void)nz;
     (void)config;
     cfd_set_error(CFD_ERROR_UNSUPPORTED, "CUDA not available (compiled without CUDA support)");
     return NULL;
