@@ -255,12 +255,18 @@ static solve_result_t solve_3d_sinusoidal_backend(
     init_3d_rhs(rhs, nx, ny, nz, dx, dy, dz);
     init_3d_analytical(analytical, nx, ny, nz, dx, dy, dz);
 
-    /* Create solver */
+    /* Check backend availability before creating solver */
+    if (!poisson_solver_backend_available(backend)) {
+        cfd_free(p); cfd_free(p_temp); cfd_free(rhs); cfd_free(analytical);
+        result.l2_error = -1.0;
+        result.solver_unavailable = 1;
+        return result;
+    }
+
     poisson_solver_t* solver = poisson_solver_create(method, backend);
     if (!solver) {
         cfd_free(p); cfd_free(p_temp); cfd_free(rhs); cfd_free(analytical);
         result.l2_error = -1.0;
-        result.solver_unavailable = 1;
         return result;
     }
 
