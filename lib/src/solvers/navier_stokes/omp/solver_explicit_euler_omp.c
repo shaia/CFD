@@ -200,10 +200,10 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
 
         // Check for NaN/Inf values
         int has_nan = 0;
-        int limit = (int)total;
-        int ii;
+        ptrdiff_t total_int = (ptrdiff_t)total;
+        ptrdiff_t ii;
 #pragma omp parallel for reduction(| : has_nan) schedule(static)
-        for (ii = 0; ii < limit; ii++) {
+        for (ii = 0; ii < total_int; ii++) {
             if (!isfinite(field->u[ii]) || !isfinite(field->v[ii]) ||
                 !isfinite(field->w[ii]) || !isfinite(field->p[ii])) {
                 has_nan = 1;
