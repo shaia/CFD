@@ -571,7 +571,9 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
         }
     }
     if (has_nan) {
-        printf("Warning: NaN/Inf detected in explicit_euler_simd step, stopping\n");
+        cfd_set_error(CFD_ERROR_DIVERGED,
+                      "NaN/Inf detected in explicit_euler_simd step");
+        return CFD_ERROR_DIVERGED;
     }
 
     return CFD_SUCCESS;

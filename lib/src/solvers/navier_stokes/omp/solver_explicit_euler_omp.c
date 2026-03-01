@@ -185,8 +185,12 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
         }
 
         if (has_nan) {
-            printf("Warning: NaN/Inf detected in iteration %d, stopping solver\n", iter);
-            break;
+            cfd_free(u_new);
+            cfd_free(v_new);
+            cfd_free(p_new);
+            cfd_set_error(CFD_ERROR_DIVERGED,
+                          "NaN/Inf detected in explicit_euler_omp step");
+            return CFD_ERROR_DIVERGED;
         }
     }
 
