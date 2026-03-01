@@ -8,7 +8,6 @@
 
 #include "../linear_solver_internal.h"
 
-#include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
@@ -27,7 +26,12 @@
 typedef struct {
     double dx2;
     double dy2;
+    double inv_dz2;    /* 1/dz^2 (0 for 2D) */
     double diag_inv;
+
+    size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
+    size_t k_start;    /* first interior k index */
+    size_t k_end;      /* one-past-last interior k index */
 
     double* r;
     double* z;
@@ -50,108 +54,141 @@ static inline int size_to_int(size_t val) {
 }
 
 static double dot_product_omp(const double* a, const double* b,
-                              size_t nx, size_t ny) {
+                              size_t nx, size_t ny,
+                              size_t k_start, size_t k_end, size_t stride_z) {
     double sum = 0.0;
     int ny_int = size_to_int(ny);
     int nx_int = size_to_int(nx);
-    int j;
+
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
 #pragma omp parallel for schedule(static) reduction(+:sum)
-    for (j = 1; j < ny_int - 1; j++) {
-        for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
-            sum += a[idx] * b[idx];
+        for (j = 1; j < ny_int - 1; j++) {
+            for (int i = 1; i < nx_int - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
+                sum += a[idx] * b[idx];
+            }
         }
     }
     return sum;
 }
 
 static void axpy_omp(double alpha, const double* x, double* y,
-                     size_t nx, size_t ny) {
+                     size_t nx, size_t ny,
+                     size_t k_start, size_t k_end, size_t stride_z) {
     int ny_int = size_to_int(ny);
     int nx_int = size_to_int(nx);
-    int j;
+
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
 #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
-            y[idx] += alpha * x[idx];
+        for (j = 1; j < ny_int - 1; j++) {
+            for (int i = 1; i < nx_int - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
+                y[idx] += alpha * x[idx];
+            }
         }
     }
 }
 
 static void apply_laplacian_omp(const double* p, double* Ap,
                                 size_t nx, size_t ny,
-                                double dx2, double dy2) {
+                                double dx2, double dy2, double inv_dz2,
+                                size_t k_start, size_t k_end, size_t stride_z) {
     double dx2_inv = 1.0 / dx2;
     double dy2_inv = 1.0 / dy2;
     int ny_int = size_to_int(ny);
     int nx_int = size_to_int(nx);
-    int j;
+
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
 #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
-            double laplacian = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv
-                             + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv;
-            Ap[idx] = -laplacian;
+        for (j = 1; j < ny_int - 1; j++) {
+            for (int i = 1; i < nx_int - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
+                double laplacian =
+                    (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv
+                  + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv
+                  + (p[idx + stride_z] + p[idx - stride_z] - 2.0 * p[idx]) * inv_dz2;
+                Ap[idx] = -laplacian;
+            }
         }
     }
 }
 
 static void compute_residual_omp(const double* x, const double* rhs, double* r,
                                  size_t nx, size_t ny,
-                                 double dx2, double dy2) {
+                                 double dx2, double dy2, double inv_dz2,
+                                 size_t k_start, size_t k_end, size_t stride_z) {
     double dx2_inv = 1.0 / dx2;
     double dy2_inv = 1.0 / dy2;
     int ny_int = size_to_int(ny);
     int nx_int = size_to_int(nx);
-    int j;
+
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
 #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
-            double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv
-                             + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv;
-            r[idx] = -rhs[idx] + laplacian;
+        for (j = 1; j < ny_int - 1; j++) {
+            for (int i = 1; i < nx_int - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
+                double laplacian =
+                    (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv
+                  + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv
+                  + (x[idx + stride_z] + x[idx - stride_z] - 2.0 * x[idx]) * inv_dz2;
+                r[idx] = -rhs[idx] + laplacian;
+            }
         }
     }
 }
 
 static void copy_vector_omp(const double* src, double* dst,
-                            size_t nx, size_t ny) {
+                            size_t nx, size_t ny,
+                            size_t k_start, size_t k_end, size_t stride_z) {
     int ny_int = size_to_int(ny);
-    int j;
+
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
 #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        memcpy(&dst[j * nx + 1], &src[j * nx + 1], (nx - 2) * sizeof(double));
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t row_start = k * stride_z + (size_t)j * nx;
+            memcpy(&dst[row_start + 1], &src[row_start + 1], (nx - 2) * sizeof(double));
+        }
     }
 }
 
 static void apply_jacobi_precond_omp(const double* r, double* z,
                                      size_t nx, size_t ny,
-                                     double diag_inv) {
+                                     double diag_inv,
+                                     size_t k_start, size_t k_end, size_t stride_z) {
     int ny_int = size_to_int(ny);
     int nx_int = size_to_int(nx);
-    int j;
+
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
 #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
-            z[idx] = diag_inv * r[idx];
+        for (j = 1; j < ny_int - 1; j++) {
+            for (int i = 1; i < nx_int - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
+                z[idx] = diag_inv * r[idx];
+            }
         }
     }
 }
 
 static void update_search_direction_omp(const double* src, double* p,
-                                        double beta, size_t nx, size_t ny) {
+                                        double beta, size_t nx, size_t ny,
+                                        size_t k_start, size_t k_end, size_t stride_z) {
     int ny_int = size_to_int(ny);
     int nx_int = size_to_int(nx);
-    int j;
+
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
 #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        for (int i = 1; i < nx_int - 1; i++) {
-            size_t idx = IDX_2D((size_t)i, (size_t)j, nx);
-            p[idx] = src[idx] + beta * p[idx];
+        for (j = 1; j < ny_int - 1; j++) {
+            for (int i = 1; i < nx_int - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
+                p[idx] = src[idx] + beta * p[idx];
+            }
         }
     }
 }
@@ -166,7 +203,6 @@ static cfd_status_t cg_omp_init(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)nz; (void)dz;
     cg_omp_context_t* ctx = (cg_omp_context_t*)cfd_calloc(1, sizeof(cg_omp_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
@@ -174,10 +210,12 @@ static cfd_status_t cg_omp_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
-    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2);
+    ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
+    poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
+    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
     ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
 
-    size_t n = nx * ny;
+    size_t n = nx * ny * nz;
     ctx->r = (double*)cfd_calloc(n, sizeof(double));
     ctx->p = (double*)cfd_calloc(n, sizeof(double));
     ctx->Ap = (double*)cfd_calloc(n, sizeof(double));
@@ -233,6 +271,10 @@ static cfd_status_t cg_omp_solve(
     size_t ny = solver->ny;
     double dx2 = ctx->dx2;
     double dy2 = ctx->dy2;
+    double inv_dz2 = ctx->inv_dz2;
+    size_t k_start = ctx->k_start;
+    size_t k_end = ctx->k_end;
+    size_t stride_z = ctx->stride_z;
 
     double* r = ctx->r;
     double* z = ctx->z;
@@ -244,21 +286,24 @@ static cfd_status_t cg_omp_solve(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    bc_apply_scalar_omp(x, nx, ny, BC_TYPE_NEUMANN);
+    poisson_solver_apply_bc(solver, x);
 
-    compute_residual_omp(x, rhs, r, nx, ny, dx2, dy2);
+    compute_residual_omp(x, rhs, r, nx, ny, dx2, dy2, inv_dz2,
+                         k_start, k_end, stride_z);
 
     double rho;
     if (use_precond) {
-        apply_jacobi_precond_omp(r, z, nx, ny, diag_inv);
-        copy_vector_omp(z, p, nx, ny);
-        rho = dot_product_omp(r, z, nx, ny);
+        apply_jacobi_precond_omp(r, z, nx, ny, diag_inv,
+                                 k_start, k_end, stride_z);
+        copy_vector_omp(z, p, nx, ny, k_start, k_end, stride_z);
+        rho = dot_product_omp(r, z, nx, ny, k_start, k_end, stride_z);
     } else {
-        copy_vector_omp(r, p, nx, ny);
-        rho = dot_product_omp(r, r, nx, ny);
+        copy_vector_omp(r, p, nx, ny, k_start, k_end, stride_z);
+        rho = dot_product_omp(r, r, nx, ny, k_start, k_end, stride_z);
     }
 
-    double initial_res = sqrt(dot_product_omp(r, r, nx, ny));
+    double initial_res = sqrt(dot_product_omp(r, r, nx, ny,
+                                              k_start, k_end, stride_z));
 
     if (stats) {
         stats->initial_residual = initial_res;
@@ -284,25 +329,31 @@ static cfd_status_t cg_omp_solve(
     double res_norm = initial_res;
 
     for (iter = 0; iter < params->max_iterations; iter++) {
-        apply_laplacian_omp(p, Ap, nx, ny, dx2, dy2);
+        apply_laplacian_omp(p, Ap, nx, ny, dx2, dy2, inv_dz2,
+                            k_start, k_end, stride_z);
 
-        double p_dot_Ap = dot_product_omp(p, Ap, nx, ny);
+        double p_dot_Ap = dot_product_omp(p, Ap, nx, ny,
+                                          k_start, k_end, stride_z);
         CG_CHECK_BREAKDOWN(p_dot_Ap, stats, iter, res_norm, start_time);
 
         double alpha = rho / p_dot_Ap;
 
-        axpy_omp(alpha, p, x, nx, ny);
-        axpy_omp(-alpha, Ap, r, nx, ny);
+        axpy_omp(alpha, p, x, nx, ny, k_start, k_end, stride_z);
+        axpy_omp(-alpha, Ap, r, nx, ny, k_start, k_end, stride_z);
 
         double rho_new;
         if (use_precond) {
-            apply_jacobi_precond_omp(r, z, nx, ny, diag_inv);
-            rho_new = dot_product_omp(r, z, nx, ny);
+            apply_jacobi_precond_omp(r, z, nx, ny, diag_inv,
+                                     k_start, k_end, stride_z);
+            rho_new = dot_product_omp(r, z, nx, ny,
+                                      k_start, k_end, stride_z);
         } else {
-            rho_new = dot_product_omp(r, r, nx, ny);
+            rho_new = dot_product_omp(r, r, nx, ny,
+                                      k_start, k_end, stride_z);
         }
 
-        res_norm = sqrt(dot_product_omp(r, r, nx, ny));
+        res_norm = sqrt(dot_product_omp(r, r, nx, ny,
+                                        k_start, k_end, stride_z));
 
         if (iter % params->check_interval == 0) {
             if (params->verbose) {
@@ -318,7 +369,8 @@ static cfd_status_t cg_omp_solve(
         CG_CHECK_BREAKDOWN(rho, stats, iter, res_norm, start_time);
 
         double beta = rho_new / rho;
-        update_search_direction_omp(use_precond ? z : r, p, beta, nx, ny);
+        update_search_direction_omp(use_precond ? z : r, p, beta, nx, ny,
+                                    k_start, k_end, stride_z);
 
         rho = rho_new;
     }
@@ -327,7 +379,7 @@ static cfd_status_t cg_omp_solve(
         converged = 1;
     }
 
-    bc_apply_scalar_omp(x, nx, ny, BC_TYPE_NEUMANN);
+    poisson_solver_apply_bc(solver, x);
 
     double end_time = poisson_solver_get_time_ms();
 

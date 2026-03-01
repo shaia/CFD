@@ -239,12 +239,6 @@ cfd_status_t poisson_solver_init(
         return CFD_ERROR_INVALID;
     }
 
-    /* OMP backends are 2D-only until Phase 6.
-     * SIMD backends were updated for 3D in Phase 5. */
-    if (nz > 1 && solver->backend == POISSON_BACKEND_OMP) {
-        return CFD_ERROR_UNSUPPORTED;
-    }
-
     solver->nx = nx;
     solver->ny = ny;
     solver->nz = nz;

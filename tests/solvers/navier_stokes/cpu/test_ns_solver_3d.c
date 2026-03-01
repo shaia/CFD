@@ -498,6 +498,43 @@ void test_3d_rk2_simd_vs_scalar(void) {
 }
 
 /* ========================================================================
+ * 3D QUIESCENT TESTS — OMP BACKENDS
+ * Skip gracefully if OMP backend is unavailable.
+ * ======================================================================== */
+
+void test_3d_explicit_euler_omp_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
+                               "Explicit Euler OMP");
+}
+
+void test_3d_projection_omp_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_PROJECTION_OMP,
+                               "Projection OMP");
+}
+
+void test_3d_rk2_omp_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_RK2_OMP,
+                               "RK2 OMP");
+}
+
+/* ========================================================================
+ * OMP vs SCALAR CONSISTENCY — 3D
+ * Verify OMP produces similar results to scalar on 3D grid.
+ * ======================================================================== */
+
+void test_3d_explicit_euler_omp_vs_scalar(void) {
+    run_3d_simd_vs_scalar(NS_SOLVER_TYPE_EXPLICIT_EULER,
+                           NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
+                           "Explicit Euler OMP");
+}
+
+void test_3d_rk2_omp_vs_scalar(void) {
+    run_3d_simd_vs_scalar(NS_SOLVER_TYPE_RK2,
+                           NS_SOLVER_TYPE_RK2_OMP,
+                           "RK2 OMP");
+}
+
+/* ========================================================================
  * MAIN
  * ======================================================================== */
 
@@ -522,6 +559,15 @@ int main(void) {
     /* SIMD vs Scalar consistency on 3D */
     RUN_TEST(test_3d_explicit_euler_simd_vs_scalar);
     RUN_TEST(test_3d_rk2_simd_vs_scalar);
+
+    /* 3D quiescent tests — OMP */
+    RUN_TEST(test_3d_explicit_euler_omp_quiescent);
+    RUN_TEST(test_3d_projection_omp_quiescent);
+    RUN_TEST(test_3d_rk2_omp_quiescent);
+
+    /* OMP vs Scalar consistency on 3D */
+    RUN_TEST(test_3d_explicit_euler_omp_vs_scalar);
+    RUN_TEST(test_3d_rk2_omp_vs_scalar);
 
     return UNITY_END();
 }

@@ -739,6 +739,62 @@ void test_3d_simd_vs_scalar_cg(void) {
 }
 
 /* ============================================================================
+ * OMP BACKEND TESTS
+ *
+ * These test OMP solvers on 3D grids.
+ * Skip gracefully if OMP backend is unavailable.
+ * ============================================================================ */
+
+static void run_omp_3d_test(poisson_solver_method_t method, const char* name,
+                             int max_iter, double omega) {
+    printf("\n    %s OMP on 3D sinusoidal (%dx%dx%d)...\n", name, N3D, N3D, N3D);
+    solve_result_t r = solve_3d_sinusoidal_backend(
+        method, POISSON_BACKEND_OMP, N3D, N3D, N3D, max_iter, omega);
+    if (r.solver_unavailable) {
+        printf("      OMP backend unavailable — skipping\n");
+        TEST_PASS();
+        return;
+    }
+    printf("      L2 error: %.6e, iters: %d, converged: %d\n",
+           r.l2_error, r.iterations, r.converged);
+    TEST_ASSERT_TRUE_MESSAGE(r.l2_error >= 0.0, "Solver setup failed");
+    TEST_ASSERT_TRUE_MESSAGE(r.l2_error < L2_ERROR_TOL,
+        "OMP 3D L2 error exceeds tolerance");
+}
+
+void test_3d_cg_omp_sinusoidal(void) {
+    run_omp_3d_test(POISSON_METHOD_CG, "CG", MAX_ITER_CG, 0.0);
+}
+
+void test_3d_redblack_omp_sinusoidal(void) {
+    run_omp_3d_test(POISSON_METHOD_REDBLACK_SOR, "Red-Black", MAX_ITER_SOR, 1.5);
+}
+
+/* Cross-backend comparison: OMP results should match scalar */
+void test_3d_omp_vs_scalar_cg(void) {
+    printf("\n    OMP vs Scalar CG on 3D (%dx%dx%d)...\n", N3D, N3D, N3D);
+
+    solve_result_t scalar = solve_3d_sinusoidal_backend(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, N3D, N3D, N3D, MAX_ITER_CG, 0.0);
+    TEST_ASSERT_TRUE_MESSAGE(scalar.l2_error >= 0.0, "Scalar solve failed");
+
+    solve_result_t omp = solve_3d_sinusoidal_backend(
+        POISSON_METHOD_CG, POISSON_BACKEND_OMP, N3D, N3D, N3D, MAX_ITER_CG, 0.0);
+    if (omp.solver_unavailable) {
+        printf("      OMP backend unavailable — skipping\n");
+        TEST_PASS();
+        return;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(omp.l2_error >= 0.0, "OMP solve failed");
+
+    double diff = fabs(scalar.l2_error - omp.l2_error);
+    printf("      Scalar L2: %.6e, OMP L2: %.6e, diff: %.6e\n",
+           scalar.l2_error, omp.l2_error, diff);
+    TEST_ASSERT_TRUE_MESSAGE(diff < SOLVER_COMPARE_TOL,
+        "OMP and Scalar CG solutions differ too much");
+}
+
+/* ============================================================================
  * MAIN
  * ============================================================================ */
 
@@ -777,6 +833,12 @@ int main(void) {
     RUN_TEST(test_3d_redblack_simd_sinusoidal);
     RUN_TEST(test_3d_bicgstab_simd_sinusoidal);
     RUN_TEST(test_3d_simd_vs_scalar_cg);
+
+    /* OMP backend tests */
+    printf("\n--- 3D OMP Backend Tests ---\n");
+    RUN_TEST(test_3d_cg_omp_sinusoidal);
+    RUN_TEST(test_3d_redblack_omp_sinusoidal);
+    RUN_TEST(test_3d_omp_vs_scalar_cg);
 
     return UNITY_END();
 }
