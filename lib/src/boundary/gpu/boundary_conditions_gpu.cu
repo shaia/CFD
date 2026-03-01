@@ -277,32 +277,40 @@ extern "C" void bc_apply_dirichlet_velocity_gpu(double* d_u, double* d_v, size_t
 
 /**
  * Apply Neumann BC to a 3D scalar field.
- * Thread tid maps to boundary-point indices across all k-planes and z-faces.
- * Launch with max(ny*nz, nx*nz, nx*ny) threads.
+ * Boundary cells are partitioned across face groups to avoid write races:
+ *   z-faces: all (i,j) pairs — owns edges/corners on z-boundary planes
+ *   y-faces: all i, interior k only [1..nz-2] — no overlap with z-faces
+ *   x-faces: interior j [1..ny-2] and interior k [1..nz-2] — no overlap
+ * Launch with max((ny-2)*(nz-2), nx*(nz-2), nx*ny) threads.
  */
 __global__ void kernel_bc_neumann_scalar_3d(double* field, size_t nx, size_t ny, size_t nz) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     size_t plane = nx * ny;
+    int ny_int = (int)ny - 2;  // interior y count
+    int nz_int = (int)nz - 2;  // interior z count
 
-    // Left/right boundaries: one thread per (j, k) pair
-    if (tid < (int)(ny * nz)) {
-        int k = tid / (int)ny;
-        int j = tid % (int)ny;
+    // Left/right boundaries: interior j [1..ny-2], interior k [1..nz-2]
+    if (nz_int > 0 && ny_int > 0 && tid < ny_int * nz_int) {
+        int ki = tid / ny_int;
+        int ji = tid % ny_int;
+        int k = ki + 1;
+        int j = ji + 1;
         size_t base = k * plane;
         field[base + IDX_2D(0, j, nx)] = field[base + IDX_2D(1, j, nx)];
         field[base + IDX_2D(nx - 1, j, nx)] = field[base + IDX_2D(nx - 2, j, nx)];
     }
 
-    // Top/bottom boundaries: one thread per (i, k) pair
-    if (tid < (int)(nx * nz)) {
-        int k = tid / (int)nx;
+    // Top/bottom boundaries: all i [0..nx-1], interior k [1..nz-2]
+    if (nz_int > 0 && tid < (int)nx * nz_int) {
+        int ki = tid / (int)nx;
         int i = tid % (int)nx;
+        int k = ki + 1;
         size_t base = k * plane;
         field[base + i] = field[base + IDX_2D(i, 1, nx)];
         field[base + IDX_2D(i, ny - 1, nx)] = field[base + IDX_2D(i, ny - 2, nx)];
     }
 
-    // Z-face boundaries: one thread per (i, j) pair
+    // Z-face boundaries: all (i, j) pairs — handles edges/corners on z-planes
     if (nz > 1 && tid < (int)plane) {
         field[tid] = field[plane + tid];                             // k=0 from k=1
         field[(nz - 1) * plane + tid] = field[(nz - 2) * plane + tid];  // k=nz-1 from k=nz-2
@@ -311,16 +319,21 @@ __global__ void kernel_bc_neumann_scalar_3d(double* field, size_t nx, size_t ny,
 
 /**
  * Apply Neumann BC to 3D velocity components (u, v, w).
+ * Same face-partitioned threading as the scalar kernel to avoid write races.
  */
 __global__ void kernel_bc_neumann_velocity_3d(double* u, double* v, double* w,
                                                size_t nx, size_t ny, size_t nz) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     size_t plane = nx * ny;
+    int ny_int = (int)ny - 2;
+    int nz_int = (int)nz - 2;
 
-    // Left/right boundaries: one thread per (j, k) pair
-    if (tid < (int)(ny * nz)) {
-        int k = tid / (int)ny;
-        int j = tid % (int)ny;
+    // Left/right boundaries: interior j [1..ny-2], interior k [1..nz-2]
+    if (nz_int > 0 && ny_int > 0 && tid < ny_int * nz_int) {
+        int ki = tid / ny_int;
+        int ji = tid % ny_int;
+        int k = ki + 1;
+        int j = ji + 1;
         size_t base = k * plane;
         size_t left = base + IDX_2D(0, j, nx);
         size_t left_int = base + IDX_2D(1, j, nx);
@@ -331,10 +344,11 @@ __global__ void kernel_bc_neumann_velocity_3d(double* u, double* v, double* w,
         if (w) { w[left] = w[left_int]; w[right] = w[right_int]; }
     }
 
-    // Top/bottom boundaries: one thread per (i, k) pair
-    if (tid < (int)(nx * nz)) {
-        int k = tid / (int)nx;
+    // Top/bottom boundaries: all i [0..nx-1], interior k [1..nz-2]
+    if (nz_int > 0 && tid < (int)nx * nz_int) {
+        int ki = tid / (int)nx;
         int i = tid % (int)nx;
+        int k = ki + 1;
         size_t base = k * plane;
         size_t bot = base + i;
         size_t bot_int = base + IDX_2D(i, 1, nx);
@@ -345,7 +359,7 @@ __global__ void kernel_bc_neumann_velocity_3d(double* u, double* v, double* w,
         if (w) { w[bot] = w[bot_int]; w[top] = w[top_int]; }
     }
 
-    // Z-face boundaries: one thread per (i, j) pair
+    // Z-face boundaries: all (i, j) — handles edges/corners on z-planes
     if (nz > 1 && tid < (int)plane) {
         size_t zbot = tid;
         size_t zbot_int = plane + tid;
@@ -364,26 +378,31 @@ __global__ void kernel_bc_neumann_velocity_3d(double* u, double* v, double* w,
 __global__ void kernel_bc_periodic_scalar_3d(double* field, size_t nx, size_t ny, size_t nz) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     size_t plane = nx * ny;
+    int ny_int = (int)ny - 2;
+    int nz_int = (int)nz - 2;
 
-    // Left/right (periodic in x)
-    if (tid < (int)(ny * nz)) {
-        int k = tid / (int)ny;
-        int j = tid % (int)ny;
+    // Left/right (periodic in x): interior j [1..ny-2], interior k [1..nz-2]
+    if (nz_int > 0 && ny_int > 0 && tid < ny_int * nz_int) {
+        int ki = tid / ny_int;
+        int ji = tid % ny_int;
+        int k = ki + 1;
+        int j = ji + 1;
         size_t base = k * plane;
         field[base + IDX_2D(0, j, nx)] = field[base + IDX_2D(nx - 2, j, nx)];
         field[base + IDX_2D(nx - 1, j, nx)] = field[base + IDX_2D(1, j, nx)];
     }
 
-    // Top/bottom (periodic in y)
-    if (tid < (int)(nx * nz)) {
-        int k = tid / (int)nx;
+    // Top/bottom (periodic in y): all i [0..nx-1], interior k [1..nz-2]
+    if (nz_int > 0 && tid < (int)nx * nz_int) {
+        int ki = tid / (int)nx;
         int i = tid % (int)nx;
+        int k = ki + 1;
         size_t base = k * plane;
         field[base + i] = field[base + IDX_2D(i, ny - 2, nx)];
         field[base + IDX_2D(i, ny - 1, nx)] = field[base + IDX_2D(i, 1, nx)];
     }
 
-    // Z-faces (periodic in z)
+    // Z-faces (periodic in z): all (i, j) — handles edges/corners on z-planes
     if (nz > 1 && tid < (int)plane) {
         field[tid] = field[(nz - 2) * plane + tid];
         field[(nz - 1) * plane + tid] = field[plane + tid];
@@ -394,11 +413,15 @@ __global__ void kernel_bc_periodic_velocity_3d(double* u, double* v, double* w,
                                                 size_t nx, size_t ny, size_t nz) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     size_t plane = nx * ny;
+    int ny_int = (int)ny - 2;
+    int nz_int = (int)nz - 2;
 
-    // Left/right (periodic in x)
-    if (tid < (int)(ny * nz)) {
-        int k = tid / (int)ny;
-        int j = tid % (int)ny;
+    // Left/right (periodic in x): interior j [1..ny-2], interior k [1..nz-2]
+    if (nz_int > 0 && ny_int > 0 && tid < ny_int * nz_int) {
+        int ki = tid / ny_int;
+        int ji = tid % ny_int;
+        int k = ki + 1;
+        int j = ji + 1;
         size_t base = k * plane;
         size_t left = base + IDX_2D(0, j, nx);
         size_t left_src = base + IDX_2D(nx - 2, j, nx);
@@ -409,10 +432,11 @@ __global__ void kernel_bc_periodic_velocity_3d(double* u, double* v, double* w,
         if (w) { w[left] = w[left_src]; w[right] = w[right_src]; }
     }
 
-    // Top/bottom (periodic in y)
-    if (tid < (int)(nx * nz)) {
-        int k = tid / (int)nx;
+    // Top/bottom (periodic in y): all i [0..nx-1], interior k [1..nz-2]
+    if (nz_int > 0 && tid < (int)nx * nz_int) {
+        int ki = tid / (int)nx;
         int i = tid % (int)nx;
+        int k = ki + 1;
         size_t base = k * plane;
         size_t bot = base + i;
         size_t bot_src = base + IDX_2D(i, ny - 2, nx);
@@ -423,7 +447,7 @@ __global__ void kernel_bc_periodic_velocity_3d(double* u, double* v, double* w,
         if (w) { w[bot] = w[bot_src]; w[top] = w[top_src]; }
     }
 
-    // Z-faces (periodic in z)
+    // Z-faces (periodic in z): all (i, j) — handles edges/corners on z-planes
     if (nz > 1 && tid < (int)plane) {
         size_t zbot = tid;
         size_t zbot_src = (nz - 2) * plane + tid;
@@ -440,8 +464,12 @@ __global__ void kernel_bc_periodic_velocity_3d(double* u, double* v, double* w,
 // ============================================================================
 
 static int bc_3d_num_blocks(size_t nx, size_t ny, size_t nz) {
-    size_t max_dim = ny * nz;
-    if (nx * nz > max_dim) max_dim = nx * nz;
+    // Thread count matches the face-partitioned kernels:
+    //   x-faces: (ny-2)*(nz-2), y-faces: nx*(nz-2), z-faces: nx*ny
+    size_t nz_int = (nz > 2) ? nz - 2 : 0;
+    size_t ny_int = (ny > 2) ? ny - 2 : 0;
+    size_t max_dim = ny_int * nz_int;
+    if (nx * nz_int > max_dim) max_dim = nx * nz_int;
     if (nx * ny > max_dim) max_dim = nx * ny;
     return (int)((max_dim + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE);
 }
