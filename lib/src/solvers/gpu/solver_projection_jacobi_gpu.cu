@@ -304,47 +304,73 @@ __global__ void kernel_scale_rhs(double* __restrict__ rhs, size_t nx, size_t ny,
 
 // Copy boundary values from stored BC arrays to velocity arrays
 // This preserves caller-set boundary conditions (e.g., Dirichlet for lid-driven cavity)
-// For 3D: copies per-plane x/y boundaries for all k, plus z-face boundaries
+// 2D (nz==1): top/bottom and left/right boundaries in k=0 plane
+// 3D (nz>1): face-partitioned to avoid corner/edge write races (z > y > x priority)
 __global__ void kernel_copy_velocity_boundaries(double* __restrict__ u, double* __restrict__ v,
                                                  double* __restrict__ w,
                                                  const double* __restrict__ u_bc,
                                                  const double* __restrict__ v_bc,
                                                  const double* __restrict__ w_bc,
                                                  size_t nx, size_t ny, size_t nz) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t tid = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
     size_t plane = nx * ny;
 
-    // Per-plane bottom/top (j=0, j=ny-1): one thread per (i, k) pair
-    if (tid < (int)(nx * nz)) {
-        int k = tid / (int)nx;
-        int i = tid % (int)nx;
-        size_t base = k * plane;
-        size_t bot = base + i;
-        size_t top = base + IDX_2D(i, ny - 1, nx);
-        u[bot] = u_bc[bot]; u[top] = u_bc[top];
-        v[bot] = v_bc[bot]; v[top] = v_bc[top];
-        if (w && w_bc) { w[bot] = w_bc[bot]; w[top] = w_bc[top]; }
-    }
+    if (nz == 1) {
+        // 2D: top/bottom (j=0, j=ny-1) — one thread per column
+        if (tid < nx) {
+            size_t i = tid;
+            size_t bot = i;
+            size_t top = IDX_2D(i, ny - 1, nx);
+            u[bot] = u_bc[bot]; u[top] = u_bc[top];
+            v[bot] = v_bc[bot]; v[top] = v_bc[top];
+        }
+        // 2D: left/right (i=0, i=nx-1) — one thread per row
+        if (tid < ny) {
+            size_t j = tid;
+            size_t left = IDX_2D(0, j, nx);
+            size_t right = IDX_2D(nx - 1, j, nx);
+            u[left] = u_bc[left]; u[right] = u_bc[right];
+            v[left] = v_bc[left]; v[right] = v_bc[right];
+        }
+    } else {
+        size_t ny_int = (ny > 2) ? ny - 2 : 0;
+        size_t nz_int = (nz > 2) ? nz - 2 : 0;
 
-    // Per-plane left/right (i=0, i=nx-1): one thread per (j, k) pair
-    if (tid < (int)(ny * nz)) {
-        int k = tid / (int)ny;
-        int j = tid % (int)ny;
-        size_t base = k * plane;
-        size_t left = base + IDX_2D(0, j, nx);
-        size_t right = base + IDX_2D(nx - 1, j, nx);
-        u[left] = u_bc[left]; u[right] = u_bc[right];
-        v[left] = v_bc[left]; v[right] = v_bc[right];
-        if (w && w_bc) { w[left] = w_bc[left]; w[right] = w_bc[right]; }
-    }
+        // y-faces (top/bottom): all i [0..nx-1], interior k [1..nz-2]
+        if (nz_int > 0 && tid < nx * nz_int) {
+            size_t ki = tid / nx;
+            size_t i = tid % nx;
+            size_t k = ki + 1;
+            size_t base = k * plane;
+            size_t bot = base + i;
+            size_t top = base + IDX_2D(i, ny - 1, nx);
+            u[bot] = u_bc[bot]; u[top] = u_bc[top];
+            v[bot] = v_bc[bot]; v[top] = v_bc[top];
+            if (w && w_bc) { w[bot] = w_bc[bot]; w[top] = w_bc[top]; }
+        }
 
-    // Z-face boundaries (k=0, k=nz-1): one thread per (i, j) pair
-    if (nz > 1 && tid < (int)plane) {
-        size_t zbot = tid;
-        size_t ztop = (nz - 1) * plane + tid;
-        u[zbot] = u_bc[zbot]; u[ztop] = u_bc[ztop];
-        v[zbot] = v_bc[zbot]; v[ztop] = v_bc[ztop];
-        if (w && w_bc) { w[zbot] = w_bc[zbot]; w[ztop] = w_bc[ztop]; }
+        // x-faces (left/right): interior j [1..ny-2], interior k [1..nz-2]
+        if (nz_int > 0 && ny_int > 0 && tid < ny_int * nz_int) {
+            size_t ki = tid / ny_int;
+            size_t ji = tid % ny_int;
+            size_t k = ki + 1;
+            size_t j = ji + 1;
+            size_t base = k * plane;
+            size_t left = base + IDX_2D(0, j, nx);
+            size_t right = base + IDX_2D(nx - 1, j, nx);
+            u[left] = u_bc[left]; u[right] = u_bc[right];
+            v[left] = v_bc[left]; v[right] = v_bc[right];
+            if (w && w_bc) { w[left] = w_bc[left]; w[right] = w_bc[right]; }
+        }
+
+        // z-faces (k=0, k=nz-1): all (i, j) — owns edges/corners
+        if (tid < plane) {
+            size_t zbot = tid;
+            size_t ztop = (nz - 1) * plane + tid;
+            u[zbot] = u_bc[zbot]; u[ztop] = u_bc[ztop];
+            v[zbot] = v_bc[zbot]; v[ztop] = v_bc[ztop];
+            if (w && w_bc) { w[zbot] = w_bc[zbot]; w[ztop] = w_bc[ztop]; }
+        }
     }
 }
 
