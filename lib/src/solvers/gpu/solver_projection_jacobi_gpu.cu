@@ -660,8 +660,9 @@ void gpu_solver_reset_stats(gpu_solver_context_t* ctx_void) {
     if (!ctx_void)
         return;
     struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
+    size_t mem = ctx->stats.memory_allocated;  // preserve across reset
     memset(&ctx->stats, 0, sizeof(gpu_solver_stats_t));
-    ctx->stats.memory_allocated = ctx->size * sizeof(double) * 8;
+    ctx->stats.memory_allocated = mem;
 }
 
 cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
