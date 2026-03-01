@@ -52,17 +52,17 @@ void test_gpu_should_use(void) {
     config.min_steps = 10;
 
     // Should use GPU: large grid size and enough steps
-    TEST_ASSERT_TRUE(gpu_should_use(&config, 1000, 1000, 20));
+    TEST_ASSERT_TRUE(gpu_should_use(&config, 1000, 1000, 1, 20));
 
     // Should NOT use: grid too small (9*9=81 < 100)
-    TEST_ASSERT_FALSE(gpu_should_use(&config, 9, 9, 20));
+    TEST_ASSERT_FALSE(gpu_should_use(&config, 9, 9, 1, 20));
 
     // Should NOT use: too few steps
-    TEST_ASSERT_FALSE(gpu_should_use(&config, 1000, 1000, 5));
+    TEST_ASSERT_FALSE(gpu_should_use(&config, 1000, 1000, 1, 5));
 
     // Should NOT use: disabled in config
     config.enable_gpu = 0;
-    TEST_ASSERT_FALSE(gpu_should_use(&config, 1000, 1000, 20));
+    TEST_ASSERT_FALSE(gpu_should_use(&config, 1000, 1000, 1, 20));
 }
 
 // Test GPU device info retrieval
@@ -113,7 +113,7 @@ void test_gpu_solver_context_lifecycle(void) {
     size_t nx = 64, ny = 64;
 
     // Create context
-    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, &config);
+    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, 1, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
     // Get initial stats
@@ -129,7 +129,7 @@ void test_gpu_solver_context_lifecycle(void) {
     gpu_solver_destroy(ctx);
 
     // Creating with NULL config should use defaults
-    ctx = gpu_solver_create(nx, ny, NULL);
+    ctx = gpu_solver_create(nx, ny, 1, NULL);
     TEST_ASSERT_NOT_NULL(ctx);
     gpu_solver_destroy(ctx);
 }
@@ -144,7 +144,7 @@ void test_gpu_data_transfer(void) {
     size_t nx = 32, ny = 32;
     gpu_config_t config = gpu_config_default();
 
-    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, &config);
+    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, 1, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
     flow_field* field = flow_field_create(nx, ny, 1);
@@ -201,7 +201,7 @@ void test_gpu_solver_step_direct(void) {
     initialize_flow_field(field, g);
 
     gpu_config_t config = gpu_config_default();
-    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, &config);
+    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, 1, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
     ns_solver_params_t params = ns_solver_params_default();
@@ -308,7 +308,7 @@ static void run_grid_size_test(size_t nx, size_t ny) {
     initialize_flow_field(field, g);
 
     gpu_config_t config = gpu_config_default();
-    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, &config);
+    gpu_solver_context_t* ctx = gpu_solver_create(nx, ny, 1, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
     ns_solver_params_t params = ns_solver_params_default();
@@ -473,7 +473,7 @@ void test_gpu_solver_error_handling(void) {
     gpu_config_t config = gpu_config_default();
 
     // NULL config for gpu_should_use
-    TEST_ASSERT_FALSE(gpu_should_use(NULL, 100, 100, 10));
+    TEST_ASSERT_FALSE(gpu_should_use(NULL, 100, 100, 1, 10));
 
     // Upload/download with NULL context
     flow_field* field = flow_field_create(32, 32, 1);
@@ -486,7 +486,7 @@ void test_gpu_solver_error_handling(void) {
     TEST_ASSERT_NOT_EQUAL(CFD_SUCCESS, status);
 
     // Upload/download with NULL field
-    gpu_solver_context_t* ctx = gpu_solver_create(32, 32, &config);
+    gpu_solver_context_t* ctx = gpu_solver_create(32, 32, 1, &config);
     TEST_ASSERT_NOT_NULL(ctx);
 
     status = gpu_solver_upload(ctx, NULL);

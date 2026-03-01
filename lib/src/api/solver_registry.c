@@ -939,11 +939,11 @@ static cfd_status_t gpu_euler_init(ns_solver_t* solver, const grid* grid, const 
     }
 
     ctx->gpu_config_t = gpu_config_default();
-    ctx->use_gpu = gpu_should_use(&ctx->gpu_config_t, grid->nx, grid->ny, params->max_iter);
+    ctx->use_gpu = gpu_should_use(&ctx->gpu_config_t, grid->nx, grid->ny, grid->nz, params->max_iter);
     ctx->gpu_ctx = NULL;
 
     if (ctx->use_gpu) {
-        ctx->gpu_ctx = gpu_solver_create(grid->nx, grid->ny, &ctx->gpu_config_t);
+        ctx->gpu_ctx = gpu_solver_create(grid->nx, grid->ny, grid->nz, &ctx->gpu_config_t);
         if (!ctx->gpu_ctx) {
             cfd_free(ctx);
             fprintf(stderr, "GPU Euler init: Failed to create GPU context\n");

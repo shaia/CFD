@@ -121,10 +121,11 @@ CFD_LIBRARY_EXPORT cfd_status_t gpu_select_device(int device_id);
  * @param config GPU configuration
  * @param nx Grid points in x
  * @param ny Grid points in y
+ * @param nz Grid points in z (1 for 2D)
  * @param num_steps Number of steps to run
  * @return 1 if GPU should be used, 0 for CPU
  */
-CFD_LIBRARY_EXPORT int gpu_should_use(const gpu_config_t* config, size_t nx, size_t ny,
+CFD_LIBRARY_EXPORT int gpu_should_use(const gpu_config_t* config, size_t nx, size_t ny, size_t nz,
                                       int num_steps);
 
 //=============================================================================
@@ -136,10 +137,11 @@ CFD_LIBRARY_EXPORT int gpu_should_use(const gpu_config_t* config, size_t nx, siz
  * Allocates GPU memory and initializes CUDA resources
  * @param nx Grid points in x
  * @param ny Grid points in y
+ * @param nz Grid points in z (1 for 2D)
  * @param config GPU configuration
  * @return New GPU solver context, or NULL on error
  */
-CFD_LIBRARY_EXPORT gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny,
+CFD_LIBRARY_EXPORT gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, size_t nz,
                                                            const gpu_config_t* config);
 
 /**
