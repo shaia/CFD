@@ -449,20 +449,12 @@ int gpu_should_use(const gpu_config_t* config, size_t nx, size_t ny, size_t nz, 
         return 0;
     if (!gpu_is_available())
         return 0;
-    if (nx == 0 || ny == 0 || nz == 0)
+    if (nx < 3 || ny < 3 || nz == 0 || nz == 2)
         return 0;
-    if (nz == 2)
-        return 0;  // nz==2 invalid: need nz==1 (2D) or nz>=3 (3D)
-    // Overflow-safe grid size check: if product overflows, grid is large enough
-    size_t grid_size;
-    if (nz > SIZE_MAX / ny) {
-        grid_size = SIZE_MAX;
-    } else if (nx > SIZE_MAX / (ny * nz)) {
-        grid_size = SIZE_MAX;
-    } else {
-        grid_size = nx * ny * nz;
-    }
-    if (grid_size < config->min_grid_size)
+    // Overflow check: reject if nx*ny*nz would overflow (gpu_solver_create rejects these)
+    if (ny > SIZE_MAX / nx || nz > SIZE_MAX / (nx * ny))
+        return 0;
+    if (nx * ny * nz < config->min_grid_size)
         return 0;
     if (num_steps < config->min_steps)
         return 0;
@@ -472,8 +464,8 @@ int gpu_should_use(const gpu_config_t* config, size_t nx, size_t ny, size_t nz, 
 gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, size_t nz, const gpu_config_t* config) {
     if (!gpu_is_available())
         return nullptr;
-    if (nx == 0 || ny == 0 || nz == 0) {
-        cfd_set_error(CFD_ERROR_INVALID, "GPU solver requires non-zero dimensions");
+    if (nx < 3 || ny < 3 || nz == 0) {
+        cfd_set_error(CFD_ERROR_INVALID, "GPU solver requires nx>=3, ny>=3, nz>=1");
         return nullptr;
     }
     if (nz == 2) {
