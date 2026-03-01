@@ -457,23 +457,28 @@ static void run_3d_simd_vs_scalar(const char* scalar_name, const char* simd_name
     TEST_ASSERT_EQUAL(CFD_SUCCESS, s2);
 
     /* Compare L2 difference */
-    double diff_u = 0.0, diff_v = 0.0, norm_u = 0.0;
+    double diff_u = 0.0, diff_v = 0.0, diff_w = 0.0, norm_u = 0.0;
     for (size_t i = 0; i < total; i++) {
         double du = f1->u[i] - f2->u[i];
         double dv = f1->v[i] - f2->v[i];
+        double dw = f1->w[i] - f2->w[i];
         diff_u += du * du;
         diff_v += dv * dv;
+        diff_w += dw * dw;
         norm_u += f1->u[i] * f1->u[i];
     }
     diff_u = sqrt(diff_u / total);
     diff_v = sqrt(diff_v / total);
+    diff_w = sqrt(diff_w / total);
     norm_u = sqrt(norm_u / total);
-    printf("  L2 diff u: %.6e, v: %.6e, norm_u: %.6e\n", diff_u, diff_v, norm_u);
+    printf("  L2 diff u: %.6e, v: %.6e, w: %.6e, norm_u: %.6e\n",
+           diff_u, diff_v, diff_w, norm_u);
 
     /* Allow moderate tolerance since explicit Euler AVX2 has different clamping */
     double tol = (norm_u > 1e-15) ? 0.05 * norm_u : 1e-10;
     TEST_ASSERT_TRUE_MESSAGE(diff_u < tol, "SIMD u differs too much from scalar");
     TEST_ASSERT_TRUE_MESSAGE(diff_v < tol, "SIMD v differs too much from scalar");
+    TEST_ASSERT_TRUE_MESSAGE(diff_w < tol, "SIMD w differs too much from scalar");
 
     flow_field_destroy(f1); grid_destroy(g1);
     flow_field_destroy(f2); grid_destroy(g2);
