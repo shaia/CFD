@@ -77,6 +77,9 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     if (!solver || !grid) {
         return CFD_ERROR_INVALID;
     }
+    if (grid->nx < 3 || grid->ny < 3 || (grid->nz > 1 && grid->nz < 3)) {
+        return CFD_ERROR_INVALID;
+    }
 
     /* Verify SIMD CG Poisson solver is available before allocating resources */
     poisson_solver_t* test_solver = poisson_solver_create(

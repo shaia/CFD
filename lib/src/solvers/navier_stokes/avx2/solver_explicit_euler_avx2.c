@@ -89,6 +89,9 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
     if (!solver || !grid) {
         return CFD_ERROR_INVALID;
     }
+    if (grid->nx < 3 || grid->ny < 3 || (grid->nz > 1 && grid->nz < 3)) {
+        return CFD_ERROR_INVALID;
+    }
 
     explicit_euler_simd_context* ctx =
         (explicit_euler_simd_context*)cfd_calloc(1, sizeof(explicit_euler_simd_context));
