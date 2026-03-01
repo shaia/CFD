@@ -99,6 +99,16 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     ctx->nz = grid->nz;
     size_t size = ctx->nx * ctx->ny * grid->nz * sizeof(double);
 
+    /* Reject non-uniform z-spacing (solver uses constant dz) */
+    if (grid->nz > 1 && grid->dz) {
+        for (size_t kk = 1; kk < grid->nz - 1; kk++) {
+            if (fabs(grid->dz[kk] - grid->dz[0]) > 1e-14) {
+                cfd_free(ctx);
+                return CFD_ERROR_INVALID;
+            }
+        }
+    }
+
     size_t plane = ctx->nx * ctx->ny;
     ctx->stride_z = (grid->nz > 1) ? plane : 0;
     ctx->k_start  = (grid->nz > 1) ? 1 : 0;

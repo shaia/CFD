@@ -669,6 +669,16 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
     ctx->nz = g->nz;
     size_t bytes = ctx->nx * ctx->ny * g->nz * sizeof(double);
 
+    /* Reject non-uniform z-spacing (solver uses constant inv_2dz/inv_dz2) */
+    if (g->nz > 1 && g->dz) {
+        for (size_t kk = 1; kk < g->nz - 1; kk++) {
+            if (fabs(g->dz[kk] - g->dz[0]) > 1e-14) {
+                cfd_free(ctx);
+                return CFD_ERROR_INVALID;
+            }
+        }
+    }
+
     /* Branch-free 3D constants */
     size_t plane   = ctx->nx * ctx->ny;
     ctx->stride_z  = (g->nz > 1) ? plane : 0;
