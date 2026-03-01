@@ -7,7 +7,6 @@
 
 #include "cfd/boundary/boundary_conditions_gpu.cuh"
 #include "cfd/core/indexing.h"
-#include <stdio.h>
 
 // Block size for 1D boundary kernels
 #define BC_BLOCK_SIZE 256
@@ -454,10 +453,7 @@ extern "C" void bc_apply_scalar_3d_gpu(double* d_field, size_t nx, size_t ny, si
         bc_apply_scalar_gpu(d_field, nx, ny, type, stream);
         return;
     }
-    if (nz < 3) {
-        fprintf(stderr, "bc_apply_scalar_3d_gpu: nz=%zu invalid (need 1 or >=3)\n", nz);
-        return;
-    }
+    if (nz < 3) return;
 
     int num_blocks = bc_3d_num_blocks(nx, ny, nz);
     switch (type) {
@@ -484,10 +480,7 @@ extern "C" void bc_apply_velocity_3d_gpu(double* d_u, double* d_v, double* d_w,
         bc_apply_velocity_gpu(d_u, d_v, nx, ny, type, stream);
         return;
     }
-    if (nz < 3) {
-        fprintf(stderr, "bc_apply_velocity_3d_gpu: nz=%zu invalid (need 1 or >=3)\n", nz);
-        return;
-    }
+    if (nz < 3) return;
 
     int num_blocks = bc_3d_num_blocks(nx, ny, nz);
     switch (type) {
