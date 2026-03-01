@@ -6,6 +6,9 @@
  * SIMD macros. It is included twice (once for AVX2, once for NEON) with
  * different macro definitions.
  *
+ * Supports both 2D (nz==1) and 3D grids via branch-free stencil:
+ * when nz==1, stride_z=0 and inv_dz2=0.0, so z-terms vanish naturally.
+ *
  * REQUIRED MACROS (must be #defined before including):
  * - SIMD_SUFFIX: avx2 or neon
  * - SIMD_VEC: vector type (__m256d or float64x2_t)
@@ -58,10 +61,16 @@
 typedef struct {
     double dx2;      /* dx^2 */
     double dy2;      /* dy^2 */
+    double inv_dz2;  /* 1/dz^2 (0.0 for 2D) */
+
+    size_t stride_z; /* nx*ny for 3D, 0 for 2D */
+    size_t k_start;  /* first interior k index (0 for 2D) */
+    size_t k_end;    /* one-past-last interior k index (1 for 2D) */
 
     /* Precomputed SIMD vectors */
     SIMD_VEC dx2_inv_vec;
     SIMD_VEC dy2_inv_vec;
+    SIMD_VEC dz2_inv_vec;  /* SIMD broadcast of inv_dz2 */
     SIMD_VEC two_vec;
 
     /* Working vectors (6 total) */
@@ -84,38 +93,42 @@ typedef struct {
  * SIMD vectorized with horizontal sum and OpenMP reduction
  */
 static inline double SIMD_FUNC(dot_product)(const double* a, const double* b,
-                                              size_t nx, size_t ny) {
+                                              size_t nx, size_t ny,
+                                              size_t k_start, size_t k_end,
+                                              size_t stride_z) {
     double sum = 0.0;
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return 0.0;
 
-    int jj;
-    #pragma omp parallel for reduction(+:sum) schedule(static)
-    for (jj = 1; jj < ny_int - 1; jj++) {
-        size_t j = (size_t)jj;
-        double row_sum = 0.0;
+    for (size_t k = k_start; k < k_end; k++) {
+        int jj;
+        #pragma omp parallel for reduction(+:sum) schedule(static)
+        for (jj = 1; jj < ny_int - 1; jj++) {
+            size_t j = (size_t)jj;
+            double row_sum = 0.0;
 
-        size_t i = 1;
-        SIMD_VEC acc = SIMD_SETZERO();
+            size_t i = 1;
+            SIMD_VEC acc = SIMD_SETZERO();
 
-        /* SIMD loop */
-        for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = IDX_2D(i, j, nx);
-            SIMD_VEC va = SIMD_LOAD(&a[idx]);
-            SIMD_VEC vb = SIMD_LOAD(&b[idx]);
-            acc = SIMD_FMA(va, vb, acc);  /* acc += va * vb */
+            /* SIMD loop */
+            for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                SIMD_VEC va = SIMD_LOAD(&a[idx]);
+                SIMD_VEC vb = SIMD_LOAD(&b[idx]);
+                acc = SIMD_FMA(va, vb, acc);  /* acc += va * vb */
+            }
+
+            /* Horizontal sum of SIMD accumulator */
+            row_sum += SIMD_HSUM(acc);
+
+            /* Scalar remainder loop */
+            for (; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                row_sum += a[idx] * b[idx];
+            }
+
+            sum += row_sum;
         }
-
-        /* Horizontal sum of SIMD accumulator */
-        row_sum += SIMD_HSUM(acc);
-
-        /* Scalar remainder loop */
-        for (; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            row_sum += a[idx] * b[idx];
-        }
-
-        sum += row_sum;
     }
 
     return sum;
@@ -126,36 +139,40 @@ static inline double SIMD_FUNC(dot_product)(const double* a, const double* b,
  * SIMD vectorized with FMA
  */
 static inline void SIMD_FUNC(axpy)(double alpha, const double* x, double* y,
-                                    size_t nx, size_t ny) {
+                                    size_t nx, size_t ny,
+                                    size_t k_start, size_t k_end,
+                                    size_t stride_z) {
     SIMD_VEC alpha_vec = SIMD_SET1(alpha);
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return;
 
-    int jj;
-    #pragma omp parallel for schedule(static)
-    for (jj = 1; jj < ny_int - 1; jj++) {
-        size_t j = (size_t)jj;
-        size_t i = 1;
+    for (size_t k = k_start; k < k_end; k++) {
+        int jj;
+        #pragma omp parallel for schedule(static)
+        for (jj = 1; jj < ny_int - 1; jj++) {
+            size_t j = (size_t)jj;
+            size_t i = 1;
 
-        /* SIMD loop */
-        for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = IDX_2D(i, j, nx);
-            SIMD_VEC vx = SIMD_LOAD(&x[idx]);
-            SIMD_VEC vy = SIMD_LOAD(&y[idx]);
-            vy = SIMD_FMA(alpha_vec, vx, vy);  /* y += alpha * x */
-            SIMD_STORE(&y[idx], vy);
-        }
+            /* SIMD loop */
+            for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                SIMD_VEC vx = SIMD_LOAD(&x[idx]);
+                SIMD_VEC vy = SIMD_LOAD(&y[idx]);
+                vy = SIMD_FMA(alpha_vec, vx, vy);  /* y += alpha * x */
+                SIMD_STORE(&y[idx], vy);
+            }
 
-        /* Scalar remainder */
-        for (; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            y[idx] += alpha * x[idx];
+            /* Scalar remainder */
+            for (; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                y[idx] += alpha * x[idx];
+            }
         }
     }
 }
 
 /**
- * Apply Laplacian operator: Ap = ∇²p (5-point stencil)
+ * Apply Laplacian operator: Ap = nabla^2(p) (7-point stencil for 3D)
  * SIMD vectorized stencil computation
  */
 static inline void SIMD_FUNC(apply_laplacian)(const double* p, double* Ap,
@@ -163,48 +180,56 @@ static inline void SIMD_FUNC(apply_laplacian)(const double* p, double* Ap,
                                                 const bicgstab_simd_context_t* ctx) {
     SIMD_VEC dx2_inv = ctx->dx2_inv_vec;
     SIMD_VEC dy2_inv = ctx->dy2_inv_vec;
+    SIMD_VEC dz2_inv = ctx->dz2_inv_vec;
     SIMD_VEC two_vec = ctx->two_vec;
+    size_t stride_z = ctx->stride_z;
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return;
 
-    int jj;
-    #pragma omp parallel for schedule(static)
-    for (jj = 1; jj < ny_int - 1; jj++) {
-        size_t j = (size_t)jj;
-        size_t i = 1;
+    for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
+        int jj;
+        #pragma omp parallel for schedule(static)
+        for (jj = 1; jj < ny_int - 1; jj++) {
+            size_t j = (size_t)jj;
+            size_t i = 1;
 
-        /* SIMD loop */
-        for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = IDX_2D(i, j, nx);
+            /* SIMD loop */
+            for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
 
-            /* Load 5-point stencil */
-            SIMD_VEC p_c = SIMD_LOAD(&p[idx]);
-            SIMD_VEC p_w = SIMD_LOAD(&p[idx - 1]);
-            SIMD_VEC p_e = SIMD_LOAD(&p[idx + 1]);
-            SIMD_VEC p_s = SIMD_LOAD(&p[idx - nx]);
-            SIMD_VEC p_n = SIMD_LOAD(&p[idx + nx]);
+                /* Load 7-point stencil */
+                SIMD_VEC p_c = SIMD_LOAD(&p[idx]);
+                SIMD_VEC p_w = SIMD_LOAD(&p[idx - 1]);
+                SIMD_VEC p_e = SIMD_LOAD(&p[idx + 1]);
+                SIMD_VEC p_s = SIMD_LOAD(&p[idx - nx]);
+                SIMD_VEC p_n = SIMD_LOAD(&p[idx + nx]);
+                SIMD_VEC p_zm = SIMD_LOAD(&p[idx - stride_z]);
+                SIMD_VEC p_zp = SIMD_LOAD(&p[idx + stride_z]);
 
-            /* d²/dx² = (p_e - 2*p_c + p_w) / dx² */
-            SIMD_VEC d2pdx2 = SIMD_SUB(p_e, SIMD_MUL(two_vec, p_c));
-            d2pdx2 = SIMD_ADD(d2pdx2, p_w);
-            d2pdx2 = SIMD_MUL(d2pdx2, dx2_inv);
+                SIMD_VEC two_center = SIMD_MUL(two_vec, p_c);
 
-            /* d²/dy² = (p_n - 2*p_c + p_s) / dy² */
-            SIMD_VEC d2pdy2 = SIMD_SUB(p_n, SIMD_MUL(two_vec, p_c));
-            d2pdy2 = SIMD_ADD(d2pdy2, p_s);
-            d2pdy2 = SIMD_MUL(d2pdy2, dy2_inv);
+                /* d^2/dx^2 = (p_e - 2*p_c + p_w) / dx^2 */
+                SIMD_VEC d2pdx2 = SIMD_MUL(SIMD_SUB(SIMD_ADD(p_e, p_w), two_center), dx2_inv);
 
-            /* Laplacian = d²/dx² + d²/dy² */
-            SIMD_VEC laplacian = SIMD_ADD(d2pdx2, d2pdy2);
-            SIMD_STORE(&Ap[idx], laplacian);
-        }
+                /* d^2/dy^2 = (p_n - 2*p_c + p_s) / dy^2 */
+                SIMD_VEC d2pdy2 = SIMD_MUL(SIMD_SUB(SIMD_ADD(p_n, p_s), two_center), dy2_inv);
 
-        /* Scalar remainder */
-        for (; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            double d2pdx2 = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / ctx->dx2;
-            double d2pdy2 = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / ctx->dy2;
-            Ap[idx] = d2pdx2 + d2pdy2;
+                /* d^2/dz^2 = (p_zp - 2*p_c + p_zm) / dz^2 (vanishes for 2D) */
+                SIMD_VEC d2pdz2 = SIMD_MUL(SIMD_SUB(SIMD_ADD(p_zp, p_zm), two_center), dz2_inv);
+
+                /* Laplacian = d^2/dx^2 + d^2/dy^2 + d^2/dz^2 */
+                SIMD_VEC laplacian = SIMD_ADD(SIMD_ADD(d2pdx2, d2pdy2), d2pdz2);
+                SIMD_STORE(&Ap[idx], laplacian);
+            }
+
+            /* Scalar remainder */
+            for (; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                double d2pdx2 = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) / ctx->dx2;
+                double d2pdy2 = (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) / ctx->dy2;
+                double d2pdz2 = (p[idx + stride_z] + p[idx - stride_z] - 2.0 * p[idx]) * ctx->inv_dz2;
+                Ap[idx] = d2pdx2 + d2pdy2 + d2pdz2;
+            }
         }
     }
 }
@@ -218,59 +243,62 @@ static inline void SIMD_FUNC(compute_residual)(const double* x, const double* rh
                                                  const bicgstab_simd_context_t* ctx) {
     SIMD_VEC dx2_inv = ctx->dx2_inv_vec;
     SIMD_VEC dy2_inv = ctx->dy2_inv_vec;
+    SIMD_VEC dz2_inv = ctx->dz2_inv_vec;
     SIMD_VEC two_vec = ctx->two_vec;
+    size_t stride_z = ctx->stride_z;
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return;
 
-    int jj;
-    #pragma omp parallel for schedule(static)
-    for (jj = 1; jj < ny_int - 1; jj++) {
-        size_t j = (size_t)jj;
-        size_t i = 1;
+    for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
+        int jj;
+        #pragma omp parallel for schedule(static)
+        for (jj = 1; jj < ny_int - 1; jj++) {
+            size_t j = (size_t)jj;
+            size_t i = 1;
 
-        /* SIMD loop: r = rhs - A*x (fused Laplacian + subtraction) */
-        for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = IDX_2D(i, j, nx);
+            /* SIMD loop: r = rhs - A*x (fused Laplacian + subtraction) */
+            for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
 
-            /* Load 5-point stencil */
-            SIMD_VEC center = SIMD_LOAD(&x[idx]);
-            SIMD_VEC left = SIMD_LOAD(&x[idx - 1]);
-            SIMD_VEC right = SIMD_LOAD(&x[idx + 1]);
-            SIMD_VEC down = SIMD_LOAD(&x[idx - nx]);
-            SIMD_VEC up = SIMD_LOAD(&x[idx + nx]);
+                /* Load 7-point stencil */
+                SIMD_VEC center = SIMD_LOAD(&x[idx]);
+                SIMD_VEC left = SIMD_LOAD(&x[idx - 1]);
+                SIMD_VEC right = SIMD_LOAD(&x[idx + 1]);
+                SIMD_VEC down = SIMD_LOAD(&x[idx - nx]);
+                SIMD_VEC up = SIMD_LOAD(&x[idx + nx]);
+                SIMD_VEC back = SIMD_LOAD(&x[idx - stride_z]);
+                SIMD_VEC front = SIMD_LOAD(&x[idx + stride_z]);
 
-            /* Compute A*x = (left + right - 2*center)/dx^2 + (down + up - 2*center)/dy^2 */
-            SIMD_VEC sum_x = SIMD_ADD(left, right);
-            SIMD_VEC sum_y = SIMD_ADD(down, up);
-            SIMD_VEC two_center = SIMD_MUL(two_vec, center);
+                SIMD_VEC two_center = SIMD_MUL(two_vec, center);
 
-            SIMD_VEC d2x = SIMD_SUB(sum_x, two_center);
-            SIMD_VEC d2y = SIMD_SUB(sum_y, two_center);
+                /* Compute A*x = nabla^2(x) */
+                SIMD_VEC d2x = SIMD_SUB(SIMD_ADD(left, right), two_center);
+                SIMD_VEC d2y = SIMD_SUB(SIMD_ADD(down, up), two_center);
+                SIMD_VEC d2z = SIMD_SUB(SIMD_ADD(back, front), two_center);
 
-            SIMD_VEC term_x = SIMD_MUL(d2x, dx2_inv);
-            SIMD_VEC term_y = SIMD_MUL(d2y, dy2_inv);
-            SIMD_VEC Ax = SIMD_ADD(term_x, term_y);
+                SIMD_VEC term_x = SIMD_MUL(d2x, dx2_inv);
+                SIMD_VEC term_y = SIMD_MUL(d2y, dy2_inv);
+                SIMD_VEC term_z = SIMD_MUL(d2z, dz2_inv);
+                SIMD_VEC Ax = SIMD_ADD(SIMD_ADD(term_x, term_y), term_z);
 
-            /* r = rhs - A*x */
-            SIMD_VEC vrhs = SIMD_LOAD(&rhs[idx]);
-            SIMD_VEC vr = SIMD_SUB(vrhs, Ax);
-            SIMD_STORE(&r[idx], vr);
-        }
+                /* r = rhs - A*x */
+                SIMD_VEC vrhs = SIMD_LOAD(&rhs[idx]);
+                SIMD_VEC vr = SIMD_SUB(vrhs, Ax);
+                SIMD_STORE(&r[idx], vr);
+            }
 
-        /* Scalar remainder */
-        for (; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            double center = x[idx];
-            double left = x[idx - 1];
-            double right = x[idx + 1];
-            double down = x[idx - nx];
-            double up = x[idx + nx];
+            /* Scalar remainder */
+            for (; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                double center = x[idx];
 
-            double d2x = (left + right - 2.0 * center) / ctx->dx2;
-            double d2y = (down + up - 2.0 * center) / ctx->dy2;
-            double Ax = d2x + d2y;
+                double d2x = (x[idx - 1] + x[idx + 1] - 2.0 * center) / ctx->dx2;
+                double d2y = (x[idx - nx] + x[idx + nx] - 2.0 * center) / ctx->dy2;
+                double d2z = (x[idx - stride_z] + x[idx + stride_z] - 2.0 * center) * ctx->inv_dz2;
+                double Ax = d2x + d2y + d2z;
 
-            r[idx] = rhs[idx] - Ax;
+                r[idx] = rhs[idx] - Ax;
+            }
         }
     }
 }
@@ -279,25 +307,29 @@ static inline void SIMD_FUNC(compute_residual)(const double* x, const double* rh
  * Vector copy: dst = src
  */
 static inline void SIMD_FUNC(copy_vector)(const double* src, double* dst,
-                                           size_t nx, size_t ny) {
+                                           size_t nx, size_t ny,
+                                           size_t k_start, size_t k_end,
+                                           size_t stride_z) {
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return;
 
-    int jj;
-    #pragma omp parallel for schedule(static)
-    for (jj = 1; jj < ny_int - 1; jj++) {
-        size_t j = (size_t)jj;
-        size_t i = 1;
+    for (size_t k = k_start; k < k_end; k++) {
+        int jj;
+        #pragma omp parallel for schedule(static)
+        for (jj = 1; jj < ny_int - 1; jj++) {
+            size_t j = (size_t)jj;
+            size_t i = 1;
 
-        for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = IDX_2D(i, j, nx);
-            SIMD_VEC v = SIMD_LOAD(&src[idx]);
-            SIMD_STORE(&dst[idx], v);
-        }
+            for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                SIMD_VEC v = SIMD_LOAD(&src[idx]);
+                SIMD_STORE(&dst[idx], v);
+            }
 
-        for (; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            dst[idx] = src[idx];
+            for (; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                dst[idx] = src[idx];
+            }
         }
     }
 }
@@ -305,25 +337,29 @@ static inline void SIMD_FUNC(copy_vector)(const double* src, double* dst,
 /**
  * Zero interior points of vector
  */
-static inline void SIMD_FUNC(zero_vector)(double* vec, size_t nx, size_t ny) {
+static inline void SIMD_FUNC(zero_vector)(double* vec, size_t nx, size_t ny,
+                                           size_t k_start, size_t k_end,
+                                           size_t stride_z) {
     SIMD_VEC zero = SIMD_SETZERO();
     int ny_int = bicgstab_size_to_int(ny);
     if (ny_int == 0) return;
 
-    int jj;
-    #pragma omp parallel for schedule(static)
-    for (jj = 1; jj < ny_int - 1; jj++) {
-        size_t j = (size_t)jj;
-        size_t i = 1;
+    for (size_t k = k_start; k < k_end; k++) {
+        int jj;
+        #pragma omp parallel for schedule(static)
+        for (jj = 1; jj < ny_int - 1; jj++) {
+            size_t j = (size_t)jj;
+            size_t i = 1;
 
-        for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
-            size_t idx = IDX_2D(i, j, nx);
-            SIMD_STORE(&vec[idx], zero);
-        }
+            for (; i + SIMD_WIDTH - 1 < nx - 1; i += SIMD_WIDTH) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                SIMD_STORE(&vec[idx], zero);
+            }
 
-        for (; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, j, nx);
-            vec[idx] = 0.0;
+            for (; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                vec[idx] = 0.0;
+            }
         }
     }
 }
@@ -334,8 +370,8 @@ static inline void SIMD_FUNC(zero_vector)(double* vec, size_t nx, size_t ny) {
 
 static cfd_status_t SIMD_FUNC(bicgstab_init)(
     poisson_solver_t* solver,
-    size_t nx, size_t ny,
-    double dx, double dy,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
     const poisson_solver_params_t* params) {
     (void)params;  /* Params stored in solver->params by caller */
 
@@ -345,7 +381,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_init)(
         return CFD_ERROR_NOMEM;
     }
 
-    size_t n = nx * ny;
+    size_t n = nx * ny * nz;
 
     /* Allocate 6 working vectors with aligned memory for SIMD */
     ctx->r = (double*)cfd_aligned_calloc(n, sizeof(double));
@@ -369,10 +405,13 @@ static cfd_status_t SIMD_FUNC(bicgstab_init)(
     /* Store grid spacing */
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
+    ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
+    poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
     /* Precompute SIMD vectors for constants */
     ctx->dx2_inv_vec = SIMD_SET1(1.0 / ctx->dx2);
     ctx->dy2_inv_vec = SIMD_SET1(1.0 / ctx->dy2);
+    ctx->dz2_inv_vec = SIMD_SET1(ctx->inv_dz2);
     ctx->two_vec = SIMD_SET1(2.0);
 
     ctx->initialized = 1;
@@ -422,6 +461,9 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
 
     size_t nx = solver->nx;
     size_t ny = solver->ny;
+    size_t k_start = ctx->k_start;
+    size_t k_end = ctx->k_end;
+    size_t stride_z = ctx->stride_z;
 
     /* Extract working vectors */
     double* r = ctx->r;
@@ -435,21 +477,21 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    /* Apply initial boundary conditions (Neumann) */
-    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+    /* Apply initial boundary conditions */
+    poisson_solver_apply_bc(solver, x);
 
     /* INITIALIZATION */
-    SIMD_FUNC(compute_residual)(x, rhs, r, nx, ny, ctx);  /* r_0 = b - A*x_0 */
-    SIMD_FUNC(copy_vector)(r, r_hat, nx, ny);             /* r_hat = r_0 (shadow residual) */
-    SIMD_FUNC(zero_vector)(p, nx, ny);                    /* p_0 = 0 */
-    SIMD_FUNC(zero_vector)(v, nx, ny);                    /* v_0 = 0 */
+    SIMD_FUNC(compute_residual)(x, rhs, r, nx, ny, ctx);
+    SIMD_FUNC(copy_vector)(r, r_hat, nx, ny, k_start, k_end, stride_z);
+    SIMD_FUNC(zero_vector)(p, nx, ny, k_start, k_end, stride_z);
+    SIMD_FUNC(zero_vector)(v, nx, ny, k_start, k_end, stride_z);
 
     double rho = 1.0;
     double alpha = 1.0;
     double omega = 1.0;
 
     /* Compute initial residual norm */
-    double r_norm_init = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
+    double r_norm_init = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny, k_start, k_end, stride_z));
 
     if (stats) {
         stats->initial_residual = r_norm_init;
@@ -478,7 +520,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
     int iter;
     for (iter = 0; iter < max_iter; iter++) {
         /* 1. rho_new = (r_hat, r) */
-        double rho_new = SIMD_FUNC(dot_product)(r_hat, r, nx, ny);
+        double rho_new = SIMD_FUNC(dot_product)(r_hat, r, nx, ny, k_start, k_end, stride_z);
 
         /* Check for breakdown */
         if (fabs(rho_new) < BICGSTAB_BREAKDOWN_THRESHOLD) {
@@ -486,7 +528,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
             if (stats) {
                 stats->status = POISSON_STAGNATED;
                 stats->iterations = iter;
-                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
+                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny, k_start, k_end, stride_z));
                 stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
             }
             return CFD_ERROR_DIVERGED;
@@ -497,16 +539,18 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
 
         /* 3. p = r + beta*(p - omega*v) */
         /* First: p = p - omega*v */
-        SIMD_FUNC(axpy)(-omega, v, p, nx, ny);
+        SIMD_FUNC(axpy)(-omega, v, p, nx, ny, k_start, k_end, stride_z);
         /* Then: p = r + beta*p (reuse p as storage) */
         int ny_int = bicgstab_size_to_int(ny);
-        int jj;
-        #pragma omp parallel for schedule(static)
-        for (jj = 1; jj < ny_int - 1; jj++) {
-            size_t j = (size_t)jj;
-            for (size_t i = 1; i < nx - 1; i++) {
-                size_t idx = IDX_2D(i, j, nx);
-                p[idx] = r[idx] + beta * p[idx];
+        for (size_t kk = k_start; kk < k_end; kk++) {
+            int jj;
+            #pragma omp parallel for schedule(static)
+            for (jj = 1; jj < ny_int - 1; jj++) {
+                size_t j = (size_t)jj;
+                for (size_t i = 1; i < nx - 1; i++) {
+                    size_t idx = kk * stride_z + IDX_2D(i, j, nx);
+                    p[idx] = r[idx] + beta * p[idx];
+                }
             }
         }
 
@@ -514,13 +558,13 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         SIMD_FUNC(apply_laplacian)(p, v, nx, ny, ctx);
 
         /* 5. alpha = rho_new / (r_hat, v) */
-        double r_hat_dot_v = SIMD_FUNC(dot_product)(r_hat, v, nx, ny);
+        double r_hat_dot_v = SIMD_FUNC(dot_product)(r_hat, v, nx, ny, k_start, k_end, stride_z);
         if (fabs(r_hat_dot_v) < BICGSTAB_BREAKDOWN_THRESHOLD) {
             cfd_set_error(CFD_ERROR_DIVERGED, "BiCGSTAB breakdown: (r_hat, v) = 0");
             if (stats) {
                 stats->status = POISSON_STAGNATED;
                 stats->iterations = iter;
-                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
+                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny, k_start, k_end, stride_z));
                 stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
             }
             return CFD_ERROR_DIVERGED;
@@ -528,17 +572,17 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         alpha = rho_new / r_hat_dot_v;
 
         /* 6. s = r - alpha*v */
-        SIMD_FUNC(copy_vector)(r, s, nx, ny);
-        SIMD_FUNC(axpy)(-alpha, v, s, nx, ny);
+        SIMD_FUNC(copy_vector)(r, s, nx, ny, k_start, k_end, stride_z);
+        SIMD_FUNC(axpy)(-alpha, v, s, nx, ny, k_start, k_end, stride_z);
 
         /* 7. Check early convergence on ||s|| */
-        double s_norm = sqrt(SIMD_FUNC(dot_product)(s, s, nx, ny));
+        double s_norm = sqrt(SIMD_FUNC(dot_product)(s, s, nx, ny, k_start, k_end, stride_z));
         if (s_norm < tolerance) {
             /* Early termination: x = x + alpha*p */
-            SIMD_FUNC(axpy)(alpha, p, x, nx, ny);
+            SIMD_FUNC(axpy)(alpha, p, x, nx, ny, k_start, k_end, stride_z);
 
             /* Apply final boundary conditions */
-            bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+            poisson_solver_apply_bc(solver, x);
 
             if (stats) {
                 stats->status = POISSON_CONVERGED;
@@ -553,14 +597,14 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         SIMD_FUNC(apply_laplacian)(s, t, nx, ny, ctx);
 
         /* 9. omega = (t, s) / (t, t) */
-        double t_dot_s = SIMD_FUNC(dot_product)(t, s, nx, ny);
-        double t_dot_t = SIMD_FUNC(dot_product)(t, t, nx, ny);
+        double t_dot_s = SIMD_FUNC(dot_product)(t, s, nx, ny, k_start, k_end, stride_z);
+        double t_dot_t = SIMD_FUNC(dot_product)(t, t, nx, ny, k_start, k_end, stride_z);
         if (fabs(t_dot_t) < BICGSTAB_BREAKDOWN_THRESHOLD) {
             cfd_set_error(CFD_ERROR_DIVERGED, "BiCGSTAB breakdown: (t, t) = 0");
             if (stats) {
                 stats->status = POISSON_STAGNATED;
                 stats->iterations = iter;
-                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
+                stats->final_residual = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny, k_start, k_end, stride_z));
                 stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
             }
             return CFD_ERROR_DIVERGED;
@@ -568,18 +612,18 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         omega = t_dot_s / t_dot_t;
 
         /* 10. x = x + alpha*p + omega*s */
-        SIMD_FUNC(axpy)(alpha, p, x, nx, ny);
-        SIMD_FUNC(axpy)(omega, s, x, nx, ny);
+        SIMD_FUNC(axpy)(alpha, p, x, nx, ny, k_start, k_end, stride_z);
+        SIMD_FUNC(axpy)(omega, s, x, nx, ny, k_start, k_end, stride_z);
 
         /* 11. r = s - omega*t */
-        SIMD_FUNC(copy_vector)(s, r, nx, ny);
-        SIMD_FUNC(axpy)(-omega, t, r, nx, ny);
+        SIMD_FUNC(copy_vector)(s, r, nx, ny, k_start, k_end, stride_z);
+        SIMD_FUNC(axpy)(-omega, t, r, nx, ny, k_start, k_end, stride_z);
 
         /* 12. Check convergence on ||r|| */
-        double r_norm = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
+        double r_norm = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny, k_start, k_end, stride_z));
         if (r_norm < tolerance) {
             /* Apply final boundary conditions */
-            bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+            poisson_solver_apply_bc(solver, x);
 
             if (stats) {
                 stats->status = POISSON_CONVERGED;
@@ -595,9 +639,9 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
     }
 
     /* Max iterations reached - apply BCs even if not converged */
-    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+    poisson_solver_apply_bc(solver, x);
 
-    double r_norm_final = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny));
+    double r_norm_final = sqrt(SIMD_FUNC(dot_product)(r, r, nx, ny, k_start, k_end, stride_z));
     if (stats) {
         stats->status = POISSON_MAX_ITER;
         stats->iterations = max_iter;

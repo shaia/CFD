@@ -44,10 +44,15 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
-    double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2)) */
+    double inv_dz2;    /* 1/dz^2 (0.0 for 2D) */
+    double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2 + inv_dz2)) */
     double omega;      /* SOR relaxation parameter */
+    size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
+    size_t k_start;    /* first interior k index */
+    size_t k_end;      /* one-past-last interior k index */
     float64x2_t dx2_inv_vec;
     float64x2_t dy2_inv_vec;
+    float64x2_t dz2_inv_vec;
     float64x2_t neg_inv_factor_vec;
     float64x2_t omega_vec;
     int initialized;
@@ -67,12 +72,14 @@ static inline int size_to_int(size_t sz) {
 /**
  * Process a single row for one color (red or black) using NEON SIMD.
  *
- * @param j       Row index
- * @param i_start Starting column index for this color
- * @param x       Solution vector (in/out)
- * @param rhs     Right-hand side vector
- * @param nx      Grid width
- * @param ctx     Solver context with precomputed SIMD vectors
+ * @param j        Row index
+ * @param i_start  Starting column index for this color
+ * @param x        Solution vector (in/out)
+ * @param rhs      Right-hand side vector
+ * @param nx       Grid width
+ * @param stride_z Stride between z-planes (nx*ny for 3D, 0 for 2D)
+ * @param k_offset Offset for the current z-plane (k * stride_z)
+ * @param ctx      Solver context with precomputed SIMD vectors
  */
 static inline void redblack_neon_process_row(
     int j,
@@ -80,10 +87,13 @@ static inline void redblack_neon_process_row(
     double* x,
     const double* rhs,
     size_t nx,
+    size_t stride_z,
+    size_t k_offset,
     const redblack_neon_context_t* ctx)
 {
     double dx2 = ctx->dx2;
     double dy2 = ctx->dy2;
+    double inv_dz2 = ctx->inv_dz2;
     double inv_factor = ctx->inv_factor;
     double omega = ctx->omega;
     size_t i = i_start;
@@ -92,16 +102,18 @@ static inline void redblack_neon_process_row(
     for (; i + 4 <= nx - 1; i += 4) {
         /* Gather 2 values with stride 2 */
         double vals[2];
-        double p_xp[2], p_xm[2], p_yp[2], p_ym[2], rhs_vals[2];
+        double p_xp[2], p_xm[2], p_yp[2], p_ym[2], p_zp[2], p_zm[2], rhs_vals[2];
 
-        for (int k = 0; k < 2; k++) {
-            size_t idx = IDX_2D(i + (size_t)k * 2, (size_t)j, nx);
-            vals[k] = x[idx];
-            p_xp[k] = x[idx + 1];
-            p_xm[k] = x[idx - 1];
-            p_yp[k] = x[idx + nx];
-            p_ym[k] = x[idx - nx];
-            rhs_vals[k] = rhs[idx];
+        for (int kk = 0; kk < 2; kk++) {
+            size_t idx = k_offset + IDX_2D(i + (size_t)kk * 2, (size_t)j, nx);
+            vals[kk] = x[idx];
+            p_xp[kk] = x[idx + 1];
+            p_xm[kk] = x[idx - 1];
+            p_yp[kk] = x[idx + nx];
+            p_ym[kk] = x[idx - nx];
+            p_zp[kk] = x[idx + stride_z];
+            p_zm[kk] = x[idx - stride_z];
+            rhs_vals[kk] = rhs[idx];
         }
 
         /* Load into SIMD registers */
@@ -110,14 +122,18 @@ static inline void redblack_neon_process_row(
         float64x2_t v_xm = vld1q_f64(p_xm);
         float64x2_t v_yp = vld1q_f64(p_yp);
         float64x2_t v_ym = vld1q_f64(p_ym);
+        float64x2_t v_zp = vld1q_f64(p_zp);
+        float64x2_t v_zm = vld1q_f64(p_zm);
         float64x2_t v_rhs = vld1q_f64(rhs_vals);
 
-        /* Compute: p_new = -(rhs - (xp+xm)/dx2 - (yp+ym)/dy2) * inv_factor */
+        /* Compute: p_new = -(rhs - (xp+xm)/dx2 - (yp+ym)/dy2 - (zp+zm)*inv_dz2) * inv_factor */
         float64x2_t sum_x = vaddq_f64(v_xp, v_xm);
         float64x2_t sum_y = vaddq_f64(v_yp, v_ym);
+        float64x2_t sum_z = vaddq_f64(v_zp, v_zm);
         float64x2_t term_x = vmulq_f64(sum_x, ctx->dx2_inv_vec);
         float64x2_t term_y = vmulq_f64(sum_y, ctx->dy2_inv_vec);
-        float64x2_t sum_terms = vaddq_f64(term_x, term_y);
+        float64x2_t term_z = vmulq_f64(sum_z, ctx->dz2_inv_vec);
+        float64x2_t sum_terms = vaddq_f64(vaddq_f64(term_x, term_y), term_z);
         float64x2_t diff = vsubq_f64(v_rhs, sum_terms);
         float64x2_t v_p_new = vmulq_f64(diff, ctx->neg_inv_factor_vec);
 
@@ -129,18 +145,20 @@ static inline void redblack_neon_process_row(
         /* Scatter back */
         double result[2];
         vst1q_f64(result, v_result);
-        for (int k = 0; k < 2; k++) {
-            size_t idx = IDX_2D(i + (size_t)k * 2, (size_t)j, nx);
-            x[idx] = result[k];
+        for (int kk = 0; kk < 2; kk++) {
+            size_t idx = k_offset + IDX_2D(i + (size_t)kk * 2, (size_t)j, nx);
+            x[idx] = result[kk];
         }
     }
 
     /* Scalar remainder */
     for (; i < nx - 1; i += 2) {
-        size_t idx = IDX_2D(i, (size_t)j, nx);
+        size_t idx = k_offset + IDX_2D(i, (size_t)j, nx);
         double p_new = -(rhs[idx]
             - (x[idx + 1] + x[idx - 1]) / dx2
-            - (x[idx + nx] + x[idx - nx]) / dy2) * inv_factor;
+            - (x[idx + nx] + x[idx - nx]) / dy2
+            - (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2
+            ) * inv_factor;
         x[idx] = x[idx] + omega * (p_new - x[idx]);
     }
 }
@@ -151,7 +169,7 @@ static cfd_status_t redblack_neon_init(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)nx; (void)ny; (void)nz; (void)dz;
+    (void)nx; (void)ny;
 
     redblack_neon_context_t* ctx = (redblack_neon_context_t*)cfd_calloc(1, sizeof(redblack_neon_context_t));
     if (!ctx) {
@@ -160,13 +178,16 @@ static cfd_status_t redblack_neon_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
-    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2);
+    ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
+    poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
+    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
     ctx->inv_factor = 1.0 / factor;
     ctx->omega = params ? params->omega : 1.5;
 
     /* Pre-compute SIMD vectors */
     ctx->dx2_inv_vec = vdupq_n_f64(1.0 / ctx->dx2);
     ctx->dy2_inv_vec = vdupq_n_f64(1.0 / ctx->dy2);
+    ctx->dz2_inv_vec = vdupq_n_f64(ctx->inv_dz2);
     ctx->neg_inv_factor_vec = vdupq_n_f64(-ctx->inv_factor);
     ctx->omega_vec = vdupq_n_f64(ctx->omega);
 
@@ -194,31 +215,37 @@ static cfd_status_t redblack_neon_iterate(
     redblack_neon_context_t* ctx = (redblack_neon_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
+    size_t stride_z = ctx->stride_z;
     int ny_int = size_to_int(ny);
-    int j;
 
-    /* Red sweep with NEON + OpenMP */
-    #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        size_t i_start = (j % 2 == 0) ? 1 : 2;
-        redblack_neon_process_row(j, i_start, x, rhs, nx, ctx);
+    /* Red sweep: (i+j+k) % 2 == 0 */
+    for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
+        size_t k_offset = k * stride_z;
+        int j;
+        #pragma omp parallel for schedule(static)
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t i_start = ((j + (int)k) % 2 == 0) ? 1 : 2;
+            redblack_neon_process_row(j, i_start, x, rhs, nx, stride_z, k_offset, ctx);
+        }
     }
 
-    /* Black sweep with NEON + OpenMP */
-    #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        size_t i_start = (j % 2 == 0) ? 2 : 1;
-        redblack_neon_process_row(j, i_start, x, rhs, nx, ctx);
+    /* Black sweep: (i+j+k) % 2 == 1 */
+    for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
+        size_t k_offset = k * stride_z;
+        int j;
+        #pragma omp parallel for schedule(static)
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t i_start = ((j + (int)k) % 2 == 0) ? 2 : 1;
+            redblack_neon_process_row(j, i_start, x, rhs, nx, stride_z, k_offset, ctx);
+        }
     }
 
-    /* Apply boundary conditions (use SIMD BC if available) */
-    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+    /* Apply boundary conditions */
+    poisson_solver_apply_bc(solver, x);
 
-    /* Compute residual if requested */
     if (residual) {
         *residual = poisson_solver_compute_residual(solver, x, rhs);
     }
-
     return CFD_SUCCESS;
 }
 

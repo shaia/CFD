@@ -23,6 +23,8 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
+#include "../boundary_copy_utils.h"
+
 #include <math.h>
 
 #ifndef M_PI
@@ -59,11 +61,18 @@
 typedef struct {
     double* u_new;
     double* v_new;
+    double* w_new;
     double* p_new;
     double* dx_inv;
     double* dy_inv;
     size_t nx;
     size_t ny;
+    size_t nz;
+    size_t stride_z;
+    size_t k_start;
+    size_t k_end;
+    double inv_2dz;
+    double inv_dz2;
     int initialized;
 } explicit_euler_simd_context;
 
@@ -89,20 +98,32 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
 
     ctx->nx = grid->nx;
     ctx->ny = grid->ny;
-    size_t field_size = ctx->nx * ctx->ny * sizeof(double);
+    ctx->nz = grid->nz;
+    size_t field_size = ctx->nx * ctx->ny * ctx->nz * sizeof(double);
+
+    size_t plane = ctx->nx * ctx->ny;
+    ctx->stride_z = (grid->nz > 1) ? plane : 0;
+    ctx->k_start  = (grid->nz > 1) ? 1 : 0;
+    ctx->k_end    = (grid->nz > 1) ? (grid->nz - 1) : 1;
+    ctx->inv_2dz  = (grid->nz > 1 && grid->dz) ? 1.0 / (2.0 * grid->dz[0]) : 0.0;
+    ctx->inv_dz2  = (grid->nz > 1 && grid->dz) ? 1.0 / (grid->dz[0] * grid->dz[0]) : 0.0;
 
     ctx->u_new = (double*)cfd_aligned_malloc(field_size);
     ctx->v_new = (double*)cfd_aligned_malloc(field_size);
+    ctx->w_new = (double*)cfd_aligned_malloc(field_size);
     ctx->p_new = (double*)cfd_aligned_malloc(field_size);
     ctx->dx_inv = (double*)cfd_aligned_malloc(ctx->nx * sizeof(double));
     ctx->dy_inv = (double*)cfd_aligned_malloc(ctx->ny * sizeof(double));
 
-    if (!ctx->u_new || !ctx->v_new || !ctx->p_new || !ctx->dx_inv || !ctx->dy_inv) {
+    if (!ctx->u_new || !ctx->v_new || !ctx->w_new || !ctx->p_new || !ctx->dx_inv || !ctx->dy_inv) {
         if (ctx->u_new) {
             cfd_aligned_free(ctx->u_new);
         }
         if (ctx->v_new) {
             cfd_aligned_free(ctx->v_new);
+        }
+        if (ctx->w_new) {
+            cfd_aligned_free(ctx->w_new);
         }
         if (ctx->p_new) {
             cfd_aligned_free(ctx->p_new);
@@ -151,6 +172,7 @@ void explicit_euler_simd_destroy(struct NSSolver* solver) {
         if (ctx->initialized) {
             cfd_aligned_free(ctx->u_new);
             cfd_aligned_free(ctx->v_new);
+            cfd_aligned_free(ctx->w_new);
             cfd_aligned_free(ctx->p_new);
             cfd_aligned_free(ctx->dx_inv);
             cfd_aligned_free(ctx->dy_inv);
@@ -184,10 +206,12 @@ typedef struct {
     __m256d epsilon;
     __m256d mu_vec;
     __m256d zero;
+    __m256d inv_2dz_vec;
+    __m256d inv_dz2_vec;
 } simd_constants;
 
 static void init_simd_constants(simd_constants* c, const ns_solver_params_t* params,
-                                double conservative_dt) {
+                                double conservative_dt, double inv_2dz, double inv_dz2) {
     c->dt_vec = _mm256_set1_pd(conservative_dt);
     c->max_deriv = _mm256_set1_pd(MAX_DERIVATIVE_LIMIT);
     c->min_deriv = _mm256_set1_pd(-MAX_DERIVATIVE_LIMIT);
@@ -203,17 +227,20 @@ static void init_simd_constants(simd_constants* c, const ns_solver_params_t* par
     c->epsilon = _mm256_set1_pd(1e-10);
     c->mu_vec = _mm256_set1_pd(params->mu);
     c->zero = _mm256_setzero_pd();
+    c->inv_2dz_vec = _mm256_set1_pd(inv_2dz);
+    c->inv_dz2_vec = _mm256_set1_pd(inv_dz2);
 }
 
 static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field, const grid* grid,
-                             size_t j, const simd_constants* sc) {
+                             size_t j, const simd_constants* sc,
+                             size_t stride_z, size_t k_offset) {
     double dy2 = grid->dy[j] * grid->dy[j];
     __m256d dy_inv_val = _mm256_set1_pd(ctx->dy_inv[j]);
     __m256d dy2_val = _mm256_set1_pd(dy2);
     __m256d dy2_recip = _mm256_div_pd(sc->one_vec, dy2_val);
 
     for (size_t i = 1; i + 3 < ctx->nx - 1; i += 4) {
-        size_t idx = IDX_2D(i, j, ctx->nx);
+        size_t idx = k_offset + IDX_2D(i, j, ctx->nx);
 
         __m256d u = _mm256_loadu_pd(&field->u[idx]);
         __m256d v = _mm256_loadu_pd(&field->v[idx]);
@@ -225,34 +252,62 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
         __m256d u_xm = _mm256_loadu_pd(&field->u[idx - 1]);
         __m256d u_yp = _mm256_loadu_pd(&field->u[idx + ctx->nx]);
         __m256d u_ym = _mm256_loadu_pd(&field->u[idx - ctx->nx]);
+        __m256d u_zp = _mm256_loadu_pd(&field->u[idx + stride_z]);
+        __m256d u_zm = _mm256_loadu_pd(&field->u[idx - stride_z]);
 
         __m256d du_dx = _mm256_mul_pd(_mm256_sub_pd(u_xp, u_xm), dx_inv_val);
         __m256d du_dy = _mm256_mul_pd(_mm256_sub_pd(u_yp, u_ym), dy_inv_val);
+        __m256d du_dz = _mm256_mul_pd(_mm256_sub_pd(u_zp, u_zm), sc->inv_2dz_vec);
 
         du_dx = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, du_dx));
         du_dy = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, du_dy));
+        du_dz = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, du_dz));
 
         __m256d v_xp = _mm256_loadu_pd(&field->v[idx + 1]);
         __m256d v_xm = _mm256_loadu_pd(&field->v[idx - 1]);
         __m256d v_yp = _mm256_loadu_pd(&field->v[idx + ctx->nx]);
         __m256d v_ym = _mm256_loadu_pd(&field->v[idx - ctx->nx]);
+        __m256d v_zp = _mm256_loadu_pd(&field->v[idx + stride_z]);
+        __m256d v_zm = _mm256_loadu_pd(&field->v[idx - stride_z]);
 
         __m256d dv_dx = _mm256_mul_pd(_mm256_sub_pd(v_xp, v_xm), dx_inv_val);
         __m256d dv_dy = _mm256_mul_pd(_mm256_sub_pd(v_yp, v_ym), dy_inv_val);
+        __m256d dv_dz = _mm256_mul_pd(_mm256_sub_pd(v_zp, v_zm), sc->inv_2dz_vec);
 
         dv_dx = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dv_dx));
         dv_dy = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dv_dy));
+        dv_dz = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dv_dz));
 
         __m256d p_xp = _mm256_loadu_pd(&field->p[idx + 1]);
         __m256d p_xm = _mm256_loadu_pd(&field->p[idx - 1]);
         __m256d p_yp = _mm256_loadu_pd(&field->p[idx + ctx->nx]);
         __m256d p_ym = _mm256_loadu_pd(&field->p[idx - ctx->nx]);
+        __m256d p_zp = _mm256_loadu_pd(&field->p[idx + stride_z]);
+        __m256d p_zm = _mm256_loadu_pd(&field->p[idx - stride_z]);
 
         __m256d dp_dx = _mm256_mul_pd(_mm256_sub_pd(p_xp, p_xm), dx_inv_val);
         __m256d dp_dy = _mm256_mul_pd(_mm256_sub_pd(p_yp, p_ym), dy_inv_val);
+        __m256d dp_dz = _mm256_mul_pd(_mm256_sub_pd(p_zp, p_zm), sc->inv_2dz_vec);
 
         dp_dx = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dp_dx));
         dp_dy = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dp_dy));
+        dp_dz = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dp_dz));
+
+        __m256d w = _mm256_loadu_pd(&field->w[idx]);
+        __m256d w_xp = _mm256_loadu_pd(&field->w[idx + 1]);
+        __m256d w_xm = _mm256_loadu_pd(&field->w[idx - 1]);
+        __m256d w_yp = _mm256_loadu_pd(&field->w[idx + ctx->nx]);
+        __m256d w_ym = _mm256_loadu_pd(&field->w[idx - ctx->nx]);
+        __m256d w_zp = _mm256_loadu_pd(&field->w[idx + stride_z]);
+        __m256d w_zm = _mm256_loadu_pd(&field->w[idx - stride_z]);
+
+        __m256d dw_dx = _mm256_mul_pd(_mm256_sub_pd(w_xp, w_xm), dx_inv_val);
+        __m256d dw_dy = _mm256_mul_pd(_mm256_sub_pd(w_yp, w_ym), dy_inv_val);
+        __m256d dw_dz = _mm256_mul_pd(_mm256_sub_pd(w_zp, w_zm), sc->inv_2dz_vec);
+
+        dw_dx = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dw_dx));
+        dw_dy = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dw_dy));
+        dw_dz = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dw_dz));
 
         __m256d inv_dx_sq = _mm256_mul_pd(sc->four, _mm256_mul_pd(dx_inv_val, dx_inv_val));
 
@@ -260,37 +315,65 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
             _mm256_sub_pd(_mm256_add_pd(u_xp, u_xm), _mm256_mul_pd(sc->two, u)), inv_dx_sq);
         __m256d d2u_dy2 = _mm256_mul_pd(
             _mm256_sub_pd(_mm256_add_pd(u_yp, u_ym), _mm256_mul_pd(sc->two, u)), dy2_recip);
+        __m256d d2u_dz2 = _mm256_mul_pd(
+            _mm256_sub_pd(_mm256_add_pd(u_zp, u_zm), _mm256_mul_pd(sc->two, u)), sc->inv_dz2_vec);
+
         __m256d d2v_dx2 = _mm256_mul_pd(
             _mm256_sub_pd(_mm256_add_pd(v_xp, v_xm), _mm256_mul_pd(sc->two, v)), inv_dx_sq);
         __m256d d2v_dy2 = _mm256_mul_pd(
             _mm256_sub_pd(_mm256_add_pd(v_yp, v_ym), _mm256_mul_pd(sc->two, v)), dy2_recip);
+        __m256d d2v_dz2 = _mm256_mul_pd(
+            _mm256_sub_pd(_mm256_add_pd(v_zp, v_zm), _mm256_mul_pd(sc->two, v)), sc->inv_dz2_vec);
+
+        __m256d d2w_dx2 = _mm256_mul_pd(
+            _mm256_sub_pd(_mm256_add_pd(w_xp, w_xm), _mm256_mul_pd(sc->two, w)), inv_dx_sq);
+        __m256d d2w_dy2 = _mm256_mul_pd(
+            _mm256_sub_pd(_mm256_add_pd(w_yp, w_ym), _mm256_mul_pd(sc->two, w)), dy2_recip);
+        __m256d d2w_dz2 = _mm256_mul_pd(
+            _mm256_sub_pd(_mm256_add_pd(w_zp, w_zm), _mm256_mul_pd(sc->two, w)), sc->inv_dz2_vec);
 
         __m256d nu = _mm256_min_pd(sc->one_vec, _mm256_mul_pd(sc->mu_vec, rho_inv));
 
         __m256d term_pres_x = _mm256_mul_pd(dp_dx, rho_inv);
-        __m256d term_visc_u = _mm256_mul_pd(nu, _mm256_add_pd(d2u_dx2, d2u_dy2));
-        __m256d conv_u = _mm256_add_pd(_mm256_mul_pd(u, du_dx), _mm256_mul_pd(v, du_dy));
+        __m256d term_visc_u = _mm256_mul_pd(nu, _mm256_add_pd(_mm256_add_pd(d2u_dx2, d2u_dy2), d2u_dz2));
+        __m256d conv_u = _mm256_add_pd(
+            _mm256_add_pd(_mm256_mul_pd(u, du_dx), _mm256_mul_pd(v, du_dy)),
+            _mm256_mul_pd(w, du_dz));
         __m256d du =
             _mm256_mul_pd(sc->dt_vec, _mm256_add_pd(_mm256_sub_pd(term_visc_u, term_pres_x),
                                                     _mm256_sub_pd(sc->zero, conv_u)));
 
         __m256d term_pres_y = _mm256_mul_pd(dp_dy, rho_inv);
-        __m256d term_visc_v = _mm256_mul_pd(nu, _mm256_add_pd(d2v_dx2, d2v_dy2));
-        __m256d conv_v = _mm256_add_pd(_mm256_mul_pd(u, dv_dx), _mm256_mul_pd(v, dv_dy));
+        __m256d term_visc_v = _mm256_mul_pd(nu, _mm256_add_pd(_mm256_add_pd(d2v_dx2, d2v_dy2), d2v_dz2));
+        __m256d conv_v = _mm256_add_pd(
+            _mm256_add_pd(_mm256_mul_pd(u, dv_dx), _mm256_mul_pd(v, dv_dy)),
+            _mm256_mul_pd(w, dv_dz));
         __m256d dv =
             _mm256_mul_pd(sc->dt_vec, _mm256_add_pd(_mm256_sub_pd(term_visc_v, term_pres_y),
                                                     _mm256_sub_pd(sc->zero, conv_v)));
 
+        __m256d term_pres_z = _mm256_mul_pd(dp_dz, rho_inv);
+        __m256d term_visc_w = _mm256_mul_pd(nu, _mm256_add_pd(_mm256_add_pd(d2w_dx2, d2w_dy2), d2w_dz2));
+        __m256d conv_w = _mm256_add_pd(
+            _mm256_add_pd(_mm256_mul_pd(u, dw_dx), _mm256_mul_pd(v, dw_dy)),
+            _mm256_mul_pd(w, dw_dz));
+        __m256d dw =
+            _mm256_mul_pd(sc->dt_vec, _mm256_add_pd(_mm256_sub_pd(term_visc_w, term_pres_z),
+                                                    _mm256_sub_pd(sc->zero, conv_w)));
+
         du = vector_fmin(sc->one_vec, vector_fmax(sc->neg_one_vec, du));
         dv = vector_fmin(sc->one_vec, vector_fmax(sc->neg_one_vec, dv));
+        dw = vector_fmin(sc->one_vec, vector_fmax(sc->neg_one_vec, dw));
 
         __m256d u_next = _mm256_add_pd(u, du);
         __m256d v_next = _mm256_add_pd(v, dv);
+        __m256d w_next = _mm256_add_pd(w, dw);
 
         u_next = vector_fmin(sc->max_vel_limit, vector_fmax(sc->min_vel_limit, u_next));
         v_next = vector_fmin(sc->max_vel_limit, vector_fmax(sc->min_vel_limit, v_next));
+        w_next = vector_fmin(sc->max_vel_limit, vector_fmax(sc->min_vel_limit, w_next));
 
-        __m256d divergence = _mm256_add_pd(du_dx, dv_dy);
+        __m256d divergence = _mm256_add_pd(_mm256_add_pd(du_dx, dv_dy), dw_dz);
         divergence = vector_fmin(sc->max_diverg, vector_fmax(sc->min_diverg, divergence));
         __m256d p = _mm256_loadu_pd(&field->p[idx]);
         __m256d dp = _mm256_mul_pd(
@@ -300,6 +383,7 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
 
         _mm256_storeu_pd(&ctx->u_new[idx], u_next);
         _mm256_storeu_pd(&ctx->v_new[idx], v_next);
+        _mm256_storeu_pd(&ctx->w_new[idx], w_next);
         _mm256_storeu_pd(&ctx->p_new[idx], p_next);
     }
 }
@@ -308,26 +392,42 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
 #if !USE_AVX
 static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* field,
                                const grid* grid, const ns_solver_params_t* params, size_t j,
-                               double conservative_dt, double t) {
+                               double conservative_dt, double t, size_t stride_z, size_t k_offset) {
     for (size_t i = 1; i < ctx->nx - 1; i++) {
-        size_t idx = IDX_2D(i, j, ctx->nx);
+        size_t idx = k_offset + IDX_2D(i, j, ctx->nx);
 
         double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
         double du_dy = (field->u[idx + ctx->nx] - field->u[idx - ctx->nx]) / (2.0 * grid->dy[j]);
+        double du_dz = (field->u[idx + stride_z] - field->u[idx - stride_z]) * ctx->inv_2dz;
         double dv_dx = (field->v[idx + 1] - field->v[idx - 1]) / (2.0 * grid->dx[i]);
         double dv_dy = (field->v[idx + ctx->nx] - field->v[idx - ctx->nx]) / (2.0 * grid->dy[j]);
+        double dv_dz = (field->v[idx + stride_z] - field->v[idx - stride_z]) * ctx->inv_2dz;
+        double dw_dx = (field->w[idx + 1] - field->w[idx - 1]) / (2.0 * grid->dx[i]);
+        double dw_dy = (field->w[idx + ctx->nx] - field->w[idx - ctx->nx]) / (2.0 * grid->dy[j]);
+        double dw_dz = (field->w[idx + stride_z] - field->w[idx - stride_z]) * ctx->inv_2dz;
 
         double dp_dx = (field->p[idx + 1] - field->p[idx - 1]) / (2.0 * grid->dx[i]);
         double dp_dy = (field->p[idx + ctx->nx] - field->p[idx - ctx->nx]) / (2.0 * grid->dy[j]);
+        double dp_dz = (field->p[idx + stride_z] - field->p[idx - stride_z]) * ctx->inv_2dz;
 
         double d2u_dx2 = (field->u[idx + 1] - 2.0 * field->u[idx] + field->u[idx - 1]) /
                          (grid->dx[i] * grid->dx[i]);
         double d2u_dy2 = (field->u[idx + ctx->nx] - 2.0 * field->u[idx] + field->u[idx - ctx->nx]) /
                          (grid->dy[j] * grid->dy[j]);
+        double d2u_dz2 = (field->u[idx + stride_z] - 2.0 * field->u[idx] + field->u[idx - stride_z]) *
+                         ctx->inv_dz2;
         double d2v_dx2 = (field->v[idx + 1] - 2.0 * field->v[idx] + field->v[idx - 1]) /
                          (grid->dx[i] * grid->dx[i]);
         double d2v_dy2 = (field->v[idx + ctx->nx] - 2.0 * field->v[idx] + field->v[idx - ctx->nx]) /
                          (grid->dy[j] * grid->dy[j]);
+        double d2v_dz2 = (field->v[idx + stride_z] - 2.0 * field->v[idx] + field->v[idx - stride_z]) *
+                         ctx->inv_dz2;
+        double d2w_dx2 = (field->w[idx + 1] - 2.0 * field->w[idx] + field->w[idx - 1]) /
+                         (grid->dx[i] * grid->dx[i]);
+        double d2w_dy2 = (field->w[idx + ctx->nx] - 2.0 * field->w[idx] + field->w[idx - ctx->nx]) /
+                         (grid->dy[j] * grid->dy[j]);
+        double d2w_dz2 = (field->w[idx + stride_z] - 2.0 * field->w[idx] + field->w[idx - stride_z]) *
+                         ctx->inv_dz2;
 
         double rho = fmax(field->rho[idx], 1e-10);
         // Using manual define for M_PI just in case it is missed in fallback
@@ -335,6 +435,19 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
 #define M_PI 3.14159265358979323846
 #endif
         double nu = fmin(params->mu / rho, 1.0);
+
+        du_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dx));
+        du_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dy));
+        du_dz = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dz));
+        dv_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dx));
+        dv_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dy));
+        dv_dz = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dv_dz));
+        dw_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dw_dx));
+        dw_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dw_dy));
+        dw_dz = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dw_dz));
+        dp_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dx));
+        dp_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dy));
+        dp_dz = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dz));
 
         double source_u = 0.0;
         double source_v = 0.0;
@@ -348,21 +461,26 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
             source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]);
         }
 
-        double du = conservative_dt * (-field->u[idx] * du_dx - field->v[idx] * du_dy -
-                                       dp_dx / rho + nu * (d2u_dx2 + d2u_dy2) + source_u);
-        double dv = conservative_dt * (-field->u[idx] * dv_dx - field->v[idx] * dv_dy -
-                                       dp_dy / rho + nu * (d2v_dx2 + d2v_dy2) + source_v);
+        double u_c = field->u[idx];
+        double v_c = field->v[idx];
+        double w_c = field->w[idx];
+
+        double du = conservative_dt * (-u_c * du_dx - v_c * du_dy - w_c * du_dz -
+                                       dp_dx / rho + nu * (d2u_dx2 + d2u_dy2 + d2u_dz2) + source_u);
+        double dv = conservative_dt * (-u_c * dv_dx - v_c * dv_dy - w_c * dv_dz -
+                                       dp_dy / rho + nu * (d2v_dx2 + d2v_dy2 + d2v_dz2) + source_v);
+        double dw = conservative_dt * (-u_c * dw_dx - v_c * dw_dy - w_c * dw_dz -
+                                       dp_dz / rho + nu * (d2w_dx2 + d2w_dy2 + d2w_dz2) + source_w);
 
         du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));
         dv = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dv));
+        dw = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dw));
 
-        ctx->u_new[idx] = field->u[idx] + du;
-        ctx->v_new[idx] = field->v[idx] + dv;
+        ctx->u_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, u_c + du));
+        ctx->v_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, v_c + dv));
+        ctx->w_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, w_c + dw));
 
-        ctx->u_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, ctx->u_new[idx]));
-        ctx->v_new[idx] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, ctx->v_new[idx]));
-
-        double divergence = du_dx + dv_dy;
+        double divergence = du_dx + dv_dy + dw_dz;
         divergence = fmax(-MAX_DIVERGENCE_LIMIT, fmin(MAX_DIVERGENCE_LIMIT, divergence));
         double dp = -PRESSURE_UPDATE_FACTOR * conservative_dt * rho * divergence;
         dp = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dp));
@@ -379,7 +497,7 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
 
     explicit_euler_simd_context* ctx = (explicit_euler_simd_context*)solver->context;
 
-    if (field->nx != ctx->nx || field->ny != ctx->ny) {
+    if (field->nx != ctx->nx || field->ny != ctx->ny || field->nz != ctx->nz) {
         return CFD_ERROR_INVALID;
     }
 
@@ -387,73 +505,73 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     double conservative_dt = fmin(params->dt, DT_CONSERVATIVE_LIMIT);
 
     // Copy current state to temp buffers
-    size_t size = ctx->nx * ctx->ny;
+    size_t size = ctx->nx * ctx->ny * ctx->nz;
     memcpy(ctx->u_new, field->u, size * sizeof(double));
     memcpy(ctx->v_new, field->v, size * sizeof(double));
+    memcpy(ctx->w_new, field->w, size * sizeof(double));
     memcpy(ctx->p_new, field->p, size * sizeof(double));
+
+    size_t nx = ctx->nx;
+    size_t ny = ctx->ny;
 
 #if USE_AVX
     simd_constants sc;
-    init_simd_constants(&sc, params, conservative_dt);
+    init_simd_constants(&sc, params, conservative_dt, ctx->inv_2dz, ctx->inv_dz2);
 
     int ny_int = (int)(ctx->ny);
     int j;
+    for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
+        size_t k_offset = k * ctx->stride_z;
 #ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static)
 #endif
-    for (j = 1; j < ny_int - 1; j++) {
-        process_simd_row(ctx, field, grid, (size_t)j, &sc);
+        for (j = 1; j < ny_int - 1; j++) {
+            process_simd_row(ctx, field, grid, (size_t)j, &sc, ctx->stride_z, k_offset);
+        }
     }
 #else
     int ny_int = (int)(ctx->ny);
     int j;
+    for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
+        size_t k_offset = k * ctx->stride_z;
 #ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static)
 #endif
-    for (j = 1; j < ny_int - 1; j++) {
-        process_scalar_row(ctx, field, grid, params, (size_t)j, conservative_dt, 0.0);
+        for (j = 1; j < ny_int - 1; j++) {
+            process_scalar_row(ctx, field, grid, params, (size_t)j, conservative_dt, 0.0,
+                               ctx->stride_z, k_offset);
+        }
     }
 #endif
 
     // Apply boundary, check NaNs, etc.
     memcpy(field->u, ctx->u_new, size * sizeof(double));
     memcpy(field->v, ctx->v_new, size * sizeof(double));
+    memcpy(field->w, ctx->w_new, size * sizeof(double));
     memcpy(field->p, ctx->p_new, size * sizeof(double));
 
     // Store caller-set boundary values before apply_boundary_conditions overwrites them
-    size_t nx = ctx->nx;
-    size_t ny = ctx->ny;
-    for (size_t i = 0; i < nx; i++) {
-        ctx->u_new[i] = field->u[i];
-        ctx->v_new[i] = field->v[i];
-        ctx->u_new[IDX_2D(i, ny - 1, nx)] = field->u[IDX_2D(i, ny - 1, nx)];
-        ctx->v_new[IDX_2D(i, ny - 1, nx)] = field->v[IDX_2D(i, ny - 1, nx)];
-    }
-    for (size_t jj = 0; jj < ny; jj++) {
-        ctx->u_new[IDX_2D(0, jj, nx)] = field->u[IDX_2D(0, jj, nx)];
-        ctx->v_new[IDX_2D(0, jj, nx)] = field->v[IDX_2D(0, jj, nx)];
-        ctx->u_new[IDX_2D(nx - 1, jj, nx)] = field->u[IDX_2D(nx - 1, jj, nx)];
-        ctx->v_new[IDX_2D(nx - 1, jj, nx)] = field->v[IDX_2D(nx - 1, jj, nx)];
-    }
-
+    copy_boundary_velocities_3d(ctx->u_new, ctx->v_new, ctx->w_new,
+                                field->u, field->v, field->w, nx, ny, ctx->nz);
     apply_boundary_conditions(field, grid);
-
-    // Restore caller-set velocity boundary values
-    for (size_t i = 0; i < nx; i++) {
-        field->u[i] = ctx->u_new[i];
-        field->v[i] = ctx->v_new[i];
-        field->u[IDX_2D(i, ny - 1, nx)] = ctx->u_new[IDX_2D(i, ny - 1, nx)];
-        field->v[IDX_2D(i, ny - 1, nx)] = ctx->v_new[IDX_2D(i, ny - 1, nx)];
-    }
-    for (size_t jj = 0; jj < ny; jj++) {
-        field->u[IDX_2D(0, jj, nx)] = ctx->u_new[IDX_2D(0, jj, nx)];
-        field->v[IDX_2D(0, jj, nx)] = ctx->v_new[IDX_2D(0, jj, nx)];
-        field->u[IDX_2D(nx - 1, jj, nx)] = ctx->u_new[IDX_2D(nx - 1, jj, nx)];
-        field->v[IDX_2D(nx - 1, jj, nx)] = ctx->v_new[IDX_2D(nx - 1, jj, nx)];
-    }
+    copy_boundary_velocities_3d(field->u, field->v, field->w,
+                                ctx->u_new, ctx->v_new, ctx->w_new, nx, ny, ctx->nz);
 
     if (stats) {
         stats->iterations = 1;
+    }
+
+    // NaN/Inf check
+    int has_nan = 0;
+    for (size_t n = 0; n < size; n++) {
+        if (!isfinite(field->u[n]) || !isfinite(field->v[n]) ||
+            !isfinite(field->w[n]) || !isfinite(field->p[n])) {
+            has_nan = 1;
+            break;
+        }
+    }
+    if (has_nan) {
+        printf("Warning: NaN/Inf detected in explicit_euler_simd step, stopping\n");
     }
 
     return CFD_SUCCESS;

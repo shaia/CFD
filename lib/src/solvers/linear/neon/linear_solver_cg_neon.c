@@ -42,11 +42,17 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
-    double diag_inv;   /* Jacobi preconditioner: 1/(2/dx2 + 2/dy2) */
+    double inv_dz2;    /* 1/dz^2 (0.0 for 2D) */
+    double diag_inv;   /* Jacobi preconditioner: 1/(2/dx2 + 2/dy2 + 2*inv_dz2) */
+
+    size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
+    size_t k_start;    /* first interior k index (0 for 2D) */
+    size_t k_end;      /* one-past-last interior k index (1 for 2D) */
 
     /* Precomputed SIMD vectors */
     float64x2_t dx2_inv_vec;
     float64x2_t dy2_inv_vec;
+    float64x2_t dz2_inv_vec;
     float64x2_t two_vec;
     float64x2_t diag_inv_vec;
 
@@ -75,36 +81,39 @@ static inline int size_to_int(size_t sz) {
  * Compute dot product using NEON with OpenMP reduction
  */
 static double dot_product_neon(const double* a, const double* b,
-                                    size_t nx, size_t ny) {
+                                    size_t nx, size_t ny,
+                                    size_t k_start, size_t k_end, size_t stride_z) {
     double sum = 0.0;
     int ny_int = size_to_int(ny);
-    int j;
 
-    #pragma omp parallel for reduction(+:sum) schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        double row_sum = 0.0;
-        size_t i = 1;
-        size_t row_start = (size_t)j * nx;
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
+        #pragma omp parallel for reduction(+:sum) schedule(static)
+        for (j = 1; j < ny_int - 1; j++) {
+            double row_sum = 0.0;
+            size_t i = 1;
+            size_t row_start = k * stride_z + (size_t)j * nx;
 
-        /* SIMD loop: process 2 doubles at a time */
-        float64x2_t acc = vdupq_n_f64(0.0);
-        for (; i + 2 <= nx - 1; i += 2) {
-            size_t idx = row_start + i;
-            float64x2_t va = vld1q_f64(&a[idx]);
-            float64x2_t vb = vld1q_f64(&b[idx]);
-            acc = vfmaq_f64(acc, va, vb);
+            /* SIMD loop: process 2 doubles at a time */
+            float64x2_t acc = vdupq_n_f64(0.0);
+            for (; i + 2 <= nx - 1; i += 2) {
+                size_t idx = row_start + i;
+                float64x2_t va = vld1q_f64(&a[idx]);
+                float64x2_t vb = vld1q_f64(&b[idx]);
+                acc = vfmaq_f64(acc, va, vb);
+            }
+
+            /* Horizontal sum of acc */
+            row_sum = vgetq_lane_f64(acc, 0) + vgetq_lane_f64(acc, 1);
+
+            /* Scalar remainder */
+            for (; i < nx - 1; i++) {
+                size_t idx = row_start + i;
+                row_sum += a[idx] * b[idx];
+            }
+
+            sum += row_sum;
         }
-
-        /* Horizontal sum of acc */
-        row_sum = vgetq_lane_f64(acc, 0) + vgetq_lane_f64(acc, 1);
-
-        /* Scalar remainder */
-        for (; i < nx - 1; i++) {
-            size_t idx = row_start + i;
-            row_sum += a[idx] * b[idx];
-        }
-
-        sum += row_sum;
     }
 
     return sum;
@@ -114,29 +123,32 @@ static double dot_product_neon(const double* a, const double* b,
  * Compute y = y + alpha * x using NEON with OpenMP
  */
 static void axpy_neon(double alpha, const double* x, double* y,
-                          size_t nx, size_t ny) {
+                          size_t nx, size_t ny,
+                          size_t k_start, size_t k_end, size_t stride_z) {
     float64x2_t alpha_vec = vdupq_n_f64(alpha);
     int ny_int = size_to_int(ny);
-    int j;
 
-    #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        size_t i = 1;
-        size_t row_start = (size_t)j * nx;
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
+        #pragma omp parallel for schedule(static)
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t i = 1;
+            size_t row_start = k * stride_z + (size_t)j * nx;
 
-        /* SIMD loop */
-        for (; i + 2 <= nx - 1; i += 2) {
-            size_t idx = row_start + i;
-            float64x2_t vx = vld1q_f64(&x[idx]);
-            float64x2_t vy = vld1q_f64(&y[idx]);
-            vy = vfmaq_f64(vy, alpha_vec, vx);
-            vst1q_f64(&y[idx], vy);
-        }
+            /* SIMD loop */
+            for (; i + 2 <= nx - 1; i += 2) {
+                size_t idx = row_start + i;
+                float64x2_t vx = vld1q_f64(&x[idx]);
+                float64x2_t vy = vld1q_f64(&y[idx]);
+                vy = vfmaq_f64(vy, alpha_vec, vx);
+                vst1q_f64(&y[idx], vy);
+            }
 
-        /* Scalar remainder */
-        for (; i < nx - 1; i++) {
-            size_t idx = row_start + i;
-            y[idx] += alpha * x[idx];
+            /* Scalar remainder */
+            for (; i < nx - 1; i++) {
+                size_t idx = row_start + i;
+                y[idx] += alpha * x[idx];
+            }
         }
     }
 }
@@ -147,52 +159,64 @@ static void axpy_neon(double alpha, const double* x, double* y,
 static void apply_laplacian_neon(const double* p, double* Ap,
                                       size_t nx, size_t ny,
                                       float64x2_t dx2_inv_vec, float64x2_t dy2_inv_vec,
-                                      float64x2_t two_vec) {
+                                      float64x2_t dz2_inv_vec, float64x2_t two_vec,
+                                      size_t k_start, size_t k_end, size_t stride_z) {
     int ny_int = size_to_int(ny);
-    int j;
     double dx2_inv_scalar = vgetq_lane_f64(dx2_inv_vec, 0);
     double dy2_inv_scalar = vgetq_lane_f64(dy2_inv_vec, 0);
+    double dz2_inv_scalar = vgetq_lane_f64(dz2_inv_vec, 0);
 
-    #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        size_t i = 1;
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
+        #pragma omp parallel for schedule(static)
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t i = 1;
 
-        /* SIMD loop */
-        for (; i + 2 <= nx - 1; i += 2) {
-            size_t idx = IDX_2D(i, (size_t)j, nx);
+            /* SIMD loop */
+            for (; i + 2 <= nx - 1; i += 2) {
+                size_t idx = k * stride_z + IDX_2D(i, (size_t)j, nx);
 
-            /* Load neighbors */
-            float64x2_t p_center = vld1q_f64(&p[idx]);
-            float64x2_t p_xp = vld1q_f64(&p[idx + 1]);
-            float64x2_t p_xm = vld1q_f64(&p[idx - 1]);
-            float64x2_t p_yp = vld1q_f64(&p[idx + nx]);
-            float64x2_t p_ym = vld1q_f64(&p[idx - nx]);
+                /* Load neighbors */
+                float64x2_t p_center = vld1q_f64(&p[idx]);
+                float64x2_t p_xp = vld1q_f64(&p[idx + 1]);
+                float64x2_t p_xm = vld1q_f64(&p[idx - 1]);
+                float64x2_t p_yp = vld1q_f64(&p[idx + nx]);
+                float64x2_t p_ym = vld1q_f64(&p[idx - nx]);
+                float64x2_t p_zp = vld1q_f64(&p[idx + stride_z]);
+                float64x2_t p_zm = vld1q_f64(&p[idx - stride_z]);
 
-            /* Compute second derivatives */
-            /* d2p_dx2 = (p[i+1] - 2*p[i] + p[i-1]) / dx2 */
-            float64x2_t sum_x = vaddq_f64(p_xp, p_xm);
-            float64x2_t two_center = vmulq_f64(two_vec, p_center);
-            float64x2_t d2p_dx2 = vsubq_f64(sum_x, two_center);
-            d2p_dx2 = vmulq_f64(d2p_dx2, dx2_inv_vec);
+                /* Compute second derivatives */
+                /* d2p_dx2 = (p[i+1] - 2*p[i] + p[i-1]) / dx2 */
+                float64x2_t sum_x = vaddq_f64(p_xp, p_xm);
+                float64x2_t two_center = vmulq_f64(two_vec, p_center);
+                float64x2_t d2p_dx2 = vsubq_f64(sum_x, two_center);
+                d2p_dx2 = vmulq_f64(d2p_dx2, dx2_inv_vec);
 
-            /* d2p_dy2 = (p[j+1] - 2*p[j] + p[j-1]) / dy2 */
-            float64x2_t sum_y = vaddq_f64(p_yp, p_ym);
-            float64x2_t d2p_dy2 = vsubq_f64(sum_y, two_center);
-            d2p_dy2 = vmulq_f64(d2p_dy2, dy2_inv_vec);
+                /* d2p_dy2 = (p[j+1] - 2*p[j] + p[j-1]) / dy2 */
+                float64x2_t sum_y = vaddq_f64(p_yp, p_ym);
+                float64x2_t d2p_dy2 = vsubq_f64(sum_y, two_center);
+                d2p_dy2 = vmulq_f64(d2p_dy2, dy2_inv_vec);
 
-            /* -Laplacian = -(d2p_dx2 + d2p_dy2) */
-            float64x2_t laplacian = vaddq_f64(d2p_dx2, d2p_dy2);
-            float64x2_t neg_laplacian = vnegq_f64(laplacian);
+                /* d2p_dz2 = (p[k+1] - 2*p[k] + p[k-1]) / dz2 */
+                float64x2_t sum_z = vaddq_f64(p_zp, p_zm);
+                float64x2_t d2p_dz2 = vsubq_f64(sum_z, two_center);
+                d2p_dz2 = vmulq_f64(d2p_dz2, dz2_inv_vec);
 
-            vst1q_f64(&Ap[idx], neg_laplacian);
-        }
+                /* -Laplacian = -(d2p_dx2 + d2p_dy2 + d2p_dz2) */
+                float64x2_t laplacian = vaddq_f64(vaddq_f64(d2p_dx2, d2p_dy2), d2p_dz2);
+                float64x2_t neg_laplacian = vnegq_f64(laplacian);
 
-        /* Scalar remainder */
-        for (; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, (size_t)j, nx);
-            double laplacian = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv_scalar
-                             + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv_scalar;
-            Ap[idx] = -laplacian;
+                vst1q_f64(&Ap[idx], neg_laplacian);
+            }
+
+            /* Scalar remainder */
+            for (; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, (size_t)j, nx);
+                double laplacian = (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv_scalar
+                                 + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv_scalar
+                                 + (p[idx + stride_z] + p[idx - stride_z] - 2.0 * p[idx]) * dz2_inv_scalar;
+                Ap[idx] = -laplacian;
+            }
         }
     }
 }
@@ -203,53 +227,64 @@ static void apply_laplacian_neon(const double* p, double* Ap,
 static void compute_residual_neon(const double* x, const double* rhs, double* r,
                                        size_t nx, size_t ny,
                                        float64x2_t dx2_inv_vec, float64x2_t dy2_inv_vec,
-                                       float64x2_t two_vec) {
+                                       float64x2_t dz2_inv_vec, float64x2_t two_vec,
+                                       size_t k_start, size_t k_end, size_t stride_z) {
     int ny_int = size_to_int(ny);
-    int j;
     double dx2_inv_scalar = vgetq_lane_f64(dx2_inv_vec, 0);
     double dy2_inv_scalar = vgetq_lane_f64(dy2_inv_vec, 0);
+    double dz2_inv_scalar = vgetq_lane_f64(dz2_inv_vec, 0);
 
-    #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        size_t i = 1;
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
+        #pragma omp parallel for schedule(static)
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t i = 1;
 
-        /* SIMD loop */
-        for (; i + 2 <= nx - 1; i += 2) {
-            size_t idx = IDX_2D(i, (size_t)j, nx);
+            /* SIMD loop */
+            for (; i + 2 <= nx - 1; i += 2) {
+                size_t idx = k * stride_z + IDX_2D(i, (size_t)j, nx);
 
-            /* Load neighbors */
-            float64x2_t x_center = vld1q_f64(&x[idx]);
-            float64x2_t x_xp = vld1q_f64(&x[idx + 1]);
-            float64x2_t x_xm = vld1q_f64(&x[idx - 1]);
-            float64x2_t x_yp = vld1q_f64(&x[idx + nx]);
-            float64x2_t x_ym = vld1q_f64(&x[idx - nx]);
-            float64x2_t rhs_vec = vld1q_f64(&rhs[idx]);
+                /* Load neighbors */
+                float64x2_t x_center = vld1q_f64(&x[idx]);
+                float64x2_t x_xp = vld1q_f64(&x[idx + 1]);
+                float64x2_t x_xm = vld1q_f64(&x[idx - 1]);
+                float64x2_t x_yp = vld1q_f64(&x[idx + nx]);
+                float64x2_t x_ym = vld1q_f64(&x[idx - nx]);
+                float64x2_t x_zp = vld1q_f64(&x[idx + stride_z]);
+                float64x2_t x_zm = vld1q_f64(&x[idx - stride_z]);
+                float64x2_t rhs_vec = vld1q_f64(&rhs[idx]);
 
-            /* Compute Laplacian */
-            float64x2_t sum_x = vaddq_f64(x_xp, x_xm);
-            float64x2_t two_center = vmulq_f64(two_vec, x_center);
-            float64x2_t d2x_dx2 = vsubq_f64(sum_x, two_center);
-            d2x_dx2 = vmulq_f64(d2x_dx2, dx2_inv_vec);
+                /* Compute Laplacian */
+                float64x2_t sum_x = vaddq_f64(x_xp, x_xm);
+                float64x2_t two_center = vmulq_f64(two_vec, x_center);
+                float64x2_t d2x_dx2 = vsubq_f64(sum_x, two_center);
+                d2x_dx2 = vmulq_f64(d2x_dx2, dx2_inv_vec);
 
-            float64x2_t sum_y = vaddq_f64(x_yp, x_ym);
-            float64x2_t d2x_dy2 = vsubq_f64(sum_y, two_center);
-            d2x_dy2 = vmulq_f64(d2x_dy2, dy2_inv_vec);
+                float64x2_t sum_y = vaddq_f64(x_yp, x_ym);
+                float64x2_t d2x_dy2 = vsubq_f64(sum_y, two_center);
+                d2x_dy2 = vmulq_f64(d2x_dy2, dy2_inv_vec);
 
-            float64x2_t laplacian = vaddq_f64(d2x_dx2, d2x_dy2);
+                float64x2_t sum_z = vaddq_f64(x_zp, x_zm);
+                float64x2_t d2x_dz2 = vsubq_f64(sum_z, two_center);
+                d2x_dz2 = vmulq_f64(d2x_dz2, dz2_inv_vec);
 
-            /* r = -rhs + laplacian */
-            float64x2_t neg_rhs = vnegq_f64(rhs_vec);
-            float64x2_t r_vec = vaddq_f64(neg_rhs, laplacian);
+                float64x2_t laplacian = vaddq_f64(vaddq_f64(d2x_dx2, d2x_dy2), d2x_dz2);
 
-            vst1q_f64(&r[idx], r_vec);
-        }
+                /* r = -rhs + laplacian */
+                float64x2_t neg_rhs = vnegq_f64(rhs_vec);
+                float64x2_t r_vec = vaddq_f64(neg_rhs, laplacian);
 
-        /* Scalar remainder */
-        for (; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, (size_t)j, nx);
-            double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv_scalar
-                             + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv_scalar;
-            r[idx] = -rhs[idx] + laplacian;
+                vst1q_f64(&r[idx], r_vec);
+            }
+
+            /* Scalar remainder */
+            for (; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, (size_t)j, nx);
+                double laplacian = (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv_scalar
+                                 + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv_scalar
+                                 + (x[idx + stride_z] + x[idx - stride_z] - 2.0 * x[idx]) * dz2_inv_scalar;
+                r[idx] = -rhs[idx] + laplacian;
+            }
         }
     }
 }
@@ -258,14 +293,17 @@ static void compute_residual_neon(const double* x, const double* rhs, double* r,
  * Copy vector using OpenMP
  */
 static void copy_vector_omp(const double* src, double* dst,
-                            size_t nx, size_t ny) {
+                            size_t nx, size_t ny,
+                            size_t k_start, size_t k_end, size_t stride_z) {
     int ny_int = size_to_int(ny);
-    int j;
 
-    #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        size_t row_start = (size_t)j * nx;
-        memcpy(&dst[row_start + 1], &src[row_start + 1], (nx - 2) * sizeof(double));
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
+        #pragma omp parallel for schedule(static)
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t row_start = k * stride_z + (size_t)j * nx;
+            memcpy(&dst[row_start + 1], &src[row_start + 1], (nx - 2) * sizeof(double));
+        }
     }
 }
 
@@ -274,62 +312,68 @@ static void copy_vector_omp(const double* src, double* dst,
  * src can be r (standard CG) or z (preconditioned CG)
  */
 static void update_search_direction_neon(const double* src, double* p,
-                                              double beta, size_t nx, size_t ny) {
+                                              double beta, size_t nx, size_t ny,
+                                              size_t k_start, size_t k_end, size_t stride_z) {
     float64x2_t beta_vec = vdupq_n_f64(beta);
     int ny_int = size_to_int(ny);
-    int j;
 
-    #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        size_t i = 1;
-        size_t row_start = (size_t)j * nx;
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
+        #pragma omp parallel for schedule(static)
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t i = 1;
+            size_t row_start = k * stride_z + (size_t)j * nx;
 
-        /* SIMD loop */
-        for (; i + 2 <= nx - 1; i += 2) {
-            size_t idx = row_start + i;
-            float64x2_t vs = vld1q_f64(&src[idx]);
-            float64x2_t vp = vld1q_f64(&p[idx]);
-            /* p = src + beta * p */
-            vp = vfmaq_f64(vs, beta_vec, vp);
-            vst1q_f64(&p[idx], vp);
-        }
+            /* SIMD loop */
+            for (; i + 2 <= nx - 1; i += 2) {
+                size_t idx = row_start + i;
+                float64x2_t vs = vld1q_f64(&src[idx]);
+                float64x2_t vp = vld1q_f64(&p[idx]);
+                /* p = src + beta * p */
+                vp = vfmaq_f64(vs, beta_vec, vp);
+                vst1q_f64(&p[idx], vp);
+            }
 
-        /* Scalar remainder */
-        for (; i < nx - 1; i++) {
-            size_t idx = row_start + i;
-            p[idx] = src[idx] + beta * p[idx];
+            /* Scalar remainder */
+            for (; i < nx - 1; i++) {
+                size_t idx = row_start + i;
+                p[idx] = src[idx] + beta * p[idx];
+            }
         }
     }
 }
 
 /**
  * Apply Jacobi preconditioner: z = M^{-1} * r using NEON with OpenMP
- * For the negative Laplacian -nabla^2, the diagonal is (2/dx^2 + 2/dy^2),
- * so M^{-1} = 1/(2/dx^2 + 2/dy^2) = diag_inv.
+ * For the negative Laplacian -nabla^2, the diagonal is (2/dx^2 + 2/dy^2 + 2*inv_dz2),
+ * so M^{-1} = 1/(2/dx^2 + 2/dy^2 + 2*inv_dz2) = diag_inv.
  */
 static void apply_jacobi_precond_neon(const double* r, double* z,
                                            size_t nx, size_t ny,
-                                           float64x2_t diag_inv_vec, double diag_inv) {
+                                           float64x2_t diag_inv_vec, double diag_inv,
+                                           size_t k_start, size_t k_end, size_t stride_z) {
     int ny_int = size_to_int(ny);
-    int j;
 
-    #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        size_t i = 1;
-        size_t row_start = (size_t)j * nx;
+    for (size_t k = k_start; k < k_end; k++) {
+        int j;
+        #pragma omp parallel for schedule(static)
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t i = 1;
+            size_t row_start = k * stride_z + (size_t)j * nx;
 
-        /* SIMD loop */
-        for (; i + 2 <= nx - 1; i += 2) {
-            size_t idx = row_start + i;
-            float64x2_t vr = vld1q_f64(&r[idx]);
-            float64x2_t vz = vmulq_f64(diag_inv_vec, vr);
-            vst1q_f64(&z[idx], vz);
-        }
+            /* SIMD loop */
+            for (; i + 2 <= nx - 1; i += 2) {
+                size_t idx = row_start + i;
+                float64x2_t vr = vld1q_f64(&r[idx]);
+                float64x2_t vz = vmulq_f64(diag_inv_vec, vr);
+                vst1q_f64(&z[idx], vz);
+            }
 
-        /* Scalar remainder */
-        for (; i < nx - 1; i++) {
-            size_t idx = row_start + i;
-            z[idx] = diag_inv * r[idx];
+            /* Scalar remainder */
+            for (; i < nx - 1; i++) {
+                size_t idx = row_start + i;
+                z[idx] = diag_inv * r[idx];
+            }
         }
     }
 }
@@ -344,7 +388,6 @@ static cfd_status_t cg_neon_init(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)nz; (void)dz;
     cg_neon_context_t* ctx = (cg_neon_context_t*)cfd_aligned_calloc(
         1, sizeof(cg_neon_context_t));
     if (!ctx) {
@@ -353,9 +396,11 @@ static cfd_status_t cg_neon_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
+    ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
+    poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
     /* Compute Jacobi preconditioner diagonal inverse */
-    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2);
+    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
 
     /* Check if preconditioner is enabled */
     ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
@@ -363,11 +408,12 @@ static cfd_status_t cg_neon_init(
     /* Precompute SIMD vectors */
     ctx->dx2_inv_vec = vdupq_n_f64(1.0 / ctx->dx2);
     ctx->dy2_inv_vec = vdupq_n_f64(1.0 / ctx->dy2);
+    ctx->dz2_inv_vec = vdupq_n_f64(ctx->inv_dz2);
     ctx->two_vec = vdupq_n_f64(2.0);
     ctx->diag_inv_vec = vdupq_n_f64(ctx->diag_inv);
 
     /* Allocate working vectors (aligned for NEON SIMD access) */
-    size_t n = nx * ny;
+    size_t n = nx * ny * nz;
     ctx->r = (double*)cfd_aligned_calloc(n, sizeof(double));
     ctx->p = (double*)cfd_aligned_calloc(n, sizeof(double));
     ctx->Ap = (double*)cfd_aligned_calloc(n, sizeof(double));
@@ -442,6 +488,9 @@ static cfd_status_t cg_neon_solve(
     cg_neon_context_t* ctx = (cg_neon_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
+    size_t k_start = ctx->k_start;
+    size_t k_end = ctx->k_end;
+    size_t stride_z = ctx->stride_z;
 
     double* r = ctx->r;
     double* z = ctx->z;
@@ -453,30 +502,32 @@ static cfd_status_t cg_neon_solve(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    /* Apply initial boundary conditions (use SIMD BC) */
-    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+    /* Apply initial boundary conditions */
+    poisson_solver_apply_bc(solver, x);
 
     /* Compute initial residual */
     compute_residual_neon(x, rhs, r, nx, ny,
-                              ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->two_vec);
+                              ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->dz2_inv_vec,
+                              ctx->two_vec, k_start, k_end, stride_z);
 
     /* Initialize search direction and rho */
     double rho;
     if (use_precond) {
         /* z_0 = M^{-1} r_0 */
-        apply_jacobi_precond_neon(r, z, nx, ny, ctx->diag_inv_vec, diag_inv);
+        apply_jacobi_precond_neon(r, z, nx, ny, ctx->diag_inv_vec, diag_inv,
+                                      k_start, k_end, stride_z);
         /* p_0 = z_0 */
-        copy_vector_omp(z, p, nx, ny);
+        copy_vector_omp(z, p, nx, ny, k_start, k_end, stride_z);
         /* rho_0 = (r_0, z_0) */
-        rho = dot_product_neon(r, z, nx, ny);
+        rho = dot_product_neon(r, z, nx, ny, k_start, k_end, stride_z);
     } else {
         /* p_0 = r_0 */
-        copy_vector_omp(r, p, nx, ny);
+        copy_vector_omp(r, p, nx, ny, k_start, k_end, stride_z);
         /* rho_0 = (r_0, r_0) */
-        rho = dot_product_neon(r, r, nx, ny);
+        rho = dot_product_neon(r, r, nx, ny, k_start, k_end, stride_z);
     }
 
-    double initial_res = sqrt(dot_product_neon(r, r, nx, ny));
+    double initial_res = sqrt(dot_product_neon(r, r, nx, ny, k_start, k_end, stride_z));
 
     if (stats) {
         stats->initial_residual = initial_res;
@@ -505,10 +556,11 @@ static cfd_status_t cg_neon_solve(
     for (iter = 0; iter < params->max_iterations; iter++) {
         /* Compute Ap = A * p */
         apply_laplacian_neon(p, Ap, nx, ny,
-                                  ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->two_vec);
+                                  ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->dz2_inv_vec,
+                                  ctx->two_vec, k_start, k_end, stride_z);
 
         /* alpha = rho / (p, Ap) */
-        double p_dot_Ap = dot_product_neon(p, Ap, nx, ny);
+        double p_dot_Ap = dot_product_neon(p, Ap, nx, ny, k_start, k_end, stride_z);
 
         /* Check for breakdown (p_dot_Ap should be positive for SPD) */
         CG_CHECK_BREAKDOWN(p_dot_Ap, stats, iter, res_norm, start_time);
@@ -516,24 +568,25 @@ static cfd_status_t cg_neon_solve(
         double alpha = rho / p_dot_Ap;
 
         /* x_{k+1} = x_k + alpha * p */
-        axpy_neon(alpha, p, x, nx, ny);
+        axpy_neon(alpha, p, x, nx, ny, k_start, k_end, stride_z);
 
         /* r_{k+1} = r_k - alpha * Ap */
-        axpy_neon(-alpha, Ap, r, nx, ny);
+        axpy_neon(-alpha, Ap, r, nx, ny, k_start, k_end, stride_z);
 
         /* Compute rho_new and update search direction */
         double rho_new;
         if (use_precond) {
             /* z_{k+1} = M^{-1} r_{k+1} */
-            apply_jacobi_precond_neon(r, z, nx, ny, ctx->diag_inv_vec, diag_inv);
+            apply_jacobi_precond_neon(r, z, nx, ny, ctx->diag_inv_vec, diag_inv,
+                                          k_start, k_end, stride_z);
             /* rho_new = (r_{k+1}, z_{k+1}) */
-            rho_new = dot_product_neon(r, z, nx, ny);
+            rho_new = dot_product_neon(r, z, nx, ny, k_start, k_end, stride_z);
         } else {
             /* rho_new = (r_{k+1}, r_{k+1}) */
-            rho_new = dot_product_neon(r, r, nx, ny);
+            rho_new = dot_product_neon(r, r, nx, ny, k_start, k_end, stride_z);
         }
 
-        res_norm = sqrt(dot_product_neon(r, r, nx, ny));
+        res_norm = sqrt(dot_product_neon(r, r, nx, ny, k_start, k_end, stride_z));
 
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {
@@ -555,9 +608,9 @@ static cfd_status_t cg_neon_solve(
 
         /* p_{k+1} = (z or r)_{k+1} + beta * p_k */
         if (use_precond) {
-            update_search_direction_neon(z, p, beta, nx, ny);
+            update_search_direction_neon(z, p, beta, nx, ny, k_start, k_end, stride_z);
         } else {
-            update_search_direction_neon(r, p, beta, nx, ny);
+            update_search_direction_neon(r, p, beta, nx, ny, k_start, k_end, stride_z);
         }
 
         rho = rho_new;
@@ -569,7 +622,7 @@ static cfd_status_t cg_neon_solve(
     }
 
     /* Apply final boundary conditions */
-    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+    poisson_solver_apply_bc(solver, x);
 
     double end_time = poisson_solver_get_time_ms();
 
