@@ -52,7 +52,6 @@ typedef struct {
     double* p_new;
     double* rhs;
     double* u_new;  /* used as p_temp for Poisson solver */
-    double* v_new;
     size_t nx;
     size_t ny;
     size_t nz;
@@ -123,10 +122,9 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     ctx->p_new  = (double*)cfd_aligned_malloc(size);
     ctx->rhs    = (double*)cfd_aligned_malloc(size);
     ctx->u_new  = (double*)cfd_aligned_malloc(size);
-    ctx->v_new  = (double*)cfd_aligned_malloc(size);
 
     if (!ctx->u_star || !ctx->v_star || !ctx->w_star || !ctx->p_new ||
-        !ctx->rhs || !ctx->u_new || !ctx->v_new) {
+        !ctx->rhs || !ctx->u_new) {
         if (ctx->u_star) {
             cfd_aligned_free(ctx->u_star);
         }
@@ -144,9 +142,6 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         }
         if (ctx->u_new) {
             cfd_aligned_free(ctx->u_new);
-        }
-        if (ctx->v_new) {
-            cfd_aligned_free(ctx->v_new);
         }
         cfd_free(ctx);
         return CFD_ERROR_NOMEM;
@@ -167,7 +162,6 @@ void projection_simd_destroy(struct NSSolver* solver) {
             cfd_aligned_free(ctx->p_new);
             cfd_aligned_free(ctx->rhs);
             cfd_aligned_free(ctx->u_new);
-            cfd_aligned_free(ctx->v_new);
         }
         cfd_free(ctx);
         solver->context = NULL;
