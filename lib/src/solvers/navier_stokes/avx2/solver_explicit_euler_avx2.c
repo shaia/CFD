@@ -497,6 +497,10 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
 
     explicit_euler_simd_context* ctx = (explicit_euler_simd_context*)solver->context;
 
+    if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
+        return CFD_ERROR_INVALID;
+    }
+
     if (field->nx != ctx->nx || field->ny != ctx->ny || field->nz != ctx->nz) {
         return CFD_ERROR_INVALID;
     }

@@ -654,7 +654,7 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
     if (!solver || !g) {
         return CFD_ERROR_INVALID;
     }
-    if (g->nx < 3 || g->ny < 3) {
+    if (g->nx < 3 || g->ny < 3 || (g->nz > 1 && g->nz < 3)) {
         return CFD_ERROR_INVALID;
     }
 
@@ -758,7 +758,7 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
     if (!solver || !solver->context || !field || !g || !params) {
         return CFD_ERROR_INVALID;
     }
-    if (field->nx < 3 || field->ny < 3) {
+    if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
         return CFD_ERROR_INVALID;
     }
 
@@ -806,7 +806,7 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
     if (!solver || !solver->context || !field || !g || !params) {
         return CFD_ERROR_INVALID;
     }
-    if (field->nx < 3 || field->ny < 3) {
+    if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
         return CFD_ERROR_INVALID;
     }
 
