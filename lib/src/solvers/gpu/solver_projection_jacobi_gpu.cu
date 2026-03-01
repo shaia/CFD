@@ -424,6 +424,8 @@ int gpu_should_use(const gpu_config_t* config, size_t nx, size_t ny, size_t nz, 
         return 0;
     if (!gpu_is_available())
         return 0;
+    if (nz == 2)
+        return 0;  // nz==2 invalid: need nz==1 (2D) or nz>=3 (3D)
     if (nx * ny * nz < config->min_grid_size)
         return 0;
     if (num_steps < config->min_steps)
@@ -434,6 +436,10 @@ int gpu_should_use(const gpu_config_t* config, size_t nx, size_t ny, size_t nz, 
 gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, size_t nz, const gpu_config_t* config) {
     if (!gpu_is_available())
         return nullptr;
+    if (nz == 2) {
+        cfd_set_error(CFD_ERROR_INVALID, "GPU solver requires nz==1 (2D) or nz>=3 (3D), got nz==2");
+        return nullptr;
+    }
     struct gpu_solver_context_impl* ctx =
         (struct gpu_solver_context_impl*)cfd_calloc(1, sizeof(struct gpu_solver_context_impl));
     if (!ctx)
