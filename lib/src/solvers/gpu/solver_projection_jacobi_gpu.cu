@@ -65,10 +65,8 @@ struct gpu_solver_context_impl {
     double* d_residual;
     double* d_x;
     double* d_y;
-    double* d_z;
     double* d_dx;
     double* d_dy;
-    double* d_dz;
     // Boundary value storage for preserving caller-set BCs
     double* d_u_bc;  // Stores u boundary values from initial upload
     double* d_v_bc;  // Stores v boundary values from initial upload
@@ -487,8 +485,6 @@ gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, size_t nz, const g
     cudaEventCreate(&ctx->start_event);
     cudaEventCreate(&ctx->stop_event);
     size_t bytes = ctx->size * sizeof(double);
-    size_t nz_coords = (nz > 1) ? nz : 0;
-    size_t nz_spacing = (nz > 1) ? (nz - 1) : 0;
     if (cudaMalloc(&ctx->d_u, bytes) != cudaSuccess ||
         cudaMalloc(&ctx->d_v, bytes) != cudaSuccess ||
         cudaMalloc(&ctx->d_w, bytes) != cudaSuccess ||
@@ -506,17 +502,15 @@ gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, size_t nz, const g
         cudaMalloc(&ctx->d_dy, (ny - 1) * sizeof(double)) != cudaSuccess ||
         cudaMalloc(&ctx->d_u_bc, bytes) != cudaSuccess ||
         cudaMalloc(&ctx->d_v_bc, bytes) != cudaSuccess ||
-        cudaMalloc(&ctx->d_w_bc, bytes) != cudaSuccess ||
-        (nz_coords > 0 && cudaMalloc(&ctx->d_z, nz_coords * sizeof(double)) != cudaSuccess) ||
-        (nz_spacing > 0 && cudaMalloc(&ctx->d_dz, nz_spacing * sizeof(double)) != cudaSuccess)) {
+        cudaMalloc(&ctx->d_w_bc, bytes) != cudaSuccess) {
         gpu_solver_destroy((gpu_solver_context_t*)ctx);
         return nullptr;
     }
     ctx->memory_allocated = 1;
     ctx->initialized = 1;
-    // 11 field-sized buffers: u,v,w,p,rho,u_new,v_new,w_new,p_new,rhs + u_bc,v_bc,w_bc = 13
+    // 13 field-sized buffers + coordinate/spacing arrays + 1 residual scalar
     ctx->stats.memory_allocated =
-        bytes * 13 + (nx + ny + nz_coords + nx - 1 + ny - 1 + nz_spacing + 1) * sizeof(double);
+        bytes * 13 + (nx + ny + nx - 1 + ny - 1 + 1) * sizeof(double);
     return (gpu_solver_context_t*)ctx;
 }
 
@@ -537,10 +531,8 @@ void gpu_solver_destroy(gpu_solver_context_t* ctx_void) {
     cudaFree(ctx->d_residual);
     cudaFree(ctx->d_x);
     cudaFree(ctx->d_y);
-    cudaFree(ctx->d_z);
     cudaFree(ctx->d_dx);
     cudaFree(ctx->d_dy);
-    cudaFree(ctx->d_dz);
     cudaFree(ctx->d_u_bc);
     cudaFree(ctx->d_v_bc);
     cudaFree(ctx->d_w_bc);
