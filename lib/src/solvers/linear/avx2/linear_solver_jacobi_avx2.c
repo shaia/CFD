@@ -45,9 +45,15 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
-    double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2)) */
+    double inv_dz2;    /* 1/dz^2 (0.0 for 2D) */
+    double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2 + inv_dz2)) */
+    size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
+    size_t k_start;    /* first interior k index */
+    size_t k_end;      /* one-past-last interior k index */
+    size_t nz;         /* grid points in z */
     __m256d dx2_inv_vec;
     __m256d dy2_inv_vec;
+    __m256d dz2_inv_vec;
     __m256d neg_inv_factor_vec;
     int initialized;
 } jacobi_avx2_context_t;
@@ -69,8 +75,7 @@ static cfd_status_t jacobi_avx2_init(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)nx; (void)ny; (void)nz; (void)params;
-    (void)dz;
+    (void)nx; (void)ny; (void)params;
 
     /* Use aligned allocation for struct containing __m256d members */
     jacobi_avx2_context_t* ctx = (jacobi_avx2_context_t*)cfd_aligned_calloc(1, sizeof(jacobi_avx2_context_t));
@@ -80,12 +85,17 @@ static cfd_status_t jacobi_avx2_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
-    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2);
+    ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
+    ctx->nz = nz;
+    poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
+
+    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
     ctx->inv_factor = 1.0 / factor;
 
     /* Pre-compute SIMD vectors */
     ctx->dx2_inv_vec = _mm256_set1_pd(1.0 / ctx->dx2);
     ctx->dy2_inv_vec = _mm256_set1_pd(1.0 / ctx->dy2);
+    ctx->dz2_inv_vec = _mm256_set1_pd(ctx->inv_dz2);
     ctx->neg_inv_factor_vec = _mm256_set1_pd(-ctx->inv_factor);
 
     ctx->initialized = 1;
@@ -117,66 +127,73 @@ static cfd_status_t jacobi_avx2_iterate(
     double dx2 = ctx->dx2;
     double dy2 = ctx->dy2;
     double inv_factor = ctx->inv_factor;
+    size_t stride_z = ctx->stride_z;
+    double inv_dz2 = ctx->inv_dz2;
+    size_t nz = ctx->nz;
 
     double* p_old = x;
     double* p_new = x_temp;
 
     int ny_int = size_to_int(ny);
-    int nx_int = size_to_int(nx);
-    int j;
-    (void)nx_int;  /* suppress unused variable warning */
 
-    /* Process interior rows with OpenMP parallelization */
-    #pragma omp parallel for schedule(static)
-    for (j = 1; j < ny_int - 1; j++) {
-        size_t i = 1;
+    for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
+        int j;
 
-        /* SIMD loop: process 4 doubles at a time */
-        for (; i + 4 <= nx - 1; i += 4) {
-            size_t idx = IDX_2D(i, (size_t)j, nx);
+        /* Process interior rows with OpenMP parallelization */
+        #pragma omp parallel for schedule(static)
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t i = 1;
 
-            /* Load neighbors */
-            __m256d p_xp = _mm256_loadu_pd(&p_old[idx + 1]);   /* x+1 */
-            __m256d p_xm = _mm256_loadu_pd(&p_old[idx - 1]);   /* x-1 */
-            __m256d p_yp = _mm256_loadu_pd(&p_old[idx + nx]);  /* y+1 */
-            __m256d p_ym = _mm256_loadu_pd(&p_old[idx - nx]);  /* y-1 */
-            __m256d rhs_vec = _mm256_loadu_pd(&rhs[idx]);
+            /* SIMD loop: process 4 doubles at a time */
+            for (; i + 4 <= nx - 1; i += 4) {
+                size_t idx = k * stride_z + IDX_2D(i, (size_t)j, nx);
 
-            /* Sum neighbors in each direction */
-            __m256d sum_x = _mm256_add_pd(p_xp, p_xm);
-            __m256d sum_y = _mm256_add_pd(p_yp, p_ym);
+                /* Load neighbors */
+                __m256d p_xp = _mm256_loadu_pd(&p_old[idx + 1]);        /* x+1 */
+                __m256d p_xm = _mm256_loadu_pd(&p_old[idx - 1]);        /* x-1 */
+                __m256d p_yp = _mm256_loadu_pd(&p_old[idx + nx]);       /* y+1 */
+                __m256d p_ym = _mm256_loadu_pd(&p_old[idx - nx]);       /* y-1 */
+                __m256d p_zp = _mm256_loadu_pd(&p_old[idx + stride_z]); /* z+1 */
+                __m256d p_zm = _mm256_loadu_pd(&p_old[idx - stride_z]); /* z-1 */
+                __m256d rhs_vec = _mm256_loadu_pd(&rhs[idx]);
 
-            /* Divide by dx^2 and dy^2 */
-            __m256d term_x = _mm256_mul_pd(sum_x, ctx->dx2_inv_vec);
-            __m256d term_y = _mm256_mul_pd(sum_y, ctx->dy2_inv_vec);
+                /* Sum neighbors in each direction */
+                __m256d sum_x = _mm256_add_pd(p_xp, p_xm);
+                __m256d sum_y = _mm256_add_pd(p_yp, p_ym);
+                __m256d sum_z = _mm256_add_pd(p_zp, p_zm);
 
-            /* Compute: -(rhs - term_x - term_y) * inv_factor */
-            __m256d sum_terms = _mm256_add_pd(term_x, term_y);
-            __m256d diff = _mm256_sub_pd(rhs_vec, sum_terms);
-            __m256d p_result = _mm256_mul_pd(diff, ctx->neg_inv_factor_vec);
+                /* Divide by dx^2, dy^2, and dz^2 */
+                __m256d term_x = _mm256_mul_pd(sum_x, ctx->dx2_inv_vec);
+                __m256d term_y = _mm256_mul_pd(sum_y, ctx->dy2_inv_vec);
+                __m256d term_z = _mm256_mul_pd(sum_z, ctx->dz2_inv_vec);
 
-            /* Store result */
-            _mm256_storeu_pd(&p_new[idx], p_result);
-        }
+                /* Compute: -(rhs - term_x - term_y - term_z) * inv_factor */
+                __m256d sum_terms = _mm256_add_pd(_mm256_add_pd(term_x, term_y), term_z);
+                __m256d diff = _mm256_sub_pd(rhs_vec, sum_terms);
+                __m256d p_result = _mm256_mul_pd(diff, ctx->neg_inv_factor_vec);
 
-        /* Scalar remainder */
-        for (; i < nx - 1; i++) {
-            size_t idx = IDX_2D(i, (size_t)j, nx);
-            double p_result = -(rhs[idx]
-                - (p_old[idx + 1] + p_old[idx - 1]) / dx2
-                - (p_old[idx + nx] + p_old[idx - nx]) / dy2) * inv_factor;
-            p_new[idx] = p_result;
+                /* Store result */
+                _mm256_storeu_pd(&p_new[idx], p_result);
+            }
+
+            /* Scalar remainder */
+            for (; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, (size_t)j, nx);
+                double p_result = -(rhs[idx]
+                    - (p_old[idx + 1] + p_old[idx - 1]) / dx2
+                    - (p_old[idx + nx] + p_old[idx - nx]) / dy2
+                    - (p_old[idx + stride_z] + p_old[idx - stride_z]) * inv_dz2
+                    ) * inv_factor;
+                p_new[idx] = p_result;
+            }
         }
     }
 
-    /* Copy result back to x (parallel) */
-    #pragma omp parallel for schedule(static)
-    for (j = 0; j < ny_int; j++) {
-        memcpy(&x[(size_t)j * nx], &x_temp[(size_t)j * nx], nx * sizeof(double));
-    }
+    /* Copy result back to x (full 3D volume) */
+    memcpy(x, x_temp, nx * ny * nz * sizeof(double));
 
-    /* Apply boundary conditions (use SIMD BC if available) */
-    bc_apply_scalar_simd(x, nx, ny, BC_TYPE_NEUMANN);
+    /* Apply boundary conditions */
+    poisson_solver_apply_bc(solver, x);
 
     /* Compute residual if requested */
     if (residual) {

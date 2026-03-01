@@ -323,13 +323,188 @@ void test_3d_rk2_backward_compat(void) {
 }
 
 /* ========================================================================
+ * 3D QUIESCENT TESTS — SIMD (_optimized) BACKENDS
+ * Skip gracefully if SIMD backend is unavailable.
+ * ======================================================================== */
+
+static void run_3d_quiescent_optimized(const char* solver_name, const char* label) {
+    printf("\n=== Test: 3D %s Quiescent ===\n", label);
+
+    size_t nx = 8, ny = 8, nz = 8;
+    grid* g = grid_create(nx, ny, nz, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* field = flow_field_create(nx, ny, nz);
+    TEST_ASSERT_NOT_NULL(field);
+    init_quiescent_3d(field);
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.dt = 1e-4;
+    params.source_amplitude_u = 0.0;
+    params.source_amplitude_v = 0.0;
+
+    cfd_status_t status = run_solver_steps(solver_name, field, g, &params, 5);
+    if (status == CFD_ERROR_UNSUPPORTED || status == CFD_ERROR_NOT_FOUND) {
+        printf("  Solver unavailable — skipping\n");
+        flow_field_destroy(field);
+        grid_destroy(g);
+        TEST_PASS();
+        return;
+    }
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    size_t total = nx * ny * nz;
+    double max_vel = 0.0;
+    for (size_t i = 0; i < total; i++) {
+        double v2 = field->u[i] * field->u[i] + field->v[i] * field->v[i] +
+                    field->w[i] * field->w[i];
+        if (v2 > max_vel) max_vel = v2;
+    }
+    max_vel = sqrt(max_vel);
+    printf("  Max velocity magnitude: %.2e (expect ~0)\n", max_vel);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-6, 0.0, max_vel);
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+    printf("PASSED\n");
+}
+
+void test_3d_explicit_euler_optimized_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+                               "Explicit Euler Optimized");
+}
+
+void test_3d_projection_optimized_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
+                               "Projection Optimized");
+}
+
+void test_3d_rk2_optimized_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_RK2_OPTIMIZED,
+                               "RK2 Optimized");
+}
+
+/* ========================================================================
+ * SIMD vs SCALAR CONSISTENCY — 3D
+ * Verify SIMD _optimized produces similar results to scalar on 3D grid.
+ * ======================================================================== */
+
+static void run_3d_simd_vs_scalar(const char* scalar_name, const char* simd_name,
+                                   const char* label) {
+    printf("\n=== Test: 3D %s SIMD vs Scalar ===\n", label);
+
+    size_t nx = 8, ny = 8, nz = 8;
+
+    /* Run scalar */
+    grid* g1 = grid_create(nx, ny, nz, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NOT_NULL(g1);
+    grid_initialize_uniform(g1);
+    flow_field* f1 = flow_field_create(nx, ny, nz);
+    TEST_ASSERT_NOT_NULL(f1);
+    init_quiescent_3d(f1);
+    /* Add small perturbation so there's something to compare */
+    size_t total = nx * ny * nz;
+    size_t plane = nx * ny;
+    for (size_t k = 1; k < nz - 1; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * plane) + (j * nx) + i;
+                double x = (double)i / (double)(nx - 1);
+                double y = (double)j / (double)(ny - 1);
+                f1->u[idx] = 0.01 * sin(M_PI * y);
+                f1->v[idx] = 0.005 * sin(2.0 * M_PI * x);
+            }
+        }
+    }
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.dt = 1e-4;
+    params.source_amplitude_u = 0.0;
+    params.source_amplitude_v = 0.0;
+
+    cfd_status_t s1 = run_solver_steps(scalar_name, f1, g1, &params, 3);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, s1);
+
+    /* Run SIMD */
+    grid* g2 = grid_create(nx, ny, nz, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NOT_NULL(g2);
+    grid_initialize_uniform(g2);
+    flow_field* f2 = flow_field_create(nx, ny, nz);
+    TEST_ASSERT_NOT_NULL(f2);
+    init_quiescent_3d(f2);
+    for (size_t k = 1; k < nz - 1; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * plane) + (j * nx) + i;
+                double x = (double)i / (double)(nx - 1);
+                double y = (double)j / (double)(ny - 1);
+                f2->u[idx] = 0.01 * sin(M_PI * y);
+                f2->v[idx] = 0.005 * sin(2.0 * M_PI * x);
+            }
+        }
+    }
+
+    params.dt = 1e-4;  /* reset after run_solver_steps may modify */
+    cfd_status_t s2 = run_solver_steps(simd_name, f2, g2, &params, 3);
+    if (s2 == CFD_ERROR_UNSUPPORTED || s2 == CFD_ERROR_NOT_FOUND) {
+        printf("  SIMD solver unavailable — skipping\n");
+        flow_field_destroy(f1); grid_destroy(g1);
+        flow_field_destroy(f2); grid_destroy(g2);
+        TEST_PASS();
+        return;
+    }
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, s2);
+
+    /* Compare L2 difference */
+    double diff_u = 0.0, diff_v = 0.0, diff_w = 0.0, norm_u = 0.0;
+    for (size_t i = 0; i < total; i++) {
+        double du = f1->u[i] - f2->u[i];
+        double dv = f1->v[i] - f2->v[i];
+        double dw = f1->w[i] - f2->w[i];
+        diff_u += du * du;
+        diff_v += dv * dv;
+        diff_w += dw * dw;
+        norm_u += f1->u[i] * f1->u[i];
+    }
+    diff_u = sqrt(diff_u / total);
+    diff_v = sqrt(diff_v / total);
+    diff_w = sqrt(diff_w / total);
+    norm_u = sqrt(norm_u / total);
+    printf("  L2 diff u: %.6e, v: %.6e, w: %.6e, norm_u: %.6e\n",
+           diff_u, diff_v, diff_w, norm_u);
+
+    /* Allow moderate tolerance since explicit Euler AVX2 has different clamping */
+    double tol = (norm_u > 1e-15) ? 0.05 * norm_u : 1e-10;
+    TEST_ASSERT_TRUE_MESSAGE(diff_u < tol, "SIMD u differs too much from scalar");
+    TEST_ASSERT_TRUE_MESSAGE(diff_v < tol, "SIMD v differs too much from scalar");
+    TEST_ASSERT_TRUE_MESSAGE(diff_w < tol, "SIMD w differs too much from scalar");
+
+    flow_field_destroy(f1); grid_destroy(g1);
+    flow_field_destroy(f2); grid_destroy(g2);
+    printf("PASSED\n");
+}
+
+void test_3d_explicit_euler_simd_vs_scalar(void) {
+    run_3d_simd_vs_scalar(NS_SOLVER_TYPE_EXPLICIT_EULER,
+                           NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+                           "Explicit Euler");
+}
+
+void test_3d_rk2_simd_vs_scalar(void) {
+    run_3d_simd_vs_scalar(NS_SOLVER_TYPE_RK2,
+                           NS_SOLVER_TYPE_RK2_OPTIMIZED,
+                           "RK2");
+}
+
+/* ========================================================================
  * MAIN
  * ======================================================================== */
 
 int main(void) {
     UNITY_BEGIN();
 
-    /* 3D quiescent tests */
+    /* 3D quiescent tests — scalar */
     RUN_TEST(test_3d_explicit_euler_quiescent);
     RUN_TEST(test_3d_projection_quiescent);
     RUN_TEST(test_3d_rk2_quiescent);
@@ -338,6 +513,15 @@ int main(void) {
     RUN_TEST(test_3d_explicit_euler_backward_compat);
     RUN_TEST(test_3d_projection_backward_compat);
     RUN_TEST(test_3d_rk2_backward_compat);
+
+    /* 3D quiescent tests — SIMD (_optimized) */
+    RUN_TEST(test_3d_explicit_euler_optimized_quiescent);
+    RUN_TEST(test_3d_projection_optimized_quiescent);
+    RUN_TEST(test_3d_rk2_optimized_quiescent);
+
+    /* SIMD vs Scalar consistency on 3D */
+    RUN_TEST(test_3d_explicit_euler_simd_vs_scalar);
+    RUN_TEST(test_3d_rk2_simd_vs_scalar);
 
     return UNITY_END();
 }

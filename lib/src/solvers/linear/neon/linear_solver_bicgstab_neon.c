@@ -19,10 +19,10 @@
 #include <limits.h>
 
 /* Platform detection for NEON + OpenMP
- * CFD_HAS_NEON is set by CMake when ARM64 architecture is detected.
- * This works consistently across all compilers (GCC, Clang, MSVC).
+ * Use compiler-defined architecture macros (matching other NEON solvers
+ * and the SIMD dispatch) instead of CMake-defined CFD_HAS_NEON.
  */
-#if defined(CFD_HAS_NEON) && defined(CFD_ENABLE_OPENMP)
+#if (defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(CFD_ENABLE_OPENMP)
 #define BICGSTAB_HAS_NEON 1
 #include <arm_neon.h>
 #include <omp.h>
