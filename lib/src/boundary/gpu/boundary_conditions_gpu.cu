@@ -7,6 +7,7 @@
 
 #include "cfd/boundary/boundary_conditions_gpu.cuh"
 #include "cfd/core/indexing.h"
+#include <stdio.h>
 
 // Block size for 1D boundary kernels
 #define BC_BLOCK_SIZE 256
