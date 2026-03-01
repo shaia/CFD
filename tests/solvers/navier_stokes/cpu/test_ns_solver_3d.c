@@ -386,13 +386,13 @@ void test_3d_rk2_optimized_quiescent(void) {
 }
 
 /* ========================================================================
- * SIMD vs SCALAR CONSISTENCY — 3D
- * Verify SIMD _optimized produces similar results to scalar on 3D grid.
+ * BACKEND vs SCALAR CONSISTENCY — 3D
+ * Verify alternate backend produces similar results to scalar on 3D grid.
  * ======================================================================== */
 
-static void run_3d_simd_vs_scalar(const char* scalar_name, const char* simd_name,
-                                   const char* label) {
-    printf("\n=== Test: 3D %s SIMD vs Scalar ===\n", label);
+static void run_3d_backend_vs_scalar(const char* scalar_name, const char* alt_name,
+                                      const char* label) {
+    printf("\n=== Test: 3D %s vs Scalar ===\n", label);
 
     size_t nx = 8, ny = 8, nz = 8;
 
@@ -446,9 +446,9 @@ static void run_3d_simd_vs_scalar(const char* scalar_name, const char* simd_name
     }
 
     params.dt = 1e-4;  /* reset after run_solver_steps may modify */
-    cfd_status_t s2 = run_solver_steps(simd_name, f2, g2, &params, 3);
+    cfd_status_t s2 = run_solver_steps(alt_name, f2, g2, &params, 3);
     if (s2 == CFD_ERROR_UNSUPPORTED || s2 == CFD_ERROR_NOT_FOUND) {
-        printf("  SIMD solver unavailable — skipping\n");
+        printf("  Solver unavailable — skipping\n");
         flow_field_destroy(f1); grid_destroy(g1);
         flow_field_destroy(f2); grid_destroy(g2);
         TEST_PASS();
@@ -476,9 +476,13 @@ static void run_3d_simd_vs_scalar(const char* scalar_name, const char* simd_name
 
     /* Allow moderate tolerance since explicit Euler AVX2 has different clamping */
     double tol = (norm_u > 1e-15) ? 0.05 * norm_u : 1e-10;
-    TEST_ASSERT_TRUE_MESSAGE(diff_u < tol, "SIMD u differs too much from scalar");
-    TEST_ASSERT_TRUE_MESSAGE(diff_v < tol, "SIMD v differs too much from scalar");
-    TEST_ASSERT_TRUE_MESSAGE(diff_w < tol, "SIMD w differs too much from scalar");
+    char msg_u[128], msg_v[128], msg_w[128];
+    snprintf(msg_u, sizeof(msg_u), "backend %s: u differs too much from scalar", alt_name);
+    snprintf(msg_v, sizeof(msg_v), "backend %s: v differs too much from scalar", alt_name);
+    snprintf(msg_w, sizeof(msg_w), "backend %s: w differs too much from scalar", alt_name);
+    TEST_ASSERT_TRUE_MESSAGE(diff_u < tol, msg_u);
+    TEST_ASSERT_TRUE_MESSAGE(diff_v < tol, msg_v);
+    TEST_ASSERT_TRUE_MESSAGE(diff_w < tol, msg_w);
 
     flow_field_destroy(f1); grid_destroy(g1);
     flow_field_destroy(f2); grid_destroy(g2);
@@ -486,15 +490,52 @@ static void run_3d_simd_vs_scalar(const char* scalar_name, const char* simd_name
 }
 
 void test_3d_explicit_euler_simd_vs_scalar(void) {
-    run_3d_simd_vs_scalar(NS_SOLVER_TYPE_EXPLICIT_EULER,
-                           NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
-                           "Explicit Euler");
+    run_3d_backend_vs_scalar(NS_SOLVER_TYPE_EXPLICIT_EULER,
+                              NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+                              "Explicit Euler SIMD");
 }
 
 void test_3d_rk2_simd_vs_scalar(void) {
-    run_3d_simd_vs_scalar(NS_SOLVER_TYPE_RK2,
-                           NS_SOLVER_TYPE_RK2_OPTIMIZED,
-                           "RK2");
+    run_3d_backend_vs_scalar(NS_SOLVER_TYPE_RK2,
+                              NS_SOLVER_TYPE_RK2_OPTIMIZED,
+                              "RK2 SIMD");
+}
+
+/* ========================================================================
+ * 3D QUIESCENT TESTS — OMP BACKENDS
+ * Skip gracefully if OMP backend is unavailable.
+ * ======================================================================== */
+
+void test_3d_explicit_euler_omp_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
+                               "Explicit Euler OMP");
+}
+
+void test_3d_projection_omp_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_PROJECTION_OMP,
+                               "Projection OMP");
+}
+
+void test_3d_rk2_omp_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_RK2_OMP,
+                               "RK2 OMP");
+}
+
+/* ========================================================================
+ * OMP vs SCALAR CONSISTENCY — 3D
+ * Verify OMP produces similar results to scalar on 3D grid.
+ * ======================================================================== */
+
+void test_3d_explicit_euler_omp_vs_scalar(void) {
+    run_3d_backend_vs_scalar(NS_SOLVER_TYPE_EXPLICIT_EULER,
+                              NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
+                              "Explicit Euler OMP");
+}
+
+void test_3d_rk2_omp_vs_scalar(void) {
+    run_3d_backend_vs_scalar(NS_SOLVER_TYPE_RK2,
+                              NS_SOLVER_TYPE_RK2_OMP,
+                              "RK2 OMP");
 }
 
 /* ========================================================================
@@ -522,6 +563,15 @@ int main(void) {
     /* SIMD vs Scalar consistency on 3D */
     RUN_TEST(test_3d_explicit_euler_simd_vs_scalar);
     RUN_TEST(test_3d_rk2_simd_vs_scalar);
+
+    /* 3D quiescent tests — OMP */
+    RUN_TEST(test_3d_explicit_euler_omp_quiescent);
+    RUN_TEST(test_3d_projection_omp_quiescent);
+    RUN_TEST(test_3d_rk2_omp_quiescent);
+
+    /* OMP vs Scalar consistency on 3D */
+    RUN_TEST(test_3d_explicit_euler_omp_vs_scalar);
+    RUN_TEST(test_3d_rk2_omp_vs_scalar);
 
     return UNITY_END();
 }
