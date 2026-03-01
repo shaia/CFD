@@ -599,9 +599,10 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
         ctx->d_u, ctx->d_v, ctx->d_w, ctx->d_rhs,
         nx, ny, stride_z, k_start, k_end, inv_2dx, inv_2dy, inv_2dz);
 
+    double ndim = (nz > 1) ? 3.0 : 2.0;
+    double p_relax = 0.1 * dt * (inv_dx2 + inv_dy2 + inv_dz2) / ndim;
     kernel_pressure_update<<<grid_dim, block, 0, ctx->stream>>>(
-        ctx->d_p, ctx->d_rhs, nx, ny, stride_z, k_start, k_end,
-        0.1 * dt / (dx * dx));
+        ctx->d_p, ctx->d_rhs, nx, ny, stride_z, k_start, k_end, p_relax);
     bc_apply_scalar_3d_gpu(ctx->d_p, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
     cudaEventRecord(ctx->stop_event, ctx->stream);
     cudaStreamSynchronize(ctx->stream);
@@ -690,9 +691,14 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
     dim3 grid_dim((nx - 2 + block.x - 1) / block.x, (ny - 2 + block.y - 1) / block.y);
 
     // 1D grid for boundary copy kernel
-    size_t max_bc_dim = nx * nz;
-    if (ny * nz > max_bc_dim) max_bc_dim = ny * nz;
-    if (nx * ny > max_bc_dim) max_bc_dim = nx * ny;
+    size_t max_bc_dim;
+    if (nz == 1) {
+        max_bc_dim = (nx > ny) ? nx : ny;
+    } else {
+        max_bc_dim = nx * nz;
+        if (ny * nz > max_bc_dim) max_bc_dim = ny * nz;
+        if (nx * ny > max_bc_dim) max_bc_dim = nx * ny;
+    }
     int bc_block = 256;
     int bc_grid = (int)((max_bc_dim + bc_block - 1) / bc_block);
 
