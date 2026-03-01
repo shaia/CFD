@@ -232,6 +232,13 @@ cfd_status_t poisson_solver_init(
         return CFD_ERROR_INVALID;
     }
 
+    /* Require at least one interior cell in each active dimension.
+     * For 2D (nz <= 1): nx, ny >= 3.  For 3D (nz > 1): nx, ny, nz >= 3.
+     * Rejects degenerate grids (e.g. nz==2) where k_start==k_end. */
+    if (nx < 3 || ny < 3 || (nz > 1 && nz < 3)) {
+        return CFD_ERROR_INVALID;
+    }
+
     /* OMP backends are 2D-only until Phase 6.
      * SIMD backends were updated for 3D in Phase 5. */
     if (nz > 1 && solver->backend == POISSON_BACKEND_OMP) {
