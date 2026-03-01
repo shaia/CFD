@@ -476,9 +476,13 @@ static void run_3d_backend_vs_scalar(const char* scalar_name, const char* alt_na
 
     /* Allow moderate tolerance since explicit Euler AVX2 has different clamping */
     double tol = (norm_u > 1e-15) ? 0.05 * norm_u : 1e-10;
-    TEST_ASSERT_TRUE_MESSAGE(diff_u < tol, "u differs too much from scalar");
-    TEST_ASSERT_TRUE_MESSAGE(diff_v < tol, "v differs too much from scalar");
-    TEST_ASSERT_TRUE_MESSAGE(diff_w < tol, "w differs too much from scalar");
+    char msg_u[128], msg_v[128], msg_w[128];
+    snprintf(msg_u, sizeof(msg_u), "backend %s: u differs too much from scalar", alt_name);
+    snprintf(msg_v, sizeof(msg_v), "backend %s: v differs too much from scalar", alt_name);
+    snprintf(msg_w, sizeof(msg_w), "backend %s: w differs too much from scalar", alt_name);
+    TEST_ASSERT_TRUE_MESSAGE(diff_u < tol, msg_u);
+    TEST_ASSERT_TRUE_MESSAGE(diff_v < tol, msg_v);
+    TEST_ASSERT_TRUE_MESSAGE(diff_w < tol, msg_w);
 
     flow_field_destroy(f1); grid_destroy(g1);
     flow_field_destroy(f2); grid_destroy(g2);
