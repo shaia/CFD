@@ -71,7 +71,8 @@ static void run_time_varying_case(const char* label,
         apply_walls_and_outlet(sim->field, nx, ny);
 
         /* Step the solver */
-        run_simulation_step(sim);
+        ns_solver_stats_t stats = ns_solver_stats_default();
+        solver_step(sim->solver, sim->field, sim->grid, &sim->params, &stats);
         time += dt;
 
         if (step % print_interval == 0) {
