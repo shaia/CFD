@@ -216,10 +216,22 @@ static inline tg3_result_t tg3_run_simulation(
 
     /* Apply periodic BCs before recording initial metrics so that
      * initial and final metrics are computed on the same basis */
-    bc_apply_scalar_3d(field->u, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
-    bc_apply_scalar_3d(field->v, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
-    bc_apply_scalar_3d(field->w, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
-    bc_apply_scalar_3d(field->p, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
+    {
+        const char* init_bc_fields[] = {"u", "v", "w", "p"};
+        double* init_bc_ptrs[] = {field->u, field->v, field->w, field->p};
+        for (int f = 0; f < 4; f++) {
+            cfd_status_t bc_status = bc_apply_scalar_3d(
+                init_bc_ptrs[f], n, n, n, g->stride_z, BC_TYPE_PERIODIC);
+            if (bc_status != CFD_SUCCESS) {
+                snprintf(result.error_msg, sizeof(result.error_msg),
+                         "Initial BC application failed for '%s': %d",
+                         init_bc_fields[f], bc_status);
+                flow_field_destroy(field);
+                grid_destroy(g);
+                return result;
+            }
+        }
+    }
 
     result.initial_ke = tg3_compute_kinetic_energy(field, g);
     result.initial_max_velocity = tg3_compute_max_velocity(field);
