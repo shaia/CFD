@@ -98,6 +98,7 @@ typedef struct {
     double final_ke;
     double initial_max_velocity;
     double final_max_velocity;
+    double max_w;
 
     int steps_completed;
     double final_time;
@@ -340,6 +341,17 @@ static inline tg3_result_t tg3_run_simulation(
         result.measured_ke_decay = result.final_ke / result.initial_ke;
     }
     result.expected_ke_decay = tg3_ke_decay_factor(result.final_time, nu);
+
+    /* Compute max |w| — analytical w=0, so any nonzero value is numerical error */
+    {
+        size_t total = n * n * n;
+        double mw = 0.0;
+        for (size_t i = 0; i < total; i++) {
+            double aw = fabs(field->w[i]);
+            if (aw > mw) { mw = aw; }
+        }
+        result.max_w = mw;
+    }
 
     result.success = 1;
 

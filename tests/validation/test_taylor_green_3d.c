@@ -102,7 +102,10 @@ void test_3d_w_remains_zero(void) {
     /* The analytical w=0, so any nonzero w is numerical error.
      * We allow a generous tolerance since the projection method
      * on a coarse 3D grid can produce small spurious w. */
-    printf("      (w-velocity verified implicitly via decay and divergence tests)\n");
+    printf("      max|w| = %.2e\n", result.max_w);
+    TEST_ASSERT_DOUBLE_WITHIN_MESSAGE(
+        0.1, 0.0, result.max_w,
+        "w-velocity should remain near zero (analytical w=0)");
 }
 
 /* ============================================================================
