@@ -93,9 +93,9 @@ static void benchmark_method(const char* label,
     memset(p, 0, nx * ny * sizeof(double));
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
-    poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+    cfd_status_t solve_status = poisson_solver_solve(solver, p, p_temp, rhs, &stats);
 
-    double l2_err = compute_l2_error(p, p_exact, nx, ny);
+    double l2_err = (solve_status == CFD_SUCCESS) ? compute_l2_error(p, p_exact, nx, ny) : -1.0;
     const char* status_str = (stats.status == POISSON_CONVERGED) ? "converged" :
                              (stats.status == POISSON_MAX_ITER)  ? "max_iter" :
                              (stats.status == POISSON_DIVERGED)  ? "DIVERGED" : "error";
@@ -126,6 +126,10 @@ int main(void) {
     double* p_exact = (double*)calloc(n, sizeof(double));
     if (!rhs || !p || !p_temp || !p_exact) {
         fprintf(stderr, "Memory allocation failed\n");
+        free(rhs);
+        free(p);
+        free(p_temp);
+        free(p_exact);
         return 1;
     }
 
