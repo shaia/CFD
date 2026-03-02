@@ -607,16 +607,16 @@ Grid 500x500, 100 iterations:
 **Purpose:** Query runtime platform capabilities and demonstrate utility APIs
 
 **What it demonstrates:**
-- SIMD detection: `cfd_detect_simd_arch()`, `cfd_has_avx2()`, `cfd_has_neon()`
+- SIMD detection: `cfd_get_simd_name()`, `cfd_has_avx2()`, `cfd_has_neon()`
 - Backend availability: `bc_backend_available()`, `poisson_solver_backend_available()`
-- Solver enumeration: `simulation_list_solvers()` to list all available solvers
+- Solver enumeration: `cfd_registry_list()` to list all registered solvers
 - Derived fields: `derived_fields_create()`, `derived_fields_compute_statistics()`
 - Error handling: `cfd_get_last_error()`, `cfd_get_error_string()`, `cfd_clear_error()`
 
 **Sections:**
 1. SIMD capabilities (architecture detection)
 2. Backend availability (BC and Poisson solver backends)
-3. Available NS solvers (enumerate via `simulation_list_solvers()`)
+3. Available NS solvers (enumerate via `cfd_registry_list()`)
 4. Derived fields and statistics (compute velocity magnitude and field stats on a small TG vortex)
 5. Error handling patterns (request a nonexistent solver, inspect error state)
 
