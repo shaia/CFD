@@ -285,10 +285,11 @@ ns_solver_stats_t ns_solver_stats_default(void);
 ```c
 #include "cfd/core/grid.h"
 
-// Create uniform grid
-grid_t* grid_create_uniform(size_t nx, size_t ny,
+// Create uniform grid (use nz=1 for 2D)
+grid_t* grid_create_uniform(size_t nx, size_t ny, size_t nz,
                             double xmin, double xmax,
-                            double ymin, double ymax);
+                            double ymin, double ymax,
+                            double zmin, double zmax);
 
 // Create stretched grid
 grid_t* grid_create_stretched(size_t nx, size_t ny,
@@ -302,10 +303,10 @@ void grid_destroy(grid_t* grid);
 
 **Example:**
 ```c
-// 100x50 uniform grid from [0,1] x [0,0.5]
-grid_t* grid = grid_create_uniform(100, 50, 0.0, 1.0, 0.0, 0.5);
+// 100x50 uniform 2D grid from [0,1] x [0,0.5]
+grid_t* grid = grid_create_uniform(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
 
-printf("Grid: %zu x %zu\n", grid->nx, grid->ny);
+printf("Grid: %zu x %zu x %zu\n", grid->nx, grid->ny, grid->nz);
 printf("dx = %f, dy = %f\n", grid->dx, grid->dy);
 
 grid_destroy(grid);
@@ -315,12 +316,16 @@ grid_destroy(grid);
 
 ```c
 typedef struct {
-    size_t nx, ny;      // Grid dimensions
-    double dx, dy;      // Grid spacing
-    double xmin, xmax;  // Domain bounds
-    double ymin, ymax;
-    double* x;          // x-coordinates [nx]
-    double* y;          // y-coordinates [ny]
+    size_t nx, ny, nz;      // Grid dimensions (nz=1 for 2D)
+    double dx, dy, dz;      // Grid spacing
+    double xmin, xmax;      // Domain bounds (x)
+    double ymin, ymax;      // Domain bounds (y)
+    double zmin, zmax;      // Domain bounds (z)
+    size_t stride_z;        // k-stride (nx*ny for 3D, 0 for 2D)
+    double inv_dz2;         // 1/dz² (0.0 for 2D)
+    double* x;              // x-coordinates [nx]
+    double* y;              // y-coordinates [ny]
+    double* z;              // z-coordinates [nz]
 } grid_t;
 ```
 
@@ -345,20 +350,24 @@ void flow_field_destroy(flow_field* field);
 
 ```c
 typedef struct {
-    size_t nx, ny;      // Grid dimensions
-    double* u;          // x-velocity [nx * ny]
-    double* v;          // y-velocity [nx * ny]
-    double* p;          // Pressure [nx * ny]
+    size_t nx, ny, nz;  // Grid dimensions (nz=1 for 2D)
+    double* u;          // x-velocity [nx * ny * nz]
+    double* v;          // y-velocity [nx * ny * nz]
+    double* w;          // z-velocity [nx * ny * nz] (zero for 2D)
+    double* p;          // Pressure [nx * ny * nz]
+    double* rho;        // Density [nx * ny * nz]
+    double* T;          // Temperature [nx * ny * nz]
 } flow_field;
 ```
 
 **Indexing:**
 ```c
-// Row-major ordering: index = i + j * nx
-size_t idx = i + j * field->nx;
-double u_val = field->u[idx];
-double v_val = field->v[idx];
-double p_val = field->p[idx];
+// Row-major ordering
+// 2D: index = i + j * nx (via IDX_2D macro)
+// 3D: index = k * nx * ny + j * nx + i (via IDX_3D macro)
+#include "cfd/core/indexing.h"
+size_t idx = IDX_2D(i, j, field->nx);          // 2D
+size_t idx3d = IDX_3D(i, j, k, field->nx, field->ny); // 3D
 ```
 
 ## Poisson Solver API
@@ -449,9 +458,24 @@ poisson_solver_stats_t poisson_solver_stats_default(void);
 ```c
 #include "cfd/io/vtk_output.h"
 
-cfd_status_t write_to_vtk(flow_field* field, grid_t* grid, const char* filename);
-cfd_status_t write_velocity_vectors_to_vtk(flow_field* field, grid_t* grid,
-                                           const char* filename);
+// Scalar field to VTK (structured points format)
+void write_vtk_output(const char* filename, const char* field_name,
+                      const double* data, size_t nx, size_t ny, size_t nz,
+                      double xmin, double xmax, double ymin, double ymax,
+                      double zmin, double zmax);
+
+// Vector field to VTK (w_data can be NULL for 2D)
+void write_vtk_vector_output(const char* filename, const char* field_name,
+                             const double* u_data, const double* v_data,
+                             const double* w_data, size_t nx, size_t ny, size_t nz,
+                             double xmin, double xmax, double ymin, double ymax,
+                             double zmin, double zmax);
+
+// Full flow field to VTK (velocity, pressure, density, temperature)
+void write_vtk_flow_field(const char* filename, const flow_field* field,
+                          size_t nx, size_t ny, size_t nz,
+                          double xmin, double xmax, double ymin, double ymax,
+                          double zmin, double zmax);
 ```
 
 ### CSV Output

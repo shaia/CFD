@@ -2,7 +2,7 @@
 
 ![CFD Logo](https://raw.githubusercontent.com/shaia/CFD/master/assets/cfd-logo-nbg.png)
 
-A production-grade computational fluid dynamics (CFD) library in C for solving 2D incompressible Navier-Stokes equations.
+A production-grade computational fluid dynamics (CFD) library in C for solving 2D/3D incompressible Navier-Stokes equations.
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
@@ -16,6 +16,7 @@ A production-grade computational fluid dynamics (CFD) library in C for solving 2
 - 🎯 **Validated**: Ghia lid-driven cavity, Taylor-Green vortex benchmarks
 - 📈 **VTK/CSV Output**: Ready for ParaView, VisIt visualization
 - ⚡ **Performance**: SIMD-optimized with runtime CPU detection
+- 🌐 **3D Support**: Full 3D simulations with nz>1, branch-free 2D compatibility
 
 ## Quick Start
 
@@ -70,7 +71,8 @@ int main(void) {
         return 1;
     }
 
-    // Create simulation (100x50 grid, domain [0,1] x [0,0.5])
+    // Create 2D simulation (100x50 grid, domain [0,1] x [0,0.5])
+    // For 3D: use nz>1 and set z-range, e.g. init_simulation(64, 64, 64, ...)
     simulation_data* sim = init_simulation(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
     if (!sim) {
         fprintf(stderr, "Failed to create simulation\n");
@@ -151,13 +153,21 @@ int main(void) {
 ```
 Simplest possible usage - 50 lines showing library basics.
 
-### 2. Lid-Driven Cavity
+### 2. Minimal 3D Example
+
+```bash
+./build/Release/minimal_example_3d
+```
+3D simulation on a 16×16×16 grid — demonstrates 3D API usage.
+
+### 3. Lid-Driven Cavity
+
 ```bash
 ./build/Release/lid_driven_cavity 100
 ```
 Classic CFD benchmark validated against Ghia et al. (1982).
 
-### 3. Custom Boundary Conditions
+### 4. Custom Boundary Conditions
 ```bash
 ./build/Release/custom_boundary_conditions
 ```
@@ -189,7 +199,7 @@ ctest --test-dir build -C Debug --output-on-failure
 ctest --test-dir build -C Debug -R "Validation" --output-on-failure
 ```
 
-58 tests covering:
+60+ tests covering:
 - Unit tests for core functionality
 - Solver accuracy and convergence
 - Physics validation benchmarks

@@ -69,9 +69,10 @@ int main(void) {
             snprintf(filename, sizeof(filename),
                      "output/step_%04d.vtk", step);
             write_vtk_flow_field(filename, sim->field,
-                                sim->grid->nx, sim->grid->ny,
+                                sim->grid->nx, sim->grid->ny, sim->grid->nz,
                                 sim->grid->xmin, sim->grid->xmax,
-                                sim->grid->ymin, sim->grid->ymax);
+                                sim->grid->ymin, sim->grid->ymax,
+                                sim->grid->zmin, sim->grid->zmax);
         }
     }
 
@@ -95,7 +96,53 @@ cd build/Release
 
 ---
 
-### 2. basic_simulation.c
+### 2. minimal_example_3d.c
+
+**Purpose:** Demonstrates 3D simulation on a small grid
+
+**What it demonstrates:**
+
+- 3D grid initialization with `nz > 1`
+- Running 3D simulation steps
+- 3D VTK output (STRUCTURED_POINTS with z-dimension)
+- All solver backends work identically in 3D
+
+**Code (~55 lines):**
+```c
+#include "cfd/api/simulation_api.h"
+
+int main() {
+    // Initialize 3D simulation: 16x16x16 grid on unit cube
+    size_t nx = 16, ny = 16, nz = 16;
+    simulation_data* sim = init_simulation(nx, ny, nz, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+
+    // Configure output
+    simulation_set_output_dir(sim, "../../artifacts");
+    simulation_set_run_prefix(sim, "minimal_3d");
+    simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, 5, "velocity_mag");
+
+    // Run 10 steps
+    for (int step = 0; step < 10; step++) {
+        run_simulation_step(sim);
+        simulation_write_outputs(sim, step);
+    }
+
+    free_simulation(sim);
+    return 0;
+}
+```
+
+**Key point:** When `nz=1`, the library produces bit-identical results to 2D. The branch-free `stride_z=0` pattern means all 3D code collapses to 2D with zero overhead.
+
+**Run:**
+```bash
+cd build/Release
+./minimal_example_3d
+```
+
+---
+
+### 3. basic_simulation.c
 
 **Purpose:** Complete simulation workflow with proper error handling
 
@@ -148,7 +195,7 @@ cfd_status_t run_simulation(simulation_data* sim, int max_steps) {
 
 ---
 
-### 3. solver_selection.c
+### 4. solver_selection.c
 
 **Purpose:** Demonstrate solver switching and discovery
 
@@ -199,7 +246,7 @@ simulation_data* sim = init_simulation_with_solver(
 
 ---
 
-### 4. performance_comparison.c
+### 5. performance_comparison.c
 
 **Purpose:** Benchmark different solvers and grid sizes
 
@@ -283,7 +330,7 @@ Memory usage: 0.19 MB
 
 ---
 
-### 5. custom_boundary_conditions.c
+### 6. custom_boundary_conditions.c
 
 **Purpose:** Flow around obstacles with complex geometry
 
@@ -368,7 +415,7 @@ void apply_cylinder_boundary(flow_field* field, grid_t* grid,
 
 ---
 
-### 6. lid_driven_cavity.c
+### 7. lid_driven_cavity.c
 
 **Purpose:** Classic CFD benchmark - lid-driven cavity flow
 
@@ -426,7 +473,7 @@ For Re=100, centerline velocities should match Ghia et al. within ~1%.
 
 ---
 
-### 7. csv_data_export.c
+### 8. csv_data_export.c
 
 **Purpose:** Export simulation data for external analysis
 
@@ -474,7 +521,7 @@ for (int step = 0; step < max_steps; step++) {
 
 ---
 
-### 8. velocity_visualization.c
+### 9. velocity_visualization.c
 
 **Purpose:** Generate VTK files optimized for velocity visualization
 
@@ -491,7 +538,7 @@ for (int step = 0; step < max_steps; step++) {
 
 ---
 
-### 9. runtime_comparison.c (CUDA)
+### 10. runtime_comparison.c (CUDA)
 
 **Purpose:** Comprehensive CPU vs GPU benchmarking
 
@@ -607,9 +654,10 @@ for (int step = 0; step < max_steps; step++) {
         snprintf(filename, sizeof(filename),
                  "%s/result_%04d.vtk", output_dir, step);
         write_vtk_flow_field(filename, sim->field,
-                           sim->grid->nx, sim->grid->ny,
+                           sim->grid->nx, sim->grid->ny, sim->grid->nz,
                            sim->grid->xmin, sim->grid->xmax,
-                           sim->grid->ymin, sim->grid->ymax);
+                           sim->grid->ymin, sim->grid->ymax,
+                           sim->grid->zmin, sim->grid->zmax);
     }
 }
 ```
