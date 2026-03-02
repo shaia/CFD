@@ -145,7 +145,7 @@ void test_csv_timeseries_has_header(void) {
                          test_grid->ny, 1);
 
     TEST_ASSERT_TRUE(file_contains(filename, "step,time,dt"));
-    TEST_ASSERT_TRUE(file_contains(filename, "max_u,max_v,max_p"));
+    TEST_ASSERT_TRUE(file_contains(filename, "max_u,max_v,max_w,max_p"));
     TEST_ASSERT_TRUE(file_contains(filename, "iterations,residual"));
 
     remove(filename);
@@ -209,7 +209,7 @@ void test_csv_centerline_horizontal(void) {
                          test_grid->nx, test_grid->ny, PROFILE_HORIZONTAL);
 
     TEST_ASSERT_TRUE(file_exists(filename));
-    TEST_ASSERT_TRUE(file_contains(filename, "x,u,v,p,rho,T"));
+    TEST_ASSERT_TRUE(file_contains(filename, "x,u,v,w,p,rho,T"));
 
     // Should have header + nx data points
     int lines = count_file_lines(filename);
@@ -227,7 +227,7 @@ void test_csv_centerline_vertical(void) {
                          test_grid->nx, test_grid->ny, PROFILE_VERTICAL);
 
     TEST_ASSERT_TRUE(file_exists(filename));
-    TEST_ASSERT_TRUE(file_contains(filename, "y,u,v,p,rho,T"));
+    TEST_ASSERT_TRUE(file_contains(filename, "y,u,v,w,p,rho,T"));
 
     // Should have header + ny data points
     int lines = count_file_lines(filename);
