@@ -120,7 +120,11 @@ static tg_result_t run_case(size_t n, const char* solver_type,
 
         apply_periodic_bcs(sim->field);
         ns_solver_stats_t stats = ns_solver_stats_default();
-        solver_step(sim->solver, sim->field, sim->grid, &sim->params, &stats);
+        cfd_status_t status = solver_step(sim->solver, sim->field, sim->grid, &sim->params, &stats);
+        if (status != CFD_SUCCESS) {
+            free_simulation(sim);
+            return res;  /* l2_error stays -1.0 → reported as FAILED */
+        }
         t += step_dt;
     }
 
@@ -200,7 +204,13 @@ int main(void) {
         if (step < num_steps) {
             apply_periodic_bcs(sim->field);
             ns_solver_stats_t stats = ns_solver_stats_default();
-            solver_step(sim->solver, sim->field, sim->grid, &sim->params, &stats);
+            cfd_status_t status = solver_step(sim->solver, sim->field, sim->grid,
+                                              &sim->params, &stats);
+            if (status != CFD_SUCCESS) {
+                fprintf(stderr, "  Error: solver_step failed at step %d\n", step);
+                free_simulation(sim);
+                return 1;
+            }
         }
     }
     free_simulation(sim);
