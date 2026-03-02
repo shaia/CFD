@@ -110,7 +110,8 @@ void vtk_write_scalar_field(const char* run_dir, const char* prefix, int step,
 void write_vtk_output(const char* filename, const char* field_name, const double* data, size_t nx,
                       size_t ny, size_t nz, double xmin, double xmax, double ymin, double ymax,
                       double zmin, double zmax) {
-    if (!filename || !field_name || !data || nx < 2 || ny < 2 || nz < 1) {
+    if (!filename || !field_name || !data || nx < 2 || ny < 2 || nz < 1 ||
+        xmax <= xmin || ymax <= ymin || (nz > 1 && zmax <= zmin)) {
         return;
     }
 
@@ -153,7 +154,8 @@ void write_vtk_vector_output(const char* filename, const char* field_name, const
                              const double* v_data, const double* w_data, size_t nx, size_t ny,
                              size_t nz, double xmin, double xmax, double ymin, double ymax,
                              double zmin, double zmax) {
-    if (!filename || !field_name || !u_data || !v_data || nx < 2 || ny < 2 || nz < 1) {
+    if (!filename || !field_name || !u_data || !v_data || nx < 2 || ny < 2 || nz < 1 ||
+        xmax <= xmin || ymax <= ymin || (nz > 1 && zmax <= zmin)) {
         return;
     }
 
@@ -194,7 +196,8 @@ void write_vtk_vector_output(const char* filename, const char* field_name, const
 void write_vtk_flow_field(const char* filename, const flow_field* field, size_t nx, size_t ny,
                           size_t nz, double xmin, double xmax, double ymin, double ymax,
                           double zmin, double zmax) {
-    if (!filename || !field || nx < 2 || ny < 2 || nz < 1) {
+    if (!filename || !field || nx < 2 || ny < 2 || nz < 1 ||
+        xmax <= xmin || ymax <= ymin || (nz > 1 && zmax <= zmin)) {
         return;
     }
 
