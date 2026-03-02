@@ -61,6 +61,13 @@ static void run_time_varying_case(const char* label,
     sim->params.source_amplitude_u = 0.0;
     sim->params.source_amplitude_v = 0.0;
 
+    /* Zero the flow field so inlet profiles are the only driver */
+    for (size_t idx = 0; idx < nx * ny; idx++) {
+        sim->field->u[idx] = 0.0;
+        sim->field->v[idx] = 0.0;
+        sim->field->p[idx] = 0.0;
+    }
+
     double time = 0.0;
     for (int step = 0; step < num_steps; step++) {
         /* Apply time-varying inlet BC */
