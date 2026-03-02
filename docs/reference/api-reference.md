@@ -307,7 +307,7 @@ void grid_destroy(grid_t* grid);
 grid_t* grid = grid_create_uniform(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
 
 printf("Grid: %zu x %zu x %zu\n", grid->nx, grid->ny, grid->nz);
-printf("dx = %f, dy = %f\n", grid->dx, grid->dy);
+printf("dx = %f, dy = %f\n", grid->dx[0], grid->dy[0]);
 
 grid_destroy(grid);
 ```
@@ -316,17 +316,24 @@ grid_destroy(grid);
 
 ```c
 typedef struct {
-    size_t nx, ny, nz;      // Grid dimensions (nz=1 for 2D)
-    double dx, dy, dz;      // Grid spacing
-    double xmin, xmax;      // Domain bounds (x)
-    double ymin, ymax;      // Domain bounds (y)
-    double zmin, zmax;      // Domain bounds (z)
-    size_t stride_z;        // k-stride (nx*ny for 3D, 0 for 2D)
-    double inv_dz2;         // 1/dz² (0.0 for 2D)
-    double* x;              // x-coordinates [nx]
-    double* y;              // y-coordinates [ny]
-    double* z;              // z-coordinates [nz]
-} grid_t;
+    double* x;        // x-coordinates [nx]
+    double* y;        // y-coordinates [ny]
+    double* dx;       // x-direction cell sizes [nx-1]
+    double* dy;       // y-direction cell sizes [ny-1]
+    size_t nx, ny;    // Grid dimensions (x, y)
+    double xmin, xmax;  // Domain bounds (x)
+    double ymin, ymax;  // Domain bounds (y)
+
+    // 3D extension (nz=1 reproduces 2D behavior)
+    double* z;        // z-coordinates [nz] (NULL when nz==1)
+    double* dz;       // z-direction cell sizes [nz-1] (NULL when nz==1)
+    size_t nz;        // Number of z-points (1 for 2D)
+    double zmin, zmax;  // Domain bounds (z) (0.0 for 2D)
+    size_t stride_z;  // nx*ny when nz>1, 0 when nz==1
+    double inv_dz2;   // 1/(dz*dz) when nz>1, 0.0 when nz==1
+    size_t k_start;   // 1 when nz>1, 0 when nz==1
+    size_t k_end;     // nz-1 when nz>1, 1 when nz==1
+} grid;
 ```
 
 ## Flow Field API
