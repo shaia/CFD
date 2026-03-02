@@ -285,43 +285,56 @@ ns_solver_stats_t ns_solver_stats_default(void);
 ```c
 #include "cfd/core/grid.h"
 
-// Create uniform grid
-grid_t* grid_create_uniform(size_t nx, size_t ny,
-                            double xmin, double xmax,
-                            double ymin, double ymax);
+// Create grid (use nz=1 for 2D)
+grid* grid_create(size_t nx, size_t ny, size_t nz,
+                  double xmin, double xmax,
+                  double ymin, double ymax,
+                  double zmin, double zmax);
 
-// Create stretched grid
-grid_t* grid_create_stretched(size_t nx, size_t ny,
-                              double xmin, double xmax,
-                              double ymin, double ymax,
-                              double stretch_factor);
+// Initialize with uniform spacing
+void grid_initialize_uniform(grid* g);
+
+// Initialize with tanh-stretched spacing (beta controls clustering)
+void grid_initialize_stretched(grid* g, double beta);
 
 // Destroy grid
-void grid_destroy(grid_t* grid);
+void grid_destroy(grid* g);
 ```
 
 **Example:**
 ```c
-// 100x50 uniform grid from [0,1] x [0,0.5]
-grid_t* grid = grid_create_uniform(100, 50, 0.0, 1.0, 0.0, 0.5);
+// 100x50 uniform 2D grid from [0,1] x [0,0.5]
+grid* g = grid_create(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
+grid_initialize_uniform(g);
 
-printf("Grid: %zu x %zu\n", grid->nx, grid->ny);
-printf("dx = %f, dy = %f\n", grid->dx, grid->dy);
+printf("Grid: %zu x %zu x %zu\n", g->nx, g->ny, g->nz);
+printf("dx = %f, dy = %f\n", g->dx[0], g->dy[0]);
 
-grid_destroy(grid);
+grid_destroy(g);
 ```
 
 ### Grid Structure
 
 ```c
 typedef struct {
-    size_t nx, ny;      // Grid dimensions
-    double dx, dy;      // Grid spacing
-    double xmin, xmax;  // Domain bounds
-    double ymin, ymax;
-    double* x;          // x-coordinates [nx]
-    double* y;          // y-coordinates [ny]
-} grid_t;
+    double* x;        // x-coordinates [nx]
+    double* y;        // y-coordinates [ny]
+    double* dx;       // x-direction cell sizes [nx-1]
+    double* dy;       // y-direction cell sizes [ny-1]
+    size_t nx, ny;    // Grid dimensions (x, y)
+    double xmin, xmax;  // Domain bounds (x)
+    double ymin, ymax;  // Domain bounds (y)
+
+    // 3D extension (nz=1 reproduces 2D behavior)
+    double* z;        // z-coordinates [nz] (NULL when nz==1)
+    double* dz;       // z-direction cell sizes [nz-1] (NULL when nz==1)
+    size_t nz;        // Number of z-points (1 for 2D)
+    double zmin, zmax;  // Domain bounds (z) (0.0 for 2D)
+    size_t stride_z;  // nx*ny when nz>1, 0 when nz==1
+    double inv_dz2;   // 1/(dz*dz) when nz>1, 0.0 when nz==1
+    size_t k_start;   // 1 when nz>1, 0 when nz==1
+    size_t k_end;     // nz-1 when nz>1, 1 when nz==1
+} grid;
 ```
 
 ## Flow Field API
@@ -345,20 +358,24 @@ void flow_field_destroy(flow_field* field);
 
 ```c
 typedef struct {
-    size_t nx, ny;      // Grid dimensions
-    double* u;          // x-velocity [nx * ny]
-    double* v;          // y-velocity [nx * ny]
-    double* p;          // Pressure [nx * ny]
+    size_t nx, ny, nz;  // Grid dimensions (nz=1 for 2D)
+    double* u;          // x-velocity [nx * ny * nz]
+    double* v;          // y-velocity [nx * ny * nz]
+    double* w;          // z-velocity [nx * ny * nz] (zero for 2D)
+    double* p;          // Pressure [nx * ny * nz]
+    double* rho;        // Density [nx * ny * nz]
+    double* T;          // Temperature [nx * ny * nz]
 } flow_field;
 ```
 
 **Indexing:**
 ```c
-// Row-major ordering: index = i + j * nx
-size_t idx = i + j * field->nx;
-double u_val = field->u[idx];
-double v_val = field->v[idx];
-double p_val = field->p[idx];
+// Row-major ordering
+// 2D: index = i + j * nx (via IDX_2D macro)
+// 3D: index = k * nx * ny + j * nx + i (via IDX_3D macro)
+#include "cfd/core/indexing.h"
+size_t idx = IDX_2D(i, j, field->nx);          // 2D
+size_t idx3d = IDX_3D(i, j, k, field->nx, field->ny); // 3D
 ```
 
 ## Poisson Solver API
@@ -449,9 +466,24 @@ poisson_solver_stats_t poisson_solver_stats_default(void);
 ```c
 #include "cfd/io/vtk_output.h"
 
-cfd_status_t write_to_vtk(flow_field* field, grid_t* grid, const char* filename);
-cfd_status_t write_velocity_vectors_to_vtk(flow_field* field, grid_t* grid,
-                                           const char* filename);
+// Scalar field to VTK (structured points format)
+void write_vtk_output(const char* filename, const char* field_name,
+                      const double* data, size_t nx, size_t ny, size_t nz,
+                      double xmin, double xmax, double ymin, double ymax,
+                      double zmin, double zmax);
+
+// Vector field to VTK (w_data can be NULL for 2D)
+void write_vtk_vector_output(const char* filename, const char* field_name,
+                             const double* u_data, const double* v_data,
+                             const double* w_data, size_t nx, size_t ny, size_t nz,
+                             double xmin, double xmax, double ymin, double ymax,
+                             double zmin, double zmax);
+
+// Full flow field to VTK (velocity, pressure, density, temperature)
+void write_vtk_flow_field(const char* filename, const flow_field* field,
+                          size_t nx, size_t ny, size_t nz,
+                          double xmin, double xmax, double ymin, double ymax,
+                          double zmin, double zmax);
 ```
 
 ### CSV Output

@@ -92,13 +92,22 @@ static inline double test_compute_max_abs(const double* arr, size_t n) {
 
 /**
  * Check if all values in flow field are finite (no NaN or Inf)
+ * 3D-aware: checks nx*ny*nz elements and includes w and T
  */
 static inline int test_flow_field_is_valid(const flow_field* field) {
-    size_t n = field->nx * field->ny;
+    size_t n = field->nx * field->ny * field->nz;
     for (size_t i = 0; i < n; i++) {
         if (!isfinite(field->u[i]) || !isfinite(field->v[i]) ||
-            !isfinite(field->p[i]) || !isfinite(field->rho[i])) {
+            !isfinite(field->p[i]) || !isfinite(field->rho[i]) ||
+            !isfinite(field->T[i])) {
             return 0;
+        }
+    }
+    if (field->w) {
+        for (size_t i = 0; i < n; i++) {
+            if (!isfinite(field->w[i])) {
+                return 0;
+            }
         }
     }
     return 1;
@@ -160,6 +169,70 @@ static inline double test_compute_divergence_l2(const flow_field* field, const g
     return sqrt(sum / count);
 }
 
+/**
+ * Compute 3D divergence of velocity field (L-infinity norm)
+ * Includes dw/dz term. When nz==1, stride_z=0 and inv_2dz=0 so dw/dz vanishes.
+ */
+static inline double test_compute_divergence_linf_3d(const flow_field* field, const grid* g) {
+    size_t nx = field->nx;
+    size_t ny = field->ny;
+    size_t nz = field->nz;
+    double dx = g->dx[0];
+    double dy = g->dy[0];
+    size_t stride_z = g->stride_z;
+    double inv_2dz = (nz > 1) ? 1.0 / (2.0 * g->dz[0]) : 0.0;
+    double max_div = 0.0;
+
+    for (size_t k = g->k_start; k < g->k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + IDX_2D(i, j, nx);
+
+                double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * dx);
+                double dv_dy = (field->v[idx + nx] - field->v[idx - nx]) / (2.0 * dy);
+                double dw_dz = (field->w[idx + stride_z] - field->w[idx - stride_z]) * inv_2dz;
+                double div = fabs(du_dx + dv_dy + dw_dz);
+
+                if (div > max_div) {
+                    max_div = div;
+                }
+            }
+        }
+    }
+    return max_div;
+}
+
+/**
+ * Compute 3D L2 norm of divergence
+ */
+static inline double test_compute_divergence_l2_3d(const flow_field* field, const grid* g) {
+    size_t nx = field->nx;
+    size_t ny = field->ny;
+    size_t nz = field->nz;
+    double dx = g->dx[0];
+    double dy = g->dy[0];
+    size_t stride_z = g->stride_z;
+    double inv_2dz = (nz > 1) ? 1.0 / (2.0 * g->dz[0]) : 0.0;
+    double sum = 0.0;
+    int count = 0;
+
+    for (size_t k = g->k_start; k < g->k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + IDX_2D(i, j, nx);
+
+                double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * dx);
+                double dv_dy = (field->v[idx + nx] - field->v[idx - nx]) / (2.0 * dy);
+                double dw_dz = (field->w[idx + stride_z] - field->w[idx - stride_z]) * inv_2dz;
+                double div = du_dx + dv_dy + dw_dz;
+                sum += div * div;
+                count++;
+            }
+        }
+    }
+    return (count > 0) ? sqrt(sum / count) : 0.0;
+}
+
 //=============================================================================
 // ENERGY COMPUTATIONS
 //=============================================================================
@@ -203,6 +276,33 @@ static inline double test_compute_kinetic_energy_simple(const flow_field* field,
             double u = field->u[idx];
             double v = field->v[idx];
             ke += 0.5 * (u * u + v * v) * dx * dy;
+        }
+    }
+    return ke;
+}
+
+/**
+ * Compute 3D kinetic energy (includes w, dz)
+ * KE = 0.5 * sum(u^2 + v^2 + w^2) * dx * dy * dz
+ */
+static inline double test_compute_kinetic_energy_3d(const flow_field* field, const grid* g) {
+    size_t nx = field->nx;
+    size_t ny = field->ny;
+    double dx = g->dx[0];
+    double dy = g->dy[0];
+    double dz = (field->nz > 1) ? g->dz[0] : 1.0;
+    size_t stride_z = g->stride_z;
+    double ke = 0.0;
+
+    for (size_t k = g->k_start; k < g->k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + IDX_2D(i, j, nx);
+                double u = field->u[idx];
+                double v = field->v[idx];
+                double w = field->w ? field->w[idx] : 0.0;
+                ke += 0.5 * (u * u + v * v + w * w) * dx * dy * dz;
+            }
         }
     }
     return ke;

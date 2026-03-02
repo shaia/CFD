@@ -110,7 +110,8 @@ void test_vtk_output_paths(void) {
     remove(test_filename);
 
     // Write VTK output
-    write_vtk_output(test_filename, "test_field", field->u, nx, ny, xmin, xmax, ymin, ymax);
+    write_vtk_output(test_filename, "test_field", field->u, nx, ny, 1, xmin, xmax, ymin, ymax,
+                     0.0, 0.0);
 
     // Check that file was created
     TEST_ASSERT_TRUE(file_exists(test_filename));
@@ -130,8 +131,8 @@ void test_vtk_output_paths(void) {
     make_output_path(vector_filename, sizeof(vector_filename), "test_vectors.vtk");
     remove(vector_filename);
 
-    write_vtk_vector_output(vector_filename, "velocity", field->u, field->v, nx, ny, xmin, xmax,
-                            ymin, ymax);
+    write_vtk_vector_output(vector_filename, "velocity", field->u, field->v, NULL, nx, ny, 1,
+                            xmin, xmax, ymin, ymax, 0.0, 0.0);
 
     TEST_ASSERT_TRUE(file_exists(vector_filename));
 
@@ -182,8 +183,8 @@ void test_solver_output_paths(void) {
     remove(test_output);  // Clean up any existing file
 
     // Write output manually (this is how output should be done now)
-    write_vtk_output(test_output, "pressure", field->p, field->nx, field->ny, grid->xmin,
-                     grid->xmax, grid->ymin, grid->ymax);
+    write_vtk_output(test_output, "pressure", field->p, field->nx, field->ny, 1, grid->xmin,
+                     grid->xmax, grid->ymin, grid->ymax, 0.0, 0.0);
 
     // Verify manual output file was created
     TEST_ASSERT_TRUE(file_exists(test_output));

@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) {
 
     // Save default case
     write_vtk_output("..\\..\\artifacts\\output\\default_source_terms.vtk", "u_velocity", field->u,
-                     nx, ny, xmin, xmax, ymin, ymax);
+                     nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     printf("   Output saved to: default_source_terms.vtk\n\n");
 
     // Example 2: High energy injection (stronger sources)
@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) {
 
     // Save high energy case
     write_vtk_output("..\\..\\artifacts\\output\\high_energy_source_terms.vtk", "u_velocity",
-                     field->u, nx, ny, xmin, xmax, ymin, ymax);
+                     field->u, nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     printf("   Output saved to: high_energy_source_terms.vtk\n\n");
 
     // Example 3: Low energy injection (weaker sources)
@@ -134,7 +134,7 @@ int main(int argc, char* argv[]) {
 
     // Save low energy case
     write_vtk_output("..\\..\\artifacts\\output\\low_energy_source_terms.vtk", "u_velocity",
-                     field->u, nx, ny, xmin, xmax, ymin, ymax);
+                     field->u, nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     printf("   Output saved to: low_energy_source_terms.vtk\n\n");
 
     // Example 4: Asymmetric flow (different U and V sources)
@@ -158,7 +158,7 @@ int main(int argc, char* argv[]) {
 
     // Save asymmetric case
     write_vtk_output("..\\..\\artifacts\\output\\asymmetric_source_terms.vtk", "u_velocity",
-                     field->u, nx, ny, xmin, xmax, ymin, ymax);
+                     field->u, nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
     printf("   Output saved to: asymmetric_source_terms.vtk\n\n");
 
     // Calculate and display flow statistics for comparison

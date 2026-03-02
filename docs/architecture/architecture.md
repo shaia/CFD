@@ -4,7 +4,7 @@ This document describes the architectural principles and design patterns used in
 
 ## Overview
 
-The CFD Framework follows a modular, layered architecture that separates:
+The CFD Framework follows a modular, layered architecture for 2D/3D incompressible flow that separates:
 - Core infrastructure (grid, memory, I/O)
 - Numerical solvers (backend implementations)
 - Public API (dispatcher layer)
@@ -128,6 +128,8 @@ if (cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
 - Public API dispatchers are technology-agnostic (no `#ifdef` for SIMD/OpenMP/CUDA)
 - Backend files contain `#ifdef` guards
 - Unavailable backends provide NULL stubs
+
+**3D Support:** All backends operate on 3D grids using a branch-free pattern. The `grid` struct includes `stride_z` (set to `nx*ny` for 3D, `0` for 2D) and `inv_dz2` (set to `1/(dz*dz)` for 3D, `0.0` for 2D). With these precomputed constants, z-neighbor reads and z-derivative terms vanish when `nz==1`, producing bit-identical 2D results without any conditional branches in solver loops.
 
 ### 5. Memory Efficiency
 

@@ -8,7 +8,8 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 - [x] Pluggable solver architecture (function pointers, registry pattern)
 - [x] Multiple solver backends (CPU, SIMD/AVX2, OpenMP, CUDA)
-- [x] 2D incompressible Navier-Stokes solver
+- [x] 2D/3D incompressible Navier-Stokes solver
+- [x] Full 3D support with branch-free stride_z=0 pattern for 2D fallback
 - [x] Explicit Euler and projection methods
 - [x] Cross-platform builds (Windows, Linux, macOS)
 - [x] CI/CD with GitHub Actions
@@ -42,7 +43,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 
 ### Critical Gaps
 
-- [ ] Only 2D (no 3D support) — **3D extension in progress, see Phase 3.1**
+- [x] ~~Only 2D (no 3D support)~~ 3D support complete (all phases), see Phase 3.1
 - [x] ~~Limited boundary conditions (no symmetry planes)~~ Symmetry planes now supported
 - [ ] Only structured grids
 - [ ] No turbulence models
@@ -650,7 +651,7 @@ Find eigenvalues/eigenvectors for stability analysis.
 
 ### 3.1 3D Support (P0 - Critical) — **ACTIVE PRIORITY**
 
-**Status:** In progress. Phase 0 (indexing macros) complete. See [3D Extension Plan](docs/technical-notes/3d-extension-plan.md) for full design.
+**Status:** Complete (all 8 phases). See [3D Extension Plan](docs/technical-notes/3d-extension-plan.md) for full design.
 
 **Approach:** "2D as subset of 3D" — `nz=1` produces bit-identical results to current 2D code. No separate 2D/3D codepaths. All code becomes 3D-aware with branch-free solver loops using precomputed constants (`stride_z=0`, `inv_dz2=0.0` when `nz==1`).
 
@@ -661,10 +662,10 @@ Find eigenvalues/eigenvectors for stability analysis.
 - [x] Phase 2: Add 3D stencils (7-point) and update scalar CPU linear solvers
 - [x] Phase 3: Update scalar CPU NS solvers with w-momentum equation
 - [x] Phase 4: Extend boundary conditions for z-faces (all backends)
-- [ ] Phase 5: Update SIMD backends (AVX2/NEON) for 3D
-- [ ] Phase 6: Update OMP backends for 3D
-- [ ] Phase 7: Update CUDA backend for 3D
-- [ ] Phase 8: Update I/O (VTK 3D), examples, validation tests, and docs
+- [x] Phase 5: Update SIMD backends (AVX2/NEON) for 3D
+- [x] Phase 6: Update OMP backends for 3D
+- [x] Phase 7: Update CUDA backend for 3D
+- [x] Phase 8: Update I/O (VTK 3D), examples, validation tests, and docs
 
 **Key design decisions:**
 

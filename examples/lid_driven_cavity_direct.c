@@ -148,8 +148,8 @@ int main(int argc, char* argv[]) {
             snprintf(filename, sizeof(filename), "%s/cavity_%05d.vtk",
                      run_dir, step);
 #endif
-            write_vtk_flow_field(filename, field, nx, ny,
-                                 g->xmin, g->xmax, g->ymin, g->ymax);
+            write_vtk_flow_field(filename, field, nx, ny, 1,
+                                 g->xmin, g->xmax, g->ymin, g->ymax, 0.0, 0.0);
         }
 
         /* Print progress */

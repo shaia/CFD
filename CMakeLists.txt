@@ -98,6 +98,10 @@ if(BUILD_EXAMPLES)
     add_executable(minimal_example examples/minimal_example.c)
     target_link_libraries(minimal_example PRIVATE CFD::Library)
 
+    # Minimal 3D example
+    add_executable(minimal_example_3d examples/minimal_example_3d.c)
+    target_link_libraries(minimal_example_3d PRIVATE CFD::Library)
+
     # Performance comparison between solvers
     add_executable(performance_comparison examples/performance_comparison.c)
     target_link_libraries(performance_comparison PRIVATE CFD::Library)
@@ -241,6 +245,10 @@ if(BUILD_TESTS)
     # Poiseuille flow validation test
     add_executable(test_poiseuille_flow tests/validation/test_poiseuille_flow.c)
 
+    # 3D validation tests
+    add_executable(test_taylor_green_3d tests/validation/test_taylor_green_3d.c)
+    add_executable(test_quiescent_3d tests/validation/test_quiescent_3d.c)
+
     # Mathematical accuracy tests
     add_executable(test_finite_differences tests/math/test_finite_differences.c)
     add_executable(test_poisson_accuracy tests/math/test_poisson_accuracy.c)
@@ -330,6 +338,8 @@ if(BUILD_TESTS)
     target_link_libraries(test_ghia_projection_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_ghia_projection_gpu PRIVATE CFD::Library unity)
     target_link_libraries(test_taylor_green_vortex PRIVATE CFD::Library unity)
+    target_link_libraries(test_taylor_green_3d PRIVATE CFD::Library unity)
+    target_link_libraries(test_quiescent_3d PRIVATE CFD::Library unity)
     target_link_libraries(test_poiseuille_flow PRIVATE CFD::Library unity)
     target_link_libraries(test_finite_differences PRIVATE unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_include_directories(test_finite_differences PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/include)
@@ -433,6 +443,10 @@ if(BUILD_TESTS)
 
     # Taylor-Green vortex validation test
     add_test(NAME TaylorGreenVortexTest COMMAND test_taylor_green_vortex)
+
+    # 3D validation tests
+    add_test(NAME TaylorGreen3DTest COMMAND test_taylor_green_3d)
+    add_test(NAME Quiescent3DTest COMMAND test_quiescent_3d)
 
     # Poiseuille flow validation test
     add_test(NAME PoiseuilleFlowTest COMMAND test_poiseuille_flow)

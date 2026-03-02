@@ -11,6 +11,8 @@ The CFD Framework implements multiple solvers for the incompressible Navier-Stok
 ∇·u = 0
 ```
 
+All solvers support both 2D (`nz=1`) and 3D (`nz>1`) grids using a branch-free approach: `stride_z=0` when `nz==1` causes z-terms to vanish, producing bit-identical 2D results with zero overhead.
+
 ## Solver Families
 
 ### 1. Explicit Euler Solvers
@@ -461,6 +463,17 @@ p(x,y,t) = -0.25(cos(2x) + cos(2y))exp(-4νt)
 **Results:**
 - Velocity error < 1% at t=1.0
 - Energy decay matches analytical solution
+
+**3D Extension:**
+
+```text
+u(x,y,z,t) =  cos(x)sin(y)cos(z)exp(-3νt)
+v(x,y,z,t) = -sin(x)cos(y)cos(z)exp(-3νt)
+w(x,y,z,t) = 0
+```
+
+- Velocity decays as exp(-3νt), kinetic energy as exp(-6νt)
+- Validated on 16×16×16 grid with ν=0.01
 
 ## References
 

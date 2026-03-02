@@ -241,7 +241,7 @@ void run_direct_solver_usage(void) {
     // Write output using VTK functions directly
     char output_path[512];
     make_output_path(output_path, sizeof(output_path), "direct_api_test.vtk");
-    write_vtk_flow_field(output_path, field, NX, NY, XMIN, XMAX, YMIN, YMAX);
+    write_vtk_flow_field(output_path, field, NX, NY, 1, XMIN, XMAX, YMIN, YMAX, 0.0, 0.0);
     printf("\nOutput written to: %s\n", output_path);
 
     // Cleanup

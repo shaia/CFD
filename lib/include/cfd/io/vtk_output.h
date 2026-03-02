@@ -21,15 +21,19 @@ extern "C" {
  *
  * WHEN NOT TO USE THIS HEADER:
  * - You are using simulation_api.h for simulations
- *   → Use output_registry via simulation_register_output() instead
+ *   -> Use output_registry via simulation_register_output() instead
  * - You want automatic timestamped outputs at regular intervals
- *   → Use the output registry system for automated output management
+ *   -> Use the output registry system for automated output management
  *
  * The output registry provides higher-level features like:
  * - Automatic run directory creation with timestamps
  * - Configurable output intervals (every N steps)
  * - Multiple output types registered once
  * - Consistent naming across simulation runs
+ *
+ * 3D SUPPORT:
+ * All functions accept nz, zmin, zmax parameters. For 2D output, pass
+ * nz=1, zmin=0.0, zmax=0.0 (produces identical output to pre-3D behavior).
  */
 
 //=============================================================================
@@ -38,32 +42,41 @@ extern "C" {
 
 // Write scalar field to VTK file (full path required)
 CFD_LIBRARY_EXPORT void write_vtk_output(const char* filename, const char* field_name,
-                                         const double* data, size_t nx, size_t ny, double xmin,
-                                         double xmax, double ymin, double ymax);
+                                         const double* data, size_t nx, size_t ny, size_t nz,
+                                         double xmin, double xmax, double ymin, double ymax,
+                                         double zmin, double zmax);
 
+// Write vector field to VTK file. w_data can be NULL (writes 0.0 for z-component).
 CFD_LIBRARY_EXPORT void write_vtk_vector_output(const char* filename, const char* field_name,
                                                 const double* u_data, const double* v_data,
-                                                size_t nx, size_t ny, double xmin, double xmax,
-                                                double ymin, double ymax);
+                                                const double* w_data, size_t nx, size_t ny,
+                                                size_t nz, double xmin, double xmax,
+                                                double ymin, double ymax, double zmin,
+                                                double zmax);
 
+// Write complete flow field (velocity, pressure, density, temperature) to VTK file
 CFD_LIBRARY_EXPORT void write_vtk_flow_field(const char* filename, const flow_field* field,
-                                             size_t nx, size_t ny, double xmin, double xmax,
-                                             double ymin, double ymax);
+                                             size_t nx, size_t ny, size_t nz, double xmin,
+                                             double xmax, double ymin, double ymax, double zmin,
+                                             double zmax);
 
-// New functions - automatically create timestamped run directory
-// These functions create a new directory for each run and write files there
+// Run-directory variants - automatically create timestamped run directory
 CFD_LIBRARY_EXPORT void write_vtk_output_run(const char* filename, const char* field_name,
-                                             const double* data, size_t nx, size_t ny, double xmin,
-                                             double xmax, double ymin, double ymax);
+                                             const double* data, size_t nx, size_t ny, size_t nz,
+                                             double xmin, double xmax, double ymin, double ymax,
+                                             double zmin, double zmax);
 
 CFD_LIBRARY_EXPORT void write_vtk_vector_output_run(const char* filename, const char* field_name,
                                                     const double* u_data, const double* v_data,
-                                                    size_t nx, size_t ny, double xmin, double xmax,
-                                                    double ymin, double ymax);
+                                                    const double* w_data, size_t nx, size_t ny,
+                                                    size_t nz, double xmin, double xmax,
+                                                    double ymin, double ymax, double zmin,
+                                                    double zmax);
 
 CFD_LIBRARY_EXPORT void write_vtk_flow_field_run(const char* filename, const flow_field* field,
-                                                 size_t nx, size_t ny, double xmin, double xmax,
-                                                 double ymin, double ymax);
+                                                 size_t nx, size_t ny, size_t nz, double xmin,
+                                                 double xmax, double ymin, double ymax,
+                                                 double zmin, double zmax);
 
 #ifdef __cplusplus
 }

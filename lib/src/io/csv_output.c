@@ -141,7 +141,7 @@ void write_csv_timeseries(const char* filename, int step, double time, const flo
 
     // Write header if new file
     if (write_header) {
-        fprintf(fp, "step,time,dt,max_u,max_v,max_p,avg_u,avg_v,avg_p");
+        fprintf(fp, "step,time,dt,max_u,max_v,max_w,max_p,avg_u,avg_v,avg_w,avg_p");
         if (has_vel_mag) {
             fprintf(fp, ",max_vel_mag,avg_vel_mag");
         }
@@ -149,9 +149,10 @@ void write_csv_timeseries(const char* filename, int step, double time, const flo
     }
 
     // Write data row using pre-computed statistics
-    fprintf(fp, "%d,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", step, time, params->dt,
-            derived->u_stats.max_val, derived->v_stats.max_val, derived->p_stats.max_val,
-            derived->u_stats.avg_val, derived->v_stats.avg_val, derived->p_stats.avg_val);
+    fprintf(fp, "%d,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", step, time, params->dt,
+            derived->u_stats.max_val, derived->v_stats.max_val, derived->w_stats.max_val,
+            derived->p_stats.max_val, derived->u_stats.avg_val, derived->v_stats.avg_val,
+            derived->w_stats.avg_val, derived->p_stats.avg_val);
 
     if (has_vel_mag) {
         fprintf(fp, ",%.6e,%.6e", derived->vel_mag_stats.max_val, derived->vel_mag_stats.avg_val);
@@ -186,7 +187,7 @@ void write_csv_centerline(const char* filename, const flow_field* field,
         // Horizontal centerline: along x at y = ny/2
         size_t j_mid = ny / 2;
 
-        fprintf(fp, "x,u,v,p,rho,T");
+        fprintf(fp, "x,u,v,w,p,rho,T");
         if (has_vel_mag) {
             fprintf(fp, ",vel_mag");
         }
@@ -194,8 +195,9 @@ void write_csv_centerline(const char* filename, const flow_field* field,
 
         for (size_t i = 0; i < nx; i++) {
             size_t idx = IDX_2D(i, j_mid, nx);
-            fprintf(fp, "%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", x_coords[i], field->u[idx], field->v[idx],
-                    field->p[idx], field->rho[idx], field->T[idx]);
+            double w_val = field->w ? field->w[idx] : 0.0;
+            fprintf(fp, "%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", x_coords[i], field->u[idx],
+                    field->v[idx], w_val, field->p[idx], field->rho[idx], field->T[idx]);
             if (has_vel_mag) {
                 fprintf(fp, ",%.6e", derived->velocity_magnitude[idx]);
             }
@@ -205,7 +207,7 @@ void write_csv_centerline(const char* filename, const flow_field* field,
         // Vertical centerline: along y at x = nx/2
         size_t i_mid = nx / 2;
 
-        fprintf(fp, "y,u,v,p,rho,T");
+        fprintf(fp, "y,u,v,w,p,rho,T");
         if (has_vel_mag) {
             fprintf(fp, ",vel_mag");
         }
@@ -213,8 +215,9 @@ void write_csv_centerline(const char* filename, const flow_field* field,
 
         for (size_t j = 0; j < ny; j++) {
             size_t idx = IDX_2D(i_mid, j, nx);
-            fprintf(fp, "%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", y_coords[j], field->u[idx], field->v[idx],
-                    field->p[idx], field->rho[idx], field->T[idx]);
+            double w_val = field->w ? field->w[idx] : 0.0;
+            fprintf(fp, "%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", y_coords[j], field->u[idx],
+                    field->v[idx], w_val, field->p[idx], field->rho[idx], field->T[idx]);
             if (has_vel_mag) {
                 fprintf(fp, ",%.6e", derived->velocity_magnitude[idx]);
             }
@@ -251,8 +254,8 @@ void write_csv_statistics(const char* filename, int step, double time, const flo
 
     // Write header if new file
     if (write_header) {
-        fprintf(fp, "step,time,min_u,max_u,avg_u,min_v,max_v,avg_v,min_p,max_p,avg_p,"
-                    "min_rho,max_rho,avg_rho,min_T,max_T,avg_T");
+        fprintf(fp, "step,time,min_u,max_u,avg_u,min_v,max_v,avg_v,min_w,max_w,avg_w,"
+                    "min_p,max_p,avg_p,min_rho,max_rho,avg_rho,min_T,max_T,avg_T");
         if (has_vel_mag) {
             fprintf(fp, ",min_vel_mag,max_vel_mag,avg_vel_mag");
         }
@@ -260,13 +263,16 @@ void write_csv_statistics(const char* filename, int step, double time, const flo
     }
 
     // Write data row using pre-computed statistics
-    fprintf(
-        fp, "%d,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e",
-        step, time, derived->u_stats.min_val, derived->u_stats.max_val, derived->u_stats.avg_val,
-        derived->v_stats.min_val, derived->v_stats.max_val, derived->v_stats.avg_val,
-        derived->p_stats.min_val, derived->p_stats.max_val, derived->p_stats.avg_val,
-        derived->rho_stats.min_val, derived->rho_stats.max_val, derived->rho_stats.avg_val,
-        derived->T_stats.min_val, derived->T_stats.max_val, derived->T_stats.avg_val);
+    fprintf(fp,
+            "%d,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,"
+            "%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e",
+            step, time, derived->u_stats.min_val, derived->u_stats.max_val,
+            derived->u_stats.avg_val, derived->v_stats.min_val, derived->v_stats.max_val,
+            derived->v_stats.avg_val, derived->w_stats.min_val, derived->w_stats.max_val,
+            derived->w_stats.avg_val, derived->p_stats.min_val, derived->p_stats.max_val,
+            derived->p_stats.avg_val, derived->rho_stats.min_val, derived->rho_stats.max_val,
+            derived->rho_stats.avg_val, derived->T_stats.min_val, derived->T_stats.max_val,
+            derived->T_stats.avg_val);
 
     if (has_vel_mag) {
         fprintf(fp, ",%.6e,%.6e,%.6e", derived->vel_mag_stats.min_val,
