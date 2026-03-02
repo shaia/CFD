@@ -148,8 +148,8 @@ int main() {
             snprintf(filename, sizeof(filename), "%s/%s", run_dir, basename);
 #endif
 
-            write_vtk_output(filename, "velocity_magnitude", field->u, nx, ny, grid->xmin,
-                             grid->xmax, grid->ymin, grid->ymax);
+            write_vtk_output(filename, "velocity_magnitude", field->u, nx, ny, 1,
+                             grid->xmin, grid->xmax, grid->ymin, grid->ymax, 0.0, 0.0);
 
             printf("  Iteration %d, output: %s\n", iter, basename);
         }

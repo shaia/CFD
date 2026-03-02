@@ -96,8 +96,9 @@ void test_vtk_output_creates_file(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_scalar.vtk");
     remove(filename);
 
-    write_vtk_output(filename, "pressure", test_field->p, test_grid->nx, test_grid->ny,
-                     test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax);
+    write_vtk_output(filename, "pressure", test_field->p, test_grid->nx, test_grid->ny, 1,
+                     test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax,
+                     0.0, 0.0);
 
     TEST_ASSERT_TRUE(file_exists(filename));
     remove(filename);
@@ -108,8 +109,9 @@ void test_vtk_output_has_header(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_header.vtk");
     remove(filename);
 
-    write_vtk_output(filename, "velocity_u", test_field->u, test_grid->nx, test_grid->ny,
-                     test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax);
+    write_vtk_output(filename, "velocity_u", test_field->u, test_grid->nx, test_grid->ny, 1,
+                     test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax,
+                     0.0, 0.0);
 
     TEST_ASSERT_TRUE(file_contains(filename, "# vtk DataFile Version"));
     TEST_ASSERT_TRUE(file_contains(filename, "STRUCTURED_POINTS"));
@@ -124,8 +126,9 @@ void test_vtk_output_file_size(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_size.vtk");
     remove(filename);
 
-    write_vtk_output(filename, "temperature", test_field->T, test_grid->nx, test_grid->ny,
-                     test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax);
+    write_vtk_output(filename, "temperature", test_field->T, test_grid->nx, test_grid->ny, 1,
+                     test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax,
+                     0.0, 0.0);
 
     FILE* fp = fopen(filename, "r");
     TEST_ASSERT_NOT_NULL(fp);
@@ -149,9 +152,10 @@ void test_vtk_vector_output_creates_file(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_vector.vtk");
     remove(filename);
 
-    write_vtk_vector_output(filename, "velocity", test_field->u, test_field->v, test_grid->nx,
-                            test_grid->ny, test_grid->xmin, test_grid->xmax, test_grid->ymin,
-                            test_grid->ymax);
+    write_vtk_vector_output(filename, "velocity", test_field->u, test_field->v, NULL,
+                            test_grid->nx, test_grid->ny, 1,
+                            test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax,
+                            0.0, 0.0);
 
     TEST_ASSERT_TRUE(file_exists(filename));
     remove(filename);
@@ -162,9 +166,10 @@ void test_vtk_vector_output_has_header(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_vector_header.vtk");
     remove(filename);
 
-    write_vtk_vector_output(filename, "velocity", test_field->u, test_field->v, test_grid->nx,
-                            test_grid->ny, test_grid->xmin, test_grid->xmax, test_grid->ymin,
-                            test_grid->ymax);
+    write_vtk_vector_output(filename, "velocity", test_field->u, test_field->v, NULL,
+                            test_grid->nx, test_grid->ny, 1,
+                            test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax,
+                            0.0, 0.0);
 
     TEST_ASSERT_TRUE(file_contains(filename, "# vtk DataFile Version"));
     TEST_ASSERT_TRUE(file_contains(filename, "VECTORS velocity"));
@@ -181,8 +186,9 @@ void test_vtk_flow_field_creates_file(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_flow.vtk");
     remove(filename);
 
-    write_vtk_flow_field(filename, test_field, test_grid->nx, test_grid->ny, test_grid->xmin,
-                         test_grid->xmax, test_grid->ymin, test_grid->ymax);
+    write_vtk_flow_field(filename, test_field, test_grid->nx, test_grid->ny, 1,
+                         test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax,
+                         0.0, 0.0);
 
     TEST_ASSERT_TRUE(file_exists(filename));
     remove(filename);
@@ -193,8 +199,9 @@ void test_vtk_flow_field_has_all_fields(void) {
     make_output_path(filename, sizeof(filename), "test_vtk_flow_fields.vtk");
     remove(filename);
 
-    write_vtk_flow_field(filename, test_field, test_grid->nx, test_grid->ny, test_grid->xmin,
-                         test_grid->xmax, test_grid->ymin, test_grid->ymax);
+    write_vtk_flow_field(filename, test_field, test_grid->nx, test_grid->ny, 1,
+                         test_grid->xmin, test_grid->xmax, test_grid->ymin, test_grid->ymax,
+                         0.0, 0.0);
 
     // Should contain velocity, pressure, density, temperature
     TEST_ASSERT_TRUE(file_contains(filename, "VECTORS velocity"));
@@ -215,9 +222,9 @@ void test_vtk_output_null_safety(void) {
     remove(filename);
 
     // These should not crash
-    write_vtk_output(NULL, "test", test_field->u, 10, 10, 0, 1, 0, 1);
-    write_vtk_output(filename, NULL, test_field->u, 10, 10, 0, 1, 0, 1);
-    write_vtk_output(filename, "test", NULL, 10, 10, 0, 1, 0, 1);
+    write_vtk_output(NULL, "test", test_field->u, 10, 10, 1, 0, 1, 0, 1, 0.0, 0.0);
+    write_vtk_output(filename, NULL, test_field->u, 10, 10, 1, 0, 1, 0, 1, 0.0, 0.0);
+    write_vtk_output(filename, "test", NULL, 10, 10, 1, 0, 1, 0, 1, 0.0, 0.0);
 
     // File should not exist since all calls had NULL params
     TEST_ASSERT_FALSE(file_exists(filename));
@@ -229,10 +236,10 @@ void test_vtk_vector_null_safety(void) {
     remove(filename);
 
     // These should not crash
-    write_vtk_vector_output(NULL, "vel", test_field->u, test_field->v, 10, 10, 0, 1, 0, 1);
-    write_vtk_vector_output(filename, NULL, test_field->u, test_field->v, 10, 10, 0, 1, 0, 1);
-    write_vtk_vector_output(filename, "vel", NULL, test_field->v, 10, 10, 0, 1, 0, 1);
-    write_vtk_vector_output(filename, "vel", test_field->u, NULL, 10, 10, 0, 1, 0, 1);
+    write_vtk_vector_output(NULL, "vel", test_field->u, test_field->v, NULL, 10, 10, 1, 0, 1, 0, 1, 0.0, 0.0);
+    write_vtk_vector_output(filename, NULL, test_field->u, test_field->v, NULL, 10, 10, 1, 0, 1, 0, 1, 0.0, 0.0);
+    write_vtk_vector_output(filename, "vel", NULL, test_field->v, NULL, 10, 10, 1, 0, 1, 0, 1, 0.0, 0.0);
+    write_vtk_vector_output(filename, "vel", test_field->u, NULL, NULL, 10, 10, 1, 0, 1, 0, 1, 0.0, 0.0);
 
     TEST_ASSERT_FALSE(file_exists(filename));
 }
@@ -243,8 +250,8 @@ void test_vtk_flow_field_null_safety(void) {
     remove(filename);
 
     // These should not crash
-    write_vtk_flow_field(NULL, test_field, 10, 10, 0, 1, 0, 1);
-    write_vtk_flow_field(filename, NULL, 10, 10, 0, 1, 0, 1);
+    write_vtk_flow_field(NULL, test_field, 10, 10, 1, 0, 1, 0, 1, 0.0, 0.0);
+    write_vtk_flow_field(filename, NULL, 10, 10, 1, 0, 1, 0, 1, 0.0, 0.0);
 
     TEST_ASSERT_FALSE(file_exists(filename));
 }
@@ -268,7 +275,7 @@ void test_vtk_output_small_grid(void) {
         data[i] = (double)i;
     }
 
-    write_vtk_output(filename, "small", data, nx, ny, 0, 1, 0, 1);
+    write_vtk_output(filename, "small", data, nx, ny, 1, 0, 1, 0, 1, 0.0, 0.0);
 
     TEST_ASSERT_TRUE(file_exists(filename));
 
@@ -295,7 +302,7 @@ void test_vtk_output_large_values(void) {
         data[i] = 0.0;
     }
 
-    write_vtk_output(filename, "extreme", data, nx, ny, 0, 1, 0, 1);
+    write_vtk_output(filename, "extreme", data, nx, ny, 1, 0, 1, 0, 1, 0.0, 0.0);
 
     TEST_ASSERT_TRUE(file_exists(filename));
 
