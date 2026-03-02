@@ -6,7 +6,8 @@
  *
  * This example demonstrates:
  *   - SIMD architecture detection (AVX2, NEON)
- *   - Backend availability checking (BC, Poisson, NS solvers)
+ *   - Backend availability checking (BC, Poisson solvers)
+ *   - NS solver registration listing
  *   - Derived field computation (velocity magnitude, statistics)
  *   - Error handling API (status codes, error messages)
  */
@@ -157,6 +158,7 @@ static void demonstrate_error_handling(void) {
         if (solver) {
             printf("     Fallback to '%s': success\n", solver->name);
             solver_destroy(solver);
+            cfd_clear_error();
         }
     } else {
         printf("   GPU solver available: %s\n", solver->name);
