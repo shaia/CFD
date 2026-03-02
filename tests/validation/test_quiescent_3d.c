@@ -104,6 +104,13 @@ static q3d_result_t q3d_run_zero_field(const char* solver_type) {
     };
 
     ns_solver_registry_t* registry = cfd_registry_create();
+    if (!registry) {
+        snprintf(result.error_msg, sizeof(result.error_msg),
+                 "Failed to create solver registry");
+        flow_field_destroy(field);
+        grid_destroy(g);
+        return result;
+    }
     cfd_registry_register_defaults(registry);
 
     ns_solver_t* solver = cfd_solver_create(registry, solver_type);
