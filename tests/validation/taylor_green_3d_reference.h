@@ -131,9 +131,10 @@ static inline double tg3_compute_kinetic_energy(const flow_field* field, const g
     size_t stride_z = g->stride_z;
     double ke = 0.0;
 
+    /* Integrate over physical interior only (exclude periodic ghost layers) */
     for (size_t k = g->k_start; k < g->k_end; k++) {
-        for (size_t j = 0; j < ny; j++) {
-            for (size_t i = 0; i < nx; i++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
                 size_t idx = (k * stride_z) + IDX_2D(i, j, nx);
                 double u = field->u[idx];
                 double v = field->v[idx];
@@ -212,6 +213,13 @@ static inline tg3_result_t tg3_run_simulation(
             }
         }
     }
+
+    /* Apply periodic BCs before recording initial metrics so that
+     * initial and final metrics are computed on the same basis */
+    bc_apply_scalar_3d(field->u, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
+    bc_apply_scalar_3d(field->v, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
+    bc_apply_scalar_3d(field->w, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
+    bc_apply_scalar_3d(field->p, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
 
     result.initial_ke = tg3_compute_kinetic_energy(field, g);
     result.initial_max_velocity = tg3_compute_max_velocity(field);
@@ -322,14 +330,15 @@ static inline tg3_result_t tg3_run_simulation(
     result.final_max_velocity = tg3_compute_max_velocity(field);
     result.max_divergence = tg3_compute_max_divergence(field, g);
 
-    /* Compute L2 errors */
+    /* Compute L2 errors on physical interior only (exclude periodic ghost layers) */
     double sum_sq_err_u = 0.0, sum_sq_exact_u = 0.0;
     double sum_sq_err_v = 0.0, sum_sq_exact_v = 0.0;
-    for (size_t k = 0; k < n; k++) {
+    size_t n_interior = 0;
+    for (size_t k = g->k_start; k < g->k_end; k++) {
         double z = g->z[k];
-        for (size_t j = 0; j < n; j++) {
+        for (size_t j = 1; j < n - 1; j++) {
             double y = g->y[j];
-            for (size_t i = 0; i < n; i++) {
+            for (size_t i = 1; i < n - 1; i++) {
                 double x = g->x[i];
                 size_t idx = (k * n * n) + IDX_2D(i, j, n);
 
@@ -341,13 +350,14 @@ static inline tg3_result_t tg3_run_simulation(
                 sum_sq_exact_u += u_exact * u_exact;
                 sum_sq_err_v += ev * ev;
                 sum_sq_exact_v += v_exact * v_exact;
+                n_interior++;
             }
         }
     }
     result.l2_error_u = (sum_sq_exact_u > 1e-15) ? sqrt(sum_sq_err_u / sum_sq_exact_u)
-                                                  : sqrt(sum_sq_err_u / (n * n * n));
+                                                  : sqrt(sum_sq_err_u / (double)n_interior);
     result.l2_error_v = (sum_sq_exact_v > 1e-15) ? sqrt(sum_sq_err_v / sum_sq_exact_v)
-                                                  : sqrt(sum_sq_err_v / (n * n * n));
+                                                  : sqrt(sum_sq_err_v / (double)n_interior);
 
     /* Decay rates */
     if (result.initial_max_velocity > 1e-10) {
