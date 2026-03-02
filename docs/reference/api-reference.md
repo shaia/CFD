@@ -285,31 +285,32 @@ ns_solver_stats_t ns_solver_stats_default(void);
 ```c
 #include "cfd/core/grid.h"
 
-// Create uniform grid (use nz=1 for 2D)
-grid_t* grid_create_uniform(size_t nx, size_t ny, size_t nz,
-                            double xmin, double xmax,
-                            double ymin, double ymax,
-                            double zmin, double zmax);
+// Create grid (use nz=1 for 2D)
+grid* grid_create(size_t nx, size_t ny, size_t nz,
+                  double xmin, double xmax,
+                  double ymin, double ymax,
+                  double zmin, double zmax);
 
-// Create stretched grid
-grid_t* grid_create_stretched(size_t nx, size_t ny,
-                              double xmin, double xmax,
-                              double ymin, double ymax,
-                              double stretch_factor);
+// Initialize with uniform spacing
+void grid_initialize_uniform(grid* g);
+
+// Initialize with tanh-stretched spacing (beta controls clustering)
+void grid_initialize_stretched(grid* g, double beta);
 
 // Destroy grid
-void grid_destroy(grid_t* grid);
+void grid_destroy(grid* g);
 ```
 
 **Example:**
 ```c
 // 100x50 uniform 2D grid from [0,1] x [0,0.5]
-grid_t* grid = grid_create_uniform(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
+grid* g = grid_create(100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
+grid_initialize_uniform(g);
 
-printf("Grid: %zu x %zu x %zu\n", grid->nx, grid->ny, grid->nz);
-printf("dx = %f, dy = %f\n", grid->dx[0], grid->dy[0]);
+printf("Grid: %zu x %zu x %zu\n", g->nx, g->ny, g->nz);
+printf("dx = %f, dy = %f\n", g->dx[0], g->dy[0]);
 
-grid_destroy(grid);
+grid_destroy(g);
 ```
 
 ### Grid Structure
