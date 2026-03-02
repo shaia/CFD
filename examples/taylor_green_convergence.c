@@ -119,7 +119,8 @@ static tg_result_t run_case(size_t n, const char* solver_type,
         sim->params.dt = step_dt;
 
         apply_periodic_bcs(sim->field);
-        run_simulation_step(sim);
+        ns_solver_stats_t stats = ns_solver_stats_default();
+        solver_step(sim->solver, sim->field, sim->grid, &sim->params, &stats);
         t += step_dt;
     }
 
@@ -198,7 +199,8 @@ int main(void) {
 
         if (step < num_steps) {
             apply_periodic_bcs(sim->field);
-            run_simulation_step(sim);
+            ns_solver_stats_t stats = ns_solver_stats_default();
+            solver_step(sim->solver, sim->field, sim->grid, &sim->params, &stats);
         }
     }
     free_simulation(sim);
