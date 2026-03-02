@@ -92,13 +92,14 @@ static inline double test_compute_max_abs(const double* arr, size_t n) {
 
 /**
  * Check if all values in flow field are finite (no NaN or Inf)
- * 3D-aware: checks nx*ny*nz elements and includes w
+ * 3D-aware: checks nx*ny*nz elements and includes w and T
  */
 static inline int test_flow_field_is_valid(const flow_field* field) {
     size_t n = field->nx * field->ny * field->nz;
     for (size_t i = 0; i < n; i++) {
         if (!isfinite(field->u[i]) || !isfinite(field->v[i]) ||
-            !isfinite(field->p[i]) || !isfinite(field->rho[i])) {
+            !isfinite(field->p[i]) || !isfinite(field->rho[i]) ||
+            !isfinite(field->T[i])) {
             return 0;
         }
     }
