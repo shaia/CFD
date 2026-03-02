@@ -2,9 +2,12 @@
  * Poiseuille Flow with Stretched Grids
  *
  * Validates the pressure-driven channel flow (Poiseuille flow) against the
- * analytical parabolic velocity profile, comparing uniform vs stretched grids.
- * Stretched grids cluster points near the walls where velocity gradients are
- * steepest, improving accuracy without increasing total grid points.
+ * analytical parabolic velocity profile, comparing a uniform grid to a
+ * stretched grid that clusters points near the walls where velocity gradients
+ * are steepest. The current Navier-Stokes solvers assume uniform spacing in
+ * their stencils (dx = grid->dx[0], dy = grid->dy[0]), so the stretched-grid
+ * run serves as a diagnostic / limitation demonstration rather than a true
+ * accuracy improvement until non-uniform stencil support is added.
  *
  * This example demonstrates:
  *   - grid_initialize_stretched() with different beta values
@@ -89,7 +92,7 @@ static case_result_t run_case(size_t nx, size_t ny, double beta,
     }
     result.dy_ratio = result.max_dy / result.min_dy;
 
-    /* Adapt dt for stability: CFL requires dt < min_dy^2 / (4*nu) */
+    /* Adapt dt for diffusion stability: dt < min_dy^2 / (4*nu) */
     double dt_stable = 0.25 * result.min_dy * result.min_dy / nu;
     if (dt < dt_stable) dt_stable = dt;
     dt = dt_stable;
@@ -98,10 +101,13 @@ static case_result_t run_case(size_t nx, size_t ny, double beta,
     if (!field) { grid_destroy(g); result.l2_error = -1.0; return result; }
     initialize_flow_field(field, g);
 
-    /* Initialize with approximate Poiseuille profile */
+    /* Initialize with approximate Poiseuille profile and zero v, p */
     for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
-            field->u[j * nx + i] = analytical_u(g->y[j], H, U_max);
+            size_t idx = j * nx + i;
+            field->u[idx] = analytical_u(g->y[j], H, U_max);
+            field->v[idx] = 0.0;
+            field->p[idx] = 0.0;
         }
     }
 
