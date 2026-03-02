@@ -11,7 +11,6 @@
  *   - Error handling API (status codes, error messages)
  */
 
-#include "cfd/api/simulation_api.h"
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cpu_features.h"
 #include "cfd/core/derived_fields.h"
@@ -53,16 +52,25 @@ static void print_backend_availability(void) {
 static void print_available_solvers(void) {
     printf("\n3. Available NS Solvers\n");
 
-    const char* names[20];
-    int count = simulation_list_solvers(names, 20);
-    int to_print = count < 20 ? count : 20;
+    ns_solver_registry_t* registry = cfd_registry_create();
+    if (!registry) {
+        printf("   Failed to create registry\n");
+        return;
+    }
+    cfd_registry_register_defaults(registry);
+
+    const char* names[32];
+    int count = cfd_registry_list(registry, names, 32);
+    int to_print = count < 32 ? count : 32;
     printf("   Found %d solver(s):\n", count);
     for (int i = 0; i < to_print; i++) {
         printf("     - %s\n", names[i]);
     }
-    if (count > 20) {
-        printf("     ... and %d more not shown\n", count - 20);
+    if (count > 32) {
+        printf("     ... and %d more not shown\n", count - 32);
     }
+
+    cfd_registry_destroy(registry);
 }
 
 static void demonstrate_derived_fields(void) {
