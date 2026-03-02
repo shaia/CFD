@@ -55,9 +55,13 @@ static void print_available_solvers(void) {
 
     const char* names[20];
     int count = simulation_list_solvers(names, 20);
+    int to_print = count < 20 ? count : 20;
     printf("   Found %d solver(s):\n", count);
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < to_print; i++) {
         printf("     - %s\n", names[i]);
+    }
+    if (count > 20) {
+        printf("     ... and %d more not shown\n", count - 20);
     }
 }
 
