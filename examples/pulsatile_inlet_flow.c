@@ -10,7 +10,7 @@
  *   - bc_inlet_config_time_step() for sudden changes
  *   - BC_TIME_CONTEXT() macro for time context
  *   - bc_apply_inlet_time() for time-varying application
- *   - bc_apply_outlet_velocity() and bc_apply_noslip() for walls/outlet
+ *   - bc_apply_outlet_velocity() for the outlet and manual no-slip walls
  */
 
 #include "cfd/api/simulation_api.h"
