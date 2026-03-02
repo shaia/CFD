@@ -160,6 +160,7 @@ void write_vtk_vector_output(const char* filename, const char* field_name, const
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
         cfd_error("Failed to open VTK vector output file");
+        return;
     }
 
     double dz = (nz > 1) ? (zmax - zmin) / (double)(nz - 1) : 1.0;
@@ -200,6 +201,7 @@ void write_vtk_flow_field(const char* filename, const flow_field* field, size_t 
     FILE* fp = fopen(filename, "w");
     if (fp == NULL) {
         cfd_error("Failed to open VTK flow field output file");
+        return;
     }
 
     double dz = (nz > 1) ? (zmax - zmin) / (double)(nz - 1) : 1.0;
