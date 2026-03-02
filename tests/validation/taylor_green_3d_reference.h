@@ -232,6 +232,13 @@ static inline tg3_result_t tg3_run_simulation(
     };
 
     ns_solver_registry_t* registry = cfd_registry_create();
+    if (!registry) {
+        snprintf(result.error_msg, sizeof(result.error_msg),
+                 "Failed to create solver registry (out of memory)");
+        flow_field_destroy(field);
+        grid_destroy(g);
+        return result;
+    }
     cfd_registry_register_defaults(registry);
 
     ns_solver_t* solver = cfd_solver_create(registry, solver_type);
@@ -269,10 +276,21 @@ static inline tg3_result_t tg3_run_simulation(
     /* Run simulation */
     for (int step = 0; step < max_steps; step++) {
         /* Apply periodic BCs */
-        bc_apply_scalar_3d(field->u, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
-        bc_apply_scalar_3d(field->v, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
-        bc_apply_scalar_3d(field->w, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
-        bc_apply_scalar_3d(field->p, n, n, n, g->stride_z, BC_TYPE_PERIODIC);
+        const char* bc_fields[] = {"u", "v", "w", "p"};
+        double* bc_ptrs[] = {field->u, field->v, field->w, field->p};
+        for (int f = 0; f < 4; f++) {
+            cfd_status_t bc_status = bc_apply_scalar_3d(bc_ptrs[f], n, n, n, g->stride_z, BC_TYPE_PERIODIC);
+            if (bc_status != CFD_SUCCESS) {
+                snprintf(result.error_msg, sizeof(result.error_msg),
+                         "BC application failed for '%s' at step %d: %d",
+                         bc_fields[f], step, bc_status);
+                solver_destroy(solver);
+                cfd_registry_destroy(registry);
+                flow_field_destroy(field);
+                grid_destroy(g);
+                return result;
+            }
+        }
 
         cfd_status_t step_status = solver_step(solver, field, g, &params, &stats);
         if (step_status != CFD_SUCCESS) {
