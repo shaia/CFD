@@ -318,6 +318,67 @@ void test_vtk_output_large_values(void) {
     remove(filename);
 }
 
+//=============================================================================
+// 3D OUTPUT TESTS
+//=============================================================================
+
+void test_vtk_scalar_3d_output(void) {
+    char filename[256];
+    make_output_path(filename, sizeof(filename), "test_vtk_scalar_3d.vtk");
+    remove(filename);
+
+    size_t nx = 3, ny = 3, nz = 2;
+    double* data = (double*)malloc(nx * ny * nz * sizeof(double));
+    TEST_ASSERT_NOT_NULL(data);
+    for (size_t i = 0; i < nx * ny * nz; i++) {
+        data[i] = (double)i;
+    }
+
+    write_vtk_output(filename, "scalar3d", data, nx, ny, nz,
+                     0.0, 1.0, 0.0, 1.0, 0.0, 0.5);
+
+    TEST_ASSERT_TRUE(file_exists(filename));
+    TEST_ASSERT_TRUE(file_contains(filename, "DIMENSIONS 3 3 2"));
+    TEST_ASSERT_TRUE(file_contains(filename, "ORIGIN 0.000000 0.000000 0.000000"));
+    TEST_ASSERT_TRUE(file_contains(filename, "POINT_DATA 18"));
+
+    free(data);
+    remove(filename);
+}
+
+void test_vtk_vector_3d_with_w(void) {
+    char filename[256];
+    make_output_path(filename, sizeof(filename), "test_vtk_vector_3d.vtk");
+    remove(filename);
+
+    size_t nx = 3, ny = 3, nz = 2;
+    size_t total = nx * ny * nz;
+    double* u = (double*)calloc(total, sizeof(double));
+    double* v = (double*)calloc(total, sizeof(double));
+    double* w = (double*)calloc(total, sizeof(double));
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+    TEST_ASSERT_NOT_NULL(w);
+
+    u[0] = 1.0;
+    v[0] = 2.0;
+    w[0] = 3.0;
+
+    write_vtk_vector_output(filename, "vel3d", u, v, w, nx, ny, nz,
+                            0.0, 1.0, 0.0, 1.0, 0.0, 0.5);
+
+    TEST_ASSERT_TRUE(file_exists(filename));
+    TEST_ASSERT_TRUE(file_contains(filename, "DIMENSIONS 3 3 2"));
+    TEST_ASSERT_TRUE(file_contains(filename, "POINT_DATA 18"));
+    TEST_ASSERT_TRUE(file_contains(filename, "VECTORS vel3d"));
+    TEST_ASSERT_TRUE(file_contains(filename, "1.000000 2.000000 3.000000"));
+
+    free(u);
+    free(v);
+    free(w);
+    remove(filename);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -342,6 +403,10 @@ int main(void) {
     // Edge case tests
     RUN_TEST(test_vtk_output_small_grid);
     RUN_TEST(test_vtk_output_large_values);
+
+    // 3D output tests
+    RUN_TEST(test_vtk_scalar_3d_output);
+    RUN_TEST(test_vtk_vector_3d_with_w);
 
     return UNITY_END();
 }
