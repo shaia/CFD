@@ -86,6 +86,31 @@ void test_3d_divergence_free(void) {
 }
 
 /* ============================================================================
+ * L2 ERROR TEST
+ * ============================================================================ */
+
+void test_3d_l2_error(void) {
+    printf("\n    Testing 3D L2 error against analytical solution...\n");
+
+    tg3_result_t result = tg3_run_simulation(
+        NS_SOLVER_TYPE_PROJECTION,
+        TG3_DEFAULT_N, TG3_DEFAULT_NU, TG3_DEFAULT_DT, TG3_DEFAULT_STEPS
+    );
+
+    TEST_ASSERT_TRUE_MESSAGE(result.success, result.error_msg);
+
+    printf("      L2 error u: %.6f (tolerance: %.4f)\n",
+           result.l2_error_u, TG3_L2_ERROR_TOL);
+    printf("      L2 error v: %.6f (tolerance: %.4f)\n",
+           result.l2_error_v, TG3_L2_ERROR_TOL);
+
+    TEST_ASSERT_TRUE_MESSAGE(result.l2_error_u < TG3_L2_ERROR_TOL,
+        "3D u-velocity L2 error exceeds tolerance");
+    TEST_ASSERT_TRUE_MESSAGE(result.l2_error_v < TG3_L2_ERROR_TOL,
+        "3D v-velocity L2 error exceeds tolerance");
+}
+
+/* ============================================================================
  * W-VELOCITY TEST
  * ============================================================================ */
 
@@ -118,6 +143,7 @@ int main(void) {
     RUN_TEST(test_3d_velocity_decay_rate);
     RUN_TEST(test_3d_kinetic_energy_decay);
     RUN_TEST(test_3d_divergence_free);
+    RUN_TEST(test_3d_l2_error);
     RUN_TEST(test_3d_w_remains_zero);
 
     return UNITY_END();
