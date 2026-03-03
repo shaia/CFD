@@ -90,6 +90,10 @@ typedef struct {
 
 /**
  * Run a Taylor-Green vortex case and return metrics.
+ *
+ * @param n  Interior resolution: the domain has n×n active cells.
+ *           bc_apply_periodic treats indices 0 and nx-1 as halo cells,
+ *           so the grid is allocated as (n+2)×(n+2) internally.
  */
 static tg_result_t run_case(size_t n, const char* solver_type,
                              double dt, double t_final) {
@@ -97,7 +101,7 @@ static tg_result_t run_case(size_t n, const char* solver_type,
     double domain = 2.0 * M_PI;
 
     simulation_data* sim = init_simulation_with_solver(
-        n, n, 1,
+        n + 2, n + 2, 1,
         0.0, domain, 0.0, domain, 0.0, 0.0,
         solver_type);
 
@@ -129,7 +133,7 @@ static tg_result_t run_case(size_t n, const char* solver_type,
     }
 
     /* Compute L2 error against analytical solution */
-    size_t nx = n, ny = n;
+    size_t nx = n + 2, ny = n + 2;
     double decay = exp(-2.0 * TG_NU * t_final);
     double sum_sq = 0.0;
     size_t count = 0;
@@ -161,7 +165,9 @@ int main(void) {
     printf("Analytical: u decays as exp(-2*nu*t)\n\n");
 
     /* === Part 1: Velocity Decay Tracking ===
-     * Run with projection solver and print velocity/KE at intervals */
+     * Run with projection solver and print velocity/KE at intervals.
+     * n is the interior resolution; grid is allocated as (n+2)×(n+2)
+     * to include halo cells used by bc_apply_periodic. */
     size_t n = 32;
     double dt = 5e-4;
     double t_end = 0.5;
@@ -172,7 +178,7 @@ int main(void) {
            "Time", "max|u|", "Analytical", "KE", "KE_exact");
 
     simulation_data* sim = init_simulation_with_solver(
-        n, n, 1,
+        n + 2, n + 2, 1,
         0.0, 2.0 * M_PI, 0.0, 2.0 * M_PI, 0.0, 0.0,
         NS_SOLVER_TYPE_PROJECTION);
 
