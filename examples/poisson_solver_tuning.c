@@ -166,8 +166,14 @@ int main(void) {
     printf("\n--- Convenience API ---\n");
     memset(p, 0, n * sizeof(double));
     int iters = poisson_solve(p, p_temp, rhs, nx, ny, dx, dy, POISSON_SOLVER_CG_SCALAR);
-    double err = compute_l2_error(p, p_exact, nx, ny);
-    printf("  poisson_solve(CG_SCALAR): %d iterations, L2 error = %.2e\n", iters, err);
+    if (iters < 0) {
+        printf("  poisson_solve(CG_SCALAR): FAILED (non-converged or error)\n");
+        printf("    Status: \"%s\"\n", cfd_get_error_string(cfd_get_last_status()));
+        cfd_clear_error();
+    } else {
+        double err = compute_l2_error(p, p_exact, nx, ny);
+        printf("  poisson_solve(CG_SCALAR): %d iterations, L2 error = %.2e\n", iters, err);
+    }
 
     /* Section 4: Error handling for unavailable solver */
     printf("\n--- Error Handling ---\n");
