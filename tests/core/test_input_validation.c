@@ -1,7 +1,6 @@
 #include "cfd/api/simulation_api.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
-#include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
 void setUp(void) {
