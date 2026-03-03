@@ -21,11 +21,12 @@
 #include <math.h>
 #include <stdio.h>
 
-static void apply_walls_and_outlet(flow_field* field, size_t nx, size_t ny) {
+static cfd_status_t apply_walls_and_outlet(flow_field* field, size_t nx, size_t ny) {
     /* Zero-gradient outlet on right */
     bc_outlet_config_t outlet = bc_outlet_config_zero_gradient();
     bc_outlet_set_edge(&outlet, BC_EDGE_RIGHT);
-    bc_apply_outlet_velocity(field->u, field->v, nx, ny, &outlet);
+    cfd_status_t st = bc_apply_outlet_velocity(field->u, field->v, nx, ny, &outlet);
+    if (st != CFD_SUCCESS) return st;
 
     /* No-slip walls on top and bottom */
     for (size_t i = 0; i < nx; i++) {
@@ -37,6 +38,7 @@ static void apply_walls_and_outlet(flow_field* field, size_t nx, size_t ny) {
 
     /* Neumann pressure */
     bc_apply_neumann(field->p, nx, ny);
+    return CFD_SUCCESS;
 }
 
 static void run_time_varying_case(const char* label,
@@ -72,10 +74,18 @@ static void run_time_varying_case(const char* label,
     for (int step = 0; step < num_steps; step++) {
         /* Apply time-varying inlet BC */
         bc_time_context_t tctx = BC_TIME_CONTEXT(time, dt);
-        bc_apply_inlet_time(sim->field->u, sim->field->v, nx, ny, inlet, &tctx);
+        cfd_status_t bc_st = bc_apply_inlet_time(sim->field->u, sim->field->v, nx, ny, inlet, &tctx);
+        if (bc_st != CFD_SUCCESS) {
+            fprintf(stderr, "    bc_apply_inlet_time failed at t=%.3f; aborting case.\n", time);
+            break;
+        }
 
         /* Apply outlet + wall BCs */
-        apply_walls_and_outlet(sim->field, nx, ny);
+        bc_st = apply_walls_and_outlet(sim->field, nx, ny);
+        if (bc_st != CFD_SUCCESS) {
+            fprintf(stderr, "    apply_walls_and_outlet failed at t=%.3f; aborting case.\n", time);
+            break;
+        }
 
         if (step % print_interval == 0) {
             /* Sample inlet velocity at mid-height (after BC, before step) */
