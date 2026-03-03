@@ -27,10 +27,15 @@
 #endif
 
 /**
- * Set up a Poisson problem with known solution.
+ * Set up a Poisson problem for method/backend comparison.
  *
- * Solution: p(x,y) = sin(pi*x) * sin(pi*y)
- * RHS:      nabla^2 p = -2*pi^2 * sin(pi*x) * sin(pi*y)
+ * Reference field: p(x,y) = sin(pi*x) * sin(pi*y)
+ * RHS:             nabla^2 p = -2*pi^2 * sin(pi*x) * sin(pi*y)
+ *
+ * Note: p_exact satisfies Dirichlet p=0 on all boundaries, but the Poisson
+ * solvers in this library apply homogeneous Neumann BCs by default. The
+ * reported L2 error therefore measures relative agreement between solver
+ * methods/backends, not absolute accuracy against this analytical field.
  */
 static void setup_poisson_problem(double* rhs, double* p_exact,
                                   size_t nx, size_t ny,
