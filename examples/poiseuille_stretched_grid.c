@@ -152,7 +152,17 @@ static case_result_t run_case(size_t nx, size_t ny, double beta,
     for (int step = 0; step < steps; step++) {
         apply_channel_bcs(field, nx, ny, U_max);
         stats_out = ns_solver_stats_default();
-        solver_step(solver, field, g, &params, &stats_out);
+        cfd_status_t step_status = solver_step(solver, field, g, &params, &stats_out);
+        if (step_status != CFD_SUCCESS) {
+            fprintf(stderr, "    solver_step failed at step %d (status=%d); aborting.\n",
+                    step, (int)step_status);
+            solver_destroy(solver);
+            cfd_registry_destroy(registry);
+            flow_field_destroy(field);
+            grid_destroy(g);
+            result.l2_error = -1.0;
+            return result;
+        }
     }
 
     /* Compute L2 error at outlet (last interior column) */
