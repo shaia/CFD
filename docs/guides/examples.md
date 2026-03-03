@@ -583,6 +583,251 @@ Grid 500x500, 100 iterations:
   GPU (CUDA): 6.8s (12x speedup)
 ```
 
+---
+
+### 11. lid_driven_cavity_direct.c
+
+**Purpose:** Lid-driven cavity using the mid-level solver registry API
+
+**What it demonstrates:**
+- Creating grid and flow_field manually
+- Using the solver registry to create a projection solver
+- Applying Dirichlet BCs explicitly each time step
+- Monitoring solver statistics (max velocity, CFL, timing)
+- Manual VTK output with `write_vtk_flow_field()`
+
+**Usage:**
+```bash
+./lid_driven_cavity_direct [Re]
+# Default Re=100
+```
+
+---
+
+### 12. platform_diagnostics.c
+
+**Purpose:** Query runtime platform capabilities and demonstrate utility APIs
+
+**What it demonstrates:**
+- SIMD detection: `cfd_get_simd_name()`, `cfd_has_avx2()`, `cfd_has_neon()`
+- Backend availability: `bc_backend_available()`, `poisson_solver_backend_available()`
+- Solver enumeration: `cfd_registry_list()` to list all registered solvers
+- Derived fields: `derived_fields_create()`, `derived_fields_compute_statistics()`
+- Error handling: `cfd_get_last_error()`, `cfd_get_error_string()`, `cfd_clear_error()`
+
+**Sections:**
+1. SIMD capabilities (architecture detection)
+2. Backend availability (BC and Poisson solver backends)
+3. Available NS solvers (enumerate via `cfd_registry_list()`)
+4. Derived fields and statistics (compute velocity magnitude and field stats on a small TG vortex)
+5. Error handling patterns (request a nonexistent solver, inspect error state)
+
+**Run:**
+```bash
+./platform_diagnostics
+```
+
+**Expected Output:**
+```
+CFD Platform Diagnostics
+========================
+
+1. SIMD Capabilities
+   Architecture: avx2
+   AVX2:  yes
+   NEON:  no
+   Any:   yes
+
+2. Backend Availability
+   Boundary Conditions:
+     Scalar:  available
+     SIMD:    available
+     OpenMP:  available
+   Poisson Solvers:
+     Scalar:  available
+     SIMD:    available (avx2)
+     OpenMP:  available
+
+3. Available NS Solvers
+   Found 8 solver(s):
+     - explicit_euler
+     - projection
+     ...
+
+4. Derived Fields & Statistics
+   Taylor-Green vortex (32x32):
+   u-velocity:  min=-0.0999, max=0.0999, avg=0.0000
+   ...
+
+5. Error Handling Patterns
+   Requesting 'nonexistent_solver'... NULL (expected)
+     Last error:  "Solver type 'nonexistent_solver' not registered"
+     Status code: Resource not found (-9)
+```
+
+---
+
+### 13. poisson_solver_tuning.c
+
+**Purpose:** Compare Poisson solver methods, backends, and preconditioners
+
+**What it demonstrates:**
+- `poisson_solver_create(method, backend)` factory API
+- `poisson_solver_params_t` with tolerance, max iterations, omega, preconditioner
+- `poisson_solver_init()`, `poisson_solver_solve()`, `poisson_solver_destroy()`
+- `poisson_solver_stats_t` for convergence monitoring
+- `poisson_solve()` convenience API
+- `poisson_solver_backend_available()` for runtime checking
+- Error handling for unavailable solvers
+
+**Sections:**
+1. Method comparison (Jacobi, SOR, Red-Black SOR, CG, CG+Jacobi PC, BiCGSTAB) on scalar backend
+2. Backend comparison (CG on Scalar, SIMD, OMP)
+3. Convenience API demo (`poisson_solve()`)
+4. Error handling (requesting unavailable multigrid solver)
+
+**Problem:** Solves ∇²p = -2π²sin(πx)sin(πy) on a 64×64 grid using the library's default homogeneous Neumann boundary conditions. The reported L2 error compares methods/backends against a common reference field — not against the Dirichlet analytical solution sin(πx)sin(πy), since BCs differ.
+
+**Run:**
+```bash
+./poisson_solver_tuning
+```
+
+**Expected Output:**
+```
+--- Method Comparison (Scalar Backend) ---
+  Method                Iters     Residual    L2 Error      Time  Status
+  Jacobi                10001   res=8.3e+00  L2=4.8e+00  5548 ms  max_iter
+  CG                        1   res=5.1e-11  L2=1.1e-04     2 ms  converged
+  CG + Jacobi PC            1   res=5.9e-11  L2=1.1e-04     2 ms  converged
+  BiCGSTAB                  1   res=5.1e-11  L2=1.1e-04     2 ms  converged
+```
+
+---
+
+### 14. poiseuille_stretched_grid.c
+
+**Purpose:** Validate Poiseuille flow against the analytical parabolic velocity profile, comparing uniform vs stretched grids
+
+**What it demonstrates:**
+- `grid_initialize_stretched(g, beta)` with multiple beta values
+- `bc_inlet_config_parabolic(U_max)` + `bc_inlet_set_edge()` for parabolic inlet
+- `bc_outlet_config_zero_gradient()` + `bc_outlet_set_edge()` for outlet
+- No-slip walls (manual loop)
+- `bc_apply_neumann()` for pressure
+- `derived_fields_create()`, `derived_fields_compute_statistics()`
+- Direct solver registry API (`cfd_registry_create()`, `cfd_solver_create()`, `solver_step()`)
+
+**Cases:**
+1. Uniform grid (beta=0) — baseline
+2. Mild stretching (beta=1.5) — 5:1 cell ratio
+3. Strong stretching (beta=2.0) — 12:1 cell ratio
+
+**Run:**
+```bash
+./poiseuille_stretched_grid
+```
+
+**Expected Output:**
+```
+--- Summary ---
+  Grid Type                  min(dy)     max(dy)     Ratio    L2 Error
+  Uniform (beta=0)           0.03226     0.03226       1.0   1.465e-02
+  Mild (beta=1.5)            0.01055     0.05342       5.1   1.263e-01
+  Strong (beta=2.0)          0.00537     0.06683      12.5   1.881e-01
+```
+
+---
+
+### 15. taylor_green_convergence.c
+
+**Purpose:** Taylor-Green vortex on a periodic domain with solver comparison and grid refinement
+
+**What it demonstrates:**
+- Periodic boundary conditions (`bc_apply_periodic` macro)
+- Three NS solver types: `projection`, `rk2`, `explicit_euler`
+- Analytical solution comparison (velocity decay exp(-2νt))
+- Grid refinement showing error reduction with resolution
+
+**Sections:**
+1. **Velocity decay tracking** — Run with projection solver, print max|u| and kinetic energy at intervals alongside analytical predictions
+2. **Solver comparison** — Same problem with projection, RK2, and explicit Euler at a single resolution
+3. **Grid refinement** — Explicit Euler at 16×16, 32×32, 64×64 showing error decreases with resolution
+
+**Run:**
+```bash
+./taylor_green_convergence
+```
+
+**Expected Output:**
+```
+Part 1: Velocity Decay (Projection, 32x32, dt=5e-04)
+  Time        max|u|  Analytical          KE    KE_exact
+  t=0.000   0.993592    1.000000    0.249722    0.250000
+  t=0.100   0.968325    0.998002    0.222092    0.249002
+  ...
+
+Part 2: Solver Comparison (32x32, dt=5e-04, T=0.5)
+  Solver                    L2 Error      max|u|
+  Projection               6.403e-02    0.894924
+  RK2 (Heun)               4.200e-02    0.951252
+  Explicit Euler           6.107e-03    0.991708
+
+Part 3: Grid Refinement (Explicit Euler, dt=5e-04, T=0.5)
+  Resolution        L2 Error
+   16 x 16      9.276e-03
+   32 x 32      6.107e-03
+   64 x 64      5.030e-03
+```
+
+---
+
+### 16. pulsatile_inlet_flow.c
+
+**Purpose:** Demonstrate all time-varying boundary condition types for pulsatile/transient flows
+
+**What it demonstrates:**
+- `bc_inlet_config_time_sinusoidal()` for pulsatile flow
+- `bc_inlet_config_time_ramp()` for smooth start-up
+- `bc_inlet_config_time_step()` for sudden changes
+- `BC_TIME_CONTEXT(time, dt)` macro for time context
+- `bc_apply_inlet_time()` for time-varying BC application
+- `bc_apply_outlet_velocity()` for outlet
+- `bc_apply_neumann()` for pressure
+
+**Cases:**
+1. **Sinusoidal** — Base velocity (1.0, 0.0) modulated at 2 Hz with 30% amplitude. Inlet u oscillates between 0.7 and 1.3
+2. **Ramp start-up** — Velocity ramps from 0 to 1.0 over t=[0, 0.25], then holds at 1.0
+3. **Step change** — Velocity jumps from 0.5 to 1.5 at t=0.2
+
+**Run:**
+```bash
+./pulsatile_inlet_flow
+```
+
+**Expected Output:**
+```
+  Case: Sinusoidal (freq=2Hz, amp=30%)
+    t=0.000: inlet u_mid = 1.0000
+    t=0.050: inlet u_mid = 1.1763
+    t=0.100: inlet u_mid = 1.2853
+    ...
+
+  Case: Ramp Start-up (0 -> 1.0 over t=[0, 0.25])
+    t=0.000: inlet u_mid = 0.0000
+    t=0.050: inlet u_mid = 0.2000
+    t=0.200: inlet u_mid = 0.8000
+    t=0.250: inlet u_mid = 1.0000
+    ...
+
+  Case: Step Change (0.5 -> 1.5 at t=0.2)
+    t=0.000: inlet u_mid = 0.5000
+    t=0.200: inlet u_mid = 1.5000
+    ...
+```
+
+---
+
 ## Visualization
 
 ### VTK Files (ParaView/VisIt)

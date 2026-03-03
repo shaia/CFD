@@ -145,6 +145,26 @@ if(BUILD_EXAMPLES)
     # Lid-driven cavity (direct) - solver registry API with manual control
     add_executable(lid_driven_cavity_direct examples/lid_driven_cavity_direct.c)
     target_link_libraries(lid_driven_cavity_direct PRIVATE CFD::Library)
+
+    # Poiseuille flow with stretched grids
+    add_executable(poiseuille_stretched_grid examples/poiseuille_stretched_grid.c)
+    target_link_libraries(poiseuille_stretched_grid PRIVATE CFD::Library)
+
+    # Taylor-Green vortex convergence study
+    add_executable(taylor_green_convergence examples/taylor_green_convergence.c)
+    target_link_libraries(taylor_green_convergence PRIVATE CFD::Library)
+
+    # Pulsatile inlet flow with time-varying BCs
+    add_executable(pulsatile_inlet_flow examples/pulsatile_inlet_flow.c)
+    target_link_libraries(pulsatile_inlet_flow PRIVATE CFD::Library)
+
+    # Poisson solver tuning and comparison
+    add_executable(poisson_solver_tuning examples/poisson_solver_tuning.c)
+    target_link_libraries(poisson_solver_tuning PRIVATE CFD::Library)
+
+    # Platform diagnostics, derived fields, and error handling
+    add_executable(platform_diagnostics examples/platform_diagnostics.c)
+    target_link_libraries(platform_diagnostics PRIVATE CFD::Library)
 endif()
 
 # Optionally build tests
