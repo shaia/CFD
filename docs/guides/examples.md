@@ -583,6 +583,8 @@ Grid 500x500, 100 iterations:
   GPU (CUDA): 6.8s (12x speedup)
 ```
 
+---
+
 ### 11. lid_driven_cavity_direct.c
 
 **Purpose:** Lid-driven cavity using the mid-level solver registry API

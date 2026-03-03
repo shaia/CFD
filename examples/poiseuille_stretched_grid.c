@@ -151,7 +151,6 @@ static case_result_t run_case(size_t nx, size_t ny, double beta,
     }
 
     /* Time-stepping */
-    ns_solver_stats_t stats_out;
     for (int step = 0; step < steps; step++) {
         cfd_status_t bc_status = apply_channel_bcs(field, nx, ny, U_max);
         if (bc_status != CFD_SUCCESS) {
@@ -163,7 +162,7 @@ static case_result_t run_case(size_t nx, size_t ny, double beta,
             result.l2_error = -1.0;
             return result;
         }
-        stats_out = ns_solver_stats_default();
+        ns_solver_stats_t stats_out = ns_solver_stats_default();
         cfd_status_t step_status = solver_step(solver, field, g, &params, &stats_out);
         if (step_status != CFD_SUCCESS) {
             fprintf(stderr, "    solver_step failed at step %d (status=%d); aborting.\n",
