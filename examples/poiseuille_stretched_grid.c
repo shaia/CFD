@@ -34,17 +34,19 @@ static double analytical_u(double y, double H, double U_max) {
     return U_max * 4.0 * (y / H) * (1.0 - y / H);
 }
 
-static void apply_channel_bcs(flow_field* field, size_t nx, size_t ny,
-                               double U_max) {
+static cfd_status_t apply_channel_bcs(flow_field* field, size_t nx, size_t ny,
+                                       double U_max) {
     /* Parabolic inlet on left boundary */
     bc_inlet_config_t inlet = bc_inlet_config_parabolic(U_max);
     bc_inlet_set_edge(&inlet, BC_EDGE_LEFT);
-    bc_apply_inlet(field->u, field->v, nx, ny, &inlet);
+    cfd_status_t st = bc_apply_inlet(field->u, field->v, nx, ny, &inlet);
+    if (st != CFD_SUCCESS) return st;
 
     /* Zero-gradient outlet on right boundary */
     bc_outlet_config_t outlet = bc_outlet_config_zero_gradient();
     bc_outlet_set_edge(&outlet, BC_EDGE_RIGHT);
-    bc_apply_outlet_velocity(field->u, field->v, nx, ny, &outlet);
+    st = bc_apply_outlet_velocity(field->u, field->v, nx, ny, &outlet);
+    if (st != CFD_SUCCESS) return st;
 
     /* No-slip walls on top and bottom */
     /* Top wall */
@@ -60,6 +62,7 @@ static void apply_channel_bcs(flow_field* field, size_t nx, size_t ny,
 
     /* Neumann BC for pressure */
     bc_apply_neumann(field->p, nx, ny);
+    return CFD_SUCCESS;
 }
 
 typedef struct {
@@ -150,7 +153,16 @@ static case_result_t run_case(size_t nx, size_t ny, double beta,
     /* Time-stepping */
     ns_solver_stats_t stats_out;
     for (int step = 0; step < steps; step++) {
-        apply_channel_bcs(field, nx, ny, U_max);
+        cfd_status_t bc_status = apply_channel_bcs(field, nx, ny, U_max);
+        if (bc_status != CFD_SUCCESS) {
+            fprintf(stderr, "    BC application failed at step %d; aborting.\n", step);
+            solver_destroy(solver);
+            cfd_registry_destroy(registry);
+            flow_field_destroy(field);
+            grid_destroy(g);
+            result.l2_error = -1.0;
+            return result;
+        }
         stats_out = ns_solver_stats_default();
         cfd_status_t step_status = solver_step(solver, field, g, &params, &stats_out);
         if (step_status != CFD_SUCCESS) {
