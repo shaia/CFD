@@ -77,17 +77,21 @@ static void run_time_varying_case(const char* label,
         /* Apply outlet + wall BCs */
         apply_walls_and_outlet(sim->field, nx, ny);
 
-        /* Step the solver */
-        ns_solver_stats_t stats = ns_solver_stats_default();
-        solver_step(sim->solver, sim->field, sim->grid, &sim->params, &stats);
-        time += dt;
-
         if (step % print_interval == 0) {
-            /* Sample inlet velocity at mid-height */
+            /* Sample inlet velocity at mid-height (after BC, before step) */
             size_t mid_j = ny / 2;
             double u_inlet = sim->field->u[mid_j * nx + 0];
             printf("    t=%.3f: inlet u_mid = %.4f\n", time, u_inlet);
         }
+
+        /* Step the solver */
+        ns_solver_stats_t stats = ns_solver_stats_default();
+        cfd_status_t status = solver_step(sim->solver, sim->field, sim->grid, &sim->params, &stats);
+        if (status != CFD_SUCCESS) {
+            fprintf(stderr, "    Solver failed at t=%.3f; aborting case.\n", time);
+            break;
+        }
+        time += dt;
     }
 
     free_simulation(sim);
