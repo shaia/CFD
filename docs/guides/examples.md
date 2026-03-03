@@ -684,7 +684,7 @@ CFD Platform Diagnostics
 3. Convenience API demo (`poisson_solve()`)
 4. Error handling (requesting unavailable multigrid solver)
 
-**Problem:** Solves ∇²p = -2π²sin(πx)sin(πy) on a 64×64 grid with known analytical solution.
+**Problem:** Solves ∇²p = -2π²sin(πx)sin(πy) on a 64×64 grid using the library's default homogeneous Neumann boundary conditions. The reported L2 error compares methods/backends against a common reference field — not against the Dirichlet analytical solution sin(πx)sin(πy), since BCs differ.
 
 **Run:**
 ```bash
@@ -806,21 +806,21 @@ Part 3: Grid Refinement (Explicit Euler, dt=5e-04, T=0.5)
 **Expected Output:**
 ```
   Case: Sinusoidal (freq=2Hz, amp=30%)
-    t=0.001: inlet u_mid = 1.0000
-    t=0.051: inlet u_mid = 1.1763
-    t=0.101: inlet u_mid = 1.2853
+    t=0.000: inlet u_mid = 1.0000
+    t=0.050: inlet u_mid = 1.1763
+    t=0.100: inlet u_mid = 1.2853
     ...
 
   Case: Ramp Start-up (0 -> 1.0 over t=[0, 0.25])
-    t=0.001: inlet u_mid = 0.0000
-    t=0.051: inlet u_mid = 0.2000
-    t=0.201: inlet u_mid = 0.8000
-    t=0.251: inlet u_mid = 1.0000
+    t=0.000: inlet u_mid = 0.0000
+    t=0.050: inlet u_mid = 0.2000
+    t=0.200: inlet u_mid = 0.8000
+    t=0.250: inlet u_mid = 1.0000
     ...
 
   Case: Step Change (0.5 -> 1.5 at t=0.2)
-    t=0.001: inlet u_mid = 0.5000
-    t=0.201: inlet u_mid = 1.5000
+    t=0.000: inlet u_mid = 0.5000
+    t=0.200: inlet u_mid = 1.5000
     ...
 ```
 
