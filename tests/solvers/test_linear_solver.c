@@ -1088,7 +1088,8 @@ void test_poisson_compute_residual_null_arrays(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(solver);
-    poisson_solver_init(solver, 8, 8, 1, 0.1, 0.1, 0.0, NULL);
+    cfd_status_t st = poisson_solver_init(solver, 8, 8, 1, 0.1, 0.1, 0.0, NULL);
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, st);
 
     double dummy[64] = {0};
     TEST_ASSERT_DOUBLE_WITHIN(1e-15, -1.0, poisson_solver_compute_residual(solver, NULL, dummy));
