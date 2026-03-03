@@ -1030,6 +1030,80 @@ void test_omp_backend_diagnostic(void) {
 }
 
 /* ============================================================================
+ * NULL GUARD / EDGE CASE TESTS
+ * ============================================================================ */
+
+void test_poisson_create_invalid_method(void) {
+    /* Unknown method enum — factory should return NULL */
+    poisson_solver_t* solver = poisson_solver_create(
+        (poisson_solver_method_t)999, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NULL(solver);
+}
+
+void test_poisson_init_null_solver(void) {
+    /* linear_solver.c:231 — guard: if (!solver) return CFD_ERROR_INVALID */
+    cfd_status_t st = poisson_solver_init(NULL, 8, 8, 1, 0.1, 0.1, 0.0, NULL);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, st);
+}
+
+void test_poisson_init_nx_too_small(void) {
+    /* linear_solver.c:238 — guard: nx < 3 => CFD_ERROR_INVALID */
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+    cfd_status_t st = poisson_solver_init(solver, 2, 8, 1, 0.1, 0.1, 0.0, NULL);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, st);
+    poisson_solver_destroy(solver);
+}
+
+void test_poisson_init_ny_too_small(void) {
+    /* linear_solver.c:238 — guard: ny < 3 => CFD_ERROR_INVALID */
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+    cfd_status_t st = poisson_solver_init(solver, 8, 2, 1, 0.1, 0.1, 0.0, NULL);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, st);
+    poisson_solver_destroy(solver);
+}
+
+void test_poisson_init_nz_degenerate(void) {
+    /* linear_solver.c:238 — guard: nz>1 && nz<3 => CFD_ERROR_INVALID (nz=2 has no interior) */
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+    cfd_status_t st = poisson_solver_init(solver, 8, 8, 2, 0.1, 0.1, 0.1, NULL);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, st);
+    poisson_solver_destroy(solver);
+}
+
+void test_poisson_compute_residual_null_solver(void) {
+    /* linear_solver.c:289 — guard: if (!solver || !x || !rhs) return -1.0 */
+    double dummy[4] = {0.0, 0.0, 0.0, 0.0};
+    double result = poisson_solver_compute_residual(NULL, dummy, dummy);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, -1.0, result);
+}
+
+void test_poisson_compute_residual_null_arrays(void) {
+    /* linear_solver.c:289 — NULL x or rhs returns -1.0 before accessing solver fields */
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+    poisson_solver_init(solver, 8, 8, 1, 0.1, 0.1, 0.0, NULL);
+
+    double dummy[64] = {0};
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, -1.0, poisson_solver_compute_residual(solver, NULL, dummy));
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, -1.0, poisson_solver_compute_residual(solver, dummy, NULL));
+
+    poisson_solver_destroy(solver);
+}
+
+void test_poisson_apply_bc_null(void) {
+    /* linear_solver.c:332 — guard: if (!solver || !x) return */
+    poisson_solver_apply_bc(NULL, NULL);
+    TEST_PASS();
+}
+
+/* ============================================================================
  * TEST RUNNER
  * ============================================================================ */
 
@@ -1094,6 +1168,16 @@ int main(void) {
 
     /* Statistics tests */
     RUN_TEST(test_stats_timing);
+
+    /* NULL guard / edge case tests */
+    RUN_TEST(test_poisson_create_invalid_method);
+    RUN_TEST(test_poisson_init_null_solver);
+    RUN_TEST(test_poisson_init_nx_too_small);
+    RUN_TEST(test_poisson_init_ny_too_small);
+    RUN_TEST(test_poisson_init_nz_degenerate);
+    RUN_TEST(test_poisson_compute_residual_null_solver);
+    RUN_TEST(test_poisson_compute_residual_null_arrays);
+    RUN_TEST(test_poisson_apply_bc_null);
 
     return UNITY_END();
 }
