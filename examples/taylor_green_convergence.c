@@ -189,10 +189,10 @@ int main(void) {
     init_taylor_green(sim->field, sim->grid);
     apply_periodic_bcs(sim->field);
 
-    int num_steps = (int)(t_end / dt);
-    for (int step = 0; step <= num_steps; step++) {
+    double t = 0.0;
+    int step = 0;
+    while (t <= t_end + 1e-12) {
         if (step % print_every == 0) {
-            double t = step * dt;
             double decay = exp(-2.0 * TG_NU * t);
             double u_max = compute_max_u(sim->field);
             double ke = compute_kinetic_energy(sim->field);
@@ -201,17 +201,23 @@ int main(void) {
                    t, u_max, TG_U0 * decay, ke, ke_exact);
         }
 
-        if (step < num_steps) {
-            apply_periodic_bcs(sim->field);
-            ns_solver_stats_t stats = ns_solver_stats_default();
-            cfd_status_t status = solver_step(sim->solver, sim->field, sim->grid,
-                                              &sim->params, &stats);
-            if (status != CFD_SUCCESS) {
-                fprintf(stderr, "  Error: solver_step failed at step %d\n", step);
-                free_simulation(sim);
-                return 1;
-            }
+        if (t >= t_end - 1e-12) { break; }
+
+        double step_dt = dt;
+        if (t + step_dt > t_end) { step_dt = t_end - t; }
+        sim->params.dt = step_dt;
+
+        apply_periodic_bcs(sim->field);
+        ns_solver_stats_t stats = ns_solver_stats_default();
+        cfd_status_t status = solver_step(sim->solver, sim->field, sim->grid,
+                                          &sim->params, &stats);
+        if (status != CFD_SUCCESS) {
+            fprintf(stderr, "  Error: solver_step failed at t=%.3f\n", t);
+            free_simulation(sim);
+            return 1;
         }
+        t += step_dt;
+        step++;
     }
     free_simulation(sim);
 
