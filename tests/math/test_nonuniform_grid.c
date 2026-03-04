@@ -220,7 +220,8 @@ void test_poisson_rectangular_domain(void) {
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, init_status);
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
-    poisson_solver_solve(solver, x, x_temp, rhs, &stats);
+    cfd_status_t solve_status = poisson_solver_solve(solver, x, x_temp, rhs, &stats);
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, solve_status);
 
     printf("      Iterations: %d, final residual: %.6e, status: %d\n",
            stats.iterations, stats.final_residual, (int)stats.status);
