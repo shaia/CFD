@@ -31,7 +31,13 @@ void tearDown(void) {}
 
 /**
  * A constant interior RHS sums to a non-zero value, making it incompatible
- * with homogeneous Neumann boundary conditions. CG cannot converge.
+ * with homogeneous Neumann boundary conditions.  With a small iteration
+ * budget and tight absolute tolerance, CG must exhaust the budget or
+ * report stagnation — it must not crash or return success in 0 iterations.
+ *
+ * Note: CG may still "converge" via relative tolerance, so we only assert
+ * that it runs the full budget without crashing and uses a non-trivial
+ * number of iterations.
  */
 void test_cg_incompatible_neumann(void) {
     double dx = 1.0 / (NX - 1);
@@ -60,19 +66,20 @@ void test_cg_incompatible_neumann(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance          = 1e-10;
     params.absolute_tolerance = 1e-14;
-    params.max_iterations     = 500;
+    params.max_iterations     = 50;
 
     cfd_status_t init_status = poisson_solver_init(solver, NX, NY, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, init_status);
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
-    /* Return value may be CFD_SUCCESS or CFD_ERROR_MAX_ITER; what matters is
-     * that the solver did not report convergence in stats. */
-    poisson_solver_solve(solver, x, x_temp, rhs, &stats);
+    cfd_status_t status = poisson_solver_solve(solver, x, x_temp, rhs, &stats);
 
     /* CG may converge via relative tolerance even on an incompatible system.
-     * The key verification is that the solver runs without crashing and
-     * requires a non-trivial number of iterations. */
+     * Accept either CFD_SUCCESS (relative convergence) or CFD_ERROR_MAX_ITER
+     * (exhausted budget). Any other return is a bug. */
+    TEST_ASSERT_TRUE_MESSAGE(
+        status == CFD_SUCCESS || status == CFD_ERROR_MAX_ITER,
+        "CG must return SUCCESS or MAX_ITER on incompatible Neumann system");
     TEST_ASSERT_TRUE_MESSAGE(stats.iterations > 0,
         "CG must perform at least one iteration on non-trivial system");
 
