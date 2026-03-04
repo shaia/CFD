@@ -3,9 +3,11 @@
  * @brief CG and BiCGSTAB breakdown and edge-case detection tests
  *
  * Verifies solver behavior under degenerate conditions:
- * - Incompatible Neumann systems (non-zero mean RHS) cannot converge
+ * - Incompatible Neumann systems (non-zero mean RHS) are handled gracefully
+ *   (no crash; solver returns SUCCESS or MAX_ITER with non-zero iterations)
  * - Zero RHS with zero initial guess converges immediately
- * - Tight tolerance with severely limited iterations reports max-iter correctly
+ * - Tight tolerance with severely limited iterations is reported via either
+ *   SUCCESS or MAX_ITER without crashing
  */
 
 #include "unity.h"
