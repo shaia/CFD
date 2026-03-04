@@ -24,7 +24,7 @@
  * output AND TEST_FAIL_MESSAGE to attach the text as the failure message.
  * Using TEST_FAIL() alone would drop the message from failure summaries. */
 #  define TEST_FAIL_PRINTF_FMT_ONLY_(fmt) \
-     do { TEST_PRINTF("%s", (fmt)); TEST_FAIL_MESSAGE(fmt); } while (0)
+     do { const char* _tfp_fmt_ = (fmt); TEST_PRINTF("%s", _tfp_fmt_); TEST_FAIL_MESSAGE(_tfp_fmt_); } while (0)
 #  define TEST_FAIL_PRINTF_VAR_(fmt, ...) \
      do { \
          char _tfp_buf_[512]; \
