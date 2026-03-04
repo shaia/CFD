@@ -86,6 +86,12 @@ void test_flow_field_create_3d_zero_dims_fails(void) {
     TEST_ASSERT_NULL(flow_field_create(10, 10, 0));
 }
 
+void test_flow_field_destroy_null(void) {
+    /* Verify destroy(NULL) is safe — guard: if (field != NULL) in solver_explicit_euler.c */
+    flow_field_destroy(NULL);
+    TEST_PASS();
+}
+
 /* ============================================================================
  * derived_fields 3D tests
  * ============================================================================ */
@@ -338,6 +344,7 @@ int main(void) {
     RUN_TEST(test_flow_field_create_wrapper_sets_nz1);
     RUN_TEST(test_flow_field_create_3d_allocates_correct_size);
     RUN_TEST(test_flow_field_create_3d_zero_dims_fails);
+    RUN_TEST(test_flow_field_destroy_null);
 
     // derived_fields 3D
     RUN_TEST(test_derived_fields_create_3d_stores_nz);

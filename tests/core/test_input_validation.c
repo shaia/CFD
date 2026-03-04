@@ -169,6 +169,157 @@ void test_null_pointer_handling(void) {
     free_simulation(sim);
 }
 
+/* ============================================================================
+ * Helper: create a minimal initialized projection solver for NULL-arg tests
+ * ============================================================================ */
+
+typedef struct {
+    ns_solver_registry_t* registry;
+    ns_solver_t*          solver;
+    grid*                 g;
+    flow_field*           field;
+    ns_solver_params_t    params;
+} solver_test_ctx_t;
+
+static int solver_test_ctx_init(solver_test_ctx_t* ctx) {
+    ctx->registry = cfd_registry_create();
+    if (!ctx->registry) return 0;
+    cfd_registry_register_defaults(ctx->registry);
+
+    ctx->g = grid_create(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    if (!ctx->g) { cfd_registry_destroy(ctx->registry); return 0; }
+    grid_initialize_uniform(ctx->g);
+
+    ctx->field = flow_field_create(8, 8, 1);
+    if (!ctx->field) {
+        grid_destroy(ctx->g);
+        cfd_registry_destroy(ctx->registry);
+        return 0;
+    }
+
+    ctx->solver = cfd_solver_create(ctx->registry, NS_SOLVER_TYPE_PROJECTION);
+    if (!ctx->solver) {
+        flow_field_destroy(ctx->field);
+        grid_destroy(ctx->g);
+        cfd_registry_destroy(ctx->registry);
+        return 0;
+    }
+
+    ctx->params = ns_solver_params_default();
+    cfd_status_t st = solver_init(ctx->solver, ctx->g, &ctx->params);
+    if (st != CFD_SUCCESS) {
+        solver_destroy(ctx->solver);
+        flow_field_destroy(ctx->field);
+        grid_destroy(ctx->g);
+        cfd_registry_destroy(ctx->registry);
+        return 0;
+    }
+
+    return 1;
+}
+
+static void solver_test_ctx_destroy(solver_test_ctx_t* ctx) {
+    solver_destroy(ctx->solver);
+    flow_field_destroy(ctx->field);
+    grid_destroy(ctx->g);
+    cfd_registry_destroy(ctx->registry);
+}
+
+/* ============================================================================
+ * cfd_solver_create — NULL registry / unknown name
+ * ============================================================================ */
+
+void test_solver_create_null_registry(void) {
+    ns_solver_t* s = cfd_solver_create(NULL, NS_SOLVER_TYPE_PROJECTION);
+    TEST_ASSERT_NULL(s);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+}
+
+void test_solver_create_unknown_name(void) {
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    ns_solver_t* s = cfd_solver_create(registry, "no_such_solver_xyz_999");
+    TEST_ASSERT_NULL(s);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_NOT_FOUND, cfd_get_last_status());
+
+    cfd_registry_destroy(registry);
+}
+
+/* ============================================================================
+ * solver_destroy / solver_init / solver_step NULL guards
+ * ============================================================================ */
+
+void test_solver_destroy_null(void) {
+    /* solver_registry.c:347 — guard: if (!solver) return */
+    solver_destroy(NULL);
+    TEST_PASS();
+}
+
+void test_solver_init_null_solver(void) {
+    /* solver_registry.c:359 — guard: if (!solver) return CFD_ERROR_INVALID */
+    cfd_status_t st = solver_init(NULL, NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, st);
+}
+
+void test_solver_step_null_solver(void) {
+    /* solver_registry.c:372 — guard: if (!solver || ...) return CFD_ERROR_INVALID */
+    ns_solver_stats_t stats = ns_solver_stats_default();
+    cfd_status_t st = solver_step(NULL, NULL, NULL, NULL, &stats);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, st);
+}
+
+void test_solver_step_null_field(void) {
+    solver_test_ctx_t ctx;
+    TEST_ASSERT_TRUE_MESSAGE(solver_test_ctx_init(&ctx), "Failed to init solver ctx");
+    ns_solver_stats_t stats = ns_solver_stats_default();
+    cfd_status_t st = solver_step(ctx.solver, NULL, ctx.g, &ctx.params, &stats);
+    solver_test_ctx_destroy(&ctx);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, st);
+}
+
+void test_solver_step_null_grid(void) {
+    solver_test_ctx_t ctx;
+    TEST_ASSERT_TRUE_MESSAGE(solver_test_ctx_init(&ctx), "Failed to init solver ctx");
+    ns_solver_stats_t stats = ns_solver_stats_default();
+    cfd_status_t st = solver_step(ctx.solver, ctx.field, NULL, &ctx.params, &stats);
+    solver_test_ctx_destroy(&ctx);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, st);
+}
+
+void test_solver_step_null_params(void) {
+    solver_test_ctx_t ctx;
+    TEST_ASSERT_TRUE_MESSAGE(solver_test_ctx_init(&ctx), "Failed to init solver ctx");
+    ns_solver_stats_t stats = ns_solver_stats_default();
+    cfd_status_t st = solver_step(ctx.solver, ctx.field, ctx.g, NULL, &stats);
+    solver_test_ctx_destroy(&ctx);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, st);
+}
+
+/* ============================================================================
+ * solver_solve / solver_apply_boundary / solver_compute_dt NULL guards
+ * ============================================================================ */
+
+void test_solver_solve_null_solver(void) {
+    /* solver_registry.c:395 — guard: if (!solver || ...) return CFD_ERROR_INVALID */
+    ns_solver_stats_t stats = ns_solver_stats_default();
+    cfd_status_t st = solver_solve(NULL, NULL, NULL, NULL, &stats);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, st);
+}
+
+void test_solver_apply_boundary_null(void) {
+    /* solver_registry.c:416 — guard: if (!solver || !field || !grid) return */
+    solver_apply_boundary(NULL, NULL, NULL);
+    TEST_PASS();
+}
+
+void test_solver_compute_dt_null(void) {
+    /* solver_registry.c:430 — guard: if (!solver || ...) return 0.0 */
+    double dt = solver_compute_dt(NULL, NULL, NULL, NULL);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, 0.0, dt);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_grid_creation_zero_width);
@@ -182,5 +333,23 @@ int main(void) {
     RUN_TEST(test_registry_register_empty_name);
     RUN_TEST(test_registry_register_limit_exceeded);
     RUN_TEST(test_null_pointer_handling);
+
+    // cfd_solver_create — NULL registry / unknown name
+    RUN_TEST(test_solver_create_null_registry);
+    RUN_TEST(test_solver_create_unknown_name);
+
+    // solver lifecycle NULL guards
+    RUN_TEST(test_solver_destroy_null);
+    RUN_TEST(test_solver_init_null_solver);
+    RUN_TEST(test_solver_step_null_solver);
+    RUN_TEST(test_solver_step_null_field);
+    RUN_TEST(test_solver_step_null_grid);
+    RUN_TEST(test_solver_step_null_params);
+
+    // solver_solve / solver_apply_boundary / solver_compute_dt NULL guards
+    RUN_TEST(test_solver_solve_null_solver);
+    RUN_TEST(test_solver_apply_boundary_null);
+    RUN_TEST(test_solver_compute_dt_null);
+
     return UNITY_END();
 }

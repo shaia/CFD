@@ -528,6 +528,12 @@ void test_grid_destroy_handles_null_z(void) {
     grid_destroy(g);  // Should not crash
 }
 
+void test_grid_destroy_null(void) {
+    /* Verify destroy(NULL) is safe — standard NULL guard in grid_destroy */
+    grid_destroy(NULL);
+    TEST_PASS();
+}
+
 /* ============================================================================
  * Test Runner
  * ============================================================================ */
@@ -571,6 +577,7 @@ int main(void) {
     RUN_TEST(test_grid_create_3d_invalid_z_bounds_fails);
     RUN_TEST(test_grid_create_3d_nz1_zero_zbounds_ok);
     RUN_TEST(test_grid_destroy_handles_null_z);
+    RUN_TEST(test_grid_destroy_null);
 
     return UNITY_END();
 }
