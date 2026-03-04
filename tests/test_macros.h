@@ -1,6 +1,7 @@
 #ifndef CFD_TEST_MACROS_H
 #define CFD_TEST_MACROS_H
 
+#include <stdio.h>
 #include "unity.h"
 
 /**
@@ -19,11 +20,18 @@
  * Calls with more arguments will mis-dispatch with a compile-time error.
  */
 #ifdef UNITY_INCLUDE_PRINT_FORMATTED
-/* Internal helpers — FMT_ONLY for format-only calls, VAR for calls with args. */
+/* Internal helpers — format into a buffer, then call TEST_PRINTF for real-time
+ * output AND TEST_FAIL_MESSAGE to attach the text as the failure message.
+ * Using TEST_FAIL() alone would drop the message from failure summaries. */
 #  define TEST_FAIL_PRINTF_FMT_ONLY_(fmt) \
-     do { TEST_PRINTF("%s", (fmt)); TEST_FAIL(); } while (0)
+     do { TEST_PRINTF("%s", (fmt)); TEST_FAIL_MESSAGE(fmt); } while (0)
 #  define TEST_FAIL_PRINTF_VAR_(fmt, ...) \
-     do { TEST_PRINTF((fmt), __VA_ARGS__); TEST_FAIL(); } while (0)
+     do { \
+         char _tfp_buf_[512]; \
+         snprintf(_tfp_buf_, sizeof(_tfp_buf_), (fmt), __VA_ARGS__); \
+         TEST_PRINTF("%s", _tfp_buf_); \
+         TEST_FAIL_MESSAGE(_tfp_buf_); \
+     } while (0)
 /* Dispatcher: _1..._8 consume the arguments; NAME resolves to the right helper. */
 #  define TEST_FAIL_PRINTF_PICK_(_1,_2,_3,_4,_5,_6,_7,_8,NAME,...) NAME
 #  define TEST_FAIL_PRINTF(...) \
@@ -33,7 +41,6 @@
          TEST_FAIL_PRINTF_VAR_, TEST_FAIL_PRINTF_VAR_, \
          TEST_FAIL_PRINTF_VAR_, TEST_FAIL_PRINTF_FMT_ONLY_)(__VA_ARGS__)
 #else
-#  include <stdio.h>
 /* Internal helpers — same dispatcher pattern using snprintf fallback. */
 #  define TEST_FAIL_PRINTF_FMT_ONLY_(fmt) \
      do { TEST_FAIL_MESSAGE(fmt); } while (0)
