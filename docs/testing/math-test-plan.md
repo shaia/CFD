@@ -96,8 +96,8 @@ The math subsystem covers linear solvers, Poisson solvers, finite difference ste
 
 | Test | Method | Expected |
 |------|--------|----------|
-| `test_stencil_rectangular_domain` | 65×33 on [0,2π]×[0,π] | L2 error < 0.05 |
-| `test_poisson_rectangular_domain` | CG on same grid | L2 error < 1e-2 |
+| `test_stencil_rectangular_domain` | 65×33 on [0,2π]×[0,π], Laplacian stencil | L2 error < 0.05 |
+| `test_poisson_rectangular_domain` | CG on 65×33 [0,1]×[0,1] (dx/dy=0.5), Neumann-compatible RHS | Converges, non-trivial solution |
 
 ### `test_cg_scaling.c` — P2
 
