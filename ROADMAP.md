@@ -2,7 +2,7 @@
 
 This document outlines the development roadmap for achieving a commercial-grade, open-source CFD library.
 
-## Current State (v0.1.7)
+## Current State (v0.2.0)
 
 ### What We Have
 

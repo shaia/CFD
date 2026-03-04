@@ -9,8 +9,8 @@ extern "C" {
 
 // Version macros
 #define CFD_VERSION_MAJOR 0
-#define CFD_VERSION_MINOR 1
-#define CFD_VERSION_PATCH 6
+#define CFD_VERSION_MINOR 2
+#define CFD_VERSION_PATCH 0
 
 // Helper macro to stringify version definition
 #define CFD_STR_HELPER(x) #x
