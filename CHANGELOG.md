@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-04
+
+### Added
+
+- **Full 3D Support** across all subsystems (8-phase rollout):
+  - Core data structures extended (`grid` with z/dz/nz/stride_z, `flow_field` with w-velocity)
+  - `IDX_2D`/`IDX_3D` indexing macros replacing inline indexing throughout codebase
+  - 3D stencils and scalar CPU linear solvers (Jacobi, SOR, Red-Black SOR, CG, BiCGSTAB)
+  - w-momentum equations in all scalar CPU NS solvers (Explicit Euler, Projection, RK2)
+  - 3D boundary conditions for z-faces across all backends (CPU, SIMD, OMP, GPU)
+  - AVX2/NEON SIMD backends updated for 3D
+  - OpenMP backends extended for 3D
+  - CUDA GPU backend extended for 3D
+  - 3D VTK/CSV I/O support
+- **RK2 (Heun's method) time integrator** with O(dt^2) temporal accuracy:
+  - Scalar CPU backend (`rk2`)
+  - AVX2 SIMD backend (`rk2_optimized`)
+  - OpenMP backend (`rk2_omp`)
+- **BiCGSTAB linear solver** for non-symmetric systems with AVX2 and NEON SIMD backends
+- **Jacobi preconditioner** for CG solver (PCG) improving convergence
+- **CG OpenMP Poisson solver** (`CG_OMP`) with fully parallelized primitives
+- **Symmetry plane boundary conditions** for all backends
+- **Time-varying boundary conditions** support
+- **Method of Manufactured Solutions (MMS)** testing framework with source term propagation to all solver backends
+- **Negative test suite** for error handling and edge cases
+- **TEST_FAIL_PRINTF** macro eliminating snprintf+TEST_FAIL_MESSAGE boilerplate in tests
+- **Validation test suite:**
+  - Taylor-Green vortex (2D and 3D)
+  - Poiseuille flow
+  - Finite difference stencil accuracy
+  - Poisson equation accuracy
+  - Laplacian operator accuracy
+  - Linear solver convergence
+  - Convergence order verification (self-convergence)
+  - Divergence-free constraint
+  - Comprehensive multi-backend lid-driven cavity validation
+- **5 new example programs:** `poiseuille_stretched_grid`, `taylor_green_convergence`, `pulsatile_inlet_flow`, `poisson_solver_tuning`, `platform_diagnostics` (19 total)
+- Rewritten `lid_driven_cavity` example using library solver API
+
+### Changed
+
+- CPU projection solver uses CG Poisson solver instead of Red-Black SOR for reliable convergence
+- OMP projection solver uses dedicated CG_OMP Poisson solver (no scalar fallback)
+- Parallelized NaN check and statistics computation in OMP projection solver
+- Boundary condition subsystem refactored for improved modularity
+- CI GPU validation switched to on-demand EC2 instances (g4dn.2xlarge)
+
+### Fixed
+
+- Stretched grid formula producing incorrect spacing
+- Silent fallback from OMP/SIMD Poisson solvers to scalar backend removed — now returns `CFD_ERROR_UNSUPPORTED`
+
 ## [0.1.6] - 2025-12-28
 
 ### Added
@@ -158,7 +210,8 @@ _Note: v0.0.4 was skipped due to release pipeline testing._
 - Basic boundary condition support
 - Unity testing framework integration
 
-[Unreleased]: https://github.com/shaia/CFD/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/shaia/CFD/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/shaia/CFD/compare/v0.1.6...v0.2.0
 [0.1.6]: https://github.com/shaia/CFD/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/shaia/CFD/compare/v0.1.0...v0.1.5
 [0.1.0]: https://github.com/shaia/CFD/compare/v0.0.6...v0.1.0
