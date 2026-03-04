@@ -14,6 +14,9 @@
  *
  * Uses an argument-counting dispatcher instead of ##__VA_ARGS__ for
  * C99/MSVC portability (##__VA_ARGS__ is a GNU extension).
+ *
+ * Limit: supports fmt plus up to 7 additional arguments (8 slots total).
+ * Calls with more arguments will mis-dispatch with a compile-time error.
  */
 #ifdef UNITY_INCLUDE_PRINT_FORMATTED
 /* Internal helpers — FMT_ONLY for format-only calls, VAR for calls with args. */
