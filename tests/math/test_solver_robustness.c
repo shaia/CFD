@@ -202,8 +202,9 @@ void test_early_termination_large_tol(void) {
  * ============================================================================ */
 
 /**
- * Verifies that SOR with omega=1.5 converges faster (fewer iterations) than
- * omega=1.0 (Gauss-Seidel) on the same 17x17 Neumann-compatible problem.
+ * Verifies that SOR with omega=1.5 converges at least as efficiently as
+ * omega=1.0 (Gauss-Seidel), i.e., it does not require significantly more
+ * iterations on the same 17x17 Neumann-compatible problem.
  */
 void test_sor_omega_boundary(void) {
     const size_t NX = 17;
