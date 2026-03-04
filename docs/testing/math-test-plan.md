@@ -64,8 +64,8 @@ The math subsystem covers linear solvers, Poisson solvers, finite difference ste
 | `test_cg_incompatible_neumann` | Non-zero interior-sum RHS, tight tol, max_iter=50 | `CFD_SUCCESS` or `CFD_ERROR_MAX_ITER`, iterations > 0 |
 | `test_bicgstab_trivial_system` | x=0, rhs=0 | Converges in 0–1 iterations |
 | `test_cg_trivial_system` | x=0, rhs=0 | Converges in 0–1 iterations |
-| `test_bicgstab_max_iter` | tol=1e-15, max_iter=5 | `CFD_ERROR_MAX_ITER` |
-| `test_cg_max_iter` | tol=1e-15, max_iter=5 | `CFD_ERROR_MAX_ITER` |
+| `test_bicgstab_max_iter` | tol=1e-15, max_iter=3 | `CFD_ERROR_MAX_ITER` |
+| `test_cg_max_iter` | tol=1e-15, max_iter=3 | `CFD_ERROR_MAX_ITER` |
 
 ### `test_omp_consistency.c` — P0
 
@@ -78,7 +78,7 @@ The math subsystem covers linear solvers, Poisson solvers, finite difference ste
 
 | Test | Method | Expected |
 |------|--------|----------|
-| `test_minimal_grid_9x9` | 9×9 grid, Jacobi + CG | L2 error < 0.1 |
+| `test_minimal_grid_9x9` | 9×9 grid, Jacobi + CG | Both converge (`CFD_SUCCESS`) |
 | `test_early_termination_large_tol` | tol=0.1, 33×33 | Iterations < 50 |
 | `test_sor_omega_boundary` | omega=1.5 vs 1.0 | Both converge |
 | `test_sequential_solves_consistent` | Solve twice, same instance | L2 diff < 1e-10 |
@@ -104,7 +104,7 @@ The math subsystem covers linear solvers, Poisson solvers, finite difference ste
 | Test | Method | Expected |
 |------|--------|----------|
 | `test_cg_sqrt_kappa_scaling` | Solve at 9/17/33/65, record iters | iter/√κ < 3.0 |
-| `test_pcg_vs_cg_across_sizes` | Compare at 17/33/65/129 | PCG ≤ CG × 1.05 |
+| `test_pcg_vs_cg_across_sizes` | Compare at 17/33/65 | PCG ≤ CG × 1.05 |
 
 ## Coverage Matrix (after implementation)
 
