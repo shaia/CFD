@@ -23,6 +23,7 @@
 
 #include <string.h>
 
+#include "../test_macros.h"
 #include "cavity_reference_data.h"
 #include "cavity_validation_utils.h"
 #include "cfd/core/indexing.h"
@@ -222,23 +223,18 @@ static void test_backend_validation(const char* solver_type,
     printf("      RMS_u: %.4f  RMS_v: %.4f  (target < %.2f)\n", rms_u, rms_v, rms_target);
 
     /* CRITICAL: Tests MUST FAIL if RMS >= target (no "baseline" workarounds) */
-    char msg[256];
     if (rms_u >= rms_target) {
-        snprintf(msg, sizeof(msg),
-                 "%s: RMS_u=%.4f >= target %.2f (UNACCEPTABLE)",
-                 backend_name, rms_u, rms_target);
         free_profile_data(&profiles);
         cavity_context_destroy(ctx);
-        TEST_FAIL_MESSAGE(msg);
+        TEST_FAIL_PRINTF("%s: RMS_u=%.4f >= target %.2f (UNACCEPTABLE)",
+                         backend_name, rms_u, rms_target);
     }
 
     if (rms_v >= rms_target) {
-        snprintf(msg, sizeof(msg),
-                 "%s: RMS_v=%.4f >= target %.2f (UNACCEPTABLE)",
-                 backend_name, rms_v, rms_target);
         free_profile_data(&profiles);
         cavity_context_destroy(ctx);
-        TEST_FAIL_MESSAGE(msg);
+        TEST_FAIL_PRINTF("%s: RMS_v=%.4f >= target %.2f (UNACCEPTABLE)",
+                         backend_name, rms_v, rms_target);
     }
 
     printf("      [PASS] Both RMS < %.2f\n", rms_target);
@@ -349,9 +345,7 @@ void test_backend_consistency(void) {
         }
 
         if (!result.success) {
-            char msg[512];
-            snprintf(msg, sizeof(msg), "%s failed: %s", names[i], result.error_msg);
-            TEST_FAIL_MESSAGE(msg);
+            TEST_FAIL_PRINTF("%s failed: %s", names[i], result.error_msg);
         }
 
         u_center_vals[n_available] = result.u_at_center;
@@ -376,19 +370,14 @@ void test_backend_consistency(void) {
         double u_rel_diff = u_diff / (fabs(u_ref) + 1e-10);
         double v_rel_diff = v_diff / (fabs(v_ref) + 1e-10);
 
-        char msg[256];
         if (u_rel_diff > BACKEND_CONSISTENCY_TOLERANCE) {
-            snprintf(msg, sizeof(msg),
-                     "Backend %d u_center differs from reference by %.3f%% (> 0.1%%)",
-                     i, u_rel_diff * 100);
-            TEST_FAIL_MESSAGE(msg);
+            TEST_FAIL_PRINTF("Backend %d u_center differs from reference by %.3f%% (> 0.1%%)",
+                             i, u_rel_diff * 100);
         }
 
         if (v_rel_diff > BACKEND_CONSISTENCY_TOLERANCE) {
-            snprintf(msg, sizeof(msg),
-                     "Backend %d v_center differs from reference by %.3f%% (> 0.1%%)",
-                     i, v_rel_diff * 100);
-            TEST_FAIL_MESSAGE(msg);
+            TEST_FAIL_PRINTF("Backend %d v_center differs from reference by %.3f%% (> 0.1%%)",
+                             i, v_rel_diff * 100);
         }
     }
 

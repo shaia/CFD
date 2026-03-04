@@ -24,6 +24,7 @@
  */
 
 #include "unity.h"
+#include "../test_macros.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
 #include "cfd/core/indexing.h"
@@ -204,11 +205,8 @@ static double run_projection_test(
         }
 
         /* Real error (e.g., CFD_ERROR_INVALID, CFD_ERROR_NOMEM) - fail test */
-        char error_msg[256];
-        snprintf(error_msg, sizeof(error_msg),
-                 "solver_init() failed with status %d (not CFD_ERROR_UNSUPPORTED)",
-                 init_status);
-        TEST_FAIL_MESSAGE(error_msg);
+        TEST_FAIL_PRINTF("solver_init() failed with status %d (not CFD_ERROR_UNSUPPORTED)",
+                         init_status);
         return -1.0;  /* Unreachable, but satisfies compiler */
     }
 
@@ -222,10 +220,8 @@ static double run_projection_test(
             flow_field_destroy(field);
             grid_destroy(g);
 
-            char error_msg[256];
-            snprintf(error_msg, sizeof(error_msg),
-                     "solver_step() failed at step %d with status %d", step, step_status);
-            TEST_FAIL_MESSAGE(error_msg);
+            TEST_FAIL_PRINTF("solver_step() failed at step %d with status %d",
+                             step, step_status);
             return -1.0;  /* Unreachable, but satisfies compiler */
         }
 

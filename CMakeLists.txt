@@ -182,8 +182,8 @@ if(BUILD_TESTS)
     # Make Unity available
     FetchContent_MakeAvailable(Unity)
     
-    # Enable double precision for Unity assertions (PUBLIC propagates to tests)
-    target_compile_definitions(unity PUBLIC UNITY_INCLUDE_DOUBLE)
+    # Enable double precision and formatted print for Unity assertions (PUBLIC propagates to tests)
+    target_compile_definitions(unity PUBLIC UNITY_INCLUDE_DOUBLE UNITY_INCLUDE_PRINT_FORMATTED)
 
     # Add the test executables
     add_executable(test_simulation_basic tests/simulation/test_simulation_basic.c)
