@@ -175,7 +175,7 @@ void test_residual_wrong_solution(void) {
  * ============================================================================
  *
  * x    = sin(πx)*sin(πy)           (continuous analytical solution)
- * rhs  = 2π²*sin(πx)*sin(πy)      (analytical RHS from -∇²x)
+ * rhs  = -2π²*sin(πx)*sin(πy)     (∇²sin(πx)sin(πy) = -2π²sin(πx)sin(πy))
  *
  * The solver computes ||∇²_h x - rhs||_∞.  Since ∇²_h x ≈ ∇²x + O(h²),
  * the residual measures truncation error and should decrease as O(h²) when
