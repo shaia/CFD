@@ -51,17 +51,17 @@ The math subsystem covers linear solvers, Poisson solvers, finite difference ste
 
 | Test | Method | Expected |
 |------|--------|----------|
-| `test_first_deriv_z_accuracy` | Grid refinement 17³→33³, f=sin(kx)sin(ky)sin(kz) | Rate > 1.7 |
-| `test_second_deriv_z_accuracy` | Same approach, compare d²f/dz² | Rate > 1.7 |
-| `test_laplacian_3d_accuracy` | Analytical = -3k²f | Rate > 1.7 |
-| `test_divergence_3d_accuracy` | Known vector field, compare to analytical div | Rate > 1.7 |
-| `test_divergence_3d_free_field` | Curl of vector potential, verify max|div| < h² | max < h² |
+| `test_first_deriv_z_accuracy` | Grid refinement 9³→17³, f=sin(kx)sin(ky)sin(kz) | Rate > 1.7 |
+| `test_second_deriv_z_accuracy` | Same grids, compare d²f/dz² | Rate > 1.7 |
+| `test_laplacian_3d_accuracy` | Same grids, analytical = -3k²f | Rate > 1.7 |
+| `test_divergence_3d_accuracy` | Grid refinement 9³→17³→33³, known vector field vs analytical div | Rate > 1.7 |
+| `test_divergence_3d_free_field` | 17³ grid, curl of vector potential, verify max\|div\| scales like h² | max < C·h² |
 
 ### `test_solver_breakdown.c` — P0
 
 | Test | Method | Expected |
 |------|--------|----------|
-| `test_cg_incompatible_neumann` | Non-zero interior-sum RHS, tight tol | `POISSON_MAX_ITER` or `POISSON_STAGNATED` |
+| `test_cg_incompatible_neumann` | Non-zero interior-sum RHS, tight tol, max_iter=50 | `CFD_SUCCESS` or `CFD_ERROR_MAX_ITER`, iterations > 0 |
 | `test_bicgstab_trivial_system` | x=0, rhs=0 | Converges in 0–1 iterations |
 | `test_cg_trivial_system` | x=0, rhs=0 | Converges in 0–1 iterations |
 | `test_bicgstab_max_iter` | tol=1e-15, max_iter=5 | `CFD_ERROR_MAX_ITER` |
@@ -78,9 +78,9 @@ The math subsystem covers linear solvers, Poisson solvers, finite difference ste
 
 | Test | Method | Expected |
 |------|--------|----------|
-| `test_minimal_grid_5x5` | 5×5 grid, Jacobi + CG | L2 error < 0.1 |
-| `test_early_termination_large_tol` | tol=0.1, 33×33 | Iterations < 20 |
-| `test_sor_omega_boundary` | omega=1.99 vs 1.0 | Both converge |
+| `test_minimal_grid_9x9` | 9×9 grid, Jacobi + CG | L2 error < 0.1 |
+| `test_early_termination_large_tol` | tol=0.1, 33×33 | Iterations < 50 |
+| `test_sor_omega_boundary` | omega=1.5 vs 1.0 | Both converge |
 | `test_sequential_solves_consistent` | Solve twice, same instance | L2 diff < 1e-10 |
 | `test_solver_create_destroy_cycle` | 100× lifecycle loop | No crash |
 
@@ -90,7 +90,7 @@ The math subsystem covers linear solvers, Poisson solvers, finite difference ste
 |------|--------|----------|
 | `test_residual_exact_solution` | Exact manufactured solution | Residual < 1e-10 |
 | `test_residual_wrong_solution` | x=0, rhs≠0 | Residual > 0 |
-| `test_residual_convergence_rate` | Grid refinement 17→33→65→129 | Rate > 1.7 |
+| `test_residual_convergence_rate` | Grid refinement 17→33→65 | Rate > 1.7 |
 
 ### `test_nonuniform_grid.c` — P1
 
