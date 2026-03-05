@@ -769,6 +769,18 @@ jobs:
           cd build
           cmake --build . --parallel $(nproc)
 
+      - name: Verify OpenMP is enabled
+        run: |
+          cd build
+          OUTPUT=$(./test_linear_solver 2>&1 || true)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "OMP backend available: YES"; then
+            echo "✅ OpenMP backend is correctly enabled"
+          else
+            echo "❌ ERROR: OpenMP was expected but OMP backend reports NO"
+            exit 1
+          fi
+
       - name: Run tests with ThreadSanitizer
         env:
           TSAN_OPTIONS: "halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1"
