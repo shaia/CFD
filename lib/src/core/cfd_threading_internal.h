@@ -55,15 +55,18 @@ static inline void cfd_atomic_store(cfd_atomic_int* ptr, int value) {
     atomic_store(ptr, value);
 }
 
-/* Atomic pointer operations (for function pointer globals) */
-typedef _Atomic(void*) cfd_atomic_ptr;
+/* Atomic pointer operations (for function pointer globals).
+ * Uses uintptr_t to avoid _Atomic(void*) which can cause TSan issues. */
+#include <stdint.h>
 
-static inline void* cfd_atomic_ptr_load(const cfd_atomic_ptr* ptr) {
-    return atomic_load(ptr);
+typedef _Atomic(uintptr_t) cfd_atomic_ptr;
+
+static inline void* cfd_atomic_ptr_load(cfd_atomic_ptr* ptr) {
+    return (void*)atomic_load(ptr);
 }
 
 static inline void cfd_atomic_ptr_store(cfd_atomic_ptr* ptr, void* value) {
-    atomic_store(ptr, value);
+    atomic_store(ptr, (uintptr_t)value);
 }
 
 #endif
