@@ -221,6 +221,7 @@ void test_pcg_vs_cg_across_sizes(void) {
     const size_t sizes[] = {17, 33, 65};
     const int num_sizes  = (int)(sizeof(sizes) / sizeof(sizes[0]));
     int all_passed = 1;
+    int sizes_tested = 0;
 
     for (int s = 0; s < num_sizes; s++) {
         size_t n  = sizes[s];
@@ -286,6 +287,11 @@ void test_pcg_vs_cg_across_sizes(void) {
                n, cg_iters, pcg_iters, passed ? "PASS" : "FAIL", limit);
 
         if (!passed) all_passed = 0;
+        sizes_tested++;
+    }
+
+    if (sizes_tested == 0) {
+        TEST_IGNORE_MESSAGE("No grid sizes could be tested (solver unavailable)");
     }
 
     TEST_ASSERT_TRUE_MESSAGE(all_passed,
