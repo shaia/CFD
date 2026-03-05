@@ -215,7 +215,7 @@ Tests added: `tests/core/test_grid.c` with 16 unit tests.
 **Still needed:**
 
 - [x] Negative testing suite (more edge cases)
-- [x] Memory leak checks (Valgrind/ASan integration in CI)
+- [x] Memory leak checks (ASan in CI; Valgrind via local `ctest -T MemCheck`)
 - [x] Add `TEST_FAIL_PRINTF` macro to eliminate repeated `snprintf` + `TEST_FAIL_MESSAGE` pattern (5+ occurrences, causes `-Wformat-truncation` warnings). Enable `UNITY_INCLUDE_PRINT_FORMATTED` or define a local helper macro.
 
 ### 0.5 Error Handling & Robustness (P0) ✅
