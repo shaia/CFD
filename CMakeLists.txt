@@ -31,12 +31,18 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # Sanitizer options (for Debug builds on GCC/Clang)
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+option(ENABLE_TSAN "Enable ThreadSanitizer (incompatible with ASan)" OFF)
 
 # Code coverage option (for GCC/Clang)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 
 # Validation test options
 option(CAVITY_FULL_VALIDATION "Enable full 129x129 cavity validation (slow)" OFF)
+
+# TSan and ASan cannot be used together (incompatible instrumentation)
+if(ENABLE_TSAN AND ENABLE_ASAN)
+    message(FATAL_ERROR "ENABLE_TSAN and ENABLE_ASAN cannot be used together")
+endif()
 
 # Explicitly default to static libraries to simplifiy running tests on Windows
 set(BUILD_SHARED_LIBS OFF)
@@ -76,6 +82,24 @@ if(ENABLE_ASAN OR ENABLE_UBSAN)
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${SANITIZER_FLAGS}")
         set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${SANITIZER_FLAGS}")
     endif()
+endif()
+
+if(ENABLE_TSAN)
+    if(MSVC)
+        message(WARNING "ThreadSanitizer is not supported with MSVC, skipping")
+    else()
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=thread -fno-omit-frame-pointer -g")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=thread")
+        message(STATUS "ThreadSanitizer enabled")
+    endif()
+endif()
+
+# CTest memcheck support (Valgrind) for local developer use
+find_program(MEMORYCHECK_COMMAND valgrind)
+if(MEMORYCHECK_COMMAND)
+    set(MEMORYCHECK_COMMAND_OPTIONS "--leak-check=full --show-reachable=yes --error-exitcode=1 --track-origins=yes")
+    message(STATUS "Valgrind found: ${MEMORYCHECK_COMMAND} (use 'ctest -T MemCheck')")
 endif()
 
 # Add the library subdirectory

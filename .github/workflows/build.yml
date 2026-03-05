@@ -717,7 +717,7 @@ jobs:
 
       - name: Run tests with sanitizers
         env:
-          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1:strict_string_checks=1"
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: |
           cd build
@@ -735,6 +735,55 @@ jobs:
           echo "- **AddressSanitizer**: Enabled" >> $GITHUB_STEP_SUMMARY
           echo "- **UndefinedBehaviorSanitizer**: Enabled" >> $GITHUB_STEP_SUMMARY
           echo "- **Compiler**: GCC" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: Debug" >> $GITHUB_STEP_SUMMARY
+
+  # ThreadSanitizer build - Detect data races in OpenMP code
+  # Uses Clang because GCC's libgomp lacks TSan annotations (false positives),
+  # while Clang's libomp has proper TSan support.
+  thread-sanitizer:
+    name: ThreadSanitizer (Linux Clang)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake clang libomp-dev
+
+      - name: Configure with ThreadSanitizer
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=ON \
+            -DENABLE_TSAN=ON
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --parallel $(nproc)
+
+      - name: Run tests with ThreadSanitizer
+        env:
+          TSAN_OPTIONS: "halt_on_error=1:second_deadlock_stack=1"
+        run: |
+          cd build
+          # Exclude cross-arch and validation tests
+          ctest --output-on-failure -LE "cross-arch|validation"
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## ThreadSanitizer Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **ThreadSanitizer**: Enabled" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compiler**: Clang (required for TSan + OpenMP)" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Type**: Debug" >> $GITHUB_STEP_SUMMARY
 
   # Code coverage build
@@ -876,6 +925,7 @@ jobs:
       - cuda-build
       - cuda-build-windows
       - sanitizers
+      - thread-sanitizer
       - coverage
     if: always()
 
@@ -929,6 +979,7 @@ jobs:
           check_job "CUDA (Linux)" "${{ needs.cuda-build.result }}"
           check_optional_job "CUDA (Windows)" "${{ needs.cuda-build-windows.result }}"
           check_job "Sanitizers" "${{ needs.sanitizers.result }}"
+          check_job "ThreadSanitizer" "${{ needs.thread-sanitizer.result }}"
           check_job "Coverage" "${{ needs.coverage.result }}"
 
           echo "" >> $GITHUB_STEP_SUMMARY
