@@ -31,7 +31,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # Sanitizer options (for Debug builds on GCC/Clang)
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
-option(ENABLE_TSAN "Enable ThreadSanitizer (incompatible with ASan)" OFF)
+option(ENABLE_TSAN "Enable ThreadSanitizer (incompatible with ASan and UBSan)" OFF)
 
 # Code coverage option (for GCC/Clang)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
