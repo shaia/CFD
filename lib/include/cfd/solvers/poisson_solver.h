@@ -381,6 +381,7 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
 #define POISSON_SOLVER_TYPE_JACOBI_SCALAR     "jacobi_scalar"
 #define POISSON_SOLVER_TYPE_JACOBI_SIMD       "jacobi_simd"
 #define POISSON_SOLVER_TYPE_SOR_SCALAR        "sor_scalar"
+#define POISSON_SOLVER_TYPE_SOR_SIMD          "sor_simd"
 #define POISSON_SOLVER_TYPE_REDBLACK_SCALAR   "redblack_scalar"
 #define POISSON_SOLVER_TYPE_REDBLACK_OMP      "redblack_omp"
 #define POISSON_SOLVER_TYPE_REDBLACK_SIMD     "redblack_simd"
@@ -408,7 +409,8 @@ typedef enum {
     POISSON_SOLVER_REDBLACK_SCALAR = 4, /**< Red-Black SOR with scalar backend (always available) */
     POISSON_SOLVER_CG_SCALAR = 5,      /**< Conjugate Gradient with scalar backend (always available) */
     POISSON_SOLVER_CG_SIMD = 6,        /**< Conjugate Gradient with SIMD backend (runtime detection) */
-    POISSON_SOLVER_CG_OMP = 7          /**< Conjugate Gradient with OpenMP backend */
+    POISSON_SOLVER_CG_OMP = 7,         /**< Conjugate Gradient with OpenMP backend */
+    POISSON_SOLVER_SOR_SIMD = 8        /**< SOR with SIMD backend (Block SOR, runtime detection) */
 } poisson_solver_type;
 
 /** Default Poisson solver - uses runtime SIMD detection */

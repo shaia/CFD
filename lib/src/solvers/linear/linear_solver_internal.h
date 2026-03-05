@@ -29,6 +29,7 @@ poisson_solver_t* create_jacobi_simd_solver(void);
 
 /* SOR solvers */
 poisson_solver_t* create_sor_scalar_solver(void);
+poisson_solver_t* create_sor_simd_solver(void);
 
 /* Red-Black SOR solvers */
 poisson_solver_t* create_redblack_scalar_solver(void);

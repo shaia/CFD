@@ -169,11 +169,14 @@ poisson_solver_t* poisson_solver_create(
 
         case POISSON_METHOD_SOR:
         case POISSON_METHOD_GAUSS_SEIDEL:
-            /* SOR/GS are inherently sequential - only scalar backend */
-            if (backend == POISSON_BACKEND_SCALAR) {
-                return create_sor_scalar_solver();
+            switch (backend) {
+                case POISSON_BACKEND_SIMD:
+                    return create_sor_simd_solver();
+                case POISSON_BACKEND_SCALAR:
+                    return create_sor_scalar_solver();
+                default:
+                    return NULL;  /* SOR not available for OMP/GPU */
             }
-            return NULL;  /* SOR not available for SIMD/OMP/GPU */
 
         case POISSON_METHOD_REDBLACK_SOR:
             switch (backend) {
@@ -503,6 +506,7 @@ cfd_status_t poisson_solver_iterate(
  */
 static poisson_solver_t* g_cached_jacobi_simd = NULL;
 static poisson_solver_t* g_cached_sor = NULL;
+static poisson_solver_t* g_cached_sor_simd = NULL;
 static poisson_solver_t* g_cached_redblack_simd = NULL;
 static poisson_solver_t* g_cached_redblack_omp = NULL;
 static poisson_solver_t* g_cached_redblack_scalar = NULL;
@@ -521,6 +525,10 @@ static void cleanup_cached_solvers(void) {
     if (g_cached_sor) {
         poisson_solver_destroy(g_cached_sor);
         g_cached_sor = NULL;
+    }
+    if (g_cached_sor_simd) {
+        poisson_solver_destroy(g_cached_sor_simd);
+        g_cached_sor_simd = NULL;
     }
     if (g_cached_redblack_simd) {
         poisson_solver_destroy(g_cached_redblack_simd);
@@ -605,6 +613,12 @@ int poisson_solve_3d(
             solver_ptr = &g_cached_cg_omp;
             method = POISSON_METHOD_CG;
             backend = POISSON_BACKEND_OMP;
+            break;
+
+        case POISSON_SOLVER_SOR_SIMD:
+            solver_ptr = &g_cached_sor_simd;
+            method = POISSON_METHOD_SOR;
+            backend = POISSON_BACKEND_SIMD;
             break;
 
         default:

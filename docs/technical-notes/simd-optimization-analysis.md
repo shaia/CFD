@@ -61,6 +61,8 @@ This **read-after-write hazard** prevents parallel execution.
 
 The SOR method's fast convergence relies on using the **most recent values**. This is what makes Gauss-Seidel converge ~2x faster than Jacobi iteration. Breaking this dependency would require switching to a different algorithm.
 
+> **Update (March 2025):** A **Block SOR** SIMD implementation has been added that partially breaks this dependency at SIMD block boundaries. Within each block of 4 (AVX2) or 2 (NEON) consecutive cells, the left-neighbor uses stale values, but between blocks the dependency is satisfied. This is a well-known HPC technique that trades slightly slower convergence per iteration for significantly higher throughput. See [Block SOR technical note](block-sor-simd.md) for details.
+
 ## Performance Impact
 
 ### Typical Cost Distribution
