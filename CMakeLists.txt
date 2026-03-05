@@ -31,12 +31,21 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # Sanitizer options (for Debug builds on GCC/Clang)
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+option(ENABLE_TSAN "Enable ThreadSanitizer (incompatible with ASan and UBSan)" OFF)
 
 # Code coverage option (for GCC/Clang)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 
 # Validation test options
 option(CAVITY_FULL_VALIDATION "Enable full 129x129 cavity validation (slow)" OFF)
+
+# TSan is incompatible with both ASan and UBSan
+if(ENABLE_TSAN AND ENABLE_ASAN)
+    message(FATAL_ERROR "ENABLE_TSAN and ENABLE_ASAN cannot be used together")
+endif()
+if(ENABLE_TSAN AND ENABLE_UBSAN)
+    message(FATAL_ERROR "ENABLE_TSAN and ENABLE_UBSAN cannot be used together")
+endif()
 
 # Explicitly default to static libraries to simplifiy running tests on Windows
 set(BUILD_SHARED_LIBS OFF)
@@ -76,6 +85,24 @@ if(ENABLE_ASAN OR ENABLE_UBSAN)
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${SANITIZER_FLAGS}")
         set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${SANITIZER_FLAGS}")
     endif()
+endif()
+
+if(ENABLE_TSAN)
+    if(MSVC)
+        message(WARNING "ThreadSanitizer is not supported with MSVC, skipping")
+    else()
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=thread -fno-omit-frame-pointer -g")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=thread")
+        message(STATUS "ThreadSanitizer enabled")
+    endif()
+endif()
+
+# CTest memcheck support (Valgrind) for local developer use
+find_program(MEMORYCHECK_COMMAND valgrind)
+if(MEMORYCHECK_COMMAND)
+    set(MEMORYCHECK_COMMAND_OPTIONS "--leak-check=full --show-reachable=yes --error-exitcode=1 --track-origins=yes")
+    message(STATUS "Valgrind found: ${MEMORYCHECK_COMMAND} (use 'ctest -T MemCheck')")
 endif()
 
 # Add the library subdirectory
@@ -391,8 +418,9 @@ if(BUILD_TESTS)
     target_link_libraries(test_nonuniform_grid PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_solver_architecture PRIVATE CFD::Library unity)
 
-    # Enable CTest support (optional)
-    enable_testing()
+    # Enable CTest support. include(CTest) generates DartConfiguration.tcl
+    # needed for 'ctest -T MemCheck' with Valgrind.
+    include(CTest)
     add_test(NAME BasicSimulationTest COMMAND test_simulation_basic)
     add_test(NAME TestRunner COMMAND test_runner)
     add_test(NAME PhysicsValidationTest COMMAND test_physics_validation)
@@ -496,6 +524,7 @@ if(BUILD_TESTS)
     add_test(NAME BiCGSTABTest COMMAND test_bicgstab)
     add_test(NAME BiCGSTAB_AVX2_Consistency COMMAND test_bicgstab_avx2)
     add_test(NAME BiCGSTAB_NEON_Consistency COMMAND test_bicgstab_neon)
+    set_tests_properties(BiCGSTAB_NEON_Consistency PROPERTIES LABELS "cross-arch")
     add_test(NAME OMPConsistencyTest COMMAND test_omp_consistency)
     add_test(NAME SolverBreakdownTest COMMAND test_solver_breakdown)
     add_test(NAME SolverRobustnessTest COMMAND test_solver_robustness)
