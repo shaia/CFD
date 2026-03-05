@@ -38,7 +38,7 @@ static void default_error_handler(bc_error_code_t error_code,
                                    const char* message,
                                    void* user_data) {
     (void)user_data;  /* Unused in default handler */
-    fprintf(stderr, "BC ERROR [%d] in %s: %s\n", (int)error_code, function, message);
+    CFD_LOG_ERROR("boundary", "BC [%d] in %s: %s", (int)error_code, function, message);
 }
 
 void bc_set_error_handler(bc_error_handler_t handler, void* user_data) {

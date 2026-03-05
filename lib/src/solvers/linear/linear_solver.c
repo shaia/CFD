@@ -15,6 +15,7 @@
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/indexing.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -432,7 +433,7 @@ cfd_status_t poisson_solver_solve_common(
             res = new_res;
 
             if (params->verbose) {
-                printf("  Iter %d: residual = %.6e\n", iter, res);
+                CFD_LOG_DEBUG("poisson", "Iter %d: residual = %.6e", iter, res);
             }
 
             if (res < tolerance || res < params->absolute_tolerance) {
@@ -622,7 +623,7 @@ int poisson_solve_3d(
             break;
 
         default:
-            fprintf(stderr, "poisson_solve_3d: Unknown solver type %d\n", solver_type);
+            CFD_LOG_ERROR("poisson", "poisson_solve_3d: Unknown solver type %d", solver_type);
             return -1;
     }
 
