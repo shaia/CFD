@@ -122,18 +122,30 @@ p_ij^(k+1) = (1-ω)p_ij^k + (ω/4)(p_i-1,j + p_i+1,j + p_i,j-1 + p_i,j+1 - h²f_
 
 **Characteristics:**
 - Faster than Jacobi (ω > 1)
-- Sequential updates (harder to parallelize)
+- Sequential row updates (row j depends on j-1)
 - Optimal ω depends on problem
+- SIMD variant uses Block SOR: processes SIMD_WIDTH consecutive cells per block, with intra-block left-neighbor approximation (see [Block SOR technical note](../technical-notes/block-sor-simd.md))
 
 **Convergence Rate:** ρ ≈ 1 - 2πh (with optimal ω)
+
+**Available Backends:**
+| Solver | Backend | Description |
+|--------|---------|-------------|
+| `sor_scalar` | Scalar | Sequential Gauss-Seidel + SOR relaxation |
+| `sor_simd` | SIMD | Block SOR (auto-detects AVX2/NEON) |
 
 **Usage:**
 ```c
 poisson_solver_params_t params = poisson_solver_params_default();
 params.omega = 1.5;  // Relaxation parameter
 
+// Scalar (fully sequential, best convergence per iteration)
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR,
                                                  POISSON_BACKEND_SCALAR);
+
+// SIMD (Block SOR, higher throughput, slightly more iterations)
+poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR,
+                                                 POISSON_BACKEND_SIMD);
 ```
 
 #### 3. Red-Black SOR

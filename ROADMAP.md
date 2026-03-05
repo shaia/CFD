@@ -32,19 +32,20 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 | ------------------- | -------------- | ---- | -------- | -------- | -------- | ---- |
 | **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | —    |
 |                     | Projection     | done | done     | —        | done     | done |
-|                     | RK2 (Heun)    | done | done     | —        | done     | —    |
-| **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
-|                     | SOR            | done | **TODO** | **TODO** | —        | —    |
+|                     | RK2 (Heun)     | done | done     | —        | done     | —    |
+| **Linear Solvers**  | Jacobi         | done | done     | done     | —        | done²|
+|                     | SOR            | done | done     | done     | —        | —    |
 |                     | Red-Black SOR  | done | done     | done     | done     | —    |
 |                     | CG / PCG       | done | done     | done     | done     | —    |
 |                     | BiCGSTAB       | done | done¹    | done¹    | —        | —    |
 
 ¹ AVX2/NEON implementations include OpenMP parallelization internally. No separate OMP backend exists.
+² GPU Jacobi is monolithic inside `solver_projection_jacobi_gpu.cu`, not a standalone reusable linear solver.
 
 ### Critical Gaps
 
-- [x] ~~Only 2D (no 3D support)~~ 3D support complete (all phases), see Phase 3.1
-- [x] ~~Limited boundary conditions (no symmetry planes)~~ Symmetry planes now supported
+- [x] 3D support complete (all phases), see Phase 3.1
+- [x] Symmetry planes now supported
 - [ ] Only structured grids
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no multigrid)
@@ -52,26 +53,28 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 
 ### Known Issues
 
-#### OMP Red-Black SOR Poisson Solver Convergence (P1)
+#### Active Bugs
 
-**Status:** Workaround implemented (switched OMP projection to CG_OMP)
+**OMP Red-Black SOR Poisson Solver Convergence (P1)**
 
-**Issue:** The OMP Red-Black SOR Poisson solver fails to converge on certain problem configurations (e.g., 33×33 grids with dt=5e-4), hitting max iterations (1000) without reaching tolerance (1e-6).
+Status: Workaround implemented (switched OMP projection to CG_OMP)
 
-**Impact:**
+The OMP Red-Black SOR Poisson solver fails to converge on certain problem configurations (e.g., 33×33 grids with dt=5e-4), hitting max iterations (1000) without reaching tolerance (1e-6).
+
+Impact:
 
 - OMP projection solver switched to CG_OMP (dedicated OMP CG solver) as workaround
 - Red-Black SOR remains available but unreliable for production use with OMP backend
 - CG_OMP provides reliable convergence with fully parallelized primitives
 
-**Root Cause:** Unknown - requires investigation of:
+Root cause unknown — requires investigation of:
 
 - Omega parameter tuning for Neumann BCs (currently uses default 1.5)
 - Parallel race conditions in red/black sweeps
 - Boundary condition application in OMP implementation
 - Comparison with working AVX2 Red-Black SOR implementation
 
-**Action Items:**
+Action items:
 
 - [ ] Profile OMP Red-Black SOR to identify convergence bottleneck
 - [ ] Compare OMP vs AVX2 Red-Black implementations for differences
@@ -79,44 +82,94 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 - [ ] Add convergence diagnostics (residual history logging)
 - [ ] Consider switch to Chebyshev acceleration or SSOR
 
-**Workaround:** Use CG or switch to AVX2/CPU backends for production
+Workaround: Use CG or switch to AVX2/CPU backends for production.
 
-#### OMP Loop Variable int Overflow for Large Grids (P3)
+**Grid Convergence Non-Monotonic Behavior (P1)**
 
-**Status:** Deferred — low risk, no practical impact yet
+Current grid convergence tests use relaxed tolerance (`prev_error + 0.08`) because RMS error does not strictly decrease with grid refinement when using the scalar Red-Black SOR Poisson solver.
 
-**Issue:** OMP backends cast `size_t` loop variables to `int` for MSVC OpenMP 2.0 compatibility. For grids where `nx * ny > INT_MAX` (~2.1 billion), this overflows and causes incorrect loop bounds or out-of-bounds writes.
+Observed behavior:
 
-**Impact:** Requires grids larger than ~46K × 46K (~16 GB per field), which is beyond the current practical scope of the library. Affects `boundary_conditions_outlet_omp.c` and potentially other OMP backends with similar casts.
+- 17×17: RMS ~0.056
+- 25×25: RMS ~0.037
+- 33×33: RMS ~0.094 (worse than 25×25!)
 
-**Action Items:**
+Root cause: The scalar Poisson solver has accuracy limitations at larger grid sizes that prevent proper convergence.
+
+Action items:
+
+- [ ] Investigate why 33×33 produces worse results than 25×25
+- [ ] May need more Poisson iterations for larger grids
+- [ ] Consider using SIMD Red-Black SOR or multigrid for better accuracy
+- [ ] Remove relaxed tolerance (`+ 0.08`) from grid convergence tests
+- [ ] Ensure RMS(33×33) < RMS(25×25) < RMS(17×17)
+- [ ] Add strict grid convergence test that FAILs if RMS increases with refinement
+
+Acceptance criteria: RMS error strictly decreases with each grid refinement level; convergence order approaches O(h²) asymptotically.
+
+#### Limitations
+
+**SIMD Poisson Strict Tolerance (Section 1.2)**
+
+Current SIMD Poisson solvers produce valid results but may not converge to strict tolerance (1e-6) on challenging problems like sinusoidal RHS within iteration limits. They converge properly on simpler problems (zero RHS, uniform RHS). See `docs/simd-optimization-analysis.md` for details.
+
+**Convergence Order BC-Limited (Section 1.3.2)**
+
+Spatial convergence achieves ~O(h^1.5) rather than theoretical O(h²), limited by first-order boundary conditions. Temporal convergence O(dt) is difficult to isolate; spatial error dominates on practical grids.
+
+**Jacobi Preconditioner on Uniform Grids (Section 1.2.4)**
+
+For the uniform-grid Laplacian with constant coefficients, the Jacobi preconditioner M⁻¹ = 1/(2/dx² + 2/dy²) is a constant scalar, which doesn't improve the condition number. PCG provides benefit for problems with variable coefficients or non-uniform grids.
+
+**Modular Library Circular Dependencies (Section 4.2)**
+
+The modular libraries have circular dependencies: `cfd_scalar`/`cfd_simd` call `poisson_solve()` (defined in `cfd_api`), while `cfd_api` links against `cfd_scalar`/`cfd_simd`.
+
+Current solution:
+
+- On Linux: GNU linker groups (`-Wl,--start-group` ... `-Wl,--end-group`) resolve circular references
+- On Windows/macOS: Linker automatically handles multiple passes
+- Shared builds: Recompile sources into unified shared library
+
+Future: Consider weak symbols, conditional registration at runtime, or plugin architecture with dynamic loading.
+
+**OMP Loop Variable int Overflow for Large Grids (P3)**
+
+Status: Deferred — low risk, no practical impact yet
+
+OMP backends cast `size_t` loop variables to `int` for MSVC OpenMP 2.0 compatibility. For grids where `nx * ny > INT_MAX` (~2.1 billion), this overflows. Requires grids larger than ~46K × 46K (~16 GB per field), beyond current practical scope.
+
+Action items:
 
 - [ ] Audit all OMP backends for `size_t` → `int` casts
 - [ ] Add `CFD_ASSERT(nx * ny <= INT_MAX)` guards if targeting large grids
 - [ ] Consider requiring OpenMP 3.0+ (unsigned loop vars) when dropping MSVC OMP 2.0 support
 
-#### ~~Stretched Grid Formula Bug~~ (FIXED in v0.1.7)
+**Debug Mode SIMD Benchmarking (Section 1.10)**
 
-**File:** `lib/src/core/grid.c` (`grid_initialize_stretched`)
+Current tests run in Debug mode where SIMD may be slower than scalar due to lack of compiler optimizations. Release mode benchmark suite needed for accurate performance measurements.
 
-**Resolution:** Fixed the hyperbolic stretching formula using tanh-based stretching:
+#### Technical Notes
+
+**Spectral Radius Test BC Assumption (Section 1.2.3)**
+
+The Jacobi spectral radius test uses Dirichlet BCs (p=0 on boundary) because the ρ = cos(πh) formula applies only to the Dirichlet problem. With Neumann BCs, the discrete Laplacian has a constant null space giving eigenvalue 1. The SOR optimal ω = 2/(1 + sin(πh)) also applies to Dirichlet BCs; with Neumann BCs optimal ω is typically lower (1.5-1.7).
+
+#### Resolved
+
+**Stretched Grid Formula Bug (FIXED in v0.1.7)**
+
+File: `lib/src/core/grid.c` (`grid_initialize_stretched`)
+
+Fixed the hyperbolic stretching formula using tanh-based stretching:
+
 ```c
 x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta)) / 2.0
 ```
 
-**Fixed behavior:**
+Fixed behavior: Grid spans full domain, points cluster near boundaries, higher beta = more clustering, beta=0 falls back to uniform grid.
 
-- Grid spans full domain from `xmin` to `xmax`
-- Points cluster near **boundaries** (useful for boundary layer resolution)
-- Higher beta = more clustering near boundaries
-- Edge case: beta=0 falls back to uniform grid
-
-**Tests added:** `tests/core/test_grid.c` with 16 unit tests covering:
-
-- Uniform grid spans full domain, equal spacing, non-unit domains
-- Stretched grid spans full domain, clusters near boundaries, higher beta = more clustering
-- beta=0 equals uniform, non-unit domains, monotonically increasing coordinates
-- Error handling for invalid inputs
+Tests added: `tests/core/test_grid.c` with 16 unit tests.
 
 ---
 
@@ -198,6 +251,69 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 - `tests/**/*.c` - Test updates for error checking
 - `examples/*.c` - Example error handling
 - `README.md` - API documentation updates
+
+### 0.6 Structured Logging & Diagnostics (P2)
+
+**Status:** Partial - `cfd_set_log_callback()` API exists but not used consistently
+
+**Current Issues:**
+
+- Raw `fprintf(stderr, ...)` and `snprintf()` scattered throughout codebase
+- No log levels (can't filter INFO vs WARNING vs ERROR)
+- No redirection (always stderr, can't send to file/syslog/GUI)
+- No timestamps or structured metadata
+- Not thread-safe (garbled output from multiple threads)
+- Mixed purposes (diagnostics vs error messages)
+
+**Proposed Structured Logging API:**
+
+```c
+// Log levels
+typedef enum {
+    CFD_LOG_DEBUG = 0,
+    CFD_LOG_INFO = 1,
+    CFD_LOG_WARNING = 2,
+    CFD_LOG_ERROR = 3
+} cfd_log_level_t;
+
+// Logging function with structured metadata
+void cfd_log(cfd_log_level_t level, const char* component,
+             const char* format, ...);
+
+// Example usage
+cfd_log(CFD_LOG_WARNING, "poisson_solver",
+        "Failed to converge (grid %zux%zu, dt=%.4e)",
+        nx, ny, dt);
+```
+
+**Implementation Tasks:**
+
+- [ ] Define `cfd_log()` API with log levels and component tags
+- [ ] Implement default console handler (with timestamps, colored output)
+- [ ] Add thread-safe logging (mutex-protected or per-thread buffers)
+- [ ] Replace all `fprintf(stderr, ...)` calls with `cfd_log()`
+- [ ] Replace diagnostic `snprintf()` with `cfd_log()` where appropriate
+- [ ] Add log filtering by level (suppress DEBUG in production)
+- [ ] Add log filtering by component (e.g., only show "boundary" logs)
+- [ ] Support custom log handlers via callback
+- [ ] Add structured data API for metrics (convergence stats, timings)
+
+**Benefits:**
+
+- Users can redirect logs to files, syslog, or application UI
+- Fine-grained control (enable DEBUG for specific components)
+- Better debugging (timestamps, thread IDs, component context)
+- Thread-safe by design
+- Statistics aggregation ("Poisson failed 15 times this run")
+- Can mute logs entirely for embedded/production use
+
+**Files to Modify:**
+
+- `lib/src/solvers/linear/cpu/linear_solver_*.c` - Replace fprintf
+- `lib/src/solvers/navier_stokes/cpu/solver_*.c` - Replace fprintf
+- `lib/src/solvers/navier_stokes/omp/solver_*.c` - Replace fprintf
+- `lib/src/solvers/navier_stokes/avx2/solver_*.c` - Replace fprintf
+- `tests/validation/lid_driven_cavity_common.h` - Replace snprintf for diagnostics
 
 ---
 
@@ -322,18 +438,24 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
   - [ ] GMRES AVX2
   - [ ] GMRES NEON
   - [ ] GMRES OMP
+  - [ ] GMRES GPU
 - [x] Jacobi (diagonal) preconditioner for CG (scalar, AVX2, NEON backends)
 - [ ] SSOR (Symmetric SOR) preconditioner
-- [ ] SOR SIMD variants (currently CPU-only)
-  - [ ] SOR AVX2
-  - [ ] SOR NEON
+- [x] SOR SIMD variants (Block SOR — see docs/technical-notes/block-sor-simd.md)
+  - [x] SOR AVX2
+  - [x] SOR NEON
+- [ ] GPU (CUDA) linear solver backends
+  - [ ] Standalone Jacobi GPU (refactor from monolithic `solver_projection_jacobi_gpu.cu`)
+  - [ ] Red-Black SOR GPU
+  - [ ] CG GPU
+  - [ ] BiCGSTAB GPU
 - [ ] ILU preconditioner
 - [ ] Geometric multigrid
 - [ ] Algebraic multigrid (AMG) solver
 - [ ] AMG preconditioner (for use with CG/GMRES/BiCGSTAB)
 - [ ] Performance benchmarking in Release mode
 
-**Note:** Current SIMD Poisson solvers produce valid results but may not converge to strict tolerance (1e-6) on challenging problems like sinusoidal RHS within iteration limits. They converge properly on simpler problems (zero RHS, uniform RHS). See `docs/simd-optimization-analysis.md` for details.
+**Note:** See [Known Issues](#known-issues) — SIMD Poisson strict tolerance limitation.
 
 #### 1.2.1 Poisson Solver Accuracy Tests ✅
 
@@ -375,7 +497,7 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 
 - `tests/math/test_linear_solver_convergence.c` - 6 tests covering convergence properties
 
-**Note:** The Jacobi spectral radius test uses Dirichlet BCs (p=0 on boundary) because the ρ = cos(πh) formula applies only to the Dirichlet problem. With Neumann BCs, the discrete Laplacian has a constant null space giving eigenvalue 1. The SOR optimal ω = 2/(1 + sin(πh)) also applies to Dirichlet BCs; with Neumann BCs optimal ω is typically lower (1.5-1.7).
+**Note:** See [Known Issues](#known-issues) — spectral radius test BC assumption.
 
 **Files still to create (future work):**
 
@@ -393,13 +515,14 @@ x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta))
 - [x] Backward compatible: POISSON_PRECOND_NONE (default) gives standard CG behavior
 
 **PCG Algorithm:**
+
 ```
 z = M⁻¹r           (apply preconditioner)
 p = z              (search direction from preconditioned residual)
 ρ = (r, z)         (instead of (r, r))
 ```
 
-**Note:** For the uniform-grid Laplacian with constant coefficients, the Jacobi preconditioner M⁻¹ = 1/(2/dx² + 2/dy²) is a constant scalar, which doesn't improve the condition number. PCG provides benefit for problems with variable coefficients or non-uniform grids.
+**Note:** See [Known Issues](#known-issues) — Jacobi preconditioner on uniform grids.
 
 **Files modified:**
 
@@ -450,12 +573,7 @@ Unit tests for individual stencil operations:
 - [x] Automated order-of-accuracy computation
 - [x] Verify super-linear spatial convergence (~1.5 order, BC-limited)
 
-**Results:**
-
-- Spatial: ~O(h^1.5) achieved (theoretical O(h²) limited by first-order BCs)
-- Temporal: O(dt) difficult to isolate; spatial error dominates on practical grids
-
-**Success criteria:** Spatial rate > 1.4, error decreases monotonically with refinement.
+**Results:** See [Known Issues](#known-issues) — convergence order BC-limited. Spatial rate > 1.4 achieved, error decreases monotonically with refinement.
 
 **Files created:**
 
@@ -596,6 +714,238 @@ Find eigenvalues/eigenvectors for stability analysis.
 - `include/cfd/solvers/eigen_solver.h`
 - `src/solvers/eigen/power_iteration.c`
 - `src/solvers/eigen/arnoldi.c`
+
+### 1.9 Derived Fields (P2)
+
+**Status:** OpenMP implemented, SIMD and CUDA pending
+
+**Current Implementation:**
+
+Located in `lib/src/core/derived_fields.c`:
+
+- [x] OpenMP parallelization for velocity magnitude computation
+- [x] OpenMP parallel reduction for field statistics (min/max/avg)
+- [x] Threshold-based parallelization (OMP_THRESHOLD = 1000 cells)
+- [x] Fallback to sequential for small grids
+
+**Still needed:**
+
+#### SIMD Optimization (AVX2/NEON)
+
+Best for: All grid sizes, especially when combined with OpenMP
+
+**Implementation approach:**
+
+```c
+// Velocity magnitude with AVX2 (4 doubles per iteration)
+for (size_t i = 0; i < n; i += 4) {
+    __m256d u = _mm256_loadu_pd(&field->u[i]);
+    __m256d v = _mm256_loadu_pd(&field->v[i]);
+    __m256d u2 = _mm256_mul_pd(u, u);
+    __m256d v2 = _mm256_mul_pd(v, v);
+    __m256d sum = _mm256_add_pd(u2, v2);
+    __m256d mag = _mm256_sqrt_pd(sum);
+    _mm256_storeu_pd(&vel_mag[i], mag);
+}
+// Handle remainder elements
+```
+
+**Tasks:**
+
+- [ ] Add AVX2 implementation for velocity magnitude
+- [ ] Add NEON implementation for velocity magnitude (ARM64)
+- [ ] Combine with OpenMP (`#pragma omp simd` or manual intrinsics)
+- [ ] Add SIMD horizontal reduction for statistics
+- [ ] Add runtime CPU feature detection
+- [ ] Benchmark against scalar+OpenMP version
+
+**Benefits:**
+
+- No thread overhead (works on small grids)
+- Combines well with OpenMP for multi-core
+- Reference: existing SIMD solvers in `lib/src/solvers/linear/avx2/`
+
+**Challenges:**
+
+- Architecture-specific code paths needed
+- Remainder handling for non-aligned sizes
+- Statistics reductions more complex with SIMD
+
+#### CUDA GPU Acceleration
+
+Best for: Very large grids (100k+ cells), GPU available
+
+**Implementation approach:**
+
+```cuda
+__global__ void compute_velocity_magnitude_kernel(
+    double* __restrict__ vel_mag,
+    const double* __restrict__ u,
+    const double* __restrict__ v,
+    size_t n)
+{
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        vel_mag[i] = sqrt(u[i] * u[i] + v[i] * v[i]);
+    }
+}
+```
+
+**Tasks:**
+
+- [ ] Add CUDA kernel for velocity magnitude
+- [ ] Add parallel reduction for statistics (use CUB library or custom)
+- [ ] Share GPU memory with CUDA solvers (avoid CPU<->GPU transfers)
+- [ ] Add threshold logic (only use GPU for large grids)
+- [ ] Benchmark transfer overhead vs compute benefit
+
+**Benefits:**
+
+- Massive parallelism for large grids
+- Can share GPU memory with CUDA solvers
+- Reference: existing CUDA infrastructure in `lib/src/solvers/gpu/`
+
+**Challenges:**
+
+- GPU memory transfer overhead for small grids
+- More complex reduction implementation
+- Only beneficial if data already on GPU
+
+**Performance Thresholds (Approximate):**
+
+| Grid Size        | Recommended Approach                         |
+|------------------|----------------------------------------------|
+| < 1,000 cells    | Sequential (overhead not worth it)           |
+| 1,000 - 10,000   | OpenMP (2-4 threads) ✅ Implemented          |
+| 10,000 - 100,000 | OpenMP + SIMD                                |
+| > 100,000        | CUDA (if GPU available) or OpenMP + SIMD     |
+
+**Note:** These operations are memory-bound, not compute-bound:
+
+- Velocity magnitude: Read 2 arrays, write 1 array
+- Statistics: Read 1 array, compute 3 values
+
+For memory-bound operations:
+
+- SIMD helps with cache line utilization
+- OpenMP helps with memory bandwidth aggregation across cores
+- CUDA helps only if data is already on GPU
+
+**Files to Modify:**
+
+- `lib/src/core/derived_fields.c` - Add SIMD/CUDA variants
+- `lib/src/core/derived_fields_simd.c` - New file for SIMD implementation
+- `lib/src/core/derived_fields_gpu.cu` - New file for CUDA kernels
+- `tests/io/test_csv_output.c` - Verify correctness after optimization
+
+### 1.10 SIMD Projection Solver Optimization (P2)
+
+**Status:** SIMD Poisson integration completed (December 2024), further optimizations pending
+
+**Current State:**
+
+- [x] SIMD Poisson solvers implemented (Jacobi and Red-Black SOR with AVX2)
+- [x] SIMD Poisson integrated into projection solver (`solver_projection_simd.c`)
+- [x] Full projection method with SIMD corrector step
+- [x] All tests pass with results matching scalar implementation
+- [x] `u_new` buffer reused as temp for Poisson solver (in-place Red-Black SOR)
+
+**Reference:** See [docs/technical-notes/simd-optimization-analysis.md](docs/technical-notes/simd-optimization-analysis.md) for detailed technical analysis.
+
+**Performance Analysis:**
+
+Current SIMD implementation provides ~1.3-1.5x speedup with Poisson solver being 70-80% of total runtime. Speedup limited by Amdahl's law:
+
+- Parallelizable fraction: ~80% (Poisson + Corrector)
+- SIMD speedup: 1.5-2x (Red-Black has gather/scatter overhead)
+- Expected overall: 1.3-1.5x (matches observations)
+
+#### High Priority
+
+##### 1. Improve Poisson Convergence for Non-Trivial Problems
+
+SIMD Poisson solvers don't fully converge to 1e-6 tolerance on challenging problems (e.g., sinusoidal RHS) within current iteration limits.
+
+**Tasks:**
+
+- [ ] Increase `POISSON_MAX_ITER` from current 1000/2000 to higher values
+- [ ] Implement adaptive tolerance based on problem scale
+- [ ] Add optional multigrid preconditioner for faster convergence
+- [ ] Investigate Red-Black omega parameter tuning for specific problem classes
+
+##### 2. Performance Benchmarking in Release Mode
+
+See [Known Issues](#known-issues) — debug mode SIMD benchmarking.
+
+**Tasks:**
+
+- [ ] Create Release mode benchmark suite
+- [ ] Measure actual speedup vs scalar implementation
+- [ ] Profile to identify remaining bottlenecks
+- [ ] Compare against theoretical Amdahl's law predictions
+- [ ] Document performance characteristics for different grid sizes
+
+#### Medium Priority
+
+##### 3. OpenMP + SIMD Hybrid
+
+Combine thread parallelism with SIMD vectorization for maximum CPU utilization.
+
+**Current State:** Separate OMP and SIMD backends exist, but no hybrid implementation.
+
+**Tasks:**
+
+- [ ] Implement hybrid projection solver using OpenMP across rows + SIMD within rows
+- [ ] Use `#pragma omp parallel for` on outer loop with SIMD intrinsics in inner loop
+- [ ] Benchmark scaling efficiency (measure speedup vs threads)
+- [ ] Compare against pure OMP and pure SIMD implementations
+- [ ] Handle load balancing for Red-Black coloring with OpenMP
+
+**Benefits:**
+
+- Jacobi allows full parallelization across rows
+- Red-Black allows parallelization within each color
+- Could achieve 4-8x speedup on modern multi-core CPUs
+
+**Reference Files:**
+
+- `lib/src/solvers/navier_stokes/omp/solver_projection_omp.c` - OMP implementation
+- `lib/src/solvers/navier_stokes/avx2/solver_projection_avx2.c` - SIMD implementation
+- `lib/src/solvers/linear/avx2/` - SIMD Poisson solvers
+
+#### Low Priority
+
+##### 4. Multigrid SIMD Implementation
+
+Achieve O(N) complexity vs O(N²) for iterative methods.
+
+**Benefits:**
+
+- Multigrid offers O(N) complexity vs O(N²) for Jacobi/SOR
+- Natural parallelism at each grid level
+- Can use SIMD at each level for additional speedup
+- Essential for large-scale 3D simulations
+
+**Tasks:**
+
+- [ ] Implement multigrid V-cycle framework
+- [ ] Add restriction/prolongation operators
+- [ ] Use SIMD Jacobi/Red-Black as smoothers at each level
+- [ ] Benchmark convergence rate vs pure iterative methods
+- [ ] Validate against analytical solutions
+
+**Challenges:**
+
+- Complex implementation requiring careful design
+- Grid hierarchy management
+- Operator construction at multiple levels
+- Testing and validation complexity
+
+**Priority Justification:** Low priority because:
+
+- Current SIMD implementation adequate for 2D problems
+- Critical for 3D but 3D support itself is Phase 2
+- Better to implement multigrid after 3D infrastructure exists
 
 ---
 
@@ -752,25 +1102,7 @@ Find eigenvalues/eigenvectors for stability analysis.
 - [ ] Update examples/tests to link against specific backends (optional)
 - [ ] Plugin loading system for dynamic backend selection
 
-**Known Limitations:**
-
-The modular libraries have circular dependencies that are handled via linker groups:
-
-- `cfd_scalar`/`cfd_simd` call `poisson_solve()` (defined in `cfd_api`)
-- `cfd_api` links against `cfd_scalar`/`cfd_simd`
-
-**Current Solution:**
-- On Linux: GNU linker groups (`-Wl,--start-group` ... `-Wl,--end-group`) resolve circular references
-- On Windows/macOS: Linker automatically handles multiple passes
-- Shared builds: Recompile sources into unified shared library
-- Static builds: INTERFACE library linking modular libraries
-
-**Future Improvements:**
-To eliminate circular dependencies entirely, consider refactoring using:
-
-- Weak symbols (platform-specific)
-- Conditional registration at runtime
-- Plugin architecture with dynamic loading
+**Known Limitations:** See [Known Issues](#known-issues) — modular library circular dependencies.
 
 **Usage Examples:**
 
@@ -800,7 +1132,7 @@ target_link_libraries(my_app PRIVATE CFD::Library)
 - [ ] Unified memory optimization
 - [ ] Advanced async transfers (multi-stream overlap, double buffering)
 - [ ] GPU-aware MPI
-- [ ] Red-Black SOR GPU kernel (CPU SIMD version available in `poisson_redblack_simd.c`)
+- GPU linear solver backends tracked in section 1.2
 
 ### 4.4 Performance Tools (P2)
 
@@ -808,301 +1140,6 @@ target_link_libraries(my_app PRIVATE CFD::Library)
 - [ ] Memory usage tracking
 - [ ] Roofline analysis integration
 - [ ] Scaling benchmarks
-
-### 4.5 Structured Logging & Diagnostics (P2)
-
-**Status:** Partial - `cfd_set_log_callback()` API exists but not used consistently
-
-**Current Issues:**
-
-- Raw `fprintf(stderr, ...)` and `snprintf()` scattered throughout codebase
-- No log levels (can't filter INFO vs WARNING vs ERROR)
-- No redirection (always stderr, can't send to file/syslog/GUI)
-- No timestamps or structured metadata
-- Not thread-safe (garbled output from multiple threads)
-- Mixed purposes (diagnostics vs error messages)
-
-**Proposed Structured Logging API:**
-
-```c
-// Log levels
-typedef enum {
-    CFD_LOG_DEBUG = 0,
-    CFD_LOG_INFO = 1,
-    CFD_LOG_WARNING = 2,
-    CFD_LOG_ERROR = 3
-} cfd_log_level_t;
-
-// Logging function with structured metadata
-void cfd_log(cfd_log_level_t level, const char* component,
-             const char* format, ...);
-
-// Example usage
-cfd_log(CFD_LOG_WARNING, "poisson_solver",
-        "Failed to converge (grid %zux%zu, dt=%.4e)",
-        nx, ny, dt);
-```
-
-**Implementation Tasks:**
-
-- [ ] Define `cfd_log()` API with log levels and component tags
-- [ ] Implement default console handler (with timestamps, colored output)
-- [ ] Add thread-safe logging (mutex-protected or per-thread buffers)
-- [ ] Replace all `fprintf(stderr, ...)` calls with `cfd_log()`
-- [ ] Replace diagnostic `snprintf()` with `cfd_log()` where appropriate
-- [ ] Add log filtering by level (suppress DEBUG in production)
-- [ ] Add log filtering by component (e.g., only show "boundary" logs)
-- [ ] Support custom log handlers via callback
-- [ ] Add structured data API for metrics (convergence stats, timings)
-
-**Benefits:**
-
-- Users can redirect logs to files, syslog, or application UI
-- Fine-grained control (enable DEBUG for specific components)
-- Better debugging (timestamps, thread IDs, component context)
-- Thread-safe by design
-- Statistics aggregation ("Poisson failed 15 times this run")
-- Can mute logs entirely for embedded/production use
-
-**Files to Modify:**
-
-- `lib/src/solvers/linear/cpu/linear_solver_*.c` - Replace fprintf
-- `lib/src/solvers/navier_stokes/cpu/solver_*.c` - Replace fprintf
-- `lib/src/solvers/navier_stokes/omp/solver_*.c` - Replace fprintf
-- `lib/src/solvers/navier_stokes/avx2/solver_*.c` - Replace fprintf
-- `tests/validation/lid_driven_cavity_common.h` - Replace snprintf for diagnostics
-
-### 4.6 Derived Fields Optimization (P2)
-
-**Status:** OpenMP implemented, SIMD and CUDA pending
-
-**Current Implementation:**
-
-Located in `lib/src/core/derived_fields.c`:
-
-- [x] OpenMP parallelization for velocity magnitude computation
-- [x] OpenMP parallel reduction for field statistics (min/max/avg)
-- [x] Threshold-based parallelization (OMP_THRESHOLD = 1000 cells)
-- [x] Fallback to sequential for small grids
-
-**Still needed:**
-
-#### SIMD Optimization (AVX2/NEON)
-
-Best for: All grid sizes, especially when combined with OpenMP
-
-**Implementation approach:**
-
-```c
-// Velocity magnitude with AVX2 (4 doubles per iteration)
-for (size_t i = 0; i < n; i += 4) {
-    __m256d u = _mm256_loadu_pd(&field->u[i]);
-    __m256d v = _mm256_loadu_pd(&field->v[i]);
-    __m256d u2 = _mm256_mul_pd(u, u);
-    __m256d v2 = _mm256_mul_pd(v, v);
-    __m256d sum = _mm256_add_pd(u2, v2);
-    __m256d mag = _mm256_sqrt_pd(sum);
-    _mm256_storeu_pd(&vel_mag[i], mag);
-}
-// Handle remainder elements
-```
-
-**Tasks:**
-
-- [ ] Add AVX2 implementation for velocity magnitude
-- [ ] Add NEON implementation for velocity magnitude (ARM64)
-- [ ] Combine with OpenMP (`#pragma omp simd` or manual intrinsics)
-- [ ] Add SIMD horizontal reduction for statistics
-- [ ] Add runtime CPU feature detection
-- [ ] Benchmark against scalar+OpenMP version
-
-**Benefits:**
-
-- No thread overhead (works on small grids)
-- Combines well with OpenMP for multi-core
-- Reference: existing SIMD solvers in `lib/src/solvers/linear/avx2/`
-
-**Challenges:**
-
-- Architecture-specific code paths needed
-- Remainder handling for non-aligned sizes
-- Statistics reductions more complex with SIMD
-
-#### CUDA GPU Acceleration
-
-Best for: Very large grids (100k+ cells), GPU available
-
-**Implementation approach:**
-
-```cuda
-__global__ void compute_velocity_magnitude_kernel(
-    double* __restrict__ vel_mag,
-    const double* __restrict__ u,
-    const double* __restrict__ v,
-    size_t n)
-{
-    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) {
-        vel_mag[i] = sqrt(u[i] * u[i] + v[i] * v[i]);
-    }
-}
-```
-
-**Tasks:**
-
-- [ ] Add CUDA kernel for velocity magnitude
-- [ ] Add parallel reduction for statistics (use CUB library or custom)
-- [ ] Share GPU memory with CUDA solvers (avoid CPU<->GPU transfers)
-- [ ] Add threshold logic (only use GPU for large grids)
-- [ ] Benchmark transfer overhead vs compute benefit
-
-**Benefits:**
-
-- Massive parallelism for large grids
-- Can share GPU memory with CUDA solvers
-- Reference: existing CUDA infrastructure in `lib/src/solvers/gpu/`
-
-**Challenges:**
-
-- GPU memory transfer overhead for small grids
-- More complex reduction implementation
-- Only beneficial if data already on GPU
-
-**Performance Thresholds (Approximate):**
-
-| Grid Size        | Recommended Approach                         |
-|------------------|----------------------------------------------|
-| < 1,000 cells    | Sequential (overhead not worth it)           |
-| 1,000 - 10,000   | OpenMP (2-4 threads) ✅ Implemented          |
-| 10,000 - 100,000 | OpenMP + SIMD                                |
-| > 100,000        | CUDA (if GPU available) or OpenMP + SIMD     |
-
-**Note:** These operations are memory-bound, not compute-bound:
-
-- Velocity magnitude: Read 2 arrays, write 1 array
-- Statistics: Read 1 array, compute 3 values
-
-For memory-bound operations:
-
-- SIMD helps with cache line utilization
-- OpenMP helps with memory bandwidth aggregation across cores
-- CUDA helps only if data is already on GPU
-
-**Files to Modify:**
-
-- `lib/src/core/derived_fields.c` - Add SIMD/CUDA variants
-- `lib/src/core/derived_fields_simd.c` - New file for SIMD implementation
-- `lib/src/core/derived_fields_gpu.cu` - New file for CUDA kernels
-- `tests/io/test_csv_output.c` - Verify correctness after optimization
-
-### 4.7 SIMD Projection Solver Optimization (P2)
-
-**Status:** SIMD Poisson integration completed (December 2024), further optimizations pending
-
-**Current State:**
-
-- [x] SIMD Poisson solvers implemented (Jacobi and Red-Black SOR with AVX2)
-- [x] SIMD Poisson integrated into projection solver (`solver_projection_simd.c`)
-- [x] Full projection method with SIMD corrector step
-- [x] All tests pass with results matching scalar implementation
-- [x] `u_new` buffer reused as temp for Poisson solver (in-place Red-Black SOR)
-
-**Reference:** See [docs/technical-notes/simd-optimization-analysis.md](docs/technical-notes/simd-optimization-analysis.md) for detailed technical analysis.
-
-**Performance Analysis:**
-
-Current SIMD implementation provides ~1.3-1.5x speedup with Poisson solver being 70-80% of total runtime. Speedup limited by Amdahl's law:
-
-- Parallelizable fraction: ~80% (Poisson + Corrector)
-- SIMD speedup: 1.5-2x (Red-Black has gather/scatter overhead)
-- Expected overall: 1.3-1.5x (matches observations)
-
-#### High Priority
-
-##### 1. Improve Poisson Convergence for Non-Trivial Problems
-
-SIMD Poisson solvers don't fully converge to 1e-6 tolerance on challenging problems (e.g., sinusoidal RHS) within current iteration limits.
-
-**Tasks:**
-
-- [ ] Increase `POISSON_MAX_ITER` from current 1000/2000 to higher values
-- [ ] Implement adaptive tolerance based on problem scale
-- [ ] Add optional multigrid preconditioner for faster convergence
-- [ ] Investigate Red-Black omega parameter tuning for specific problem classes
-
-##### 2. Performance Benchmarking in Release Mode
-
-Current tests run in Debug mode where SIMD may be slower than scalar due to lack of compiler optimizations.
-
-**Tasks:**
-
-- [ ] Create Release mode benchmark suite
-- [ ] Measure actual speedup vs scalar implementation
-- [ ] Profile to identify remaining bottlenecks
-- [ ] Compare against theoretical Amdahl's law predictions
-- [ ] Document performance characteristics for different grid sizes
-
-#### Medium Priority
-
-##### 3. OpenMP + SIMD Hybrid
-
-Combine thread parallelism with SIMD vectorization for maximum CPU utilization.
-
-**Current State:** Separate OMP and SIMD backends exist, but no hybrid implementation.
-
-**Tasks:**
-
-- [ ] Implement hybrid projection solver using OpenMP across rows + SIMD within rows
-- [ ] Use `#pragma omp parallel for` on outer loop with SIMD intrinsics in inner loop
-- [ ] Benchmark scaling efficiency (measure speedup vs threads)
-- [ ] Compare against pure OMP and pure SIMD implementations
-- [ ] Handle load balancing for Red-Black coloring with OpenMP
-
-**Benefits:**
-
-- Jacobi allows full parallelization across rows
-- Red-Black allows parallelization within each color
-- Could achieve 4-8x speedup on modern multi-core CPUs
-
-**Reference Files:**
-
-- `lib/src/solvers/navier_stokes/omp/solver_projection_omp.c` - OMP implementation
-- `lib/src/solvers/navier_stokes/avx2/solver_projection_avx2.c` - SIMD implementation
-- `lib/src/solvers/linear/avx2/` - SIMD Poisson solvers
-
-#### Low Priority
-
-##### 4. Multigrid SIMD Implementation
-
-Achieve O(N) complexity vs O(N²) for iterative methods.
-
-**Benefits:**
-
-- Multigrid offers O(N) complexity vs O(N²) for Jacobi/SOR
-- Natural parallelism at each grid level
-- Can use SIMD at each level for additional speedup
-- Essential for large-scale 3D simulations
-
-**Tasks:**
-
-- [ ] Implement multigrid V-cycle framework
-- [ ] Add restriction/prolongation operators
-- [ ] Use SIMD Jacobi/Red-Black as smoothers at each level
-- [ ] Benchmark convergence rate vs pure iterative methods
-- [ ] Validate against analytical solutions
-
-**Challenges:**
-
-- Complex implementation requiring careful design
-- Grid hierarchy management
-- Operator construction at multiple levels
-- Testing and validation complexity
-
-**Priority Justification:** Low priority because:
-
-- Current SIMD implementation adequate for 2D problems
-- Critical for 3D but 3D support itself is Phase 2
-- Better to implement multigrid after 3D infrastructure exists
 
 ---
 
@@ -1168,6 +1205,7 @@ Achieve O(N) complexity vs O(N²) for iterative methods.
 **Status:** COMPLETE - Solver meets scientific tolerance (RMS ~0.04, target < 0.10)
 
 **Test files created:**
+
 - `tests/validation/test_cavity_setup.c` - Basic setup and BC tests (7 tests)
 - `tests/validation/test_cavity_flow.c` - Flow development and stability (8 tests)
 - `tests/validation/test_cavity_validation.c` - Conservation and Ghia comparison (5 tests)
@@ -1194,7 +1232,7 @@ Achieve O(N) complexity vs O(N²) for iterative methods.
 
 **Backend Validation Complete (Feb 2026):**
 
-3. **Test ALL solver backends (systematic validation):** ✅
+1. **Test ALL solver backends (systematic validation):** ✅
    - [x] CPU scalar (explicit Euler, projection) ✅
    - [x] AVX2/SIMD (explicit Euler, projection) ✅
    - [x] OpenMP (explicit Euler, projection) ✅
@@ -1216,7 +1254,7 @@ Achieve O(N) complexity vs O(N²) for iterative methods.
    - `tests/validation/test_cavity_backends.c` - Comprehensive backend validation
    - `docs/validation/cavity-backends-validation.md` - Test methodology and results
 
-4. **Verification that tests are honest:** ✅
+2. **Verification that tests are honest:** ✅
    - [x] Tests MUST fail if RMS >= target (no loose tolerances) ✅
    - [x] Tests compare computed values at EXACT Ghia sample points ✅
    - [x] Tests report actual vs expected values transparently ✅
@@ -1243,36 +1281,7 @@ Achieve O(N) complexity vs O(N²) for iterative methods.
 
 #### 6.1.1.1 Grid Convergence Validation (P1)
 
-**Issue:** Current grid convergence tests use relaxed tolerance (`prev_error + 0.08`) because RMS error does not strictly decrease with grid refinement when using the scalar Red-Black SOR Poisson solver.
-
-**Observed behavior:**
-
-- 17×17: RMS ~0.056
-- 25×25: RMS ~0.037
-- 33×33: RMS ~0.094 (worse than 25×25!)
-
-**Root cause:** The scalar Poisson solver has accuracy limitations at larger grid sizes that prevent proper convergence.
-
-**TODO - Strict Grid Convergence Validation:**
-
-1. **Fix Poisson solver convergence at larger grids:**
-   - [ ] Investigate why 33×33 produces worse results than 25×25
-   - [ ] May need more Poisson iterations for larger grids
-   - [ ] Consider using SIMD Red-Black SOR or multigrid for better accuracy
-
-2. **Validate RMS monotonically decreases:**
-   - [ ] Remove relaxed tolerance (`+ 0.08`) from grid convergence tests
-   - [ ] Ensure RMS(33×33) < RMS(25×25) < RMS(17×17)
-   - [ ] Test larger grids: 65×65, 129×129
-
-3. **Add strict grid convergence test:**
-   - [ ] Test must FAIL if RMS increases with refinement
-   - [ ] No tolerance workarounds allowed
-
-**Acceptance Criteria:**
-
-- RMS error strictly decreases with each grid refinement level
-- Convergence order approaches O(h²) asymptotically
+See [Known Issues](#known-issues) — grid convergence non-monotonic behavior. Action items and acceptance criteria tracked there.
 
 #### 6.1.2 Taylor-Green Vortex Validation (P0) ✅
 
@@ -1325,6 +1334,7 @@ u(y) = 4 * U_max * y * (H - y) / H²
 **Strategy:** Initialize with analytical solution, run projection steps, verify stability.
 
 **Files created:**
+
 - `tests/validation/test_poiseuille_flow.c`
 
 #### 6.1.4 Other Benchmarks (P2)
@@ -1446,6 +1456,7 @@ Train models in Python (PyTorch/JAX), deploy inference in C for:
 ### 7.1 Weight Format & Loader (P3)
 
 - [ ] Define binary weight format (.cfdnn)
+
   ```c
   typedef struct {
       uint32_t magic;           // "CFDN"
@@ -1459,6 +1470,7 @@ Train models in Python (PyTorch/JAX), deploy inference in C for:
 
 - [ ] JSON metadata support for model info
 - [ ] Weight loading API
+
   ```c
   cfdnn_model_t* cfdnn_load(const char* path);
   void cfdnn_free(cfdnn_model_t* model);
@@ -1467,6 +1479,7 @@ Train models in Python (PyTorch/JAX), deploy inference in C for:
 ### 7.2 Layer Implementations (P3)
 
 - [ ] Dense (fully connected) layer
+
   ```c
   void cfdnn_dense_forward(
       const double* input, size_t in_features,
@@ -1542,6 +1555,7 @@ cfd_status_t cfdnn_predict_batch(
 ### 7.6 Hybrid Solver Integration (P3)
 
 - [ ] Use ML prediction as initial guess for iterative solver
+
   ```c
   // ML-accelerated projection method
   cfd_status_t ns_solve_projection_ml_init(

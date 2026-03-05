@@ -149,6 +149,22 @@ void test_create_sor_scalar(void) {
     poisson_solver_destroy(solver);
 }
 
+void test_create_sor_simd(void) {
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_SOR, POISSON_BACKEND_SIMD);
+
+    if (!solver) {
+        TEST_IGNORE_MESSAGE("SOR SIMD backend not available on this platform");
+        return;
+    }
+
+    TEST_ASSERT_EQUAL_STRING(POISSON_SOLVER_TYPE_SOR_SIMD, solver->name);
+    TEST_ASSERT_EQUAL_INT(POISSON_METHOD_SOR, solver->method);
+    TEST_ASSERT_EQUAL_INT(POISSON_BACKEND_SIMD, solver->backend);
+
+    poisson_solver_destroy(solver);
+}
+
 void test_create_redblack_scalar(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR);
@@ -1127,6 +1143,7 @@ int main(void) {
     /* Lifecycle tests */
     RUN_TEST(test_create_jacobi_scalar);
     RUN_TEST(test_create_sor_scalar);
+    RUN_TEST(test_create_sor_simd);
     RUN_TEST(test_create_redblack_scalar);
     RUN_TEST(test_create_cg_scalar);
     RUN_TEST(test_create_with_auto_backend);

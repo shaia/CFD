@@ -144,10 +144,12 @@ set(CFD_SIMD_SOURCES
     src/solvers/linear/avx2/linear_solver_redblack_avx2.c
     src/solvers/linear/avx2/linear_solver_cg_avx2.c
     src/solvers/linear/avx2/linear_solver_bicgstab_avx2.c
+    src/solvers/linear/avx2/linear_solver_sor_avx2.c
     src/solvers/linear/neon/linear_solver_jacobi_neon.c
     src/solvers/linear/neon/linear_solver_redblack_neon.c
     src/solvers/linear/neon/linear_solver_cg_neon.c
     src/solvers/linear/neon/linear_solver_bicgstab_neon.c
+    src/solvers/linear/neon/linear_solver_sor_neon.c
 )
 
 # OpenMP sources
