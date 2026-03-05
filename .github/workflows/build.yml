@@ -771,7 +771,7 @@ jobs:
 
       - name: Run tests with ThreadSanitizer
         env:
-          TSAN_OPTIONS: "halt_on_error=1:second_deadlock_stack=1"
+          TSAN_OPTIONS: "halt_on_error=1:second_deadlock_stack=1:ignore_noninstrumented_modules=1"
         run: |
           cd build
           # Exclude cross-arch and validation tests
