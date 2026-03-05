@@ -27,7 +27,7 @@ static __thread cfd_log_callback_t s_log_callback = NULL;
 static cfd_atomic_int s_global_log_level = 1; /* CFD_LOG_LEVEL_INFO */
 
 /* Global extended callback (set once at startup, read on every log call) */
-static volatile cfd_log_callback_ex_t s_global_callback_ex = NULL;
+static cfd_atomic_ptr s_global_callback_ex = NULL;
 
 /* Level name table (const, thread-safe) */
 static const char* const s_level_names[] = {"DEBUG", "INFO", "WARNING", "ERROR"};
@@ -108,8 +108,8 @@ void cfd_log(cfd_log_level_t level, const char* component, const char* fmt, ...)
     /* Dispatch: per-thread callback > global extended callback > default handler */
     if (s_log_callback) {
         s_log_callback(level, buf);
-    } else if (s_global_callback_ex) {
-        s_global_callback_ex(level, component, buf);
+    } else if (cfd_atomic_ptr_load(&s_global_callback_ex)) {
+        ((cfd_log_callback_ex_t)cfd_atomic_ptr_load(&s_global_callback_ex))(level, component, buf);
     } else {
         const char* level_str =
             ((int)level >= 0 && (int)level <= 3) ? s_level_names[(int)level] : "UNKNOWN";
@@ -131,7 +131,7 @@ cfd_log_level_t cfd_get_log_level(void) {
 }
 
 void cfd_set_log_callback_ex(cfd_log_callback_ex_t callback) {
-    s_global_callback_ex = callback;
+    cfd_atomic_ptr_store(&s_global_callback_ex, (void*)callback);
 }
 
 /* ============================================================================

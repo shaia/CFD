@@ -25,6 +25,17 @@ static inline void cfd_atomic_store(cfd_atomic_int* ptr, int value) {
     InterlockedExchange(ptr, value);
 }
 
+/* Atomic pointer operations (for function pointer globals) */
+typedef void* volatile cfd_atomic_ptr;
+
+static inline void* cfd_atomic_ptr_load(const cfd_atomic_ptr* ptr) {
+    return *ptr;
+}
+
+static inline void cfd_atomic_ptr_store(cfd_atomic_ptr* ptr, void* value) {
+    InterlockedExchangePointer(ptr, value);
+}
+
 #else
 #include <stdatomic.h>
 
@@ -41,6 +52,17 @@ static inline int cfd_atomic_cas(cfd_atomic_int* ptr, int expected, int desired)
 }
 
 static inline void cfd_atomic_store(cfd_atomic_int* ptr, int value) {
+    atomic_store(ptr, value);
+}
+
+/* Atomic pointer operations (for function pointer globals) */
+typedef _Atomic(void*) cfd_atomic_ptr;
+
+static inline void* cfd_atomic_ptr_load(const cfd_atomic_ptr* ptr) {
+    return atomic_load(ptr);
+}
+
+static inline void cfd_atomic_ptr_store(cfd_atomic_ptr* ptr, void* value) {
     atomic_store(ptr, value);
 }
 
