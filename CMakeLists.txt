@@ -418,8 +418,9 @@ if(BUILD_TESTS)
     target_link_libraries(test_nonuniform_grid PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_solver_architecture PRIVATE CFD::Library unity)
 
-    # Enable CTest support (optional)
-    enable_testing()
+    # Enable CTest support (include(CTest) generates DartConfiguration.tcl
+    # needed for 'ctest -T MemCheck' with Valgrind)
+    include(CTest)
     add_test(NAME BasicSimulationTest COMMAND test_simulation_basic)
     add_test(NAME TestRunner COMMAND test_runner)
     add_test(NAME PhysicsValidationTest COMMAND test_physics_validation)
