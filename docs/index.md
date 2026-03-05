@@ -122,6 +122,7 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 
 - [Lid-Driven Cavity](validation/lid-driven-cavity.md) - Ghia benchmark
 - [Taylor-Green Vortex](reference/solvers.md#taylor-green-vortex) - Analytical validation
+- [Math Test Plan](testing/math-test-plan.md) - Math subsystem coverage and gap analysis
 - [Testing Patterns](../README.md#testing) - Test suite organization
 
 ## API Quick Reference
