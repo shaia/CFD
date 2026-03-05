@@ -39,9 +39,12 @@ option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 # Validation test options
 option(CAVITY_FULL_VALIDATION "Enable full 129x129 cavity validation (slow)" OFF)
 
-# TSan and ASan cannot be used together (incompatible instrumentation)
+# TSan is incompatible with both ASan and UBSan
 if(ENABLE_TSAN AND ENABLE_ASAN)
     message(FATAL_ERROR "ENABLE_TSAN and ENABLE_ASAN cannot be used together")
+endif()
+if(ENABLE_TSAN AND ENABLE_UBSAN)
+    message(FATAL_ERROR "ENABLE_TSAN and ENABLE_UBSAN cannot be used together")
 endif()
 
 # Explicitly default to static libraries to simplifiy running tests on Windows
