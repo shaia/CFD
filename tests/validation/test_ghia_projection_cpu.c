@@ -60,7 +60,7 @@ void test_projection_cpu_grid_convergence(void) {
     printf("\n    Grid convergence study...\n");
 
     size_t sizes[] = {17, 25, 33};
-    double prev_rms = 1.0;
+    double errors[3];
 
     for (int i = 0; i < 3; i++) {
         size_t n = sizes[i];
@@ -79,18 +79,26 @@ void test_projection_cpu_grid_convergence(void) {
 
         TEST_ASSERT_TRUE_MESSAGE(result.success, result.error_msg);
 
-        printf("      %zux%zu: RMS_u=%.4f", n, n, result.rms_u_error);
-        if (result.rms_u_error > GHIA_TOLERANCE_MEDIUM) {
+        errors[i] = result.rms_u_error;
+
+        printf("      %zux%zu: RMS_u=%.4f", n, n, errors[i]);
+        if (errors[i] > GHIA_TOLERANCE_MEDIUM) {
             printf(" [ABOVE TARGET]");
         }
         printf("\n");
 
         /* Error must strictly decrease with grid refinement */
         if (i > 0) {
-            TEST_ASSERT_TRUE_MESSAGE(result.rms_u_error < prev_rms,
+            TEST_ASSERT_TRUE_MESSAGE(errors[i] < errors[i - 1],
                 "Error must decrease with grid refinement (strict monotonicity)");
         }
-        prev_rms = result.rms_u_error;
+    }
+
+    /* Report convergence rates (informational — first-order BCs limit to ~O(h^1.5)) */
+    double h[] = {1.0 / 17, 1.0 / 25, 1.0 / 33};
+    for (int i = 0; i < 2; i++) {
+        double rate = log(errors[i] / errors[i + 1]) / log(h[i] / h[i + 1]);
+        printf("      Rate (%zu->%zu): %.2f\n", sizes[i], sizes[i + 1], rate);
     }
 }
 
