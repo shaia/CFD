@@ -29,7 +29,7 @@ static inline void cfd_atomic_store(cfd_atomic_int* ptr, int value) {
 typedef void* volatile cfd_atomic_ptr;
 
 static inline void* cfd_atomic_ptr_load(const cfd_atomic_ptr* ptr) {
-    return *ptr;
+    return InterlockedCompareExchangePointer((volatile PVOID*)ptr, NULL, NULL);
 }
 
 static inline void cfd_atomic_ptr_store(cfd_atomic_ptr* ptr, void* value) {
