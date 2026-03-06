@@ -85,9 +85,11 @@ void test_projection_cpu_grid_convergence(void) {
         }
         printf("\n");
 
-        /* Error should decrease or stay similar with refinement */
-        TEST_ASSERT_TRUE_MESSAGE(result.rms_u_error <= prev_rms + 0.02,
-            "Error increased significantly with grid refinement");
+        /* Error must strictly decrease with grid refinement */
+        if (i > 0) {
+            TEST_ASSERT_TRUE_MESSAGE(result.rms_u_error < prev_rms,
+                "Error must decrease with grid refinement (strict monotonicity)");
+        }
         prev_rms = result.rms_u_error;
     }
 }

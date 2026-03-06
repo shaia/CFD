@@ -251,7 +251,6 @@ void test_grid_convergence(void) {
 
     size_t sizes[] = {17, 25, 33};
     double errors[3];
-    double prev_error = 1.0;
 
     for (int i = 0; i < 3; i++) {
         size_t n = sizes[i];
@@ -279,18 +278,26 @@ void test_grid_convergence(void) {
         }
         printf("\n");
 
-        /* Error should decrease or stay similar with refinement */
-        TEST_ASSERT_TRUE_MESSAGE(errors[i] <= prev_error + 0.02,
-            "Error increased significantly with grid refinement");
-        prev_error = errors[i];
+        /* Error must strictly decrease with grid refinement */
+        if (i > 0) {
+            TEST_ASSERT_TRUE_MESSAGE(errors[i] < errors[i - 1],
+                "Error must decrease with grid refinement (strict monotonicity)");
+        }
 
         free_centerline_data(&data);
         cavity_context_destroy(ctx);
     }
 
-    /* Finest grid should have lowest error */
-    TEST_ASSERT_TRUE_MESSAGE(errors[2] <= errors[0] + 0.02,
-        "Grid convergence: finest grid should have lower or similar error");
+    /* Finest grid must have lowest error */
+    TEST_ASSERT_TRUE_MESSAGE(errors[2] < errors[0],
+        "Grid convergence: finest grid must have lower error than coarsest");
+
+    /* Report convergence rates (informational — first-order BCs limit to ~O(h^1.5)) */
+    double h[] = {1.0 / 17, 1.0 / 25, 1.0 / 33};
+    for (int i = 0; i < 2; i++) {
+        double rate = log(errors[i] / errors[i + 1]) / log(h[i] / h[i + 1]);
+        printf("      Rate (%zu->%zu): %.2f\n", sizes[i], sizes[i + 1], rate);
+    }
 }
 
 /* ============================================================================
