@@ -9,8 +9,13 @@
 #define CFD_LINEAR_SOLVER_INTERNAL_H
 
 #include "cfd/solvers/poisson_solver.h"
+#include <math.h>
 #include <stdbool.h>
 #include <limits.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -148,6 +153,41 @@ static inline void poisson_solver_compute_3d_bounds(
  */
 static inline double poisson_solver_compute_inv_dz2(double dz) {
     return (dz > 0.0) ? (1.0 / (dz * dz)) : 0.0;
+}
+
+/* ============================================================================
+ * OPTIMAL SOR OMEGA COMPUTATION
+ * ============================================================================ */
+
+/**
+ * Compute optimal SOR relaxation parameter for a 2D Laplacian.
+ *
+ * Uses the Jacobi spectral radius for a rectangular grid:
+ *   rho_J = [cos(pi/(nx-1))/dx^2 + cos(pi/(ny-1))/dy^2] / [1/dx^2 + 1/dy^2]
+ *   omega_opt = 2 / (1 + sqrt(1 - rho_J^2))
+ */
+static inline double poisson_solver_compute_optimal_omega(
+    size_t nx, size_t ny, double dx, double dy)
+{
+    double inv_dx2 = 1.0 / (dx * dx);
+    double inv_dy2 = 1.0 / (dy * dy);
+    double rho_j = (cos(M_PI / (double)(nx - 1)) * inv_dx2
+                  + cos(M_PI / (double)(ny - 1)) * inv_dy2)
+                 / (inv_dx2 + inv_dy2);
+    return 2.0 / (1.0 + sqrt(1.0 - (rho_j * rho_j)));
+}
+
+/**
+ * Resolve omega: if omega <= 0.0 (auto sentinel), compute optimal value.
+ * Otherwise return the user-specified omega as-is.
+ */
+static inline double poisson_solver_resolve_omega(
+    double omega, size_t nx, size_t ny, double dx, double dy)
+{
+    if (omega <= 0.0) {
+        return poisson_solver_compute_optimal_omega(nx, ny, dx, dy);
+    }
+    return omega;
 }
 
 /* ============================================================================

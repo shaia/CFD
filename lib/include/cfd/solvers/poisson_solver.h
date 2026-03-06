@@ -101,7 +101,7 @@ typedef struct {
     double tolerance;          /**< Relative convergence tolerance (default: 1e-6) */
     double absolute_tolerance; /**< Absolute tolerance (default: 1e-10) */
     int max_iterations;        /**< Maximum iterations (default: 1000) */
-    double omega;              /**< SOR relaxation parameter (default: 1.5, range: 1.0-2.0) */
+    double omega;              /**< SOR relaxation parameter (default: 0 = auto-optimal; set > 0 to override) */
     int check_interval;        /**< Check convergence every N iterations (default: 1) */
     bool verbose;              /**< Print iteration progress (default: false) */
     poisson_precond_type_t preconditioner; /**< Preconditioner type (default: NONE) */
@@ -124,8 +124,8 @@ typedef struct {
  * Default values:
  * - tolerance: 1e-6
  * - absolute_tolerance: 1e-10
- * - max_iterations: 1000
- * - omega: 1.5
+ * - max_iterations: 5000
+ * - omega: 0.0 (auto-compute optimal for grid dimensions)
  * - check_interval: 1
  * - verbose: false
  */

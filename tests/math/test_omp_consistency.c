@@ -6,7 +6,7 @@
  * consistent results with their scalar reference implementations:
  * - CG OMP vs CG Scalar: L2 difference < 1e-9 (iterative math is identical)
  * - Red-Black SOR OMP vs Scalar: L2 difference < 1e-6 (parallel ordering
- *   causes minor rounding differences; OMP RB-SOR is known-fragile per CLAUDE.md)
+ *   causes minor rounding differences)
  *
  * Both tests skip gracefully when OpenMP is not enabled or unavailable.
  */
@@ -111,7 +111,7 @@ void test_cg_omp_vs_scalar(void) {
     /* Initialize and solve with scalar solver */
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance       = TOLERANCE;
-    params.max_iterations  = 5000;
+    params.max_iterations  = 1000;
 
     cfd_status_t status = poisson_solver_init(solver_scalar, NX, NY, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
@@ -193,10 +193,8 @@ void test_cg_omp_vs_scalar(void) {
  * Solves the same Poisson problem with both scalar and OMP Red-Black SOR
  * solvers, then verifies the solutions agree within a relaxed tolerance.
  *
- * Note: OMP Red-Black SOR is known-fragile (see CLAUDE.md Known Issues).
  * Parallel sweep ordering differs from scalar, producing larger rounding
- * differences than CG. Tolerances and iteration allowances are relaxed
- * accordingly.
+ * differences than CG. Tolerances are relaxed accordingly.
  */
 void test_redblack_omp_vs_scalar(void) {
     double dx = (XMAX - XMIN) / (NX - 1);
@@ -224,7 +222,7 @@ void test_redblack_omp_vs_scalar(void) {
     /* Initialize and solve with scalar solver */
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance       = TOLERANCE;
-    params.max_iterations  = 5000;
+    params.max_iterations  = 1000;
 
     cfd_status_t status = poisson_solver_init(solver_scalar, NX, NY, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
@@ -246,7 +244,7 @@ void test_redblack_omp_vs_scalar(void) {
     }
 
     /* Create OMP Red-Black SOR solver.
-     * Known-fragile: solver_create may return NULL if the OMP RB-SOR factory
+     * solver_create may return NULL if the OMP RB-SOR factory
      * is not registered.  Skip gracefully rather than failing. */
     poisson_solver_t* solver_omp = poisson_solver_create(
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_OMP);
