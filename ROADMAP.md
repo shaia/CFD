@@ -33,20 +33,16 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 | **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | —    |
 |                     | Projection     | done | done     | —        | done     | done |
 |                     | RK2 (Heun)     | done | done     | —        | done     | —    |
-| **Linear Solvers**  | Jacobi         | done | done     | done     | —        | done²|
+| **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
 |                     | SOR            | done | done     | done     | —        | —    |
 |                     | Red-Black SOR  | done | done     | done     | done     | —    |
 |                     | CG / PCG       | done | done     | done     | done     | —    |
-|                     | BiCGSTAB       | done | done¹    | done¹    | —        | —    |
+|                     | BiCGSTAB       | done | done     | done     | —        | —    |
+| **Boundary Conds**  | All types      | done | done     | done     | done     | done |
 
-¹ AVX2/NEON implementations include OpenMP parallelization internally. No separate OMP backend exists.
-² GPU Jacobi is monolithic inside `solver_projection_jacobi_gpu.cu`, not a standalone reusable linear solver.
+### What's Missing
 
-### Critical Gaps
-
-- [x] 3D support complete (all phases), see Phase 3.1
-- [x] Symmetry planes now supported
-- [ ] Only structured grids
+- [ ] No 3D validation benchmarks yet
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no multigrid)
 - [ ] No restart/checkpoint capability
@@ -63,16 +59,8 @@ The OMP Red-Black SOR Poisson solver fails to converge on certain problem config
 
 Impact:
 
-- OMP projection solver switched to CG_OMP (dedicated OMP CG solver) as workaround
+- OMP projection solver switched to CG_OMP as workaround
 - Red-Black SOR remains available but unreliable for production use with OMP backend
-- CG_OMP provides reliable convergence with fully parallelized primitives
-
-Root cause unknown — requires investigation of:
-
-- Omega parameter tuning for Neumann BCs (currently uses default 1.5)
-- Parallel race conditions in red/black sweeps
-- Boundary condition application in OMP implementation
-- Comparison with working AVX2 Red-Black SOR implementation
 
 Action items:
 
@@ -82,30 +70,17 @@ Action items:
 - [ ] Add convergence diagnostics (residual history logging)
 - [ ] Consider switch to Chebyshev acceleration or SSOR
 
-Workaround: Use CG or switch to AVX2/CPU backends for production.
+**Grid Convergence Non-Monotonic Behavior (P1)** ✅ RESOLVED
 
-**Grid Convergence Non-Monotonic Behavior (P1)**
-
-Current grid convergence tests use relaxed tolerance (`prev_error + 0.08`) because RMS error does not strictly decrease with grid refinement when using the scalar Red-Black SOR Poisson solver.
-
-Observed behavior:
-
-- 17×17: RMS ~0.056
-- 25×25: RMS ~0.037
-- 33×33: RMS ~0.094 (worse than 25×25!)
-
-Root cause: The scalar Poisson solver has accuracy limitations at larger grid sizes that prevent proper convergence.
+Root cause: Red-Black SOR Poisson solver had insufficient convergence on larger grids. Switching all projection backends to CG (Conjugate Gradient) resolved the issue. Grid convergence is now strictly monotonic (17×17: 0.046, 25×25: 0.037, 33×33: 0.032).
 
 Action items:
 
-- [ ] Investigate why 33×33 produces worse results than 25×25
-- [ ] May need more Poisson iterations for larger grids
-- [ ] Consider using SIMD Red-Black SOR or multigrid for better accuracy
-- [ ] Remove relaxed tolerance (`+ 0.08`) from grid convergence tests
-- [ ] Ensure RMS(33×33) < RMS(25×25) < RMS(17×17)
-- [ ] Add strict grid convergence test that FAILs if RMS increases with refinement
-
-Acceptance criteria: RMS error strictly decreases with each grid refinement level; convergence order approaches O(h²) asymptotically.
+- [x] Investigate why 33×33 produces worse results than 25×25 — Red-Black SOR Poisson solver
+- [x] May need more Poisson iterations for larger grids — solved by switch to CG
+- [x] Consider using SIMD Red-Black SOR or multigrid for better accuracy — CG sufficient
+- [x] Remove relaxed tolerance from grid convergence tests
+- [x] Add strict grid convergence test that FAILs if RMS increases with refinement
 
 #### Limitations
 
@@ -123,27 +98,17 @@ For the uniform-grid Laplacian with constant coefficients, the Jacobi preconditi
 
 **Modular Library Circular Dependencies (Section 4.2)**
 
-The modular libraries have circular dependencies: `cfd_scalar`/`cfd_simd` call `poisson_solve()` (defined in `cfd_api`), while `cfd_api` links against `cfd_scalar`/`cfd_simd`.
-
-Current solution:
-
-- On Linux: GNU linker groups (`-Wl,--start-group` ... `-Wl,--end-group`) resolve circular references
-- On Windows/macOS: Linker automatically handles multiple passes
-- Shared builds: Recompile sources into unified shared library
-
-Future: Consider weak symbols, conditional registration at runtime, or plugin architecture with dynamic loading.
+The modular libraries have circular dependencies: `cfd_scalar`/`cfd_simd` call `poisson_solve()` (defined in `cfd_api`), while `cfd_api` links against `cfd_scalar`/`cfd_simd`. Resolved on Linux with linker groups; Windows/macOS handle automatically. Future: consider weak symbols or plugin architecture.
 
 **OMP Loop Variable int Overflow for Large Grids (P3)**
 
 Status: Deferred — low risk, no practical impact yet
 
-OMP backends cast `size_t` loop variables to `int` for MSVC OpenMP 2.0 compatibility. For grids where `nx * ny > INT_MAX` (~2.1 billion), this overflows. Requires grids larger than ~46K × 46K (~16 GB per field), beyond current practical scope.
-
-Action items:
+OMP backends cast `size_t` loop variables to `int` for MSVC OpenMP 2.0 compatibility. Overflows for grids where `nx * ny > INT_MAX` (~46K × 46K).
 
 - [ ] Audit all OMP backends for `size_t` → `int` casts
 - [ ] Add `CFD_ASSERT(nx * ny <= INT_MAX)` guards if targeting large grids
-- [ ] Consider requiring OpenMP 3.0+ (unsigned loop vars) when dropping MSVC OMP 2.0 support
+- [ ] Consider requiring OpenMP 3.0+ when dropping MSVC OMP 2.0 support
 
 **Debug Mode SIMD Benchmarking (Section 1.10)**
 
@@ -153,179 +118,26 @@ Current tests run in Debug mode where SIMD may be slower than scalar due to lack
 
 **Spectral Radius Test BC Assumption (Section 1.2.3)**
 
-The Jacobi spectral radius test uses Dirichlet BCs (p=0 on boundary) because the ρ = cos(πh) formula applies only to the Dirichlet problem. With Neumann BCs, the discrete Laplacian has a constant null space giving eigenvalue 1. The SOR optimal ω = 2/(1 + sin(πh)) also applies to Dirichlet BCs; with Neumann BCs optimal ω is typically lower (1.5-1.7).
-
-#### Resolved
-
-**Stretched Grid Formula Bug (FIXED in v0.1.7)**
-
-File: `lib/src/core/grid.c` (`grid_initialize_stretched`)
-
-Fixed the hyperbolic stretching formula using tanh-based stretching:
-
-```c
-x[i] = xmin + (xmax - xmin) * (1.0 + tanh(beta * (2.0 * xi - 1.0)) / tanh(beta)) / 2.0
-```
-
-Fixed behavior: Grid spans full domain, points cluster near boundaries, higher beta = more clustering, beta=0 falls back to uniform grid.
-
-Tests added: `tests/core/test_grid.c` with 16 unit tests.
+The Jacobi spectral radius test uses Dirichlet BCs (p=0 on boundary) because the ρ = cos(πh) formula applies only to the Dirichlet problem. The SOR optimal ω = 2/(1 + sin(πh)) also applies to Dirichlet BCs; with Neumann BCs optimal ω is typically lower (1.5-1.7).
 
 ---
 
-## Phase 0: Architecture & Robustness (P0 - Critical)
+## Phase 0: Architecture & Robustness (P0 - Critical) ✅
 
-**Goal:** Transform the codebase from a research prototype to a production-safe library.
+**Status:** COMPLETE
 
-### 0.1 Safe Error Handling
+- [x] 0.1 Safe Error Handling — `cfd_status_t`, error propagation, resource cleanup
+- [x] 0.2 Thread Safety — removed static buffers, thread-safe registry, re-entrant solvers
+- [x] 0.3 API Robustness — input validation, logging callback, version header, symbol visibility
+- [x] 0.4 API & Robustness Testing — comprehensive test suites for all subsystems
+- [x] 0.5 Error Handling & Robustness — removed static `warned` flag, `run_simulation_step()` returns `cfd_status_t`
+- [x] 0.6 Structured Logging & Diagnostics — `cfd_log()` API with levels, component tags, thread-safe callbacks
 
-- [x] Replace all `exit()` calls with error code propagation
-- [x] Implement `cfd_status_t` and `cfd_get_error_string()`
-- [x] Thread-local error context for rich error reporting
-- [x] Ensure resource cleanup on error paths (no leaks on failure)
+**0.6 Deferred items:**
 
-### 0.2 Thread Safety & Global State
-
-- [x] Remove static buffers in `utils.c` (path management)
-- [x] Make `SolverRegistry` thread-safe or context-bound
-- [x] Ensure `SimulationData` and solvers are re-entrant
-- [x] Validate thread-safety with concurrent simulation tests
-
-### 0.3 API Robustness
-
-- [x] Comprehensive input validation (check for NULL, NaN, invalid ranges)
-- [x] Configurable logging callback (`cfd_set_log_callback`)
-- [x] Version header (`cfd_version.h`) with version macros
-- [x] Symbol visibility control (hide private symbols) & export headers
-- [x] Library initialization/shutdown functions
-
-### 0.4 API & Robustness Testing
-
-**Implemented:**
-
-- [x] Core functionality tests (`tests/core/`)
-- [x] Input validation tests (`test_input_validation.c`)
-- [x] Error handling tests (`test_error_handling.c`)
-- [x] Re-entrancy/thread-safety tests (`test_reentrancy.c`)
-- [x] Solver tests organized by architecture (CPU, SIMD, OMP, GPU)
-- [x] Simulation API tests (`tests/simulation/`)
-- [x] I/O tests (VTK, CSV, output paths)
-- [x] Physics validation tests (`test_physics_validation.c`)
-
-**Still needed:**
-
-- [x] Negative testing suite (more edge cases)
-- [x] Memory leak checks (ASan in CI; Valgrind via local `ctest -T MemCheck`)
-- [x] Add `TEST_FAIL_PRINTF` macro to eliminate repeated `snprintf` + `TEST_FAIL_MESSAGE` pattern (5+ occurrences, causes `-Wformat-truncation` warnings). Enable `UNITY_INCLUDE_PRINT_FORMATTED` or define a local helper macro.
-
-### 0.5 Error Handling & Robustness (P0) ✅
-
-**Status:** COMPLETE (PR #139, Feb 2026)
-
-**Problem:** Projection solvers used thread-unsafe static `warned` flag for Poisson convergence failures, continuing execution with inaccurate pressure fields instead of returning errors.
-
-**Solution implemented:**
-
-- [x] Removed static `warned` flag from all projection solvers (CPU, OMP, AVX2) ✅
-- [x] Return `CFD_ERROR_MAX_ITER` immediately on Poisson convergence failure ✅
-- [x] **Breaking API change:** `run_simulation_step()` and `run_simulation_solve()` now return `cfd_status_t` instead of `void` ✅
-- [x] Updated solver registry wrappers to propagate errors properly ✅
-- [x] Updated all ~15 test files to check return values ✅
-- [x] Updated all examples to handle errors in loops ✅
-- [x] Updated README with new function signatures ✅
-- [x] Proper distinction between `CFD_ERROR_UNSUPPORTED` (backend unavailable) and other errors ✅
-
-**Impact:**
-
-- Thread-safe error handling (no data races in OpenMP builds)
-- Users can now detect and respond to convergence failures
-- Better diagnostics for validation debugging
-- Compile-time safety (void → cfd_status_t breaks code that ignores errors)
-
-**Files modified:**
-
-- `lib/include/cfd/api/simulation_api.h` - Function signature changes
-- `lib/src/api/simulation_api.c` - Error propagation implementation
-- `lib/src/api/solver_registry.c` - Wrapper error handling
-- `lib/src/solvers/navier_stokes/{cpu,omp,avx2}/solver_projection*.c` - Return errors
-- `tests/**/*.c` - Test updates for error checking
-- `examples/*.c` - Example error handling
-- `README.md` - API documentation updates
-
-### 0.6 Structured Logging & Diagnostics (P2) ✅
-
-**Status:** Complete
-
-**Implementation Tasks:**
-
-- [x] Define `cfd_log()` API with log levels and component tags
-- [x] Implement default console handler (stderr for WARNING/ERROR, stdout for DEBUG/INFO)
-- [x] Add thread-safe logging (atomic global log level, per-thread callbacks)
-- [x] Replace all `fprintf(stderr, ...)` calls with `cfd_log()`
-- [x] Replace diagnostic `printf()` calls with `cfd_log()`
-- [x] Add log filtering by level (suppress DEBUG in production)
-- [x] Support custom log handlers via `cfd_set_log_callback_ex()` (with component)
-- [ ] Add log filtering by component (e.g., only show "boundary" logs) — deferred
-- [ ] Add timestamps and colored output — deferred
-- [ ] Add structured data API for metrics (convergence stats, timings) — deferred
-
-**API added:**
-
-```c
-// Log levels (renumbered to include DEBUG)
-typedef enum {
-    CFD_LOG_LEVEL_DEBUG = 0,
-    CFD_LOG_LEVEL_INFO = 1,
-    CFD_LOG_LEVEL_WARNING = 2,
-    CFD_LOG_LEVEL_ERROR = 3
-} cfd_log_level_t;
-
-// Core logging function with printf-style formatting
-void cfd_log(cfd_log_level_t level, const char* component,
-             const char* fmt, ...);
-
-// Global log level control (atomic, thread-safe)
-void cfd_set_log_level(cfd_log_level_t level);
-cfd_log_level_t cfd_get_log_level(void);
-
-// Extended callback with component tag
-typedef void (*cfd_log_callback_ex_t)(cfd_log_level_t level,
-    const char* component, const char* message);
-void cfd_set_log_callback_ex(cfd_log_callback_ex_t callback);
-
-// Convenience macros
-CFD_LOG_DEBUG(component, ...)
-CFD_LOG_INFO(component, ...)
-CFD_LOG_WARNING(component, ...)
-CFD_LOG_ERROR(component, ...)
-```
-
-**Design decisions:**
-
-- Default log level is INFO (DEBUG suppressed unless explicitly enabled)
-- Per-thread legacy callback takes priority over global extended callback
-- `cfd_error()` always sets thread-local error state regardless of log level filter
-- Convergence verbose output uses `CFD_LOG_DEBUG` with `if (params->verbose)` guard
-- Component tags: "gpu", "boundary", "poisson", "projection", "solver", "simd"
-- Default output format: `LEVEL [component]: message`
-
-**Files modified:**
-
-- `lib/include/cfd/core/logging.h` — Extended API with DEBUG level, `cfd_log()`, macros
-- `lib/src/core/logging.c` — `cfd_log()` implementation, atomic log level, extended callback
-- `lib/src/api/solver_registry.c` — 5 fprintf → CFD_LOG_ERROR/WARNING
-- `lib/src/boundary/boundary_conditions.c` — 1 fprintf → CFD_LOG_ERROR
-- `lib/src/solvers/linear/linear_solver.c` — 2 fprintf/printf → CFD_LOG_ERROR/DEBUG
-- `lib/src/solvers/linear/simd/linear_solver_simd_dispatch.c` — 1 fprintf → CFD_LOG_DEBUG
-- `lib/src/solvers/linear/cpu/linear_solver_cg.c` — 1 printf → CFD_LOG_DEBUG
-- `lib/src/solvers/linear/cpu/linear_solver_bicgstab.c` — 1 printf → CFD_LOG_DEBUG
-- `lib/src/solvers/linear/avx2/linear_solver_cg_avx2.c` — 1 printf → CFD_LOG_DEBUG
-- `lib/src/solvers/linear/neon/linear_solver_cg_neon.c` — 1 printf → CFD_LOG_DEBUG
-- `lib/src/solvers/linear/omp/linear_solver_cg_omp.c` — 1 printf → CFD_LOG_DEBUG
-- `lib/src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c` — 4 printf → CFD_LOG_INFO
-- `lib/src/solvers/navier_stokes/avx2/solver_projection_avx2.c` — 1 fprintf → CFD_LOG_WARNING
-- `lib/src/solvers/navier_stokes/avx2/solver_rk2_avx2.c` — 2 printf → CFD_LOG_INFO
-- `tests/core/test_logging.c` — 11 new tests (16 total)
+- [ ] Log filtering by component (e.g., only show "boundary" logs)
+- [ ] Timestamps and colored output
+- [ ] Structured data API for metrics (convergence stats, timings)
 
 ---
 
@@ -333,117 +145,15 @@ CFD_LOG_ERROR(component, ...)
 
 **Goal:** Make the solver practically usable for real problems.
 
-### 1.1 Boundary Conditions (P0 - Critical)
+### 1.1 Boundary Conditions (P0 - Critical) ✅
 
-- [x] Boundary condition abstraction layer (`boundary_conditions.h/.c`)
-- [x] Runtime backend selection (Scalar, SIMD, OpenMP, GPU)
-- [x] Neumann (zero-gradient) boundary conditions
-- [x] Periodic boundary conditions
-- [x] SIMD-optimized BC application (AVX2)
-- [x] OpenMP-parallelized BC application
-- [x] CUDA GPU BC kernels
-- [x] Dirichlet (fixed value) boundary conditions
-- [x] No-slip wall conditions
-- [x] Inlet velocity specification (uniform, parabolic, custom profiles)
-- [x] Outlet (zero-gradient/convective)
-- [x] Symmetry planes
-- [x] Moving wall boundaries (via Dirichlet BCs, see lid-driven cavity example)
-- [x] Time-varying boundary conditions
-
-**Implemented files:**
-
-- `lib/include/cfd/boundary/boundary_conditions.h` - Public API with backend selection
-- `lib/include/cfd/boundary/boundary_conditions_gpu.cuh` - GPU API declarations
-- `lib/src/boundary/boundary_conditions.c` - Public API dispatcher
-- `lib/src/boundary/cpu/boundary_conditions_scalar.c` - Scalar implementation
-- `lib/src/boundary/cpu/boundary_conditions_outlet_scalar.c` - Scalar outlet BC
-- `lib/src/boundary/omp/boundary_conditions_omp.c` - OpenMP parallelization
-- `lib/src/boundary/omp/boundary_conditions_outlet_omp.c` - OpenMP outlet BC
-- `lib/src/boundary/avx2/boundary_conditions_avx2.c` - AVX2 SIMD optimizations
-- `lib/src/boundary/avx2/boundary_conditions_inlet_avx2.c` - AVX2 inlet BC
-- `lib/src/boundary/avx2/boundary_conditions_outlet_avx2.c` - AVX2 outlet BC
-- `lib/src/boundary/neon/boundary_conditions_neon.c` - NEON SIMD optimizations
-- `lib/src/boundary/neon/boundary_conditions_inlet_neon.c` - NEON inlet BC
-- `lib/src/boundary/neon/boundary_conditions_outlet_neon.c` - NEON outlet BC
-- `lib/src/boundary/simd/boundary_conditions_simd_dispatch.c` - SIMD runtime dispatch
-- `lib/src/boundary/gpu/boundary_conditions_gpu.cu` - CUDA kernels
-- `lib/src/boundary/boundary_conditions_internal.h` - Internal declarations
-- `lib/src/boundary/boundary_conditions_inlet_common.h` - Shared inlet BC helpers
-- `lib/src/boundary/boundary_conditions_outlet_common.h` - Shared outlet BC helpers
-- `lib/src/boundary/boundary_conditions_time.h` - Time modulation helpers
-- `lib/src/boundary/cpu/boundary_conditions_inlet_time_scalar.c` - Time-varying inlet scalar implementation
-- `tests/core/test_boundary_conditions_symmetry.c` - Symmetry BC unit tests
-
-#### 1.1.1 Boundary Conditions Code Refactoring (P2) ✅
-
-**Refactoring Complete.** Reduced ~500 lines of duplicated code across BC backends using parameterized header templates.
-
-1. **Consolidate Inlet BC Implementations (Priority 1)**
-   - [x] Deleted 3 redundant inlet files (OMP/AVX2/NEON) — all delegate to scalar
-   - **Savings:** 196 lines removed
-
-2. **Extract Common Outlet SIMD Template (Priority 2)**
-   - [x] Created `boundary_conditions_outlet_simd.h` parameterized by SIMD intrinsics
-   - [x] AVX2/NEON outlet files reduced from ~135 lines each to ~33 lines
-   - **Savings:** 99 lines removed
-
-3. **Templatize OMP vs Scalar (Priority 3)**
-   - [x] Created `boundary_conditions_core_impl.h` with token-pasting macros
-   - [x] Scalar and OMP files include shared template with `BC_CORE_USE_OMP` flag
-   - **Savings:** 29 lines removed
-
-4. **Unify AVX2 and NEON (Priority 4)**
-   - [x] Created `boundary_conditions_simd_impl.h` parameterized by STORE/LOAD/BROADCAST/VEC_TYPE/WIDTH/MASK
-   - [x] AVX2/NEON main BC files reduced from ~218 lines each to ~55 lines
-   - **Savings:** 181 lines removed
-
-**Files created:**
-
-- `lib/src/boundary/boundary_conditions_core_impl.h`
-- `lib/src/boundary/boundary_conditions_outlet_simd.h`
-- `lib/src/boundary/boundary_conditions_simd_impl.h`
-
-**Files deleted:**
-
-- `lib/src/boundary/omp/boundary_conditions_inlet_omp.c`
-- `lib/src/boundary/avx2/boundary_conditions_inlet_avx2.c`
-- `lib/src/boundary/neon/boundary_conditions_inlet_neon.c`
-
-**Total savings:** ~505 lines removed across 4 priorities
+All BC types implemented across all backends (Scalar, AVX2, NEON, OMP, GPU): Dirichlet, Neumann, Periodic, No-slip, Inlet (uniform/parabolic/custom), Outlet, Symmetry, Moving wall, Time-varying. Code refactored with shared templates (~505 lines removed).
 
 ### 1.2 Linear Solvers (P0 - Critical)
 
-**Implemented:**
-
-- [x] SOR (Successive Over-Relaxation) - CPU baseline
-- [x] Jacobi SIMD (`poisson_jacobi_simd.c`) - AVX2 vectorized, fully parallelizable
-- [x] Red-Black SOR SIMD (`poisson_redblack_simd.c`) - AVX2 with SOR convergence rate
-- [x] GPU Jacobi Poisson solver (`solver_projection_jacobi_gpu.cu`)
-- [x] Integrate SIMD Poisson into projection solver (`solver_projection_simd.c`)
+**Implemented:** Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB (all with SIMD backends). CG is the default Poisson solver for all projection methods.
 
 **Still needed:**
-
-- [x] Solver abstraction interface
-- [x] Conjugate Gradient (CG) for SPD systems (scalar, AVX2, NEON, OMP backends)
-  - **Note:** CG is now the default Poisson solver for all projection methods (PR #139)
-  - CPU uses CG_SCALAR, AVX2 uses CG_SIMD, OMP uses CG_OMP for reliable O(√κ) convergence
-- [x] BiCGSTAB for non-symmetric systems ✅
-  - [x] BiCGSTAB Scalar (CPU) ✅
-  - [x] BiCGSTAB SIMD (AVX2/NEON with integrated OpenMP parallelization) ✅
-
-  **Note:** AVX2 and NEON implementations include OpenMP parallelization via `#pragma omp parallel for` in inner loops. There is no separate `POISSON_BACKEND_OMP` backend for BiCGSTAB.
-
-  **Files created (BiCGSTAB backends):**
-
-  - `lib/src/solvers/linear/avx2/linear_solver_bicgstab_avx2.c` - AVX2 SIMD implementation with OpenMP
-  - `lib/src/solvers/linear/neon/linear_solver_bicgstab_neon.c` - NEON SIMD implementation with OpenMP
-  - `tests/math/test_bicgstab_avx2.c` - AVX2 vs scalar consistency test
-  - `tests/math/test_bicgstab_neon.c` - NEON vs scalar consistency test
-
-  Updated files:
-
-  - `lib/src/solvers/linear/simd/linear_solver_simd_dispatch.c` - Added BiCGSTAB dispatcher
-  - `lib/src/solvers/linear/linear_solver_internal.h` - Added BiCGSTAB SIMD factory declaration
 
 - [ ] GMRES (Generalized Minimal Residual) for non-symmetric systems
   - [ ] GMRES scalar
@@ -451,11 +161,7 @@ CFD_LOG_ERROR(component, ...)
   - [ ] GMRES NEON
   - [ ] GMRES OMP
   - [ ] GMRES GPU
-- [x] Jacobi (diagonal) preconditioner for CG (scalar, AVX2, NEON backends)
 - [ ] SSOR (Symmetric SOR) preconditioner
-- [x] SOR SIMD variants (Block SOR — see docs/technical-notes/block-sor-simd.md)
-  - [x] SOR AVX2
-  - [x] SOR NEON
 - [ ] GPU (CUDA) linear solver backends
   - [ ] Standalone Jacobi GPU (refactor from monolithic `solver_projection_jacobi_gpu.cu`)
   - [ ] Red-Black SOR GPU
@@ -467,86 +173,7 @@ CFD_LOG_ERROR(component, ...)
 - [ ] AMG preconditioner (for use with CG/GMRES/BiCGSTAB)
 - [ ] Performance benchmarking in Release mode
 
-**Note:** See [Known Issues](#known-issues) — SIMD Poisson strict tolerance limitation.
-
-#### 1.2.1 Poisson Solver Accuracy Tests ✅
-
-- [x] Zero RHS test (solution should remain constant)
-- [x] Uniform RHS test (quadratic solution)
-- [x] Sinusoidal RHS test with analytical solution comparison
-- [x] Convergence rate verification for all Poisson variants (SOR, Jacobi, Red-Black)
-- [x] Residual convergence tracking
-
-**Files created:**
-
-- `tests/math/test_poisson_accuracy.c` - 15 tests covering all accuracy requirements
-
-#### 1.2.2 Laplacian Operator Validation ✅
-
-**Test the discrete Laplacian against manufactured solutions:**
-
-- [x] Manufactured solution: p = sin(πx)sin(πy) → ∇²p = -2π²p
-- [x] Verify 2nd-order accuracy O(dx²) with grid refinement
-- [x] Compare CPU and CG implementations (SIMD compared when available)
-- [x] Verify stencil symmetry (self-adjoint property)
-
-**Files created:**
-
-- `tests/math/test_laplacian_accuracy.c` - 4 tests covering all accuracy requirements
-
-**Files tested:** `lib/src/solvers/linear/cpu/linear_solver_cg.c` - `apply_laplacian()`
-
-#### 1.2.3 Linear Solver Convergence Validation ✅
-
-**Verify convergence rates match theory:**
-
-- [x] Jacobi: spectral radius ρ = cos(πh) verified to <1% accuracy (Dirichlet BCs)
-- [x] SOR: over-relaxation (ω > 1) converges faster than Gauss-Seidel
-- [x] Red-Black SOR: comparable convergence to standard SOR (ratio 0.5-2.0)
-- [x] CG: convergence in O(√κ) iterations verified
-
-**Files created:**
-
-- `tests/math/test_linear_solver_convergence.c` - 6 tests covering convergence properties
-
-**Note:** See [Known Issues](#known-issues) — spectral radius test BC assumption.
-
-**Files still to create (future work):**
-
-- `src/solvers/linear/multigrid.c`
-
-#### 1.2.4 Preconditioned Conjugate Gradient (PCG) ✅
-
-**Jacobi (diagonal) preconditioner for CG solver:**
-
-- [x] Added `poisson_precond_type_t` enum (NONE, JACOBI) to `poisson_solver.h`
-- [x] Added `preconditioner` field to `poisson_solver_params_t`
-- [x] Implemented PCG algorithm in scalar CG solver
-- [x] Implemented PCG in AVX2 backend with SIMD-vectorized preconditioner application
-- [x] Implemented PCG in NEON backend with SIMD-vectorized preconditioner application
-- [x] Backward compatible: POISSON_PRECOND_NONE (default) gives standard CG behavior
-
-**PCG Algorithm:**
-
-```
-z = M⁻¹r           (apply preconditioner)
-p = z              (search direction from preconditioned residual)
-ρ = (r, z)         (instead of (r, r))
-```
-
-**Note:** See [Known Issues](#known-issues) — Jacobi preconditioner on uniform grids.
-
-**Files modified:**
-
-- `lib/include/cfd/solvers/poisson_solver.h` - Added preconditioner enum and params field
-- `lib/src/solvers/linear/linear_solver.c` - Default params initialization
-- `lib/src/solvers/linear/cpu/linear_solver_cg.c` - Scalar PCG implementation
-- `lib/src/solvers/linear/avx2/linear_solver_cg_avx2.c` - AVX2 PCG implementation
-- `lib/src/solvers/linear/neon/linear_solver_cg_neon.c` - NEON PCG implementation
-
-**Files created:**
-
-- `tests/math/test_pcg_convergence.c` - 4 tests verifying PCG correctness and consistency
+**Completed sub-sections:** Poisson Accuracy Tests (1.2.1), Laplacian Validation (1.2.2), Convergence Validation (1.2.3), PCG (1.2.4).
 
 ### 1.3 Numerical Schemes (P1)
 
@@ -554,88 +181,9 @@ p = z              (search direction from preconditioned residual)
 - [ ] Central differencing with delayed correction
 - [ ] High-resolution TVD schemes (Van Leer, Superbee)
 - [ ] Gradient limiters (Barth-Jespersen, Venkatakrishnan)
-
-#### 1.3.1 Finite Difference Stencil Tests ✅
-
-Unit tests for individual stencil operations:
-
-- [x] First derivative (central difference) - verify O(h²) accuracy
-- [x] Second derivative - verify O(h²) accuracy
-- [x] 2D Laplacian (5-point stencil) - verify O(h²) accuracy
-- [x] Divergence operator - verify O(h²) accuracy
-- [x] Gradient operator - verify O(h²) accuracy
-
-**Test approach:** Use smooth analytical functions (e.g., `sin(kx)*sin(ky)`), compute numerical derivatives using shared stencil implementations, compare to analytical derivatives, verify error scaling.
-
-**Files created:**
-
-- `lib/include/cfd/math/stencils.h` - Shared stencil implementations (header-only)
-- `tests/math/test_finite_differences.c` - 9 tests verifying O(h²) convergence
-
-**Future work:**
-
 - [ ] Migrate solver code to use `cfd/math/stencils.h` (currently inline implementations)
-  - `solver_explicit_euler.c`, `solver_projection.c`, `linear_solver_jacobi.c`, etc.
-  - This ensures tests exercise the exact production code paths
 
-#### 1.3.2 Convergence Order Verification ✅
-
-- [x] Spatial convergence tests (h-refinement: 16→32→64→128)
-- [x] Temporal convergence tests (dt-refinement)
-- [x] Automated order-of-accuracy computation
-- [x] Verify super-linear spatial convergence (~1.5 order, BC-limited)
-
-**Results:** See [Known Issues](#known-issues) — convergence order BC-limited. Spatial rate > 1.4 achieved, error decreases monotonically with refinement.
-
-**Files created:**
-
-- `tests/math/test_convergence_order.c`
-
-#### 1.3.3 Method of Manufactured Solutions (MMS) ✅
-
-- [x] Define manufactured velocity/pressure fields with known derivatives
-- [x] Compute analytical source terms from Navier-Stokes substitution
-- [x] Run solver with manufactured source terms
-- [x] Compare numerical to manufactured solution
-- [x] Verify convergence order
-
-**Manufactured solution (Modified Taylor-Green):**
-
-```c
-u(x,y,t) =  cos(x) * sin(y) * exp(-αt)
-v(x,y,t) = -sin(x) * cos(y) * exp(-αt)
-Source:  f = (2ν - α) · u_exact  // With α = ν
-```
-
-**Implementation:**
-
-- Added `ns_source_func_t` callback to `ns_solver_params_t` for custom source terms
-- Propagated callback to all solver variants: CPU explicit Euler (via `compute_source_terms()`), CPU projection, AVX2 explicit Euler (scalar path), AVX2 projection, OMP explicit Euler, OMP projection, OMP RK2 (already via helper)
-- Created `tests/math/test_mms.c` with 5 tests:
-  1. Source callback mechanism verification (constant source α=0 for robust direction check)
-  2. Spatial convergence (Euler) — verified O(h^1.5+), monotonic with 1% tolerance
-  3. Spatial convergence (RK2) — verified O(h^1.5+), monotonic with 1% tolerance
-  4. Temporal convergence (Euler) — verified error decreases
-  5. Temporal convergence (RK2) — verified better rate than Euler
-
-#### 1.3.4 Divergence-Free Constraint Validation ✅
-
-**Verify projection method enforces incompressibility:**
-
-- [x] Measure max|∇·u| after projection step (should be bounded)
-- [x] Test with various initial velocity fields (sinusoidal, Taylor-Green, vortex pair)
-- [x] Verify all projection backends (CPU, AVX2, OMP, GPU)
-
-**Results:**
-
-- Divergence computation verified against analytically div-free fields (<1e-10)
-- All backends produce consistent results (within 10%)
-- Divergence stays bounded (<10.0) - matches existing solver behavior
-- GPU test skipped when CUDA not available
-
-**Files created:**
-
-- `tests/math/test_divergence_free.c`
+**Completed sub-sections:** Stencil Tests (1.3.1), Convergence Order (1.3.2), MMS (1.3.3), Divergence-Free (1.3.4).
 
 ### 1.4 Steady-State Solver (P1)
 
@@ -644,24 +192,15 @@ Source:  f = (2ν - α) · u_exact  // With α = ν
 - [ ] Pseudo-transient continuation
 - [ ] Convergence acceleration (relaxation)
 
-**Files to create:**
-
-- `include/cfd/solvers/steady_state.h`
-- `src/solvers/steady/simple.c`
-- `src/solvers/steady/simplec.c`
-- `src/solvers/steady/piso.c`
-
 ### 1.5 Time Integration (P1)
 
-Each time integrator requires a scalar (CPU) reference implementation first, then backend variants.
-See `/add-ns-time-integrator` command for the cross-backend workflow.
+Each time integrator requires a scalar (CPU) reference implementation first, then backend variants. See `/add-ns-time-integrator` for the cross-backend workflow.
 
-**Algorithms:**
+**Implemented:** RK2 (Heun's method) — all CPU/AVX2/OMP backends, O(dt²) verified.
 
-- [x] RK2 (Heun's method) — scalar
-  - [x] RK2 AVX2/SIMD (`rk2_avx2`, `rk2_optimized`)
-  - [x] RK2 OpenMP (`rk2_omp`)
-  - [ ] RK2 CUDA (`rk2_gpu`)
+**Still needed:**
+
+- [ ] RK2 CUDA (`rk2_gpu`)
 - [ ] RK4 (classical Runge-Kutta) — scalar
   - [ ] RK4 AVX2+OMP (`rk4_optimized`)
   - [ ] RK4 OpenMP (`rk4_omp`)
@@ -670,24 +209,6 @@ See `/add-ns-time-integrator` command for the cross-backend workflow.
 - [ ] Crank-Nicolson (2nd order implicit)
 - [ ] BDF2 (backward differentiation)
 - [ ] Adaptive time stepping with error control
-
-**RK2 Implementation:**
-
-- O(dt²) temporal accuracy verified via self-convergence test (ratio ≈ 4.0)
-- Uses periodic stencil indexing in RHS evaluation to avoid ghost-cell order reduction
-- BCs applied only after full RK2 step (not between stages)
-
-**Files created:**
-
-- `lib/src/solvers/navier_stokes/cpu/solver_rk2.c`
-- `tests/solvers/navier_stokes/cpu/test_solver_rk2.c`
-
-**Files modified:**
-
-- `lib/include/cfd/solvers/navier_stokes_solver.h` — added `NS_SOLVER_TYPE_RK2`
-- `lib/src/api/solver_registry.c` — registered RK2 factory
-- `lib/CMakeLists.txt` — added source file
-- `CMakeLists.txt` — added test entries
 
 ### 1.6 Restart/Checkpoint (P1)
 
@@ -706,12 +227,6 @@ Solve F(x)=0 where F is nonlinear. Required for steady-state Navier-Stokes.
 - [ ] Line search and globalization
 - [ ] Nonlinear solver abstraction interface
 
-**Files to create:**
-
-- `include/cfd/solvers/nonlinear_solver.h`
-- `src/solvers/nonlinear/newton.c`
-- `src/solvers/nonlinear/picard.c`
-
 ### 1.8 Eigenvalue Solvers (P3)
 
 Find eigenvalues/eigenvectors for stability analysis.
@@ -721,48 +236,15 @@ Find eigenvalues/eigenvectors for stability analysis.
 - [ ] Arnoldi iteration
 - [ ] Stability analysis framework
 
-**Files to create:**
-
-- `include/cfd/solvers/eigen_solver.h`
-- `src/solvers/eigen/power_iteration.c`
-- `src/solvers/eigen/arnoldi.c`
-
 ### 1.9 Derived Fields (P2)
 
 **Status:** OpenMP implemented, SIMD and CUDA pending
 
-**Current Implementation:**
-
-Located in `lib/src/core/derived_fields.c`:
-
-- [x] OpenMP parallelization for velocity magnitude computation
-- [x] OpenMP parallel reduction for field statistics (min/max/avg)
-- [x] Threshold-based parallelization (OMP_THRESHOLD = 1000 cells)
-- [x] Fallback to sequential for small grids
+**Current:** OpenMP parallelization for velocity magnitude and field statistics with threshold-based parallelization (OMP_THRESHOLD = 1000 cells).
 
 **Still needed:**
 
 #### SIMD Optimization (AVX2/NEON)
-
-Best for: All grid sizes, especially when combined with OpenMP
-
-**Implementation approach:**
-
-```c
-// Velocity magnitude with AVX2 (4 doubles per iteration)
-for (size_t i = 0; i < n; i += 4) {
-    __m256d u = _mm256_loadu_pd(&field->u[i]);
-    __m256d v = _mm256_loadu_pd(&field->v[i]);
-    __m256d u2 = _mm256_mul_pd(u, u);
-    __m256d v2 = _mm256_mul_pd(v, v);
-    __m256d sum = _mm256_add_pd(u2, v2);
-    __m256d mag = _mm256_sqrt_pd(sum);
-    _mm256_storeu_pd(&vel_mag[i], mag);
-}
-// Handle remainder elements
-```
-
-**Tasks:**
 
 - [ ] Add AVX2 implementation for velocity magnitude
 - [ ] Add NEON implementation for velocity magnitude (ARM64)
@@ -771,39 +253,7 @@ for (size_t i = 0; i < n; i += 4) {
 - [ ] Add runtime CPU feature detection
 - [ ] Benchmark against scalar+OpenMP version
 
-**Benefits:**
-
-- No thread overhead (works on small grids)
-- Combines well with OpenMP for multi-core
-- Reference: existing SIMD solvers in `lib/src/solvers/linear/avx2/`
-
-**Challenges:**
-
-- Architecture-specific code paths needed
-- Remainder handling for non-aligned sizes
-- Statistics reductions more complex with SIMD
-
 #### CUDA GPU Acceleration
-
-Best for: Very large grids (100k+ cells), GPU available
-
-**Implementation approach:**
-
-```cuda
-__global__ void compute_velocity_magnitude_kernel(
-    double* __restrict__ vel_mag,
-    const double* __restrict__ u,
-    const double* __restrict__ v,
-    size_t n)
-{
-    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) {
-        vel_mag[i] = sqrt(u[i] * u[i] + v[i] * v[i]);
-    }
-}
-```
-
-**Tasks:**
 
 - [ ] Add CUDA kernel for velocity magnitude
 - [ ] Add parallel reduction for statistics (use CUB library or custom)
@@ -811,153 +261,30 @@ __global__ void compute_velocity_magnitude_kernel(
 - [ ] Add threshold logic (only use GPU for large grids)
 - [ ] Benchmark transfer overhead vs compute benefit
 
-**Benefits:**
-
-- Massive parallelism for large grids
-- Can share GPU memory with CUDA solvers
-- Reference: existing CUDA infrastructure in `lib/src/solvers/gpu/`
-
-**Challenges:**
-
-- GPU memory transfer overhead for small grids
-- More complex reduction implementation
-- Only beneficial if data already on GPU
-
-**Performance Thresholds (Approximate):**
-
-| Grid Size        | Recommended Approach                         |
-|------------------|----------------------------------------------|
-| < 1,000 cells    | Sequential (overhead not worth it)           |
-| 1,000 - 10,000   | OpenMP (2-4 threads) ✅ Implemented          |
-| 10,000 - 100,000 | OpenMP + SIMD                                |
-| > 100,000        | CUDA (if GPU available) or OpenMP + SIMD     |
-
-**Note:** These operations are memory-bound, not compute-bound:
-
-- Velocity magnitude: Read 2 arrays, write 1 array
-- Statistics: Read 1 array, compute 3 values
-
-For memory-bound operations:
-
-- SIMD helps with cache line utilization
-- OpenMP helps with memory bandwidth aggregation across cores
-- CUDA helps only if data is already on GPU
-
-**Files to Modify:**
-
-- `lib/src/core/derived_fields.c` - Add SIMD/CUDA variants
-- `lib/src/core/derived_fields_simd.c` - New file for SIMD implementation
-- `lib/src/core/derived_fields_gpu.cu` - New file for CUDA kernels
-- `tests/io/test_csv_output.c` - Verify correctness after optimization
-
 ### 1.10 SIMD Projection Solver Optimization (P2)
 
-**Status:** SIMD Poisson integration completed (December 2024), further optimizations pending
-
-**Current State:**
-
-- [x] SIMD Poisson solvers implemented (Jacobi and Red-Black SOR with AVX2)
-- [x] SIMD Poisson integrated into projection solver (`solver_projection_simd.c`)
-- [x] Full projection method with SIMD corrector step
-- [x] All tests pass with results matching scalar implementation
-- [x] `u_new` buffer reused as temp for Poisson solver (in-place Red-Black SOR)
-
-**Reference:** See [docs/technical-notes/simd-optimization-analysis.md](docs/technical-notes/simd-optimization-analysis.md) for detailed technical analysis.
-
-**Performance Analysis:**
-
-Current SIMD implementation provides ~1.3-1.5x speedup with Poisson solver being 70-80% of total runtime. Speedup limited by Amdahl's law:
-
-- Parallelizable fraction: ~80% (Poisson + Corrector)
-- SIMD speedup: 1.5-2x (Red-Black has gather/scatter overhead)
-- Expected overall: 1.3-1.5x (matches observations)
+**Status:** SIMD Poisson integration completed, further optimizations pending. Current ~1.3-1.5x speedup limited by Amdahl's law (parallelizable fraction ~80%).
 
 #### High Priority
 
-##### 1. Improve Poisson Convergence for Non-Trivial Problems
-
-SIMD Poisson solvers don't fully converge to 1e-6 tolerance on challenging problems (e.g., sinusoidal RHS) within current iteration limits.
-
-**Tasks:**
-
-- [ ] Increase `POISSON_MAX_ITER` from current 1000/2000 to higher values
-- [ ] Implement adaptive tolerance based on problem scale
+- [ ] Increase `POISSON_MAX_ITER` or implement adaptive tolerance
 - [ ] Add optional multigrid preconditioner for faster convergence
-- [ ] Investigate Red-Black omega parameter tuning for specific problem classes
-
-##### 2. Performance Benchmarking in Release Mode
-
-See [Known Issues](#known-issues) — debug mode SIMD benchmarking.
-
-**Tasks:**
-
+- [ ] Investigate Red-Black omega parameter tuning
 - [ ] Create Release mode benchmark suite
-- [ ] Measure actual speedup vs scalar implementation
 - [ ] Profile to identify remaining bottlenecks
-- [ ] Compare against theoretical Amdahl's law predictions
-- [ ] Document performance characteristics for different grid sizes
 
-#### Medium Priority
-
-##### 3. OpenMP + SIMD Hybrid
-
-Combine thread parallelism with SIMD vectorization for maximum CPU utilization.
-
-**Current State:** Separate OMP and SIMD backends exist, but no hybrid implementation.
-
-**Tasks:**
+#### Medium Priority — OpenMP + SIMD Hybrid
 
 - [ ] Implement hybrid projection solver using OpenMP across rows + SIMD within rows
-- [ ] Use `#pragma omp parallel for` on outer loop with SIMD intrinsics in inner loop
-- [ ] Benchmark scaling efficiency (measure speedup vs threads)
+- [ ] Benchmark scaling efficiency
 - [ ] Compare against pure OMP and pure SIMD implementations
-- [ ] Handle load balancing for Red-Black coloring with OpenMP
 
-**Benefits:**
-
-- Jacobi allows full parallelization across rows
-- Red-Black allows parallelization within each color
-- Could achieve 4-8x speedup on modern multi-core CPUs
-
-**Reference Files:**
-
-- `lib/src/solvers/navier_stokes/omp/solver_projection_omp.c` - OMP implementation
-- `lib/src/solvers/navier_stokes/avx2/solver_projection_avx2.c` - SIMD implementation
-- `lib/src/solvers/linear/avx2/` - SIMD Poisson solvers
-
-#### Low Priority
-
-##### 4. Multigrid SIMD Implementation
-
-Achieve O(N) complexity vs O(N²) for iterative methods.
-
-**Benefits:**
-
-- Multigrid offers O(N) complexity vs O(N²) for Jacobi/SOR
-- Natural parallelism at each grid level
-- Can use SIMD at each level for additional speedup
-- Essential for large-scale 3D simulations
-
-**Tasks:**
+#### Low Priority — Multigrid SIMD
 
 - [ ] Implement multigrid V-cycle framework
 - [ ] Add restriction/prolongation operators
 - [ ] Use SIMD Jacobi/Red-Black as smoothers at each level
 - [ ] Benchmark convergence rate vs pure iterative methods
-- [ ] Validate against analytical solutions
-
-**Challenges:**
-
-- Complex implementation requiring careful design
-- Grid hierarchy management
-- Operator construction at multiple levels
-- Testing and validation complexity
-
-**Priority Justification:** Low priority because:
-
-- Current SIMD implementation adequate for 2D problems
-- Critical for 3D but 3D support itself is Phase 2
-- Better to implement multigrid after 3D infrastructure exists
 
 ---
 
@@ -1011,31 +338,9 @@ Achieve O(N) complexity vs O(N²) for iterative methods.
 
 **Goal:** Support complex geometries.
 
-### 3.1 3D Support (P0 - Critical) — **ACTIVE PRIORITY**
+### 3.1 3D Support (P0 - Critical) ✅
 
-**Status:** Complete (all 8 phases). See [3D Extension Plan](docs/technical-notes/3d-extension-plan.md) for full design.
-
-**Approach:** "2D as subset of 3D" — `nz=1` produces bit-identical results to current 2D code. No separate 2D/3D codepaths. All code becomes 3D-aware with branch-free solver loops using precomputed constants (`stride_z=0`, `inv_dz2=0.0` when `nz==1`).
-
-**Phases:**
-
-- [x] Phase 0: Introduce `IDX_2D`/`IDX_3D` indexing macros (`lib/include/cfd/core/indexing.h`), replace all inline `j*nx+i` patterns across ~50 files
-- [x] Phase 1: Extend core data structures (grid: `nz, z[], dz[], stride_z, inv_dz2, k_start, k_end`; flow_field: `w, nz`; BCs: `front/back`)
-- [x] Phase 2: Add 3D stencils (7-point) and update scalar CPU linear solvers
-- [x] Phase 3: Update scalar CPU NS solvers with w-momentum equation
-- [x] Phase 4: Extend boundary conditions for z-faces (all backends)
-- [x] Phase 5: Update SIMD backends (AVX2/NEON) for 3D
-- [x] Phase 6: Update OMP backends for 3D
-- [x] Phase 7: Update CUDA backend for 3D
-- [x] Phase 8: Update I/O (VTK 3D), examples, validation tests, and docs
-
-**Key design decisions:**
-
-- Branch-free inner loops: `stride_z=0` makes z-neighbor reads return same cell, z-terms vanish mathematically
-- Cache-optimized: k→j→i loop order, three-plane working set fits L2, OMP `collapse(2) schedule(static)`
-- Backward-compatible API: `grid_create(nx, ny, ...)` becomes wrapper for `grid_create_3d(nx, ny, 1, ...)`
-
-**Estimated effort:** ~90 files, 12-18 weeks across all phases
+**Status:** Complete. "2D as subset of 3D" approach — `nz=1` produces bit-identical results to previous 2D code. Branch-free solver loops using precomputed constants (`stride_z=0`, `inv_dz2=0.0`). All 8 phases done: indexing macros, core data structures, 3D stencils, NS solvers, BCs, SIMD, OMP, CUDA, I/O, examples, docs.
 
 ### 3.2 Unstructured Meshes (P1)
 
@@ -1080,19 +385,7 @@ Achieve O(N) complexity vs O(N²) for iterative methods.
 
 ### 4.2 Modular Backend Libraries (P1) ✅
 
-**Goal:** Split the monolithic library into separate per-backend libraries for flexible deployment.
-
-**Status:** Implemented in v0.1.5
-
-**Rationale:**
-
-- Users only link what they need (smaller binaries)
-- CUDA library can be loaded dynamically (plugin pattern)
-- Clear ABI boundaries between backends
-- Allows mixing compiler toolchains (e.g., nvcc for CUDA only)
-- Easier to add new backends (OpenCL, SYCL, etc.)
-
-**Library Structure:**
+**Status:** Implemented in v0.1.5. Split monolithic library into per-backend targets.
 
 | Library | CMake Target | Contents | Dependencies |
 | ------- | ------------ | -------- | ------------ |
@@ -1103,40 +396,16 @@ Achieve O(N) complexity vs O(N²) for iterative methods.
 | `cfd_cuda` | `CFD::CUDA` | CUDA GPU solvers | CFD::Core |
 | `cfd_library` | `CFD::Library` | Unified library (all backends) | All above |
 
-**Implementation Tasks:**
+**Still needed:**
 
-- [x] Split `lib/CMakeLists.txt` into multiple library targets
-- [x] Create separate source lists for each backend
-- [x] Define public/private header boundaries per library
-- [x] Add CMake aliases for clean target references
-- [x] Add comprehensive test suite (`test_modular_libraries.c`)
-- [x] Support shared library builds (both static and shared supported)
 - [ ] Update examples/tests to link against specific backends (optional)
 - [ ] Plugin loading system for dynamic backend selection
 
-**Known Limitations:** See [Known Issues](#known-issues) — modular library circular dependencies.
-
-**Usage Examples:**
-
-```cmake
-# Currently, use the unified library for full functionality
-target_link_libraries(my_app PRIVATE CFD::Library)
-
-# Future: Link only what you need (after refactoring)
-# target_link_libraries(my_app PRIVATE CFD::Core CFD::SIMD)
-```
+See [Known Issues](#known-issues) — modular library circular dependencies.
 
 ### 4.3 GPU Improvements (P2)
 
-**Implemented:**
-
-- [x] CUDA device detection and selection
-- [x] GPU device information queries (compute capability, memory)
-- [x] Projection method with Jacobi Poisson solver on GPU
-- [x] GPU memory management (persistent memory, basic async transfers)
-- [x] GPU boundary condition kernels
-- [x] Configurable GPU settings (block size, convergence tolerance)
-- [x] GPU solver statistics (kernel time, transfer time, iterations)
+**Implemented:** CUDA device detection, GPU projection with Jacobi Poisson, GPU memory management, GPU BC kernels, configurable GPU settings, GPU solver statistics.
 
 **Still needed:**
 
@@ -1168,13 +437,7 @@ target_link_libraries(my_app PRIVATE CFD::Library)
 
 ### 5.2 Modern VTK (P1)
 
-**Implemented:**
-
-- [x] VTK legacy ASCII format output
-- [x] Scalar field output (`write_vtk_output`)
-- [x] Vector field output (`write_vtk_vector_output`)
-- [x] Full flow field output (`write_vtk_flow_field`)
-- [x] Timestamped run directories (`write_vtk_*_run` functions)
+**Implemented:** VTK legacy ASCII format, scalar/vector/flow field output, timestamped run directories.
 
 **Still needed:**
 
@@ -1183,13 +446,9 @@ target_link_libraries(my_app PRIVATE CFD::Library)
 - [ ] Time series support
 - [ ] Binary encoding
 
-### 5.3 CSV Output (Implemented)
+### 5.3 CSV Output ✅
 
-- [x] Timeseries data (step, time, dt, velocity stats, pressure stats)
-- [x] Centerline profiles (horizontal/vertical)
-- [x] Global statistics (min/max/avg of all fields)
-- [x] Velocity magnitude columns
-- [x] Automatic header creation and append mode
+Implemented: timeseries data, centerline profiles, global statistics, velocity magnitude, automatic headers.
 
 ### 5.4 Restart Files (P1)
 
@@ -1208,146 +467,34 @@ target_link_libraries(my_app PRIVATE CFD::Library)
 
 **Goal:** Validate against reference solutions and provide comprehensive documentation.
 
-**Note:** API/robustness testing is in Phase 0.4. Mathematical accuracy validation (stencils, convergence, MMS) is in Phase 1.3. Linear solver validation is in Phase 1.2.
-
 ### 6.1 Benchmark Validation (P0 - Critical)
 
 #### 6.1.1 Lid-Driven Cavity Validation ✅
 
-**Status:** COMPLETE - Solver meets scientific tolerance (RMS ~0.04, target < 0.10)
+**Status:** COMPLETE — All backends validated at 33×33, Re=100. Projection RMS < 0.10, Explicit Euler RMS < 0.15, all backends within 0.1% of each other. Grid convergence now monotonic.
 
-**Test files created:**
+**Remaining work (129×129 full validation):**
 
-- `tests/validation/test_cavity_setup.c` - Basic setup and BC tests (7 tests)
-- `tests/validation/test_cavity_flow.c` - Flow development and stability (8 tests)
-- `tests/validation/test_cavity_validation.c` - Conservation and Ghia comparison (5 tests)
-- `tests/validation/test_cavity_reference.c` - Reference-based regression tests (5 tests)
-- `tests/validation/lid_driven_cavity_common.h` - Shared utilities
-- `tests/validation/cavity_reference_data.h` - Ghia reference data
-- `docs/validation/lid_driven_cavity.md` - Validation methodology documentation
-
-**What Was Fixed (PR #139, Feb 2026):**
-
-1. **Switched Projection Solvers to CG:**
-   - [x] CPU projection: Red-Black SOR → CG_SCALAR ✅
-   - [x] OMP projection: Red-Black SOR → CG_OMP ✅ (initially CG_SCALAR in PR #139, upgraded to CG_OMP in PR #145)
-   - [x] AVX2 projection: Red-Black SOR → CG_SIMD ✅
-   - **Rationale:** CG has O(√κ) convergence vs SOR's O(n) - typically 20-64 iterations vs 100s-1000s
-
-2. **Increased Iteration Limits:**
-   - [x] max_iterations: 1000 → 5000 (accommodates CG on fine grids) ✅
-
-3. **Achieved Scientific Target:**
-   - [x] RMS_u: 0.0382 (target < 0.10) ✅
-   - [x] RMS_v: 0.0440 (target < 0.10) ✅
-   - [x] Grid convergence now monotonic: 17×17 (0.046) → 25×25 (0.037) → 33×33 (0.032) ✅
-
-**Backend Validation Complete (Feb 2026):**
-
-1. **Test ALL solver backends (systematic validation):** ✅
-   - [x] CPU scalar (explicit Euler, projection) ✅
-   - [x] AVX2/SIMD (explicit Euler, projection) ✅
-   - [x] OpenMP (explicit Euler, projection) ✅
-   - [x] CUDA GPU (projection Jacobi) - test created, runs when GPU available ✅
-   - [x] Each backend independently achieves accuracy target ✅
-
-   **Test file:** `tests/validation/test_cavity_backends.c`
-
-   **Results (33×33 grid, Re=100):**
-   - Projection (CPU): RMS_u=0.0382, RMS_v=0.0440 < 0.10 ✅
-   - Projection (AVX2): RMS_u=0.0382, RMS_v=0.0440 < 0.10 ✅
-   - Projection (OMP): RMS_u=0.0382, RMS_v=0.0440 < 0.10 ✅
-   - Explicit Euler (CPU): RMS_u=0.0957, RMS_v=0.1284 < 0.15 ✅
-   - Explicit Euler (AVX2): RMS_u=0.0954, RMS_v=0.1312 < 0.15 ✅
-   - Explicit Euler (OMP): RMS_u=0.0957, RMS_v=0.1284 < 0.15 ✅
-   - Backend consistency: All 3 backends within 0.1% ✅
-
-   **Documentation:**
-   - `tests/validation/test_cavity_backends.c` - Comprehensive backend validation
-   - `docs/validation/cavity-backends-validation.md` - Test methodology and results
-
-2. **Verification that tests are honest:** ✅
-   - [x] Tests MUST fail if RMS >= target (no loose tolerances) ✅
-   - [x] Tests compare computed values at EXACT Ghia sample points ✅
-   - [x] Tests report actual vs expected values transparently ✅
-   - [x] No "current baseline" workarounds - fix solver, not tolerance ✅
-
-   **Target enforcement:**
-   - Projection method: RMS < 0.10 (production solver, strict)
-   - Explicit Euler: RMS < 0.15 (simpler method, relaxed)
-   - Tests FAIL immediately if RMS >= target
-
-**Remaining Work (for 129×129 full validation):**
-
-- [x] Parallel CTest infrastructure for full validation (per-backend test entries, `ctest -j 4`)
-- [x] OMP thread oversubscription mitigation (`OMP_NUM_THREADS=2`)
 - [ ] Confirm all backends pass at 129×129 on EC2 and record RMS values
 - [ ] Use CAVITY_FULL_VALIDATION=1 build flag
 
-**Acceptance Criteria (non-negotiable):**
+**Acceptance Criteria:**
 
 - RMS error vs Ghia < 0.10 for Re=100, 400, 1000
 - All 7 solver backends produce identical results (within 0.1%)
 - Grid convergence: error decreases monotonically with refinement
-- Tests run in parallel to complete in < 60 seconds
 
-#### 6.1.1.1 Grid Convergence Validation (P1)
+##### 6.1.1.1 Grid Convergence Validation (P1) ✅
 
-See [Known Issues](#known-issues) — grid convergence non-monotonic behavior. Action items and acceptance criteria tracked there.
+Resolved by switching projection backends from Red-Black SOR to CG. Grid convergence tests now enforce strict monotonicity with convergence rate reporting.
 
 #### 6.1.2 Taylor-Green Vortex Validation (P0) ✅
 
-**Analytical solution with known decay rate - ideal for full NS validation:**
-
-```c
-u(x,y,t) = cos(x) * sin(y) * exp(-2νt)
-v(x,y,t) = -sin(x) * cos(y) * exp(-2νt)
-p(x,y,t) = -0.25 * (cos(2x) + cos(2y)) * exp(-4νt)
-```
-
-**Tests implemented:**
-
-- [x] Verify velocity decay rate matches exp(-2νt)
-- [x] Verify kinetic energy decay: KE(t) = KE₀ * exp(-4νt)
-- [x] Test L2 error remains bounded
-- [x] Verify grid convergence (error decreases with refinement)
-- [x] Verify divergence-free constraint (incompressibility)
-- [x] Compare solver backends (CPU, OpenMP)
-- [x] Long-time stability tests
-- [x] Low viscosity stability tests
-
-**Files created:**
-
-- `tests/validation/test_taylor_green_vortex.c` - 9 validation tests
-- `tests/validation/taylor_green_reference.h` - Analytical solutions and test utilities
+Velocity/energy decay, L2 error, grid convergence, divergence-free, backend consistency, long-time and low-viscosity stability — all verified.
 
 #### 6.1.3 Poiseuille Flow Validation (P1) ✅
 
-**Analytical parabolic profile for channel flow:**
-
-```c
-u(y) = 4 * U_max * y * (H - y) / H²
-```
-
-**Tests implemented:**
-
-- [x] Velocity profile stability (analytical solution preserved by solver)
-- [x] Mass conservation verification (flux in = flux mid = flux out)
-- [x] Pressure gradient accuracy vs analytical dp/dx = -8μU_max/H²
-- [x] Inlet BC accuracy (parabolic profile applied exactly)
-
-**Results:**
-
-- Profile RMS error: <1% (tolerance 1%)
-- Mass flux conservation: <1% (tolerance 1%)
-- Pressure gradient error: <5% (tolerance 5%)
-- Inlet BC: machine precision
-
-**Strategy:** Initialize with analytical solution, run projection steps, verify stability.
-
-**Files created:**
-
-- `tests/validation/test_poiseuille_flow.c`
+Profile stability (<1% RMS), mass conservation (<1%), pressure gradient (<5% error), inlet BC (machine precision) — all verified.
 
 #### 6.1.4 Other Benchmarks (P2)
 
@@ -1358,17 +505,12 @@ u(y) = 4 * U_max * y * (H - y) / H²
 
 **Goal:** Full-length validation tests that run during releases (too slow for CI).
 
-**Rationale:** CI tests use reduced grid sizes and iteration counts for fast feedback (~30 seconds). Release validation uses full parameters for scientific accuracy verification.
-
 **CI vs Release Parameters:**
 
 | Test | CI Mode | Release Mode |
 |------|---------|--------------|
-| Cavity Flow Development | 17×17, 500 steps | 33×33, 5000 steps |
-| Cavity Re=100 Stability | 21×21, 500 steps | 33×33, 10000 steps |
+| Cavity Ghia Validation | 33×33, 5000 steps | 129×129, 50000 steps |
 | Cavity Re=400 Stability | 25×25, 500 steps | 65×65, 20000 steps |
-| Reynolds Dependency | 17×17, 400 steps | 33×33, 5000 steps |
-| Ghia Validation | 33×33, 5000 steps | 129×129, 50000 steps |
 | Grid Convergence | 17→25→33 | 33→65→129 |
 | Taylor-Green Vortex | 32×32, 200 steps | 128×128, 10000 steps |
 
@@ -1380,33 +522,6 @@ u(y) = 4 * U_max * y * (H - y) / H²
 - [ ] Taylor-Green vortex decay rate verification (extended time)
 - [ ] Cross-architecture consistency check (all backends produce identical results)
 - [ ] Memory usage and performance regression benchmarks
-
-**Implementation:**
-
-```bash
-# CI mode (default) - fast, reduced parameters
-cmake -DCAVITY_FULL_VALIDATION=0 ..
-ctest -R validation
-
-# Release mode - full scientific validation
-cmake -DCAVITY_FULL_VALIDATION=1 ..
-ctest -R validation --timeout 3600
-```
-
-**Files to create:**
-
-- `tests/validation/test_ghia_full.c` - Full 129×129 Ghia validation
-- `tests/validation/test_taylor_green_full.c` - Extended Taylor-Green decay
-- `tests/validation/test_release_validation.c` - All backends consistency check
-- `.github/workflows/release-validation.yml` - GitHub Actions workflow for releases
-
-**Acceptance Criteria:**
-
-- All tests pass with full parameters
-- RMS error vs Ghia < 0.05 at 129×129 grid
-- Taylor-Green decay rate within 1% of analytical
-- All solver backends produce identical results (within floating-point tolerance)
-- Total runtime < 30 minutes on release CI runner
 
 ### 6.2 Convergence Studies (P1)
 
@@ -1427,20 +542,7 @@ ctest -R validation --timeout 3600
 
 ### 6.4 Examples (P1)
 
-**Implemented (12 examples):**
-
-- [x] `minimal_example.c` - Simplest usage, basic setup
-- [x] `basic_simulation.c` - Standard incompressible Navier-Stokes
-- [x] `animated_flow_simulation.c` - Time-stepping with visualization
-- [x] `simple_animated_flow.c` - Simpler animation variant
-- [x] `velocity_visualization.c` - Output velocity field visualization
-- [x] `performance_comparison.c` - Compare different solvers
-- [x] `runtime_comparison.c` - Detailed timing comparisons
-- [x] `solver_selection.c` - Demonstrate solver registry and selection
-- [x] `custom_boundary_conditions.c` - Example BC usage
-- [x] `custom_source_terms.c` - Source term implementation
-- [x] `csv_data_export.c` - CSV output examples
-- [x] `lid_driven_cavity.c` - Lid-driven cavity with Dirichlet BCs
+**Implemented:** 12 examples (minimal, basic simulation, animated flow, velocity visualization, performance/runtime comparison, solver selection, custom BCs, custom source terms, CSV export, lid-driven cavity).
 
 **Still needed:**
 
@@ -1468,44 +570,13 @@ Train models in Python (PyTorch/JAX), deploy inference in C for:
 ### 7.1 Weight Format & Loader (P3)
 
 - [ ] Define binary weight format (.cfdnn)
-
-  ```c
-  typedef struct {
-      uint32_t magic;           // "CFDN"
-      uint32_t version;
-      uint32_t num_layers;
-      uint32_t input_dim;
-      uint32_t output_dim;
-      // Layer descriptors follow
-  } cfdnn_header_t;
-  ```
-
 - [ ] JSON metadata support for model info
 - [ ] Weight loading API
-
-  ```c
-  cfdnn_model_t* cfdnn_load(const char* path);
-  void cfdnn_free(cfdnn_model_t* model);
-  ```
 
 ### 7.2 Layer Implementations (P3)
 
 - [ ] Dense (fully connected) layer
-
-  ```c
-  void cfdnn_dense_forward(
-      const double* input, size_t in_features,
-      const double* weights, const double* bias,
-      double* output, size_t out_features
-  );
-  ```
-
-- [ ] Activation functions
-  - [ ] ReLU, Leaky ReLU
-  - [ ] Tanh, Sigmoid
-  - [ ] GELU (for transformers)
-  - [ ] Swish/SiLU
-
+- [ ] Activation functions (ReLU, Leaky ReLU, Tanh, Sigmoid, GELU, Swish/SiLU)
 - [ ] Batch normalization
 - [ ] Layer normalization
 - [ ] Dropout (inference mode = identity)
@@ -1517,15 +588,6 @@ Train models in Python (PyTorch/JAX), deploy inference in C for:
 - [ ] NEON equivalents for ARM
 - [ ] Cache-optimized tiling for large layers
 
-```c
-// Example: SIMD dense layer
-void cfdnn_dense_forward_avx2(
-    const double* input, size_t in_features,
-    const double* weights, const double* bias,
-    double* output, size_t out_features
-);
-```
-
 ### 7.4 Model Architectures (P3)
 
 | Architecture | Status | Notes |
@@ -1536,47 +598,12 @@ void cfdnn_dense_forward_avx2(
 
 ### 7.5 Inference API (P3)
 
-```c
-// High-level inference API
-typedef struct {
-    size_t nx, ny;
-    double Re;
-    double* boundary_conditions;  // Flattened BC values
-} cfdnn_input_t;
-
-typedef struct {
-    double* u;   // Velocity x-component (nx * ny)
-    double* v;   // Velocity y-component (nx * ny)
-    double* p;   // Pressure field (nx * ny)
-} cfdnn_output_t;
-
-cfd_status_t cfdnn_predict(
-    const cfdnn_model_t* model,
-    const cfdnn_input_t* input,
-    cfdnn_output_t* output
-);
-
-// Batch inference for parameter sweeps
-cfd_status_t cfdnn_predict_batch(
-    const cfdnn_model_t* model,
-    const cfdnn_input_t* inputs, size_t batch_size,
-    cfdnn_output_t* outputs
-);
-```
+- [ ] High-level `cfdnn_predict()` and `cfdnn_predict_batch()` API
+- [ ] Model loading/freeing lifecycle
 
 ### 7.6 Hybrid Solver Integration (P3)
 
 - [ ] Use ML prediction as initial guess for iterative solver
-
-  ```c
-  // ML-accelerated projection method
-  cfd_status_t ns_solve_projection_ml_init(
-      const cfdnn_model_t* surrogate,
-      ns_solver_t* solver,
-      // ... other params
-  );
-  ```
-
 - [ ] Adaptive switching: ML for steady-state estimate, CFD for accuracy
 - [ ] Uncertainty quantification (ensemble models)
 
@@ -1610,131 +637,29 @@ cfd_status_t cfdnn_predict_batch(
 
 ### Rationale
 
-Alternative to full C inference (Phase 7). Best of both worlds:
-
-- Python handles training, model management, and orchestration
-- C provides optimized compute kernels callable from Python
-- Lower implementation effort than full C inference engine
-- Easier to support new architectures (just add kernels)
+Alternative to full C inference (Phase 7). Python handles training/orchestration, C provides optimized compute kernels. Lower effort, easier to support new architectures.
 
 ### 8.1 Optimized Compute Kernels (P3)
 
-Expose SIMD-optimized operations for ML workloads via Python bindings:
-
-```c
-// Matrix operations optimized for neural network inference
-cfd_status_t cfd_matmul(
-    const double* A, size_t A_rows, size_t A_cols,
-    const double* B, size_t B_cols,
-    double* C  // Output: A_rows x B_cols
-);
-
-cfd_status_t cfd_matmul_add_bias(
-    const double* A, size_t A_rows, size_t A_cols,
-    const double* B, size_t B_cols,
-    const double* bias,  // B_cols
-    double* C
-);
-
-// Activation functions (in-place)
-cfd_status_t cfd_relu(double* data, size_t n);
-cfd_status_t cfd_tanh(double* data, size_t n);
-cfd_status_t cfd_gelu(double* data, size_t n);
-```
+- [ ] SIMD-optimized matrix operations (`cfd_matmul`, `cfd_matmul_add_bias`)
+- [ ] Activation functions (ReLU, Tanh, GELU — in-place)
 
 ### 8.2 Python-Callable Kernels (P3)
 
-Expose kernels to Python via bindings:
-
-```python
-from cfd_kernels import matmul, relu, gelu
-
-# Use C kernels in custom PyTorch module
-class CFDAcceleratedLayer(torch.nn.Module):
-    def forward(self, x):
-        # Offload to SIMD-optimized C kernel
-        out = matmul(x.numpy(), self.weight.numpy())
-        return torch.from_numpy(relu(out))
-```
+- [ ] Python bindings for C compute kernels
 
 ### 8.3 Physics Residual Kernels (P3)
 
-Optimized physics loss computation for PINN training:
-
-```c
-// Compute Navier-Stokes residuals efficiently
-cfd_status_t cfd_ns_residual(
-    const double* u, const double* v, const double* p,
-    size_t nx, size_t ny, double dx, double dy, double Re,
-    double* continuity_residual,
-    double* momentum_x_residual,
-    double* momentum_y_residual
-);
-
-// Finite difference operators (2nd order central)
-cfd_status_t cfd_gradient_x(const double* f, size_t nx, size_t ny, double dx, double* df_dx);
-cfd_status_t cfd_gradient_y(const double* f, size_t nx, size_t ny, double dy, double* df_dy);
-cfd_status_t cfd_laplacian(const double* f, size_t nx, size_t ny, double dx, double dy, double* lap_f);
-```
-
-Python usage:
-
-```python
-from cfd_kernels import ns_residual
-
-# Fast physics loss for PINN training
-def physics_loss(model, coords, Re):
-    u, v, p = model(coords)
-    cont, mom_x, mom_y = ns_residual(u, v, p, nx, ny, dx, dy, Re)
-    return (cont**2 + mom_x**2 + mom_y**2).mean()
-```
+- [ ] Optimized NS residual computation for PINN training
+- [ ] Finite difference operators (gradient, laplacian)
 
 ### 8.4 Data Generation Acceleration (P3)
 
-Fast CFD simulation for training data generation:
-
-```c
-// Batch simulation for dataset generation
-cfd_status_t cfd_generate_samples(
-    const cfd_sample_params_t* params, size_t n_samples,
-    cfd_sample_result_t* results,
-    int n_threads  // OpenMP parallelization
-);
-```
-
-```python
-from cfd_ml import generate_training_data
-
-# Generate 1000 cavity flow samples in parallel
-samples = generate_training_data(
-    problem="cavity",
-    Re_range=(10, 200),
-    n_samples=1000,
-    n_threads=8  # Uses OpenMP in C
-)
-```
+- [ ] Batch simulation API for dataset generation with OpenMP parallelization
 
 ### 8.5 Memory-Mapped Data Sharing (P3)
 
-Zero-copy data sharing between C and Python/NumPy:
-
-```c
-// Create memory-mapped buffer accessible from Python
-cfd_buffer_t* cfd_create_shared_buffer(size_t size);
-double* cfd_buffer_data(cfd_buffer_t* buf);
-void cfd_buffer_free(cfd_buffer_t* buf);
-```
-
-```python
-from cfd_memory import SharedBuffer
-
-# Zero-copy data sharing
-buf = SharedBuffer(shape=(128, 128))
-arr = buf.as_numpy()  # No copy, direct memory access
-
-# Pass to C functions without copying
-cfd.run_simulation(output_buffer=buf)
-```
+- [ ] Zero-copy shared buffers between C and Python/NumPy
 
 ### Comparison: Phase 7 vs Phase 8
 
@@ -1747,68 +672,17 @@ cfd.run_simulation(output_buffer=buf)
 | Performance | Highest | High (kernel-level) |
 | Flexibility | Fixed architectures | Any PyTorch model |
 
-### Phase 8 Success Criteria
-
-- Kernels provide >2x speedup over NumPy equivalents
-- Zero-copy memory sharing works with NumPy arrays
-- Physics residual kernel matches Python implementation to 1e-10
-- Dataset generation scales linearly with thread count
-
 ---
 
 ## Version Milestones
 
-### v0.1.0 - Foundation (Released)
-
-- [x] Boundary condition abstraction layer with runtime backend selection
-- [x] Neumann and Periodic boundary conditions (all backends)
-- [x] SIMD Poisson solvers (Jacobi, Red-Black SOR)
-- [x] GPU Jacobi Poisson solver
-- [x] Comprehensive test suite
-- [x] 11 example programs
-- [x] VTK and CSV output
-
-### v0.1.x - Boundary Condition Improvements
-
-**Completed:**
-
-- [x] Dirichlet (fixed value) boundary conditions
-- [x] No-slip wall boundary conditions
-- [x] Inlet velocity boundary conditions (uniform, parabolic, custom profiles)
-- [x] Outlet boundary conditions (zero-gradient, convective)
-- [x] Conjugate Gradient (CG) Krylov solver
-- [x] Lid-driven cavity validation (Ghia et al. 1982 benchmark)
-- [x] Cross-architecture solver validation (CPU, AVX2, OpenMP, CUDA)
-- [x] Per-architecture Ghia validation tests
-- [x] Basic documentation (OMP solvers, API constants)
-
-### v0.1.5
-
-- [x] OpenMP solver variants documented (explicit_euler_omp, projection_omp)
-- [x] Updated solver type constants with NS_SOLVER_TYPE_ prefix
-- [x] Doxyfile version synchronized with VERSION file
-- [x] Ghia validation tests use appropriate step counts for Euler solvers
-
-### v0.1.6
-
-- [x] CI: Doxygen API documentation generation in release workflow
-- [x] CI: macOS OpenMP support via Homebrew libomp
-- [x] CI: Improved CUDA toolkit configuration for Windows builds
-- [x] CI: Fixed library path detection for modular builds
-
 ### v0.1.7 - Current Release
 
-- [x] Fix stretched grid formula to correctly span domain [xmin, xmax]
-- [x] Add tanh-based stretching for boundary layer clustering
-- [x] Add 16 unit tests for grid initialization functions
+- [x] Stretched grid formula fix, tanh-based stretching, grid unit tests
 
-### v0.2.0 - 3D Support (In Progress)
+### v0.2.0 - 3D Support
 
-- [x] Phase 0: IDX_2D/IDX_3D indexing macros, replace all inline indexing
-- [x] Phase 1: Extend grid, flow_field, BCs with z-dimension (nz=1 backward compatible)
-- [x] Phase 2: 3D stencils (7-point), scalar CPU linear solvers (Jacobi, SOR, Red-Black, CG, BiCGSTAB)
-- [x] Phase 3: NS solvers with w-momentum
-- [x] Phase 4: 3D boundary conditions (all backends)
+- [x] Phases 0–4: Indexing macros, core data structures, 3D stencils, NS solvers, BCs
 - [ ] Phase 5-7: SIMD, OMP, CUDA backends for 3D
 - [ ] Phase 8: 3D VTK output, examples, validation (Taylor-Green 3D, Poiseuille 3D)
 
@@ -1849,7 +723,7 @@ cfd.run_simulation(output_buffer=buf)
 ## Priority Legend
 
 | Priority | Meaning |
-|----------|---------|
+| -------- | ------- |
 | P0 | Critical - blocks v1.0 release |
 | P1 | Important - required for v1.0 |
 | P2 | Valuable - nice to have for v1.0 |
@@ -1871,7 +745,7 @@ When working on roadmap items:
 
 ---
 
-## References
+## References & Bibliography
 
 ### CFD Validation Benchmarks
 
