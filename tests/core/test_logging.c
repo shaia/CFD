@@ -1,6 +1,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/logging.h"
 #include "unity.h"
+#include <stdio.h>
 #include <string.h>
 
 
@@ -57,6 +58,8 @@ void mock_log_callback_ex(cfd_log_level_t level, const char* component, const ch
     }
     if (message) {
         snprintf(s_ex_last_message, sizeof(s_ex_last_message), "%s", message);
+    } else {
+        s_ex_last_message[0] = '\0';
     }
 }
 
