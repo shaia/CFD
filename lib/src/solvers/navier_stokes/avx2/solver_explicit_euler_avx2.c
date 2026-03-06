@@ -20,6 +20,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/indexing.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
@@ -164,15 +165,15 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
 
 #if USE_AVX
     #ifdef _OPENMP
-    printf("Explicit Euler SIMD: AVX2 + OpenMP enabled (%d threads)\n", omp_get_max_threads());
+    CFD_LOG_INFO("solver", "Explicit Euler SIMD: AVX2 + OpenMP enabled (%d threads)", omp_get_max_threads());
     #else
-    printf("Explicit Euler SIMD: AVX2 enabled (OpenMP disabled)\n");
+    CFD_LOG_INFO("solver", "Explicit Euler SIMD: AVX2 enabled (OpenMP disabled)");
     #endif
 #else
     #ifdef _OPENMP
-    printf("Explicit Euler OMP: Scalar + OpenMP enabled (%d threads)\n", omp_get_max_threads());
+    CFD_LOG_INFO("solver", "Explicit Euler OMP: Scalar + OpenMP enabled (%d threads)", omp_get_max_threads());
     #else
-    printf("Explicit Euler: Scalar fallback (no SIMD or OpenMP)\n");
+    CFD_LOG_INFO("solver", "Explicit Euler: Scalar fallback (no SIMD or OpenMP)");
     #endif
 #endif
 

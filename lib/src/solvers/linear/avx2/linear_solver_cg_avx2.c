@@ -19,6 +19,7 @@
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cpu_features.h"
 #include "cfd/core/indexing.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
@@ -596,7 +597,7 @@ static cfd_status_t cg_avx2_solve(
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {
             if (params->verbose) {
-                printf("  CG AVX2 Iter %d: residual = %.6e\n", iter, res_norm);
+                CFD_LOG_DEBUG("poisson", "CG AVX2 Iter %d: residual = %.6e", iter, res_norm);
             }
 
             if (res_norm < tolerance || res_norm < params->absolute_tolerance) {

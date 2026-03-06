@@ -38,10 +38,10 @@
 #include "../linear_solver_internal.h"
 
 #include "cfd/core/indexing.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 
 #include <math.h>
-#include <stdio.h>
 #include <string.h>
 
 /* ============================================================================
@@ -453,7 +453,7 @@ static cfd_status_t bicgstab_scalar_solve(
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {
             if (params->verbose) {
-                printf("  BiCGSTAB Iter %d: residual = %.6e\n", iter, res_norm);
+                CFD_LOG_DEBUG("poisson", "BiCGSTAB Iter %d: residual = %.6e", iter, res_norm);
             }
 
             if (res_norm < tolerance || res_norm < params->absolute_tolerance) {

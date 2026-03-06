@@ -3,6 +3,7 @@
 #include "cfd/core/filesystem.h"
 #include "cfd/core/gpu_device.h"
 #include "cfd/core/grid.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
@@ -946,7 +947,7 @@ static cfd_status_t gpu_euler_init(ns_solver_t* solver, const grid* grid, const 
         ctx->gpu_ctx = gpu_solver_create(grid->nx, grid->ny, grid->nz, &ctx->gpu_config_t);
         if (!ctx->gpu_ctx) {
             cfd_free(ctx);
-            fprintf(stderr, "GPU Euler init: Failed to create GPU context\n");
+            CFD_LOG_ERROR("gpu", "GPU Euler init: Failed to create GPU context");
             return CFD_ERROR_UNSUPPORTED;
         }
     }
@@ -1006,13 +1007,13 @@ static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const
             }
         }
         // GPU operation failed
-        fprintf(stderr, "GPU Euler step: GPU operation failed\n");
+        CFD_LOG_ERROR("gpu", "GPU Euler step: GPU operation failed");
         return CFD_ERROR_INVALID;
     }
 
     // GPU not available - could be: CUDA not compiled in, gpu_should_use() returned false,
     // or GPU initialization failed
-    fprintf(stderr, "GPU Euler step: GPU solver not initialized\n");
+    CFD_LOG_ERROR("gpu", "GPU Euler step: GPU solver not initialized");
     return CFD_ERROR_UNSUPPORTED;
 }
 
@@ -1051,7 +1052,7 @@ static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, cons
 
     // GPU not available - could be: CUDA not compiled in, gpu_should_use() returned false,
     // or GPU initialization failed
-    fprintf(stderr, "GPU Euler solve: GPU solver not initialized\n");
+    CFD_LOG_ERROR("gpu", "GPU Euler solve: GPU solver not initialized");
     return CFD_ERROR_UNSUPPORTED;
 }
 
@@ -1335,7 +1336,7 @@ static cfd_status_t projection_omp_init(ns_solver_t* solver, const grid* grid,
     poisson_solver_t* test_solver = poisson_solver_create(
         POISSON_METHOD_CG, POISSON_BACKEND_OMP);
     if (!test_solver) {
-        fprintf(stderr, "projection_omp_init: OMP CG Poisson solver not available\n");
+        CFD_LOG_WARNING("projection", "OMP CG Poisson solver not available");
         return CFD_ERROR_UNSUPPORTED;
     }
     poisson_solver_destroy(test_solver);

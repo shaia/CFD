@@ -20,8 +20,7 @@
 
 #include "../linear_solver_internal.h"
 #include "cfd/core/cpu_features.h"
-
-#include <stdio.h>
+#include "cfd/core/logging.h"
 
 /* ============================================================================
  * LOGGING
@@ -32,15 +31,8 @@
  * Callers should handle the NULL return and fall back to scalar if needed.
  */
 static void log_no_simd_available(const char* solver_type) {
-    /* Silent in release builds - caller handles fallback */
-#ifdef CFD_DEBUG
-    fprintf(stderr,
-            "DEBUG: SIMD %s solver not available "
-            "(detected arch: %s). Returning NULL for fallback.\n",
-            solver_type, cfd_get_simd_name());
-#else
-    (void)solver_type;  /* Suppress unused parameter warning */
-#endif
+    CFD_LOG_DEBUG("simd", "SIMD %s solver not available (detected arch: %s). "
+                  "Returning NULL for fallback.", solver_type, cfd_get_simd_name());
 }
 
 /* ============================================================================

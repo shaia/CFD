@@ -13,6 +13,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/indexing.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
@@ -85,7 +86,7 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     poisson_solver_t* test_solver = poisson_solver_create(
         POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
     if (!test_solver) {
-        fprintf(stderr, "projection_simd_init: SIMD CG Poisson solver not available\n");
+        CFD_LOG_WARNING("projection", "SIMD CG Poisson solver not available");
         return CFD_ERROR_UNSUPPORTED;
     }
     poisson_solver_destroy(test_solver);

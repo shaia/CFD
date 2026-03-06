@@ -29,6 +29,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/indexing.h"
+#include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
@@ -729,9 +730,9 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
     solver->context  = ctx;
 
 #ifdef _OPENMP
-    printf("RK2 SIMD: AVX2 + OpenMP enabled (%d threads)\n", omp_get_max_threads());
+    CFD_LOG_INFO("solver", "RK2 SIMD: AVX2 + OpenMP enabled (%d threads)", omp_get_max_threads());
 #else
-    printf("RK2 SIMD: AVX2 enabled (OpenMP disabled)\n");
+    CFD_LOG_INFO("solver", "RK2 SIMD: AVX2 enabled (OpenMP disabled)");
 #endif
 
     return CFD_SUCCESS;

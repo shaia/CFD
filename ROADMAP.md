@@ -252,68 +252,80 @@ Tests added: `tests/core/test_grid.c` with 16 unit tests.
 - `examples/*.c` - Example error handling
 - `README.md` - API documentation updates
 
-### 0.6 Structured Logging & Diagnostics (P2)
+### 0.6 Structured Logging & Diagnostics (P2) ✅
 
-**Status:** Partial - `cfd_set_log_callback()` API exists but not used consistently
-
-**Current Issues:**
-
-- Raw `fprintf(stderr, ...)` and `snprintf()` scattered throughout codebase
-- No log levels (can't filter INFO vs WARNING vs ERROR)
-- No redirection (always stderr, can't send to file/syslog/GUI)
-- No timestamps or structured metadata
-- Not thread-safe (garbled output from multiple threads)
-- Mixed purposes (diagnostics vs error messages)
-
-**Proposed Structured Logging API:**
-
-```c
-// Log levels
-typedef enum {
-    CFD_LOG_DEBUG = 0,
-    CFD_LOG_INFO = 1,
-    CFD_LOG_WARNING = 2,
-    CFD_LOG_ERROR = 3
-} cfd_log_level_t;
-
-// Logging function with structured metadata
-void cfd_log(cfd_log_level_t level, const char* component,
-             const char* format, ...);
-
-// Example usage
-cfd_log(CFD_LOG_WARNING, "poisson_solver",
-        "Failed to converge (grid %zux%zu, dt=%.4e)",
-        nx, ny, dt);
-```
+**Status:** Complete
 
 **Implementation Tasks:**
 
-- [ ] Define `cfd_log()` API with log levels and component tags
-- [ ] Implement default console handler (with timestamps, colored output)
-- [ ] Add thread-safe logging (mutex-protected or per-thread buffers)
-- [ ] Replace all `fprintf(stderr, ...)` calls with `cfd_log()`
-- [ ] Replace diagnostic `snprintf()` with `cfd_log()` where appropriate
-- [ ] Add log filtering by level (suppress DEBUG in production)
-- [ ] Add log filtering by component (e.g., only show "boundary" logs)
-- [ ] Support custom log handlers via callback
-- [ ] Add structured data API for metrics (convergence stats, timings)
+- [x] Define `cfd_log()` API with log levels and component tags
+- [x] Implement default console handler (stderr for WARNING/ERROR, stdout for DEBUG/INFO)
+- [x] Add thread-safe logging (atomic global log level, per-thread callbacks)
+- [x] Replace all `fprintf(stderr, ...)` calls with `cfd_log()`
+- [x] Replace diagnostic `printf()` calls with `cfd_log()`
+- [x] Add log filtering by level (suppress DEBUG in production)
+- [x] Support custom log handlers via `cfd_set_log_callback_ex()` (with component)
+- [ ] Add log filtering by component (e.g., only show "boundary" logs) — deferred
+- [ ] Add timestamps and colored output — deferred
+- [ ] Add structured data API for metrics (convergence stats, timings) — deferred
 
-**Benefits:**
+**API added:**
 
-- Users can redirect logs to files, syslog, or application UI
-- Fine-grained control (enable DEBUG for specific components)
-- Better debugging (timestamps, thread IDs, component context)
-- Thread-safe by design
-- Statistics aggregation ("Poisson failed 15 times this run")
-- Can mute logs entirely for embedded/production use
+```c
+// Log levels (renumbered to include DEBUG)
+typedef enum {
+    CFD_LOG_LEVEL_DEBUG = 0,
+    CFD_LOG_LEVEL_INFO = 1,
+    CFD_LOG_LEVEL_WARNING = 2,
+    CFD_LOG_LEVEL_ERROR = 3
+} cfd_log_level_t;
 
-**Files to Modify:**
+// Core logging function with printf-style formatting
+void cfd_log(cfd_log_level_t level, const char* component,
+             const char* fmt, ...);
 
-- `lib/src/solvers/linear/cpu/linear_solver_*.c` - Replace fprintf
-- `lib/src/solvers/navier_stokes/cpu/solver_*.c` - Replace fprintf
-- `lib/src/solvers/navier_stokes/omp/solver_*.c` - Replace fprintf
-- `lib/src/solvers/navier_stokes/avx2/solver_*.c` - Replace fprintf
-- `tests/validation/lid_driven_cavity_common.h` - Replace snprintf for diagnostics
+// Global log level control (atomic, thread-safe)
+void cfd_set_log_level(cfd_log_level_t level);
+cfd_log_level_t cfd_get_log_level(void);
+
+// Extended callback with component tag
+typedef void (*cfd_log_callback_ex_t)(cfd_log_level_t level,
+    const char* component, const char* message);
+void cfd_set_log_callback_ex(cfd_log_callback_ex_t callback);
+
+// Convenience macros
+CFD_LOG_DEBUG(component, ...)
+CFD_LOG_INFO(component, ...)
+CFD_LOG_WARNING(component, ...)
+CFD_LOG_ERROR(component, ...)
+```
+
+**Design decisions:**
+
+- Default log level is INFO (DEBUG suppressed unless explicitly enabled)
+- Per-thread legacy callback takes priority over global extended callback
+- `cfd_error()` always sets thread-local error state regardless of log level filter
+- Convergence verbose output uses `CFD_LOG_DEBUG` with `if (params->verbose)` guard
+- Component tags: "gpu", "boundary", "poisson", "projection", "solver", "simd"
+- Default output format: `LEVEL [component]: message`
+
+**Files modified:**
+
+- `lib/include/cfd/core/logging.h` — Extended API with DEBUG level, `cfd_log()`, macros
+- `lib/src/core/logging.c` — `cfd_log()` implementation, atomic log level, extended callback
+- `lib/src/api/solver_registry.c` — 5 fprintf → CFD_LOG_ERROR/WARNING
+- `lib/src/boundary/boundary_conditions.c` — 1 fprintf → CFD_LOG_ERROR
+- `lib/src/solvers/linear/linear_solver.c` — 2 fprintf/printf → CFD_LOG_ERROR/DEBUG
+- `lib/src/solvers/linear/simd/linear_solver_simd_dispatch.c` — 1 fprintf → CFD_LOG_DEBUG
+- `lib/src/solvers/linear/cpu/linear_solver_cg.c` — 1 printf → CFD_LOG_DEBUG
+- `lib/src/solvers/linear/cpu/linear_solver_bicgstab.c` — 1 printf → CFD_LOG_DEBUG
+- `lib/src/solvers/linear/avx2/linear_solver_cg_avx2.c` — 1 printf → CFD_LOG_DEBUG
+- `lib/src/solvers/linear/neon/linear_solver_cg_neon.c` — 1 printf → CFD_LOG_DEBUG
+- `lib/src/solvers/linear/omp/linear_solver_cg_omp.c` — 1 printf → CFD_LOG_DEBUG
+- `lib/src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c` — 4 printf → CFD_LOG_INFO
+- `lib/src/solvers/navier_stokes/avx2/solver_projection_avx2.c` — 1 fprintf → CFD_LOG_WARNING
+- `lib/src/solvers/navier_stokes/avx2/solver_rk2_avx2.c` — 2 printf → CFD_LOG_INFO
+- `tests/core/test_logging.c` — 11 new tests (16 total)
 
 ---
 
