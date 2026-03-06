@@ -24,7 +24,7 @@ static __thread cfd_log_callback_t s_log_callback = NULL;
  * ============================================================================ */
 
 /* Default log level: INFO (suppresses DEBUG) */
-static cfd_atomic_int s_global_log_level = 1; /* CFD_LOG_LEVEL_INFO */
+static cfd_atomic_int s_global_log_level = CFD_LOG_LEVEL_INFO;
 
 /* Global extended callback (set once at startup, read on every log call) */
 static cfd_atomic_ptr s_global_callback_ex;
