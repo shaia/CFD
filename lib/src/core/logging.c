@@ -128,11 +128,27 @@ void cfd_log(cfd_log_level_t level, const char* component, const char* fmt, ...)
 }
 
 void cfd_set_log_level(cfd_log_level_t level) {
-    cfd_atomic_store(&s_global_log_level, (int)level);
+    int lvl = (int)level;
+
+    if (lvl < (int)CFD_LOG_LEVEL_DEBUG) {
+        lvl = (int)CFD_LOG_LEVEL_DEBUG;
+    } else if (lvl > (int)CFD_LOG_LEVEL_ERROR) {
+        lvl = (int)CFD_LOG_LEVEL_ERROR;
+    }
+
+    cfd_atomic_store(&s_global_log_level, lvl);
 }
 
 cfd_log_level_t cfd_get_log_level(void) {
-    return (cfd_log_level_t)cfd_atomic_load(&s_global_log_level);
+    int lvl = cfd_atomic_load(&s_global_log_level);
+
+    if (lvl < (int)CFD_LOG_LEVEL_DEBUG) {
+        lvl = (int)CFD_LOG_LEVEL_DEBUG;
+    } else if (lvl > (int)CFD_LOG_LEVEL_ERROR) {
+        lvl = (int)CFD_LOG_LEVEL_ERROR;
+    }
+
+    return (cfd_log_level_t)lvl;
 }
 
 void cfd_set_log_callback_ex(cfd_log_callback_ex_t callback) {
