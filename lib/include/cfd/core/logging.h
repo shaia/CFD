@@ -3,6 +3,13 @@
 
 #include "cfd/cfd_export.h"
 
+/* Printf format checking attribute */
+#if defined(__GNUC__) || defined(__clang__)
+#define CFD_PRINTF_FORMAT(fmt_idx, arg_idx) __attribute__((format(printf, fmt_idx, arg_idx)))
+#else
+#define CFD_PRINTF_FORMAT(fmt_idx, arg_idx)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -48,7 +55,7 @@ typedef void (*cfd_log_callback_ex_t)(cfd_log_level_t level, const char* compone
  * @param fmt       printf-style format string
  */
 CFD_LIBRARY_EXPORT void cfd_log(cfd_log_level_t level, const char* component, const char* fmt,
-                                ...);
+                                ...) CFD_PRINTF_FORMAT(3, 4);
 
 /** Set the global minimum log level (default: CFD_LOG_LEVEL_INFO). Thread-safe. */
 CFD_LIBRARY_EXPORT void cfd_set_log_level(cfd_log_level_t level);
