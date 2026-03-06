@@ -121,19 +121,8 @@ void test_cg_omp_vs_scalar(void) {
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats_scalar.status);
 
-    /* OMP backend requires OpenMP - skip if not compiled in */
-#ifndef CFD_ENABLE_OPENMP
-    cfd_free(x_scalar);
-    cfd_free(x_omp);
-    cfd_free(x_temp);
-    cfd_free(rhs);
-    poisson_solver_destroy(solver_scalar);
-    TEST_IGNORE_MESSAGE("OMP test skipped: OpenMP not enabled in this build");
-    return;
-#endif
-
-    bool omp_available = poisson_solver_backend_available(POISSON_BACKEND_OMP);
-    if (!omp_available) {
+    /* OMP backend requires OpenMP - skip at runtime if unavailable */
+    if (!poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
         cfd_free(x_scalar);
         cfd_free(x_omp);
         cfd_free(x_temp);
@@ -245,19 +234,8 @@ void test_redblack_omp_vs_scalar(void) {
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats_scalar.status);
 
-    /* OMP backend requires OpenMP - skip if not compiled in */
-#ifndef CFD_ENABLE_OPENMP
-    cfd_free(x_scalar);
-    cfd_free(x_omp);
-    cfd_free(x_temp);
-    cfd_free(rhs);
-    poisson_solver_destroy(solver_scalar);
-    TEST_IGNORE_MESSAGE("OMP test skipped: OpenMP not enabled in this build");
-    return;
-#endif
-
-    bool omp_available = poisson_solver_backend_available(POISSON_BACKEND_OMP);
-    if (!omp_available) {
+    /* OMP backend requires OpenMP - skip at runtime if unavailable */
+    if (!poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
         cfd_free(x_scalar);
         cfd_free(x_omp);
         cfd_free(x_temp);
