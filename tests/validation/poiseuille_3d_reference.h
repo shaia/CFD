@@ -212,13 +212,28 @@ static inline pois3d_result_t pois3d_run_simulation(void) {
             bc_apply_inlet(u_k, v_k, POIS3D_NX, POIS3D_NY, &inlet);
             bc_apply_outlet_velocity(u_k, v_k, POIS3D_NX, POIS3D_NY, &outlet);
         }
-        /* w = 0 on top/bottom walls for each z-plane */
+        /* Enforce w BCs for each z-plane:
+         *   - No-slip on top/bottom walls: w = 0 at j = 0 and j = ny-1
+         *   - Inlet (x = 0): w = 0 for all j
+         *   - Outlet (x = nx-1): zero-gradient, w(nx-1,j) = w(nx-2,j)
+         */
         if (field->w) {
             for (size_t k = 0; k < POIS3D_NZ; k++) {
                 double* w_k = field->w + k * stride_z;
+
+                /* y-walls: j = 0 and j = ny-1 */
                 for (size_t i = 0; i < POIS3D_NX; i++) {
-                    w_k[i] = 0.0;                                       /* j=0 */
-                    w_k[(POIS3D_NY - 1) * POIS3D_NX + i] = 0.0;        /* j=ny-1 */
+                    w_k[IDX_2D(i, 0,              POIS3D_NX)] = 0.0;
+                    w_k[IDX_2D(i, POIS3D_NY - 1,  POIS3D_NX)] = 0.0;
+                }
+
+                /* x-faces on interior j: inlet and outlet */
+                for (size_t j = 1; j + 1 < POIS3D_NY; j++) {
+                    /* Inlet: w = 0 at i = 0 */
+                    w_k[IDX_2D(0,             j, POIS3D_NX)] = 0.0;
+                    /* Outlet: zero-gradient, copy from i = nx-2 */
+                    w_k[IDX_2D(POIS3D_NX - 1, j, POIS3D_NX)] =
+                        w_k[IDX_2D(POIS3D_NX - 2, j, POIS3D_NX)];
                 }
             }
         }
