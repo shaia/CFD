@@ -678,8 +678,8 @@ Alternative to full C inference (Phase 7). Python handles training/orchestration
 ### v0.2.0 - 3D Support
 
 - [x] Phases 0–4: Indexing macros, core data structures, 3D stencils, NS solvers, BCs
-- [ ] Phase 5-7: SIMD, OMP, CUDA backends for 3D
-- [ ] Phase 8: 3D VTK output, examples, validation (Taylor-Green 3D, Poiseuille 3D)
+- [x] Phase 5-7: SIMD, OMP, CUDA backends for 3D
+- [x] Phase 8: 3D VTK output, examples, validation (Taylor-Green 3D, Poiseuille 3D)
 
 ### v0.3.0 - Heat Transfer
 
