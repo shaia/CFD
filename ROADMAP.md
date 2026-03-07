@@ -42,7 +42,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 
 ### What's Missing
 
-- [ ] No 3D validation benchmarks yet
+- [x] ~~No 3D validation benchmarks~~ — Taylor-Green 3D and Poiseuille 3D added
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no multigrid)
 - [ ] No restart/checkpoint capability
