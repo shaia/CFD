@@ -62,7 +62,7 @@ Action items:
 - [x] Profile OMP Red-Black SOR to identify convergence bottleneck — suboptimal omega
 - [x] Compare OMP vs AVX2 Red-Black implementations for differences — identical algorithm
 - [x] Test omega parameter sweep (1.0 to 1.9) for optimal convergence — auto-computed
-- [x] Add convergence diagnostics (residual history logging) — test_optimal_omega.c
+- [x] Verify convergence via iteration-count tests — test_optimal_omega.c
 - [x] Consider switch to Chebyshev acceleration or SSOR — not needed, optimal omega suffices
 
 **Grid Convergence Non-Monotonic Behavior (P1)** ✅ RESOLVED
