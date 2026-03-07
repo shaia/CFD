@@ -243,7 +243,7 @@ static inline pois3d_result_t pois3d_run_simulation(void) {
          * which would destroy the inlet/outlet/wall BCs we just set. */
         {
             double* flds[] = {field->u, field->v, field->w, field->p};
-            size_t plane_bytes = POIS3D_NX * POIS3D_NY * sizeof(double);
+            size_t plane_bytes = stride_z * sizeof(double);
             for (int f = 0; f < 4; f++) {
                 if (!flds[f]) continue;
                 double* d = flds[f];
