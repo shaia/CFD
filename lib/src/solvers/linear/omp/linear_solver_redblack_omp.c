@@ -60,7 +60,7 @@ static cfd_status_t redblack_omp_init(
     double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
     ctx->inv_factor = 1.0 / factor;
     ctx->omega = poisson_solver_resolve_omega(
-        params ? params->omega : 0.0, nx, ny, dx, dy);
+        params ? params->omega : 0.0, nx, ny, nz, dx, dy, dz);
     ctx->initialized = 1;
 
     solver->context = ctx;

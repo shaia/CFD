@@ -160,32 +160,53 @@ static inline double poisson_solver_compute_inv_dz2(double dz) {
  * ============================================================================ */
 
 /**
- * Compute optimal SOR relaxation parameter for a 2D Laplacian.
+ * Compute optimal SOR relaxation parameter for a 2D/3D Laplacian.
  *
  * Uses the Jacobi spectral radius for a rectangular grid:
- *   rho_J = [cos(pi/(nx-1))/dx^2 + cos(pi/(ny-1))/dy^2] / [1/dx^2 + 1/dy^2]
+ *   2D: rho_J = [cos(pi/(nx-1))/dx^2 + cos(pi/(ny-1))/dy^2]
+ *                / [1/dx^2 + 1/dy^2]
+ *   3D: rho_J = [cos(pi/(nx-1))/dx^2 + cos(pi/(ny-1))/dy^2
+ *                + cos(pi/(nz-1))/dz^2]
+ *                / [1/dx^2 + 1/dy^2 + 1/dz^2]
  *   omega_opt = 2 / (1 + sqrt(1 - rho_J^2))
+ *
+ * When nz <= 1 or dz <= 0, the z-component is ignored and the 2D formula
+ * is used.
  */
 static inline double poisson_solver_compute_optimal_omega(
-    size_t nx, size_t ny, double dx, double dy)
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz)
 {
     double inv_dx2 = 1.0 / (dx * dx);
     double inv_dy2 = 1.0 / (dy * dy);
-    double rho_j = (cos(M_PI / (double)(nx - 1)) * inv_dx2
-                  + cos(M_PI / (double)(ny - 1)) * inv_dy2)
-                 / (inv_dx2 + inv_dy2);
+    double inv_dz2 = poisson_solver_compute_inv_dz2(dz);
+
+    double num = cos(M_PI / (double)(nx - 1)) * inv_dx2
+               + cos(M_PI / (double)(ny - 1)) * inv_dy2;
+    double denom = inv_dx2 + inv_dy2;
+
+    if (nz > 1 && inv_dz2 > 0.0) {
+        num   += cos(M_PI / (double)(nz - 1)) * inv_dz2;
+        denom += inv_dz2;
+    }
+
+    double rho_j = num / denom;
     return 2.0 / (1.0 + sqrt(1.0 - (rho_j * rho_j)));
 }
 
 /**
  * Resolve omega: if omega <= 0.0 (auto sentinel), compute optimal value.
  * Otherwise return the user-specified omega as-is.
+ *
+ * Supports both 2D (nz <= 1 or dz <= 0) and 3D (nz > 1, dz > 0) problems.
  */
 static inline double poisson_solver_resolve_omega(
-    double omega, size_t nx, size_t ny, double dx, double dy)
+    double omega,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz)
 {
     if (omega <= 0.0) {
-        return poisson_solver_compute_optimal_omega(nx, ny, dx, dy);
+        return poisson_solver_compute_optimal_omega(nx, ny, nz, dx, dy, dz);
     }
     return omega;
 }

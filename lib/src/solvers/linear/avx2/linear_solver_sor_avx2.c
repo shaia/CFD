@@ -89,7 +89,7 @@ static cfd_status_t sor_avx2_init(
     ctx->inv_factor = 1.0 / factor;
 
     ctx->omega = poisson_solver_resolve_omega(
-        params ? params->omega : 0.0, nx, ny, dx, dy);
+        params ? params->omega : 0.0, nx, ny, nz, dx, dy, dz);
 
     /* Pre-compute SIMD vectors */
     ctx->dx2_inv_vec        = _mm256_set1_pd(1.0 / ctx->dx2);
