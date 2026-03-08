@@ -801,6 +801,14 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
+        double max_t = 0.0;
+        if (field->T) {
+            for (ks = 0; ks < n_s; ks++) {
+                double at = fabs(field->T[ks]);
+                if (at > max_t) max_t = at;
+            }
+        }
+        stats->max_temperature = max_t;
     }
 
     return status;
@@ -848,6 +856,14 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
+        double max_t = 0.0;
+        if (field->T) {
+            for (ks = 0; ks < n_s; ks++) {
+                double at = fabs(field->T[ks]);
+                if (at > max_t) max_t = at;
+            }
+        }
+        stats->max_temperature = max_t;
     }
     return status;
 #endif

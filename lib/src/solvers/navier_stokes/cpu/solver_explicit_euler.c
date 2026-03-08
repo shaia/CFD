@@ -6,6 +6,7 @@
 #include "cfd/core/memory.h"
 
 
+#include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
 #include "../boundary_copy_utils.h"
@@ -64,7 +65,13 @@ ns_solver_params_t ns_solver_params_default(void) {
                             .source_amplitude_u = DEFAULT_SOURCE_AMPLITUDE_U,
                             .source_amplitude_v = DEFAULT_SOURCE_AMPLITUDE_V,
                             .source_decay_rate = DEFAULT_SOURCE_DECAY_RATE,
-                            .pressure_coupling = DEFAULT_PRESSURE_COUPLING};
+                            .pressure_coupling = DEFAULT_PRESSURE_COUPLING,
+                            .alpha = 0.0,
+                            .beta = 0.0,
+                            .T_ref = 0.0,
+                            .gravity = {0.0, 0.0, 0.0},
+                            .heat_source_func = NULL,
+                            .heat_source_context = NULL};
     return params;
 }
 flow_field* flow_field_create(size_t nx, size_t ny, size_t nz) {
@@ -202,11 +209,21 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
     // Compute time step based on CFL condition with safety factor
     double dt_cfl = params->cfl * dmin / max_speed;
 
+    // Thermal diffusion stability constraint: dt < dx^2 / (2 * alpha * ndim)
+    double dt_thermal = dt_cfl;
+    if (params->alpha > 0.0) {
+        int ndim = (grid->nz > 1) ? 3 : 2;
+        dt_thermal = (dmin * dmin) / (2.0 * params->alpha * ndim);
+        dt_thermal *= params->cfl;  // Apply safety factor
+    }
+
+    double dt_stable = min_double(dt_cfl, dt_thermal);
+
     // Limit time step to reasonable bounds
     double dt_max = DT_MAX_LIMIT;  // Maximum allowed time step
     double dt_min = DT_MIN_LIMIT;  // Minimum allowed time step
 
-    params->dt = max_double(dt_min, min_double(dt_max, dt_cfl));
+    params->dt = max_double(dt_min, min_double(dt_max, dt_stable));
 }
 
 void apply_boundary_conditions(flow_field* field, const grid* grid) {
@@ -350,11 +367,10 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     double* w_new = (double*)cfd_calloc(total, sizeof(double));
     double* p_new = (double*)cfd_calloc(total, sizeof(double));
     double* rho_new = (double*)cfd_calloc(total, sizeof(double));
-    double* t_new = (double*)cfd_calloc(total, sizeof(double));
 
-    if (!u_new || !v_new || !w_new || !p_new || !rho_new || !t_new) {
+    if (!u_new || !v_new || !w_new || !p_new || !rho_new) {
         cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-        cfd_free(p_new); cfd_free(rho_new); cfd_free(t_new);
+        cfd_free(p_new); cfd_free(rho_new);
         return CFD_ERROR_NOMEM;
     }
 
@@ -363,7 +379,6 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     memcpy(w_new, field->w, bytes);
     memcpy(p_new, field->p, bytes);
     memcpy(rho_new, field->rho, bytes);
-    memcpy(t_new, field->T, bytes);
 
     double conservative_dt = fmin(params->dt, DT_CONSERVATIVE_LIMIT);
 
@@ -458,6 +473,10 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
                     compute_source_terms(x, y, z, iter, conservative_dt, params,
                                          &source_u, &source_v, &source_w);
 
+                    /* Boussinesq buoyancy source */
+                    energy_compute_buoyancy(field->T[idx], params,
+                                            &source_u, &source_v, &source_w);
+
                     /* u-momentum */
                     double du = conservative_dt *
                         (-u_c * du_dx - v_c * du_dy - w_c * du_dz
@@ -495,7 +514,6 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
                     p_new[idx] = field->p[idx] + dp;
 
                     rho_new[idx] = field->rho[idx];
-                    t_new[idx] = field->T[idx];
                 }
             }
         }
@@ -506,7 +524,18 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         memcpy(field->w, w_new, bytes);
         memcpy(field->p, p_new, bytes);
         memcpy(field->rho, rho_new, bytes);
-        memcpy(field->T, t_new, bytes);
+
+        /* Energy equation: advance temperature using updated velocity */
+        {
+            cfd_status_t energy_status = energy_step_explicit(field, grid, params,
+                                                               conservative_dt,
+                                                               iter * conservative_dt);
+            if (energy_status != CFD_SUCCESS) {
+                cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
+                cfd_free(p_new); cfd_free(rho_new);
+                return energy_status;
+            }
+        }
 
         /* Save caller BCs, apply periodic BCs, restore caller BCs.
          * Use _3d helper for 6-face copy when nz > 1. */
@@ -527,7 +556,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         }
         if (has_nan) {
             cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-            cfd_free(p_new); cfd_free(rho_new); cfd_free(t_new);
+            cfd_free(p_new); cfd_free(rho_new);
             cfd_set_error(CFD_ERROR_DIVERGED,
                           "NaN/Inf detected in explicit_euler step");
             return CFD_ERROR_DIVERGED;
@@ -535,7 +564,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     }
 
     cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-    cfd_free(p_new); cfd_free(rho_new); cfd_free(t_new);
+    cfd_free(p_new); cfd_free(rho_new);
 
     return CFD_SUCCESS;
 }

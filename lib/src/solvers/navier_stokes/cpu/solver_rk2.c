@@ -20,6 +20,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
+#include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
 #include <math.h>
@@ -55,7 +56,7 @@
  * during intermediate RK stages).
  */
 static void compute_rhs(const double* u, const double* v, const double* w,
-                         const double* p, const double* rho,
+                         const double* p, const double* rho, const double* T,
                          double* rhs_u, double* rhs_v, double* rhs_w, double* rhs_p,
                          const grid* grid, const ns_solver_params_t* params,
                          size_t nx, size_t ny, size_t nz,
@@ -163,6 +164,12 @@ static void compute_rhs(const double* u, const double* v, const double* w,
                 compute_source_terms(grid->x[i], grid->y[j], z_coord, iter, dt,
                                      params, &source_u, &source_v, &source_w);
 
+                /* Boussinesq buoyancy source */
+                if (T) {
+                    energy_compute_buoyancy(T[idx], params,
+                                            &source_u, &source_v, &source_w);
+                }
+
                 /* RHS for u-momentum */
                 rhs_u[idx] = -u[idx] * du_dx - v[idx] * du_dy - w[idx] * du_dz
                              - dp_dx / rho[idx]
@@ -268,7 +275,7 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
         memset(k1_w, 0, bytes);
         memset(k1_p, 0, bytes);
 
-        compute_rhs(field->u, field->v, field->w, field->p, field->rho,
+        compute_rhs(field->u, field->v, field->w, field->p, field->rho, field->T,
                      k1_u, k1_v, k1_w, k1_p,
                      grid, params, nx, ny, nz,
                      stride_z, k_start, k_end, inv_2dz, inv_dz2,
@@ -298,7 +305,7 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
         memset(k2_w, 0, bytes);
         memset(k2_p, 0, bytes);
 
-        compute_rhs(field->u, field->v, field->w, field->p, field->rho,
+        compute_rhs(field->u, field->v, field->w, field->p, field->rho, field->T,
                      k2_u, k2_v, k2_w, k2_p,
                      grid, params, nx, ny, nz,
                      stride_z, k_start, k_end, inv_2dz, inv_dz2,
@@ -315,6 +322,16 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
             field->u[n] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, field->u[n]));
             field->v[n] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, field->v[n]));
             field->w[n] = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, field->w[n]));
+        }
+
+        /* Energy equation: advance temperature after RK2 velocity update */
+        {
+            cfd_status_t energy_status = energy_step_explicit(field, grid, params, dt,
+                                                               iter * dt);
+            if (energy_status != CFD_SUCCESS) {
+                status = energy_status;
+                goto cleanup;
+            }
         }
 
         /* Apply BCs to final state only (after the full RK2 step).
