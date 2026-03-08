@@ -367,6 +367,75 @@ static void test_backward_compatibility(void) {
 }
 
 /* ============================================================================
+ * TEST 6: Heat Source Function
+ *
+ * Apply a uniform heat source Q=1.0 to a quiescent flow with zero initial
+ * temperature. After N steps, T should increase by approximately Q*N*dt
+ * in the interior (no advection, diffusion of uniform field is zero).
+ * ============================================================================ */
+
+#define HS_NX 17
+#define HS_NY 17
+#define HS_DT 0.001
+#define HS_STEPS 50
+#define HS_Q 1.0
+
+static double uniform_heat_source(double x, double y, double z, double t,
+                                   void* context) {
+    (void)x; (void)y; (void)z; (void)t; (void)context;
+    return HS_Q;
+}
+
+static void test_heat_source(void) {
+    grid* g = grid_create(HS_NX, HS_NY, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* field = flow_field_create(HS_NX, HS_NY, 1);
+    TEST_ASSERT_NOT_NULL(field);
+
+    /* Quiescent flow, uniform T=0, rho=1 */
+    for (size_t n = 0; n < (size_t)(HS_NX * HS_NY); n++) {
+        field->u[n] = 0.0;
+        field->v[n] = 0.0;
+        field->w[n] = 0.0;
+        field->p[n] = 1.0;
+        field->rho[n] = 1.0;
+        field->T[n] = 0.0;
+    }
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;  /* Need alpha > 0 to enable energy equation */
+    params.heat_source_func = uniform_heat_source;
+    params.heat_source_context = NULL;
+
+    for (int step = 0; step < HS_STEPS; step++) {
+        cfd_status_t status = energy_step_explicit(field, g, &params, HS_DT,
+                                                    step * HS_DT);
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+    }
+
+    /* Interior points should have T ≈ Q * N * dt = 1.0 * 50 * 0.001 = 0.05
+     * (boundary points stay at 0 since the stencil doesn't update them) */
+    double expected = HS_Q * HS_STEPS * HS_DT;
+    size_t ci = HS_NX / 2;
+    size_t cj = HS_NY / 2;
+    double T_center = field->T[cj * HS_NX + ci];
+
+    printf("  Heat source test: T_center=%.6f, expected≈%.6f\n",
+           T_center, expected);
+
+    /* Uniform field has zero Laplacian, so diffusion doesn't contribute.
+     * The only driver is Q. Allow 10% tolerance for boundary effects. */
+    TEST_ASSERT_TRUE_MESSAGE(T_center > 0.0,
+                              "Temperature should increase with heat source");
+    TEST_ASSERT_DOUBLE_WITHIN(expected * 0.10, expected, T_center);
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+/* ============================================================================
  * MAIN
  * ============================================================================ */
 
@@ -377,5 +446,6 @@ int main(void) {
     RUN_TEST(test_energy_disabled);
     RUN_TEST(test_buoyancy_source);
     RUN_TEST(test_backward_compatibility);
+    RUN_TEST(test_heat_source);
     return UNITY_END();
 }
