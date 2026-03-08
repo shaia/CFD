@@ -21,6 +21,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
+#include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
 
@@ -161,6 +162,10 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                     compute_source_terms(x_coord, y_coord, z_coord, iter, dt, params,
                                          &source_u, &source_v, &source_w);
 
+                    /* Boussinesq buoyancy source */
+                    energy_compute_buoyancy(field->T[idx], params,
+                                            &source_u, &source_v, &source_w);
+
                     /* Intermediate velocity (without pressure gradient) */
                     u_star[idx] = u + dt * (-conv_u + visc_u + source_u);
                     v_star[idx] = v + dt * (-conv_v + visc_v + source_v);
@@ -240,6 +245,16 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
         /* Update pressure */
         memcpy(field->p, p_new, bytes);
+
+        /* Energy equation: advance temperature after velocity correction */
+        {
+            cfd_status_t energy_status = energy_step_explicit(field, grid, params, dt);
+            if (energy_status != CFD_SUCCESS) {
+                cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
+                cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+                return energy_status;
+            }
+        }
 
         /* Restore caller-set boundary conditions */
         copy_boundary_velocities_3d(field->u, field->v, field->w,

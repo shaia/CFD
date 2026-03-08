@@ -118,6 +118,8 @@ set(CFD_SCALAR_SOURCES
     src/solvers/navier_stokes/cpu/solver_explicit_euler.c
     src/solvers/navier_stokes/cpu/solver_rk2.c
     src/solvers/navier_stokes/cpu/solver_projection.c
+    # Energy equation solver - scalar
+    src/solvers/energy/cpu/energy_solver.c
     # Linear solvers - scalar implementations only
     src/solvers/linear/cpu/linear_solver_jacobi.c
     src/solvers/linear/cpu/linear_solver_sor.c
@@ -574,6 +576,7 @@ set(CFD_LIBRARY_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/core/cpu_features.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/navier_stokes_solver.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/poisson_solver.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/solvers/energy_solver.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/boundary/boundary_conditions.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/vtk_output.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/csv_output.h

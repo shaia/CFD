@@ -297,6 +297,10 @@ if(BUILD_TESTS)
     add_executable(test_taylor_green_3d tests/validation/test_taylor_green_3d.c)
     add_executable(test_quiescent_3d tests/validation/test_quiescent_3d.c)
 
+    # Energy equation tests
+    add_executable(test_energy_solver tests/solvers/energy/test_energy_solver.c)
+    add_executable(test_natural_convection tests/validation/test_natural_convection.c)
+
     # Mathematical accuracy tests
     add_executable(test_finite_differences tests/math/test_finite_differences.c)
     add_executable(test_finite_differences_3d tests/math/test_finite_differences_3d.c)
@@ -398,6 +402,8 @@ if(BUILD_TESTS)
     target_link_libraries(test_quiescent_3d PRIVATE CFD::Library unity)
     target_link_libraries(test_poiseuille_flow PRIVATE CFD::Library unity)
     target_link_libraries(test_poiseuille_3d PRIVATE CFD::Library unity)
+    target_link_libraries(test_energy_solver PRIVATE CFD::Library unity)
+    target_link_libraries(test_natural_convection PRIVATE CFD::Library unity)
     target_link_libraries(test_finite_differences PRIVATE unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_include_directories(test_finite_differences PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/include)
     target_link_libraries(test_finite_differences_3d PRIVATE unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
@@ -518,6 +524,10 @@ if(BUILD_TESTS)
     # Poiseuille flow validation tests
     add_test(NAME PoiseuilleFlowTest COMMAND test_poiseuille_flow)
     add_test(NAME Poiseuille3DTest COMMAND test_poiseuille_3d)
+
+    # Energy equation tests
+    add_test(NAME EnergySolverTest COMMAND test_energy_solver)
+    add_test(NAME NaturalConvectionTest COMMAND test_natural_convection)
 
     # Mathematical accuracy tests
     add_test(NAME FiniteDifferencesTest COMMAND test_finite_differences)

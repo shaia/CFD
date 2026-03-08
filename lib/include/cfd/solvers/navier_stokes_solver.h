@@ -79,6 +79,18 @@ typedef void (*ns_source_func_t)(double x, double y, double z, double t,
                                   double* source_w);
 
 /**
+ * Custom heat source callback function
+ * @param x X coordinate
+ * @param y Y coordinate
+ * @param z Z coordinate (0.0 for 2D)
+ * @param t Physical time
+ * @param context User-provided context pointer
+ * @return Heat source term Q at the given point
+ */
+typedef double (*ns_heat_source_func_t)(double x, double y, double z, double t,
+                                         void* context);
+
+/**
  * Navier-Stokes solver parameters
  */
 typedef struct {
@@ -99,6 +111,16 @@ typedef struct {
     /* Custom source term callback (NULL = use default) */
     ns_source_func_t source_func;  /**< Custom source term function pointer */
     void* source_context;           /**< User context for source_func */
+
+    /* Energy equation parameters (alpha > 0 enables energy equation) */
+    double alpha;           /**< Thermal diffusivity k/(rho*cp) [m^2/s], 0 = disabled */
+    double beta;            /**< Thermal expansion coefficient [1/K] (Boussinesq) */
+    double T_ref;           /**< Reference temperature [K] for Boussinesq */
+    double gravity[3];      /**< Gravity vector (gx, gy, gz) [m/s^2] */
+
+    /* Custom heat source callback (NULL = no heat source) */
+    ns_heat_source_func_t heat_source_func;  /**< Heat source function pointer */
+    void* heat_source_context;                /**< User context for heat_source_func */
 } ns_solver_params_t;
 
 
@@ -144,6 +166,7 @@ typedef struct {
     double residual;         /**< Final residual norm */
     double max_velocity;     /**< Maximum velocity magnitude */
     double max_pressure;     /**< Maximum pressure */
+    double max_temperature;  /**< Maximum temperature (when energy equation active) */
     double cfl_number;       /**< Actual CFL number used */
     double elapsed_time_ms;  /**< Wall clock time for solve */
     cfd_status_t status;     /**< Status of the solve */
@@ -338,6 +361,7 @@ static inline ns_solver_stats_t ns_solver_stats_default(void) {
     stats.residual = 0.0;
     stats.max_velocity = 0.0;
     stats.max_pressure = 0.0;
+    stats.max_temperature = 0.0;
     stats.cfl_number = 0.0;
     stats.elapsed_time_ms = 0.0;
     stats.status = CFD_SUCCESS;
