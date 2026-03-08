@@ -367,11 +367,10 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     double* w_new = (double*)cfd_calloc(total, sizeof(double));
     double* p_new = (double*)cfd_calloc(total, sizeof(double));
     double* rho_new = (double*)cfd_calloc(total, sizeof(double));
-    double* t_new = (double*)cfd_calloc(total, sizeof(double));
 
-    if (!u_new || !v_new || !w_new || !p_new || !rho_new || !t_new) {
+    if (!u_new || !v_new || !w_new || !p_new || !rho_new) {
         cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-        cfd_free(p_new); cfd_free(rho_new); cfd_free(t_new);
+        cfd_free(p_new); cfd_free(rho_new);
         return CFD_ERROR_NOMEM;
     }
 
@@ -380,7 +379,6 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     memcpy(w_new, field->w, bytes);
     memcpy(p_new, field->p, bytes);
     memcpy(rho_new, field->rho, bytes);
-    memcpy(t_new, field->T, bytes);
 
     double conservative_dt = fmin(params->dt, DT_CONSERVATIVE_LIMIT);
 
@@ -533,7 +531,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
                                                                conservative_dt);
             if (energy_status != CFD_SUCCESS) {
                 cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-                cfd_free(p_new); cfd_free(rho_new); cfd_free(t_new);
+                cfd_free(p_new); cfd_free(rho_new);
                 return energy_status;
             }
         }
@@ -557,7 +555,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         }
         if (has_nan) {
             cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-            cfd_free(p_new); cfd_free(rho_new); cfd_free(t_new);
+            cfd_free(p_new); cfd_free(rho_new);
             cfd_set_error(CFD_ERROR_DIVERGED,
                           "NaN/Inf detected in explicit_euler step");
             return CFD_ERROR_DIVERGED;
@@ -565,7 +563,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     }
 
     cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-    cfd_free(p_new); cfd_free(rho_new); cfd_free(t_new);
+    cfd_free(p_new); cfd_free(rho_new);
 
     return CFD_SUCCESS;
 }
