@@ -37,11 +37,12 @@ extern "C" {
  * @param grid   Computational grid
  * @param params Solver parameters (alpha, heat_source_func, dt)
  * @param dt     Time step size
+ * @param time   Current physical time (passed to heat_source_func)
  * @return CFD_SUCCESS, or CFD_ERROR_DIVERGED if NaN detected in T
  */
 CFD_LIBRARY_EXPORT cfd_status_t energy_step_explicit(flow_field* field, const grid* grid,
                                                       const ns_solver_params_t* params,
-                                                      double dt);
+                                                      double dt, double time);
 
 /**
  * Compute Boussinesq buoyancy source terms from the temperature field.

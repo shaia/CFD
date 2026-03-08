@@ -528,7 +528,8 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         /* Energy equation: advance temperature using updated velocity */
         {
             cfd_status_t energy_status = energy_step_explicit(field, grid, params,
-                                                               conservative_dt);
+                                                               conservative_dt,
+                                                               iter * conservative_dt);
             if (energy_status != CFD_SUCCESS) {
                 cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
                 cfd_free(p_new); cfd_free(rho_new);

@@ -20,7 +20,7 @@
 
 cfd_status_t energy_step_explicit(flow_field* field, const grid* grid,
                                    const ns_solver_params_t* params,
-                                   double dt) {
+                                   double dt, double time) {
     /* Skip when energy equation is disabled */
     if (params->alpha <= 0.0) {
         return CFD_SUCCESS;
@@ -81,7 +81,7 @@ cfd_status_t energy_step_explicit(flow_field* field, const grid* grid,
                     double x = grid->x[i];
                     double y = grid->y[j];
                     double z = (nz > 1 && grid->z) ? grid->z[k] : 0.0;
-                    Q = params->heat_source_func(x, y, z, 0.0,
+                    Q = params->heat_source_func(x, y, z, time,
                                                   params->heat_source_context);
                 }
 

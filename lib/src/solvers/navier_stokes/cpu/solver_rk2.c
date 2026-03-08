@@ -326,7 +326,8 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
 
         /* Energy equation: advance temperature after RK2 velocity update */
         {
-            cfd_status_t energy_status = energy_step_explicit(field, grid, params, dt);
+            cfd_status_t energy_status = energy_step_explicit(field, grid, params, dt,
+                                                               iter * dt);
             if (energy_status != CFD_SUCCESS) {
                 status = energy_status;
                 goto cleanup;

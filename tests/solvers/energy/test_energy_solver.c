@@ -90,7 +90,7 @@ static void test_pure_diffusion(void) {
 
     /* Run diffusion steps */
     for (int step = 0; step < DIFF_STEPS; step++) {
-        cfd_status_t status = energy_step_explicit(field, g, &params, DIFF_DT);
+        cfd_status_t status = energy_step_explicit(field, g, &params, DIFF_DT, step * DIFF_DT);
         if (status != CFD_SUCCESS) {
             printf("  DIVERGED at step %d, status=%d\n", step, status);
             /* Print min/max T for debugging */
@@ -190,7 +190,8 @@ static void test_pure_advection(void) {
     params.alpha = 0.0001;  /* Small diffusivity to stabilize */
 
     for (int step = 0; step < ADV_STEPS; step++) {
-        cfd_status_t status = energy_step_explicit(field, g, &params, ADV_DT);
+        cfd_status_t status = energy_step_explicit(field, g, &params, ADV_DT,
+                                                     step * ADV_DT);
         TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     }
 
@@ -250,7 +251,7 @@ static void test_energy_disabled(void) {
     ns_solver_params_t params = ns_solver_params_default();
     params.alpha = 0.0;  /* Disabled */
 
-    cfd_status_t status = energy_step_explicit(field, g, &params, 0.001);
+    cfd_status_t status = energy_step_explicit(field, g, &params, 0.001, 0.0);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     /* Temperature should be unchanged */

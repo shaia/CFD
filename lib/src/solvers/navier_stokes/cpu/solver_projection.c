@@ -248,7 +248,8 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
         /* Energy equation: advance temperature after velocity correction */
         {
-            cfd_status_t energy_status = energy_step_explicit(field, grid, params, dt);
+            cfd_status_t energy_status = energy_step_explicit(field, grid, params, dt,
+                                                               iter * dt);
             if (energy_status != CFD_SUCCESS) {
                 cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
                 cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
