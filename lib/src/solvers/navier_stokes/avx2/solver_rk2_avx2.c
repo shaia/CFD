@@ -785,11 +785,11 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
 
     if (stats) {
         stats->iterations = 1;
-        double max_vel = 0.0, max_p = 0.0;
+        double max_vel = 0.0, max_p = 0.0, max_t = 0.0;
         ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny * field->nz);
         ptrdiff_t ks;
 #if defined(_OPENMP) && (_OPENMP >= 201107)
-        #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
+        #pragma omp parallel for reduction(max: max_vel, max_p, max_t) schedule(static)
 #endif
         for (ks = 0; ks < n_s; ks++) {
             double vel = sqrt(field->u[ks] * field->u[ks] +
@@ -798,16 +798,10 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
             if (vel > max_vel) max_vel = vel;
             double ap = fabs(field->p[ks]);
             if (ap > max_p) max_p = ap;
+            if (field->T && field->T[ks] > max_t) max_t = field->T[ks];
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
-        double max_t = 0.0;
-        if (field->T) {
-            for (ks = 0; ks < n_s; ks++) {
-                double at = fabs(field->T[ks]);
-                if (at > max_t) max_t = at;
-            }
-        }
         stats->max_temperature = max_t;
     }
 
@@ -840,11 +834,11 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
 
     if (stats) {
         stats->iterations = params->max_iter;
-        double max_vel = 0.0, max_p = 0.0;
+        double max_vel = 0.0, max_p = 0.0, max_t = 0.0;
         ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny * field->nz);
         ptrdiff_t ks;
 #if defined(_OPENMP) && (_OPENMP >= 201107)
-        #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
+        #pragma omp parallel for reduction(max: max_vel, max_p, max_t) schedule(static)
 #endif
         for (ks = 0; ks < n_s; ks++) {
             double vel = sqrt(field->u[ks] * field->u[ks] +
@@ -853,16 +847,10 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
             if (vel > max_vel) max_vel = vel;
             double ap = fabs(field->p[ks]);
             if (ap > max_p) max_p = ap;
+            if (field->T && field->T[ks] > max_t) max_t = field->T[ks];
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
-        double max_t = 0.0;
-        if (field->T) {
-            for (ks = 0; ks < n_s; ks++) {
-                double at = fabs(field->T[ks]);
-                if (at > max_t) max_t = at;
-            }
-        }
         stats->max_temperature = max_t;
     }
     return status;

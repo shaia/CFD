@@ -24,14 +24,14 @@
 #include <omp.h>
 #endif
 
-/* Compute max |T| for stats reporting */
+/* Compute max T for stats reporting */
 static double compute_max_temperature(const flow_field* field) {
     double max_t = 0.0;
     if (field->T) {
         size_t n = field->nx * field->ny * field->nz;
-        for (size_t i = 0; i < n; i++) {
-            double at = fabs(field->T[i]);
-            if (at > max_t) max_t = at;
+        max_t = field->T[0];
+        for (size_t i = 1; i < n; i++) {
+            if (field->T[i] > max_t) max_t = field->T[i];
         }
     }
     return max_t;
