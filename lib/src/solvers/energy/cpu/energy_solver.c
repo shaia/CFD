@@ -33,6 +33,24 @@ cfd_status_t energy_step_explicit(flow_field* field, const grid* grid,
     size_t total = plane * nz;
     double alpha = params->alpha;
 
+    /* Validate uniform dz for 3D (energy solver uses constant z-spacing) */
+    if (nz > 1) {
+        if (!grid->dz) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                          "energy_solver: missing dz for 3D energy solve");
+            return CFD_ERROR_INVALID;
+        }
+        const double dz0 = grid->dz[0];
+        const double tol = 1e-12 * fmax(1.0, fabs(dz0));
+        for (size_t k = 1; k < nz; k++) {
+            if (fabs(grid->dz[k] - dz0) > tol) {
+                cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                              "energy_solver: non-uniform dz not supported");
+                return CFD_ERROR_UNSUPPORTED;
+            }
+        }
+    }
+
     /* Branch-free 3D constants */
     size_t stride_z = (nz > 1) ? plane : 0;
     size_t k_start  = (nz > 1) ? 1 : 0;
