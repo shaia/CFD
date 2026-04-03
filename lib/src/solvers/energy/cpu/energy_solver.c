@@ -15,7 +15,6 @@
 #include "cfd/core/memory.h"
 
 #include <math.h>
-#include <stdio.h>
 #include <string.h>
 
 cfd_status_t energy_step_explicit(flow_field* field, const grid* grid,
@@ -113,10 +112,8 @@ cfd_status_t energy_step_explicit(flow_field* field, const grid* grid,
     /* Check for NaN/Inf */
     for (size_t n = 0; n < total; n++) {
         if (!isfinite(T_new[n])) {
-            size_t ni = n % nx;
-            size_t nj = (n / nx) % ny;
-            fprintf(stderr, "energy_solver: NaN/Inf at idx=%zu (i=%zu,j=%zu) T_new=%e field->T=%e\n",
-                    n, ni, nj, T_new[n], field->T[n]);
+            cfd_set_error(CFD_ERROR_DIVERGED,
+                          "NaN/Inf detected in energy_step_explicit");
             cfd_free(T_new);
             return CFD_ERROR_DIVERGED;
         }
