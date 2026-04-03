@@ -1026,6 +1026,8 @@ static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
+    cfd_status_t rc = check_energy_unsupported(params);
+    if (rc != CFD_SUCCESS) return rc;
 
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
@@ -1077,6 +1079,8 @@ static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, cons
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
+    cfd_status_t rc = check_energy_unsupported(params);
+    if (rc != CFD_SUCCESS) return rc;
 
     if (ctx && ctx->use_gpu && ctx->gpu_ctx) {
         // Use full GPU solver
@@ -1146,6 +1150,8 @@ static cfd_status_t gpu_projection_step(ns_solver_t* solver, flow_field* field, 
                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
     (void)stats;
+    cfd_status_t rc = check_energy_unsupported(params);
+    if (rc != CFD_SUCCESS) return rc;
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
     /* Override thresholds to allow single-step GPU execution on small grids */
@@ -1159,6 +1165,8 @@ static cfd_status_t gpu_projection_solve(ns_solver_t* solver, flow_field* field,
                                          const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
     (void)stats;
+    cfd_status_t rc = check_energy_unsupported(params);
+    if (rc != CFD_SUCCESS) return rc;
     /* Override thresholds to allow GPU execution on small grids */
     gpu_config_t cfg = gpu_config_default();
     cfg.min_grid_size = 1;
