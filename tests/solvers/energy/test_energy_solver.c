@@ -228,16 +228,20 @@ static void test_pure_advection(void) {
  * When alpha=0, energy_step_explicit should be a no-op.
  * ============================================================================ */
 
+#define DIS_NX 9
+#define DIS_NY 9
+#define DIS_TOTAL ((size_t)(DIS_NX) * DIS_NY)
+
 static void test_energy_disabled(void) {
-    grid* g = grid_create(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid* g = grid_create(DIS_NX, DIS_NY, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
-    flow_field* field = flow_field_create(9, 9, 1);
+    flow_field* field = flow_field_create(DIS_NX, DIS_NY, 1);
     TEST_ASSERT_NOT_NULL(field);
 
     /* Set non-uniform temperature */
-    for (size_t n = 0; n < 81; n++) {
+    for (size_t n = 0; n < DIS_TOTAL; n++) {
         field->u[n] = 1.0;
         field->v[n] = 0.5;
         field->rho[n] = 1.0;
@@ -245,8 +249,8 @@ static void test_energy_disabled(void) {
     }
 
     /* Save original temperature */
-    double T_orig[81];
-    memcpy(T_orig, field->T, 81 * sizeof(double));
+    double T_orig[DIS_TOTAL];
+    memcpy(T_orig, field->T, DIS_TOTAL * sizeof(double));
 
     ns_solver_params_t params = ns_solver_params_default();
     params.alpha = 0.0;  /* Disabled */
@@ -255,7 +259,7 @@ static void test_energy_disabled(void) {
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
     /* Temperature should be unchanged */
-    for (size_t n = 0; n < 81; n++) {
+    for (size_t n = 0; n < DIS_TOTAL; n++) {
         TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[n], field->T[n]);
     }
 
