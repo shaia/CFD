@@ -542,12 +542,20 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         }
 
         /* Save caller BCs, apply periodic BCs, restore caller BCs.
-         * Use _3d helper for 6-face copy when nz > 1. */
+         * Use _3d helper for 6-face copy when nz > 1.
+         * Preserve temperature so caller-specified thermal BCs are not
+         * overwritten by the generic periodic BC application. */
         copy_boundary_velocities_3d(u_new, v_new, w_new,
                                     field->u, field->v, field->w, nx, ny, nz);
+        if (field->T && T_energy_ws) {
+            memcpy(T_energy_ws, field->T, bytes);
+        }
         apply_boundary_conditions(field, grid);
         copy_boundary_velocities_3d(field->u, field->v, field->w,
                                     u_new, v_new, w_new, nx, ny, nz);
+        if (field->T && T_energy_ws) {
+            memcpy(field->T, T_energy_ws, bytes);
+        }
 
         /* NaN/Inf check */
         int has_nan = 0;
