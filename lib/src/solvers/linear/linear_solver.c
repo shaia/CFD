@@ -356,9 +356,22 @@ void poisson_solver_apply_bc(
                plane_size * sizeof(double));
     }
 
-    /* Apply 2D Neumann BCs on each z-plane (x/y faces) */
+    /* Apply 2D Neumann BCs on each z-plane using solver's own backend.
+     * This avoids BC_BACKEND_AUTO selecting a different backend (e.g. OMP)
+     * than the solver itself, which could spawn unexpected threads. */
     for (size_t k = 0; k < nz; k++) {
-        bc_apply_scalar(x + k * plane_size, nx, ny, BC_TYPE_NEUMANN);
+        double* plane = x + k * plane_size;
+        switch (solver->backend) {
+            case POISSON_BACKEND_OMP:
+                bc_apply_scalar_omp(plane, nx, ny, BC_TYPE_NEUMANN);
+                break;
+            case POISSON_BACKEND_SIMD:
+                bc_apply_scalar_simd(plane, nx, ny, BC_TYPE_NEUMANN);
+                break;
+            default:
+                bc_apply_scalar_cpu(plane, nx, ny, BC_TYPE_NEUMANN);
+                break;
+        }
     }
 }
 

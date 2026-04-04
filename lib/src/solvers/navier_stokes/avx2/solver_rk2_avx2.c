@@ -769,6 +769,11 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
     if (!solver || !solver->context || !field || !g || !params) {
         return CFD_ERROR_INVALID;
     }
+    if (params->alpha > 0.0 || params->beta != 0.0) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "Energy equation not supported by AVX2 backend");
+        return CFD_ERROR_UNSUPPORTED;
+    }
     if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
         return CFD_ERROR_INVALID;
     }
@@ -787,9 +792,10 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
         stats->iterations = 1;
         double max_vel = 0.0, max_p = 0.0;
         ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny * field->nz);
+        double max_t = (field->T && n_s > 0) ? field->T[0] : 0.0;
         ptrdiff_t ks;
 #if defined(_OPENMP) && (_OPENMP >= 201107)
-        #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
+        #pragma omp parallel for reduction(max: max_vel, max_p, max_t) schedule(static)
 #endif
         for (ks = 0; ks < n_s; ks++) {
             double vel = sqrt(field->u[ks] * field->u[ks] +
@@ -798,9 +804,11 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
             if (vel > max_vel) max_vel = vel;
             double ap = fabs(field->p[ks]);
             if (ap > max_p) max_p = ap;
+            if (field->T && field->T[ks] > max_t) max_t = field->T[ks];
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
+        stats->max_temperature = max_t;
     }
 
     return status;
@@ -816,6 +824,11 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
 #else
     if (!solver || !solver->context || !field || !g || !params) {
         return CFD_ERROR_INVALID;
+    }
+    if (params->alpha > 0.0 || params->beta != 0.0) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "Energy equation not supported by AVX2 backend");
+        return CFD_ERROR_UNSUPPORTED;
     }
     if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
         return CFD_ERROR_INVALID;
@@ -834,9 +847,10 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
         stats->iterations = params->max_iter;
         double max_vel = 0.0, max_p = 0.0;
         ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny * field->nz);
+        double max_t = (field->T && n_s > 0) ? field->T[0] : 0.0;
         ptrdiff_t ks;
 #if defined(_OPENMP) && (_OPENMP >= 201107)
-        #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
+        #pragma omp parallel for reduction(max: max_vel, max_p, max_t) schedule(static)
 #endif
         for (ks = 0; ks < n_s; ks++) {
             double vel = sqrt(field->u[ks] * field->u[ks] +
@@ -845,9 +859,11 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
             if (vel > max_vel) max_vel = vel;
             double ap = fabs(field->p[ks]);
             if (ap > max_p) max_p = ap;
+            if (field->T && field->T[ks] > max_t) max_t = field->T[ks];
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
+        stats->max_temperature = max_t;
     }
     return status;
 #endif

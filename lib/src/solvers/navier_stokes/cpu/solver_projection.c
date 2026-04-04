@@ -21,9 +21,11 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
+#include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
 
+#include "../../energy/energy_solver_internal.h"
 #include "../boundary_copy_utils.h"
 
 #include <math.h>
@@ -88,10 +90,15 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     double* p_new  = (double*)cfd_calloc(total, sizeof(double));
     double* p_temp = (double*)cfd_calloc(total, sizeof(double));
     double* rhs    = (double*)cfd_calloc(total, sizeof(double));
+    int needs_T_ws = (params->alpha > 0.0 || params->beta != 0.0);
+    double* T_energy_ws = needs_T_ws
+        ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
 
-    if (!u_star || !v_star || !w_star || !p_new || !p_temp || !rhs) {
+    if (!u_star || !v_star || !w_star || !p_new || !p_temp || !rhs ||
+        (needs_T_ws && !T_energy_ws)) {
         cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
         cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+        cfd_free(T_energy_ws);
         return CFD_ERROR_NOMEM;
     }
 
@@ -160,6 +167,10 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                     double z_coord = (nz > 1 && grid->z) ? grid->z[k] : 0.0;
                     compute_source_terms(x_coord, y_coord, z_coord, iter, dt, params,
                                          &source_u, &source_v, &source_w);
+
+                    /* Boussinesq buoyancy source */
+                    energy_compute_buoyancy(field->T[idx], params,
+                                            &source_u, &source_v, &source_w);
 
                     /* Intermediate velocity (without pressure gradient) */
                     u_star[idx] = u + dt * (-conv_u + visc_u + source_u);
@@ -241,6 +252,18 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         /* Update pressure */
         memcpy(field->p, p_new, bytes);
 
+        /* Energy equation: advance temperature after velocity correction */
+        {
+            cfd_status_t energy_status = energy_step_explicit_with_workspace(
+                field, grid, params, dt, iter * dt, T_energy_ws, total);
+            if (energy_status != CFD_SUCCESS) {
+                cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
+                cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+                cfd_free(T_energy_ws);
+                return energy_status;
+            }
+        }
+
         /* Restore caller-set boundary conditions */
         copy_boundary_velocities_3d(field->u, field->v, field->w,
                                     u_star, v_star, w_star, nx, ny, nz);
@@ -251,6 +274,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                 !isfinite(field->w[n]) || !isfinite(field->p[n])) {
                 cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
                 cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+                cfd_free(T_energy_ws);
                 return CFD_ERROR_DIVERGED;
             }
         }
@@ -258,6 +282,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
     cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
     cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+    cfd_free(T_energy_ws);
 
     return CFD_SUCCESS;
 }
