@@ -23,6 +23,17 @@ cfd_status_t energy_step_explicit_with_workspace(
     const ns_solver_params_t* params,
     double dt, double time,
     double* T_workspace, size_t workspace_size) {
+    if (!field || !grid || !params) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "energy_solver: field, grid, and params must be non-NULL");
+        return CFD_ERROR_INVALID;
+    }
+    if (!field->T) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "energy_solver: missing temperature field");
+        return CFD_ERROR_INVALID;
+    }
+
     /* Skip when energy equation is disabled */
     if (params->alpha <= 0.0) {
         return CFD_SUCCESS;
@@ -31,6 +42,12 @@ cfd_status_t energy_step_explicit_with_workspace(
     size_t nx = field->nx;
     size_t ny = field->ny;
     size_t nz = field->nz;
+
+    if (!grid->dx || !grid->dy || nx < 3 || ny < 3) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "energy_solver: grid too small or missing dx/dy");
+        return CFD_ERROR_INVALID;
+    }
     size_t plane = nx * ny;
     size_t total = plane * nz;
     double alpha = params->alpha;
