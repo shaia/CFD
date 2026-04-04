@@ -7,8 +7,8 @@
  *
  * where alpha = k/(rho*cp) is thermal diffusivity and Q is a heat source.
  *
- * Boussinesq buoyancy coupling adds a body force to the momentum equations:
- *   F_buoy = -rho_0 * beta * (T - T_ref) * g
+ * Boussinesq buoyancy coupling adds a buoyancy acceleration to the momentum equations:
+ *   a_buoy = -beta * (T - T_ref) * g
  *
  * The energy equation is solved as a post-step after velocity advancement,
  * using the updated velocity field for advection.
