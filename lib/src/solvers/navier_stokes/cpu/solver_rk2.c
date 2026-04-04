@@ -23,6 +23,8 @@
 #include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
+#include "../../energy/energy_solver_internal.h"
+
 #include <math.h>
 #include <string.h>
 
@@ -249,13 +251,17 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
     double* v0 = (double*)cfd_calloc(total, sizeof(double));
     double* w0 = (double*)cfd_calloc(total, sizeof(double));
     double* p0 = (double*)cfd_calloc(total, sizeof(double));
+    double* T_energy_ws = (params->alpha > 0.0)
+        ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
 
     if (!k1_u || !k1_v || !k1_w || !k1_p ||
         !k2_u || !k2_v || !k2_w || !k2_p ||
-        !u0 || !v0 || !w0 || !p0) {
+        !u0 || !v0 || !w0 || !p0 ||
+        (params->alpha > 0.0 && !T_energy_ws)) {
         cfd_free(k1_u); cfd_free(k1_v); cfd_free(k1_w); cfd_free(k1_p);
         cfd_free(k2_u); cfd_free(k2_v); cfd_free(k2_w); cfd_free(k2_p);
         cfd_free(u0); cfd_free(v0); cfd_free(w0); cfd_free(p0);
+        cfd_free(T_energy_ws);
         return CFD_ERROR_NOMEM;
     }
 
@@ -326,8 +332,8 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
 
         /* Energy equation: advance temperature after RK2 velocity update */
         {
-            cfd_status_t energy_status = energy_step_explicit(field, grid, params, dt,
-                                                               iter * dt);
+            cfd_status_t energy_status = energy_step_explicit_with_workspace(
+                field, grid, params, dt, iter * dt, T_energy_ws, total);
             if (energy_status != CFD_SUCCESS) {
                 status = energy_status;
                 goto cleanup;
@@ -352,6 +358,7 @@ cleanup:
     cfd_free(k1_u); cfd_free(k1_v); cfd_free(k1_w); cfd_free(k1_p);
     cfd_free(k2_u); cfd_free(k2_v); cfd_free(k2_w); cfd_free(k2_p);
     cfd_free(u0); cfd_free(v0); cfd_free(w0); cfd_free(p0);
+    cfd_free(T_energy_ws);
 
     return status;
 }

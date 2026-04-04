@@ -25,6 +25,7 @@
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
 
+#include "../../energy/energy_solver_internal.h"
 #include "../boundary_copy_utils.h"
 
 #include <math.h>
@@ -89,10 +90,14 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     double* p_new  = (double*)cfd_calloc(total, sizeof(double));
     double* p_temp = (double*)cfd_calloc(total, sizeof(double));
     double* rhs    = (double*)cfd_calloc(total, sizeof(double));
+    double* T_energy_ws = (params->alpha > 0.0)
+        ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
 
-    if (!u_star || !v_star || !w_star || !p_new || !p_temp || !rhs) {
+    if (!u_star || !v_star || !w_star || !p_new || !p_temp || !rhs ||
+        (params->alpha > 0.0 && !T_energy_ws)) {
         cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
         cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+        cfd_free(T_energy_ws);
         return CFD_ERROR_NOMEM;
     }
 
@@ -248,11 +253,12 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
         /* Energy equation: advance temperature after velocity correction */
         {
-            cfd_status_t energy_status = energy_step_explicit(field, grid, params, dt,
-                                                               iter * dt);
+            cfd_status_t energy_status = energy_step_explicit_with_workspace(
+                field, grid, params, dt, iter * dt, T_energy_ws, total);
             if (energy_status != CFD_SUCCESS) {
                 cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
                 cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+                cfd_free(T_energy_ws);
                 return energy_status;
             }
         }
@@ -267,6 +273,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                 !isfinite(field->w[n]) || !isfinite(field->p[n])) {
                 cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
                 cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+                cfd_free(T_energy_ws);
                 return CFD_ERROR_DIVERGED;
             }
         }
@@ -274,6 +281,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
     cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
     cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+    cfd_free(T_energy_ws);
 
     return CFD_SUCCESS;
 }

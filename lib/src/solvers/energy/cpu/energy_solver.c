@@ -10,6 +10,7 @@
  */
 
 #include "cfd/solvers/energy_solver.h"
+#include "../energy_solver_internal.h"
 
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
@@ -17,9 +18,11 @@
 #include <math.h>
 #include <string.h>
 
-cfd_status_t energy_step_explicit(flow_field* field, const grid* grid,
-                                   const ns_solver_params_t* params,
-                                   double dt, double time) {
+cfd_status_t energy_step_explicit_with_workspace(
+    flow_field* field, const grid* grid,
+    const ns_solver_params_t* params,
+    double dt, double time,
+    double* T_workspace, size_t workspace_size) {
     /* Skip when energy equation is disabled */
     if (params->alpha <= 0.0) {
         return CFD_SUCCESS;
@@ -57,10 +60,17 @@ cfd_status_t energy_step_explicit(flow_field* field, const grid* grid,
     double inv_2dz  = (nz > 1 && grid->dz) ? 1.0 / (2.0 * grid->dz[0]) : 0.0;
     double inv_dz2  = (nz > 1 && grid->dz) ? 1.0 / (grid->dz[0] * grid->dz[0]) : 0.0;
 
-    /* Allocate temporary array for new temperature */
-    double* T_new = (double*)cfd_calloc(total, sizeof(double));
-    if (!T_new) {
-        return CFD_ERROR_NOMEM;
+    /* Use caller's workspace or allocate internally */
+    int owns_buffer = 0;
+    double* T_new;
+    if (T_workspace && workspace_size >= total) {
+        T_new = T_workspace;
+    } else {
+        T_new = (double*)cfd_calloc(total, sizeof(double));
+        if (!T_new) {
+            return CFD_ERROR_NOMEM;
+        }
+        owns_buffer = 1;
     }
     memcpy(T_new, field->T, total * sizeof(double));
 
@@ -114,15 +124,22 @@ cfd_status_t energy_step_explicit(flow_field* field, const grid* grid,
         if (!isfinite(T_new[n])) {
             cfd_set_error(CFD_ERROR_DIVERGED,
                           "NaN/Inf detected in energy_step_explicit");
-            cfd_free(T_new);
+            if (owns_buffer) cfd_free(T_new);
             return CFD_ERROR_DIVERGED;
         }
     }
 
     memcpy(field->T, T_new, total * sizeof(double));
-    cfd_free(T_new);
+    if (owns_buffer) cfd_free(T_new);
 
     return CFD_SUCCESS;
+}
+
+cfd_status_t energy_step_explicit(flow_field* field, const grid* grid,
+                                   const ns_solver_params_t* params,
+                                   double dt, double time) {
+    return energy_step_explicit_with_workspace(field, grid, params,
+                                                dt, time, NULL, 0);
 }
 
 void energy_compute_buoyancy(double T_local, const ns_solver_params_t* params,

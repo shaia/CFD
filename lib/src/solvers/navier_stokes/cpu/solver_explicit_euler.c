@@ -9,6 +9,7 @@
 #include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
+#include "../../energy/energy_solver_internal.h"
 #include "../boundary_copy_utils.h"
 
 #include <math.h>
@@ -367,10 +368,13 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     double* w_new = (double*)cfd_calloc(total, sizeof(double));
     double* p_new = (double*)cfd_calloc(total, sizeof(double));
     double* rho_new = (double*)cfd_calloc(total, sizeof(double));
+    double* T_energy_ws = (params->alpha > 0.0)
+        ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
 
-    if (!u_new || !v_new || !w_new || !p_new || !rho_new) {
+    if (!u_new || !v_new || !w_new || !p_new || !rho_new ||
+        (params->alpha > 0.0 && !T_energy_ws)) {
         cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-        cfd_free(p_new); cfd_free(rho_new);
+        cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
         return CFD_ERROR_NOMEM;
     }
 
@@ -527,12 +531,12 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
 
         /* Energy equation: advance temperature using updated velocity */
         {
-            cfd_status_t energy_status = energy_step_explicit(field, grid, params,
-                                                               conservative_dt,
-                                                               iter * conservative_dt);
+            cfd_status_t energy_status = energy_step_explicit_with_workspace(
+                field, grid, params, conservative_dt,
+                iter * conservative_dt, T_energy_ws, total);
             if (energy_status != CFD_SUCCESS) {
                 cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-                cfd_free(p_new); cfd_free(rho_new);
+                cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
                 return energy_status;
             }
         }
@@ -556,7 +560,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         }
         if (has_nan) {
             cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-            cfd_free(p_new); cfd_free(rho_new);
+            cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
             cfd_set_error(CFD_ERROR_DIVERGED,
                           "NaN/Inf detected in explicit_euler step");
             return CFD_ERROR_DIVERGED;
@@ -564,7 +568,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     }
 
     cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-    cfd_free(p_new); cfd_free(rho_new);
+    cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
 
     return CFD_SUCCESS;
 }
