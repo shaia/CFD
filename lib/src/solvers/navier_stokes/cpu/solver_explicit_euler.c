@@ -368,11 +368,12 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     double* w_new = (double*)cfd_calloc(total, sizeof(double));
     double* p_new = (double*)cfd_calloc(total, sizeof(double));
     double* rho_new = (double*)cfd_calloc(total, sizeof(double));
-    double* T_energy_ws = (params->alpha > 0.0)
+    int needs_T_ws = (params->alpha > 0.0 || params->beta != 0.0);
+    double* T_energy_ws = needs_T_ws
         ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
 
     if (!u_new || !v_new || !w_new || !p_new || !rho_new ||
-        (params->alpha > 0.0 && !T_energy_ws)) {
+        (needs_T_ws && !T_energy_ws)) {
         cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
         cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
         return CFD_ERROR_NOMEM;

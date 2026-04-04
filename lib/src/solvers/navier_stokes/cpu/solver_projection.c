@@ -90,11 +90,12 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     double* p_new  = (double*)cfd_calloc(total, sizeof(double));
     double* p_temp = (double*)cfd_calloc(total, sizeof(double));
     double* rhs    = (double*)cfd_calloc(total, sizeof(double));
-    double* T_energy_ws = (params->alpha > 0.0)
+    int needs_T_ws = (params->alpha > 0.0 || params->beta != 0.0);
+    double* T_energy_ws = needs_T_ws
         ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
 
     if (!u_star || !v_star || !w_star || !p_new || !p_temp || !rhs ||
-        (params->alpha > 0.0 && !T_energy_ws)) {
+        (needs_T_ws && !T_energy_ws)) {
         cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
         cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
         cfd_free(T_energy_ws);
