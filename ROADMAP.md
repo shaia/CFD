@@ -26,7 +26,7 @@ This document outlines the development roadmap for achieving a commercial-grade,
 
 ### Backend Coverage Summary
 
-Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
+Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps here.
 
 | Category            | Algorithm      | CPU  | AVX2     | NEON     | OMP      | GPU  |
 | ------------------- | -------------- | ---- | -------- | -------- | -------- | ---- |
@@ -46,6 +46,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP variants. Track gaps here.
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no multigrid)
 - [ ] No restart/checkpoint capability
+- [ ] GPU backends limited to projection solver only — missing: Explicit Euler GPU, RK2 GPU, and all modular linear solvers (Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB)
 
 ### Known Issues
 

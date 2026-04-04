@@ -194,3 +194,99 @@ void energy_compute_buoyancy(double T_local, const ns_solver_params_t* params,
     *source_v += -params->beta * dT * params->gravity[1];
     *source_w += -params->beta * dT * params->gravity[2];
 }
+
+void energy_apply_thermal_bcs(flow_field* field,
+                               const ns_solver_params_t* params) {
+    if (!field || !params || !field->T) return;
+    if (params->alpha <= 0.0) return;
+
+    const ns_thermal_bc_config_t* tbc = &params->thermal_bc;
+
+    /* All-periodic means nothing to do */
+    if (tbc->left == BC_TYPE_PERIODIC && tbc->right == BC_TYPE_PERIODIC &&
+        tbc->bottom == BC_TYPE_PERIODIC && tbc->top == BC_TYPE_PERIODIC &&
+        tbc->front == BC_TYPE_PERIODIC && tbc->back == BC_TYPE_PERIODIC) {
+        return;
+    }
+
+    size_t nx = field->nx;
+    size_t ny = field->ny;
+    size_t nz = field->nz;
+    size_t plane = nx * ny;
+
+    /* Left face (i=0) */
+    for (size_t k = 0; k < nz; k++) {
+        size_t base = k * plane;
+        for (size_t j = 0; j < ny; j++) {
+            size_t idx = base + j * nx;
+            if (tbc->left == BC_TYPE_DIRICHLET)
+                field->T[idx] = tbc->dirichlet_values.left;
+            else if (tbc->left == BC_TYPE_NEUMANN)
+                field->T[idx] = field->T[idx + 1];
+        }
+    }
+
+    /* Right face (i=nx-1) */
+    for (size_t k = 0; k < nz; k++) {
+        size_t base = k * plane;
+        for (size_t j = 0; j < ny; j++) {
+            size_t idx = base + j * nx + (nx - 1);
+            if (tbc->right == BC_TYPE_DIRICHLET)
+                field->T[idx] = tbc->dirichlet_values.right;
+            else if (tbc->right == BC_TYPE_NEUMANN)
+                field->T[idx] = field->T[idx - 1];
+        }
+    }
+
+    /* Bottom face (j=0) — runs after left/right, overwrites shared corners */
+    for (size_t k = 0; k < nz; k++) {
+        size_t base = k * plane;
+        for (size_t i = 0; i < nx; i++) {
+            size_t idx = base + i;
+            if (tbc->bottom == BC_TYPE_DIRICHLET)
+                field->T[idx] = tbc->dirichlet_values.bottom;
+            else if (tbc->bottom == BC_TYPE_NEUMANN)
+                field->T[idx] = field->T[idx + nx];
+        }
+    }
+
+    /* Top face (j=ny-1) */
+    for (size_t k = 0; k < nz; k++) {
+        size_t base = k * plane;
+        for (size_t i = 0; i < nx; i++) {
+            size_t idx = base + (ny - 1) * nx + i;
+            if (tbc->top == BC_TYPE_DIRICHLET)
+                field->T[idx] = tbc->dirichlet_values.top;
+            else if (tbc->top == BC_TYPE_NEUMANN)
+                field->T[idx] = field->T[idx - nx];
+        }
+    }
+
+    /* Back face (k=0) — only when nz > 1 */
+    if (nz > 1) {
+        for (size_t j = 0; j < ny; j++) {
+            for (size_t i = 0; i < nx; i++) {
+                size_t idx = j * nx + i;
+                if (tbc->back == BC_TYPE_DIRICHLET)
+                    field->T[idx] = tbc->dirichlet_values.back;
+                else if (tbc->back == BC_TYPE_NEUMANN)
+                    field->T[idx] = field->T[plane + idx];
+            }
+        }
+    }
+
+    /* Front face (k=nz-1) — only when nz > 1 */
+    if (nz > 1) {
+        size_t front_base = (nz - 1) * plane;
+        size_t interior_base = (nz - 2) * plane;
+        for (size_t j = 0; j < ny; j++) {
+            for (size_t i = 0; i < nx; i++) {
+                size_t off = j * nx + i;
+                if (tbc->front == BC_TYPE_DIRICHLET)
+                    field->T[front_base + off] = tbc->dirichlet_values.front;
+                else if (tbc->front == BC_TYPE_NEUMANN)
+                    field->T[front_base + off] = field->T[interior_base + off];
+            }
+        }
+    }
+}

@@ -440,6 +440,106 @@ static void test_heat_source(void) {
 }
 
 /* ============================================================================
+ * TEST 7: Thermal BC — Mixed Dirichlet / Neumann
+ *
+ * Configure Dirichlet on left/right (fixed T) and Neumann on top/bottom
+ * (zero-gradient). After calling energy_apply_thermal_bcs, verify:
+ *   - Left/right boundaries have the Dirichlet values
+ *   - Top/bottom boundaries equal the adjacent interior row
+ * ============================================================================ */
+
+#define TBC_NX 11
+#define TBC_NY 11
+
+static void test_thermal_bc_dirichlet_neumann(void) {
+    grid* g = grid_create(TBC_NX, TBC_NY, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* field = flow_field_create(TBC_NX, TBC_NY, 1);
+    TEST_ASSERT_NOT_NULL(field);
+
+    /* Fill T with a recognizable pattern: T = 100 + i + j*10 */
+    for (size_t j = 0; j < TBC_NY; j++) {
+        for (size_t i = 0; i < TBC_NX; i++) {
+            size_t idx = j * TBC_NX + i;
+            field->T[idx] = 100.0 + (double)i + (double)j * 10.0;
+            field->rho[idx] = 1.0;
+        }
+    }
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;  /* Must be > 0 to activate thermal BCs */
+    params.thermal_bc.left   = BC_TYPE_DIRICHLET;
+    params.thermal_bc.right  = BC_TYPE_DIRICHLET;
+    params.thermal_bc.bottom = BC_TYPE_NEUMANN;
+    params.thermal_bc.top    = BC_TYPE_NEUMANN;
+    params.thermal_bc.dirichlet_values.left  = 500.0;
+    params.thermal_bc.dirichlet_values.right = 200.0;
+
+    energy_apply_thermal_bcs(field, &params);
+
+    /* Verify Dirichlet on left (i=0) and right (i=nx-1) */
+    for (size_t j = 0; j < TBC_NY; j++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, 500.0, field->T[j * TBC_NX + 0]);
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, 200.0, field->T[j * TBC_NX + (TBC_NX - 1)]);
+    }
+
+    /* Verify Neumann on bottom (j=0): T[0,i] == T[1,i] */
+    for (size_t i = 0; i < TBC_NX; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, field->T[1 * TBC_NX + i],
+                                   field->T[0 * TBC_NX + i]);
+    }
+
+    /* Verify Neumann on top (j=ny-1): T[ny-1,i] == T[ny-2,i] */
+    for (size_t i = 0; i < TBC_NX; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, field->T[(TBC_NY - 2) * TBC_NX + i],
+                                   field->T[(TBC_NY - 1) * TBC_NX + i]);
+    }
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+/* ============================================================================
+ * TEST 8: Thermal BC — All Periodic (no-op)
+ *
+ * Default thermal_bc config (all PERIODIC) should not modify T at all.
+ * ============================================================================ */
+
+static void test_thermal_bc_all_periodic_noop(void) {
+    grid* g = grid_create(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* field = flow_field_create(9, 9, 1);
+    TEST_ASSERT_NOT_NULL(field);
+
+    /* Fill T with distinct values */
+    for (size_t n = 0; n < 81; n++) {
+        field->T[n] = 1000.0 + (double)n;
+        field->rho[n] = 1.0;
+    }
+
+    /* Save original T */
+    double T_orig[81];
+    memcpy(T_orig, field->T, 81 * sizeof(double));
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;  /* Energy enabled, but thermal_bc is all-periodic */
+
+    energy_apply_thermal_bcs(field, &params);
+
+    /* T should be completely unchanged */
+    for (size_t n = 0; n < 81; n++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[n], field->T[n]);
+    }
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+/* ============================================================================
  * MAIN
  * ============================================================================ */
 
@@ -451,5 +551,7 @@ int main(void) {
     RUN_TEST(test_buoyancy_source);
     RUN_TEST(test_backward_compatibility);
     RUN_TEST(test_heat_source);
+    RUN_TEST(test_thermal_bc_dirichlet_neumann);
+    RUN_TEST(test_thermal_bc_all_periodic_noop);
     return UNITY_END();
 }

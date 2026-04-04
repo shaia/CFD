@@ -22,6 +22,7 @@
  * 4. No divergence (NaN/Inf)
  */
 
+#include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cfd_init.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
@@ -70,33 +71,19 @@ void setUp(void) { cfd_init(); }
 void tearDown(void) { cfd_finalize(); }
 
 /* ============================================================================
- * Apply thermal boundary conditions for differentially heated cavity
+ * Apply velocity no-slip boundary conditions for cavity walls
+ * (Thermal BCs are now configured via params.thermal_bc)
  * ============================================================================ */
 
-static void apply_cavity_bcs(flow_field* field, size_t nx, size_t ny) {
+static void apply_cavity_velocity_bcs(flow_field* field, size_t nx, size_t ny) {
     for (size_t j = 0; j < ny; j++) {
-        /* Left wall: hot */
-        field->T[j * nx + 0] = NC_T_HOT;
-        /* Right wall: cold */
-        field->T[j * nx + (nx - 1)] = NC_T_COLD;
-
-        /* No-slip on left and right walls */
         field->u[j * nx + 0] = 0.0;
         field->v[j * nx + 0] = 0.0;
         field->u[j * nx + (nx - 1)] = 0.0;
         field->v[j * nx + (nx - 1)] = 0.0;
     }
 
-    for (size_t i = 1; i < nx - 1; i++) {
-        /* Bottom wall: adiabatic (Neumann dT/dy=0 via copy from interior) */
-        field->T[0 * nx + i] = field->T[1 * nx + i];
-        /* Top wall: adiabatic */
-        field->T[(ny - 1) * nx + i] = field->T[(ny - 2) * nx + i];
-    }
-
     for (size_t i = 0; i < nx; i++) {
-
-        /* No-slip on top and bottom walls */
         field->u[0 * nx + i] = 0.0;
         field->v[0 * nx + i] = 0.0;
         field->u[(ny - 1) * nx + i] = 0.0;
@@ -145,6 +132,14 @@ static void test_natural_convection_development(void) {
     params.source_amplitude_u = 0.0;
     params.source_amplitude_v = 0.0;
 
+    /* Thermal BCs: Dirichlet on left/right walls, Neumann (adiabatic) on top/bottom */
+    params.thermal_bc.left   = BC_TYPE_DIRICHLET;
+    params.thermal_bc.right  = BC_TYPE_DIRICHLET;
+    params.thermal_bc.top    = BC_TYPE_NEUMANN;
+    params.thermal_bc.bottom = BC_TYPE_NEUMANN;
+    params.thermal_bc.dirichlet_values.left  = NC_T_HOT;
+    params.thermal_bc.dirichlet_values.right = NC_T_COLD;
+
     /* Use projection solver */
     ns_solver_registry_t* registry = cfd_registry_create();
     TEST_ASSERT_NOT_NULL(registry);
@@ -159,15 +154,16 @@ static void test_natural_convection_development(void) {
     /* Run simulation */
     ns_solver_stats_t stats = ns_solver_stats_default();
     for (int step = 0; step < NC_STEPS; step++) {
-        /* Apply thermal BCs before each step */
-        apply_cavity_bcs(field, NC_NX, NC_NY);
+        /* Apply velocity no-slip BCs before step */
+        apply_cavity_velocity_bcs(field, NC_NX, NC_NY);
 
         cfd_status_t status = solver_step(solver, field, g, &params, &stats);
         TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, status,
                                    "Solver step should succeed");
 
-        /* Re-apply thermal BCs after step */
-        apply_cavity_bcs(field, NC_NX, NC_NY);
+        /* Thermal BCs are applied automatically inside solver_step.
+         * Reapply velocity no-slip after step. */
+        apply_cavity_velocity_bcs(field, NC_NX, NC_NY);
     }
 
     /* ---- Verify results ---- */

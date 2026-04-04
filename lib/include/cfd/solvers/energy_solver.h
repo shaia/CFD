@@ -61,6 +61,22 @@ CFD_LIBRARY_EXPORT void energy_compute_buoyancy(double T_local, const ns_solver_
                                                  double* source_u, double* source_v,
                                                  double* source_w);
 
+/**
+ * Apply thermal boundary conditions to the temperature field.
+ *
+ * For each face configured as DIRICHLET, sets T to the specified value.
+ * For each face configured as NEUMANN, copies from adjacent interior cell.
+ * For PERIODIC faces (default), does nothing (assumes periodic BCs were
+ * already applied by apply_boundary_conditions).
+ *
+ * Only active when params->alpha > 0. Returns immediately otherwise.
+ *
+ * @param field  Flow field (T is updated in-place)
+ * @param params Solver parameters containing thermal_bc config
+ */
+CFD_LIBRARY_EXPORT void energy_apply_thermal_bcs(flow_field* field,
+                                                  const ns_solver_params_t* params);
+
 #ifdef __cplusplus
 }
 #endif
