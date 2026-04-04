@@ -87,11 +87,14 @@ static void apply_cavity_bcs(flow_field* field, size_t nx, size_t ny) {
         field->v[j * nx + (nx - 1)] = 0.0;
     }
 
-    for (size_t i = 0; i < nx; i++) {
+    for (size_t i = 1; i < nx - 1; i++) {
         /* Bottom wall: adiabatic (Neumann dT/dy=0 via copy from interior) */
         field->T[0 * nx + i] = field->T[1 * nx + i];
         /* Top wall: adiabatic */
         field->T[(ny - 1) * nx + i] = field->T[(ny - 2) * nx + i];
+    }
+
+    for (size_t i = 0; i < nx; i++) {
 
         /* No-slip on top and bottom walls */
         field->u[0 * nx + i] = 0.0;
