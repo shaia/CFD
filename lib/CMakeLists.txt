@@ -532,6 +532,13 @@ else()
     )
 endif()
 
+# Propagate CFD_ENABLE_OPENMP to consumers (tests, examples)
+# The directory-level add_compile_definitions() only affects targets in lib/,
+# but test executables in the root CMakeLists.txt need this for compile-time guards.
+if(OpenMP_C_FOUND)
+    target_compile_definitions(cfd_library INTERFACE CFD_ENABLE_OPENMP)
+endif()
+
 # Symbol Visibility and Export Header (needed for both builds)
 include(GenerateExportHeader)
 # For INTERFACE libraries, we can't generate export header from it, use cfd_core instead
