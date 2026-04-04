@@ -44,7 +44,7 @@ cfd_status_t energy_step_explicit_with_workspace(
         }
         const double dz0 = grid->dz[0];
         const double tol = 1e-12 * fmax(1.0, fabs(dz0));
-        for (size_t k = 1; k < nz; k++) {
+        for (size_t k = 1; k < nz - 1; k++) {
             if (fabs(grid->dz[k] - dz0) > tol) {
                 cfd_set_error(CFD_ERROR_UNSUPPORTED,
                               "energy_solver: non-uniform dz not supported");
