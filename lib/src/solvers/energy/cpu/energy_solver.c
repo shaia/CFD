@@ -52,7 +52,27 @@ cfd_status_t energy_step_explicit_with_workspace(
     size_t total = plane * nz;
     double alpha = params->alpha;
 
-    /* Validate uniform dz for 3D (energy solver uses constant z-spacing) */
+    /* Validate uniform spacing (central-difference stencil assumes it) */
+    const double dx0 = grid->dx[0];
+    const double dy0 = grid->dy[0];
+    {
+        const double tol_x = 1e-12 * fmax(1.0, fabs(dx0));
+        for (size_t i = 1; i < nx - 1; i++) {
+            if (fabs(grid->dx[i] - dx0) > tol_x) {
+                cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                              "energy_solver: non-uniform dx not supported");
+                return CFD_ERROR_UNSUPPORTED;
+            }
+        }
+        const double tol_y = 1e-12 * fmax(1.0, fabs(dy0));
+        for (size_t j = 1; j < ny - 1; j++) {
+            if (fabs(grid->dy[j] - dy0) > tol_y) {
+                cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                              "energy_solver: non-uniform dy not supported");
+                return CFD_ERROR_UNSUPPORTED;
+            }
+        }
+    }
     if (nz > 1) {
         if (!grid->dz) {
             cfd_set_error(CFD_ERROR_INVALID,
@@ -60,15 +80,21 @@ cfd_status_t energy_step_explicit_with_workspace(
             return CFD_ERROR_INVALID;
         }
         const double dz0 = grid->dz[0];
-        const double tol = 1e-12 * fmax(1.0, fabs(dz0));
+        const double tol_z = 1e-12 * fmax(1.0, fabs(dz0));
         for (size_t k = 1; k < nz - 1; k++) {
-            if (fabs(grid->dz[k] - dz0) > tol) {
+            if (fabs(grid->dz[k] - dz0) > tol_z) {
                 cfd_set_error(CFD_ERROR_UNSUPPORTED,
                               "energy_solver: non-uniform dz not supported");
                 return CFD_ERROR_UNSUPPORTED;
             }
         }
     }
+
+    /* Precomputed constants for uniform-grid stencil */
+    double inv_2dx = 1.0 / (2.0 * dx0);
+    double inv_2dy = 1.0 / (2.0 * dy0);
+    double inv_dx2 = 1.0 / (dx0 * dx0);
+    double inv_dy2 = 1.0 / (dy0 * dy0);
 
     /* Branch-free 3D constants */
     size_t stride_z = (nz > 1) ? plane : 0;
@@ -101,19 +127,16 @@ cfd_status_t energy_step_explicit_with_workspace(
                 double v_c = field->v[idx];
                 double w_c = field->w[idx];
 
-                double dx = grid->dx[i];
-                double dy = grid->dy[j];
-
                 /* Advection: u * dT/dx + v * dT/dy + w * dT/dz */
-                double dT_dx = (field->T[idx + 1] - field->T[idx - 1]) / (2.0 * dx);
-                double dT_dy = (field->T[idx + nx] - field->T[idx - nx]) / (2.0 * dy);
+                double dT_dx = (field->T[idx + 1] - field->T[idx - 1]) * inv_2dx;
+                double dT_dy = (field->T[idx + nx] - field->T[idx - nx]) * inv_2dy;
                 double dT_dz = (field->T[idx + stride_z] - field->T[idx - stride_z]) * inv_2dz;
 
                 double advection = u_c * dT_dx + v_c * dT_dy + w_c * dT_dz;
 
                 /* Diffusion: alpha * (d2T/dx2 + d2T/dy2 + d2T/dz2) */
-                double d2T_dx2 = (field->T[idx + 1] - 2.0 * T_c + field->T[idx - 1]) / (dx * dx);
-                double d2T_dy2 = (field->T[idx + nx] - 2.0 * T_c + field->T[idx - nx]) / (dy * dy);
+                double d2T_dx2 = (field->T[idx + 1] - 2.0 * T_c + field->T[idx - 1]) * inv_dx2;
+                double d2T_dy2 = (field->T[idx + nx] - 2.0 * T_c + field->T[idx - nx]) * inv_dy2;
                 double d2T_dz2 = (field->T[idx + stride_z] - 2.0 * T_c +
                                    field->T[idx - stride_z]) * inv_dz2;
 
