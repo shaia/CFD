@@ -790,8 +790,9 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
 
     if (stats) {
         stats->iterations = 1;
-        double max_vel = 0.0, max_p = 0.0, max_t = 0.0;
+        double max_vel = 0.0, max_p = 0.0;
         ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny * field->nz);
+        double max_t = (field->T && n_s > 0) ? field->T[0] : 0.0;
         ptrdiff_t ks;
 #if defined(_OPENMP) && (_OPENMP >= 201107)
         #pragma omp parallel for reduction(max: max_vel, max_p, max_t) schedule(static)
@@ -844,8 +845,9 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
 
     if (stats) {
         stats->iterations = params->max_iter;
-        double max_vel = 0.0, max_p = 0.0, max_t = 0.0;
+        double max_vel = 0.0, max_p = 0.0;
         ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny * field->nz);
+        double max_t = (field->T && n_s > 0) ? field->T[0] : 0.0;
         ptrdiff_t ks;
 #if defined(_OPENMP) && (_OPENMP >= 201107)
         #pragma omp parallel for reduction(max: max_vel, max_p, max_t) schedule(static)
