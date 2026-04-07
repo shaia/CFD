@@ -502,37 +502,80 @@ static void test_thermal_bc_dirichlet_neumann(void) {
 }
 
 /* ============================================================================
- * TEST 8: Thermal BC — All Periodic (no-op)
+ * TEST 8: Thermal BC — All Periodic
  *
- * Default thermal_bc config (all PERIODIC) should not modify T at all.
+ * Default thermal_bc config (all PERIODIC) copies boundary cells from the
+ * opposite interior cell.  Verify:
+ *   - Interior cells are unchanged
+ *   - Boundary cells equal the opposite interior cell
  * ============================================================================ */
 
-static void test_thermal_bc_all_periodic_noop(void) {
-    grid* g = grid_create(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+#define PER_NX 9
+#define PER_NY 9
+
+static void test_thermal_bc_all_periodic(void) {
+    grid* g = grid_create(PER_NX, PER_NY, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
-    flow_field* field = flow_field_create(9, 9, 1);
+    flow_field* field = flow_field_create(PER_NX, PER_NY, 1);
     TEST_ASSERT_NOT_NULL(field);
 
-    /* Fill T with distinct values */
-    for (size_t n = 0; n < 81; n++) {
-        field->T[n] = 1000.0 + (double)n;
-        field->rho[n] = 1.0;
+    /* Fill T with a recognizable pattern: T = 100 + i + j*10 */
+    for (size_t j = 0; j < PER_NY; j++) {
+        for (size_t i = 0; i < PER_NX; i++) {
+            size_t idx = j * PER_NX + i;
+            field->T[idx] = 100.0 + (double)i + (double)j * 10.0;
+            field->rho[idx] = 1.0;
+        }
     }
 
-    /* Save original T */
-    double T_orig[81];
-    memcpy(T_orig, field->T, 81 * sizeof(double));
+    /* Save original interior T for comparison */
+    double T_orig[PER_NX * PER_NY];
+    memcpy(T_orig, field->T, sizeof(T_orig));
 
     ns_solver_params_t params = ns_solver_params_default();
-    params.alpha = 0.01;  /* Energy enabled, but thermal_bc is all-periodic */
+    params.alpha = 0.01;  /* Energy enabled, all-periodic by default */
 
     energy_apply_thermal_bcs(field, &params);
 
-    /* T should be completely unchanged */
-    for (size_t n = 0; n < 81; n++) {
-        TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[n], field->T[n]);
+    /* Interior cells (1..nx-2, 1..ny-2) should be unchanged */
+    for (size_t j = 1; j < PER_NY - 1; j++) {
+        for (size_t i = 1; i < PER_NX - 1; i++) {
+            size_t idx = j * PER_NX + i;
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[idx], field->T[idx]);
+        }
+    }
+
+    /* Left face (i=0): should equal interior column i=nx-2 (before bottom/top overwrite) */
+    /* Bottom/top periodic run after left/right, so j=0 and j=ny-1 are overwritten.
+     * Check interior rows only. */
+    for (size_t j = 1; j < PER_NY - 1; j++) {
+        size_t left_idx = j * PER_NX;
+        size_t src_idx  = j * PER_NX + (PER_NX - 2);
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[src_idx], field->T[left_idx]);
+    }
+
+    /* Right face (i=nx-1): should equal interior column i=1 */
+    for (size_t j = 1; j < PER_NY - 1; j++) {
+        size_t right_idx = j * PER_NX + (PER_NX - 1);
+        size_t src_idx   = j * PER_NX + 1;
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[src_idx], field->T[right_idx]);
+    }
+
+    /* Bottom face (j=0): copies from j=ny-2, but left/right periodic may have
+     * modified i=0 and i=nx-1 in that row. Check interior columns. */
+    for (size_t i = 1; i < PER_NX - 1; i++) {
+        size_t bot_idx = i;
+        size_t src_idx = (PER_NY - 2) * PER_NX + i;
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[src_idx], field->T[bot_idx]);
+    }
+
+    /* Top face (j=ny-1): copies from j=1 */
+    for (size_t i = 1; i < PER_NX - 1; i++) {
+        size_t top_idx = (PER_NY - 1) * PER_NX + i;
+        size_t src_idx = PER_NX + i;
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[src_idx], field->T[top_idx]);
     }
 
     flow_field_destroy(field);
@@ -591,18 +634,12 @@ static void test_thermal_bc_3d_front_back(void) {
 
     energy_apply_thermal_bcs(field, &params);
 
-    /* Verify back face (k=0): all cells should be 50.0 (Dirichlet) */
+    /* Verify back face (k=0): back Dirichlet runs after bottom/top,
+     * so the entire k=0 plane should be 50.0. */
     for (size_t j = 0; j < TBC3D_NY; j++) {
         for (size_t i = 0; i < TBC3D_NX; i++) {
             size_t idx = j * TBC3D_NX + i;
-            /* Bottom/top Dirichlet overwrites corners on j=0 and j=ny-1 */
-            if (j == 0) {
-                TEST_ASSERT_DOUBLE_WITHIN(1e-15, 99.0, field->T[idx]);
-            } else if (j == TBC3D_NY - 1) {
-                TEST_ASSERT_DOUBLE_WITHIN(1e-15, 77.0, field->T[idx]);
-            } else {
-                TEST_ASSERT_DOUBLE_WITHIN(1e-15, 50.0, field->T[idx]);
-            }
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15, 50.0, field->T[idx]);
         }
     }
 
@@ -642,16 +679,17 @@ static void test_thermal_bc_3d_front_back(void) {
         }
     }
 
-    /* Verify bottom face (j=0): Dirichlet 99.0 across all k */
-    for (size_t k = 0; k < TBC3D_NZ; k++) {
+    /* Verify bottom face (j=0): Dirichlet 99.0 at interior k planes.
+     * k=0 is overwritten by back Dirichlet, k=nz-1 by front Neumann. */
+    for (size_t k = 1; k < TBC3D_NZ - 1; k++) {
         size_t base = k * TBC3D_PLANE;
         for (size_t i = 0; i < TBC3D_NX; i++) {
             TEST_ASSERT_DOUBLE_WITHIN(1e-15, 99.0, field->T[base + i]);
         }
     }
 
-    /* Verify top face (j=ny-1): Dirichlet 77.0 across all k */
-    for (size_t k = 0; k < TBC3D_NZ; k++) {
+    /* Verify top face (j=ny-1): Dirichlet 77.0 at interior k planes */
+    for (size_t k = 1; k < TBC3D_NZ - 1; k++) {
         size_t base = k * TBC3D_PLANE;
         for (size_t i = 0; i < TBC3D_NX; i++) {
             TEST_ASSERT_DOUBLE_WITHIN(1e-15, 77.0,
@@ -676,7 +714,7 @@ int main(void) {
     RUN_TEST(test_backward_compatibility);
     RUN_TEST(test_heat_source);
     RUN_TEST(test_thermal_bc_dirichlet_neumann);
-    RUN_TEST(test_thermal_bc_all_periodic_noop);
+    RUN_TEST(test_thermal_bc_all_periodic);
     RUN_TEST(test_thermal_bc_3d_front_back);
     return UNITY_END();
 }
