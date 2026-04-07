@@ -66,8 +66,7 @@ CFD_LIBRARY_EXPORT void energy_compute_buoyancy(double T_local, const ns_solver_
  *
  * For each face configured as DIRICHLET, sets T to the specified value.
  * For each face configured as NEUMANN, copies from adjacent interior cell.
- * For PERIODIC faces (default), does nothing (assumes periodic BCs were
- * already applied by apply_boundary_conditions).
+ * For PERIODIC faces (default), copies from the opposite interior cell.
  *
  * Only active when params->alpha > 0. Returns immediately otherwise.
  *

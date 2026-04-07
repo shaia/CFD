@@ -202,17 +202,18 @@ void energy_apply_thermal_bcs(flow_field* field,
 
     const ns_thermal_bc_config_t* tbc = &params->thermal_bc;
 
-    /* All-periodic means nothing to do */
-    if (tbc->left == BC_TYPE_PERIODIC && tbc->right == BC_TYPE_PERIODIC &&
-        tbc->bottom == BC_TYPE_PERIODIC && tbc->top == BC_TYPE_PERIODIC &&
-        tbc->front == BC_TYPE_PERIODIC && tbc->back == BC_TYPE_PERIODIC) {
-        return;
-    }
-
     size_t nx = field->nx;
     size_t ny = field->ny;
     size_t nz = field->nz;
     size_t plane = nx * ny;
+
+    /* Guard: Neumann needs >= 2 cells, Periodic needs >= 3 cells */
+    if ((tbc->left == BC_TYPE_NEUMANN || tbc->right == BC_TYPE_NEUMANN) && nx < 2) return;
+    if ((tbc->bottom == BC_TYPE_NEUMANN || tbc->top == BC_TYPE_NEUMANN) && ny < 2) return;
+    if ((tbc->left == BC_TYPE_PERIODIC || tbc->right == BC_TYPE_PERIODIC) && nx < 3) return;
+    if ((tbc->bottom == BC_TYPE_PERIODIC || tbc->top == BC_TYPE_PERIODIC) && ny < 3) return;
+    if (nz > 1 && (tbc->back == BC_TYPE_NEUMANN || tbc->front == BC_TYPE_NEUMANN) && nz < 2) return;
+    if (nz > 1 && (tbc->back == BC_TYPE_PERIODIC || tbc->front == BC_TYPE_PERIODIC) && nz < 3) return;
 
     /* Left face (i=0) */
     for (size_t k = 0; k < nz; k++) {
@@ -223,6 +224,8 @@ void energy_apply_thermal_bcs(flow_field* field,
                 field->T[idx] = tbc->dirichlet_values.left;
             else if (tbc->left == BC_TYPE_NEUMANN)
                 field->T[idx] = field->T[idx + 1];
+            else if (tbc->left == BC_TYPE_PERIODIC)
+                field->T[idx] = field->T[base + j * nx + (nx - 2)];
         }
     }
 
@@ -235,6 +238,8 @@ void energy_apply_thermal_bcs(flow_field* field,
                 field->T[idx] = tbc->dirichlet_values.right;
             else if (tbc->right == BC_TYPE_NEUMANN)
                 field->T[idx] = field->T[idx - 1];
+            else if (tbc->right == BC_TYPE_PERIODIC)
+                field->T[idx] = field->T[base + j * nx + 1];
         }
     }
 
@@ -247,6 +252,8 @@ void energy_apply_thermal_bcs(flow_field* field,
                 field->T[idx] = tbc->dirichlet_values.bottom;
             else if (tbc->bottom == BC_TYPE_NEUMANN)
                 field->T[idx] = field->T[idx + nx];
+            else if (tbc->bottom == BC_TYPE_PERIODIC)
+                field->T[idx] = field->T[base + (ny - 2) * nx + i];
         }
     }
 
@@ -259,6 +266,8 @@ void energy_apply_thermal_bcs(flow_field* field,
                 field->T[idx] = tbc->dirichlet_values.top;
             else if (tbc->top == BC_TYPE_NEUMANN)
                 field->T[idx] = field->T[idx - nx];
+            else if (tbc->top == BC_TYPE_PERIODIC)
+                field->T[idx] = field->T[base + nx + i];
         }
     }
 
@@ -271,6 +280,8 @@ void energy_apply_thermal_bcs(flow_field* field,
                     field->T[idx] = tbc->dirichlet_values.back;
                 else if (tbc->back == BC_TYPE_NEUMANN)
                     field->T[idx] = field->T[plane + idx];
+                else if (tbc->back == BC_TYPE_PERIODIC)
+                    field->T[idx] = field->T[(nz - 2) * plane + idx];
             }
         }
     }
@@ -278,14 +289,15 @@ void energy_apply_thermal_bcs(flow_field* field,
     /* Front face (k=nz-1) — only when nz > 1 */
     if (nz > 1) {
         size_t front_base = (nz - 1) * plane;
-        size_t interior_base = (nz - 2) * plane;
         for (size_t j = 0; j < ny; j++) {
             for (size_t i = 0; i < nx; i++) {
                 size_t off = j * nx + i;
                 if (tbc->front == BC_TYPE_DIRICHLET)
                     field->T[front_base + off] = tbc->dirichlet_values.front;
                 else if (tbc->front == BC_TYPE_NEUMANN)
-                    field->T[front_base + off] = field->T[interior_base + off];
+                    field->T[front_base + off] = field->T[(nz - 2) * plane + off];
+                else if (tbc->front == BC_TYPE_PERIODIC)
+                    field->T[front_base + off] = field->T[plane + off];
             }
         }
     }
