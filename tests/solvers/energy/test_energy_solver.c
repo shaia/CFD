@@ -563,8 +563,6 @@ static void test_thermal_bc_3d_front_back(void) {
     flow_field* field = flow_field_create(TBC3D_NX, TBC3D_NY, TBC3D_NZ);
     TEST_ASSERT_NOT_NULL(field);
 
-    size_t total = TBC3D_PLANE * TBC3D_NZ;
-
     /* Fill T with a recognizable 3D pattern: T = k*1000 + j*100 + i */
     for (size_t k = 0; k < TBC3D_NZ; k++) {
         for (size_t j = 0; j < TBC3D_NY; j++) {
