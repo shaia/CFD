@@ -540,6 +540,132 @@ static void test_thermal_bc_all_periodic_noop(void) {
 }
 
 /* ============================================================================
+ * TEST 9: 3D Thermal BCs — Front/Back Dirichlet + Neumann
+ *
+ * Create a small 3D field (nz=5) and verify:
+ *   - Back face (k=0): Dirichlet sets T to specified value
+ *   - Front face (k=nz-1): Neumann copies from adjacent interior plane
+ *   - Left/right: Periodic copies from opposite interior column
+ *   - Bottom/top: Dirichlet values overwrite corners correctly
+ * ============================================================================ */
+
+#define TBC3D_NX 7
+#define TBC3D_NY 7
+#define TBC3D_NZ 5
+#define TBC3D_PLANE ((size_t)(TBC3D_NX) * TBC3D_NY)
+
+static void test_thermal_bc_3d_front_back(void) {
+    grid* g = grid_create(TBC3D_NX, TBC3D_NY, TBC3D_NZ,
+                          0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* field = flow_field_create(TBC3D_NX, TBC3D_NY, TBC3D_NZ);
+    TEST_ASSERT_NOT_NULL(field);
+
+    size_t total = TBC3D_PLANE * TBC3D_NZ;
+
+    /* Fill T with a recognizable 3D pattern: T = k*1000 + j*100 + i */
+    for (size_t k = 0; k < TBC3D_NZ; k++) {
+        for (size_t j = 0; j < TBC3D_NY; j++) {
+            for (size_t i = 0; i < TBC3D_NX; i++) {
+                size_t idx = k * TBC3D_PLANE + j * TBC3D_NX + i;
+                field->T[idx] = (double)k * 1000.0 + (double)j * 100.0 + (double)i;
+                field->rho[idx] = 1.0;
+            }
+        }
+    }
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;  /* Enable thermal BCs */
+
+    /* Back = Dirichlet(50), Front = Neumann, Left/Right = Periodic,
+     * Bottom = Dirichlet(99), Top = Dirichlet(77) */
+    params.thermal_bc.back   = BC_TYPE_DIRICHLET;
+    params.thermal_bc.front  = BC_TYPE_NEUMANN;
+    params.thermal_bc.left   = BC_TYPE_PERIODIC;
+    params.thermal_bc.right  = BC_TYPE_PERIODIC;
+    params.thermal_bc.bottom = BC_TYPE_DIRICHLET;
+    params.thermal_bc.top    = BC_TYPE_DIRICHLET;
+    params.thermal_bc.dirichlet_values.back   = 50.0;
+    params.thermal_bc.dirichlet_values.bottom = 99.0;
+    params.thermal_bc.dirichlet_values.top    = 77.0;
+
+    energy_apply_thermal_bcs(field, &params);
+
+    /* Verify back face (k=0): all cells should be 50.0 (Dirichlet) */
+    for (size_t j = 0; j < TBC3D_NY; j++) {
+        for (size_t i = 0; i < TBC3D_NX; i++) {
+            size_t idx = j * TBC3D_NX + i;
+            /* Bottom/top Dirichlet overwrites corners on j=0 and j=ny-1 */
+            if (j == 0) {
+                TEST_ASSERT_DOUBLE_WITHIN(1e-15, 99.0, field->T[idx]);
+            } else if (j == TBC3D_NY - 1) {
+                TEST_ASSERT_DOUBLE_WITHIN(1e-15, 77.0, field->T[idx]);
+            } else {
+                TEST_ASSERT_DOUBLE_WITHIN(1e-15, 50.0, field->T[idx]);
+            }
+        }
+    }
+
+    /* Verify front face (k=nz-1): Neumann copies from k=nz-2 */
+    size_t front_base = (TBC3D_NZ - 1) * TBC3D_PLANE;
+    size_t interior_base = (TBC3D_NZ - 2) * TBC3D_PLANE;
+    for (size_t j = 1; j < TBC3D_NY - 1; j++) {
+        for (size_t i = 1; i < TBC3D_NX - 1; i++) {
+            size_t off = j * TBC3D_NX + i;
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15,
+                                       field->T[interior_base + off],
+                                       field->T[front_base + off]);
+        }
+    }
+
+    /* Verify left face (i=0): Periodic copies from i=nx-2 */
+    for (size_t k = 1; k < TBC3D_NZ - 1; k++) {
+        size_t base = k * TBC3D_PLANE;
+        for (size_t j = 1; j < TBC3D_NY - 1; j++) {
+            size_t left_idx = base + j * TBC3D_NX;
+            size_t src_idx = base + j * TBC3D_NX + (TBC3D_NX - 2);
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15,
+                                       field->T[src_idx],
+                                       field->T[left_idx]);
+        }
+    }
+
+    /* Verify right face (i=nx-1): Periodic copies from i=1 */
+    for (size_t k = 1; k < TBC3D_NZ - 1; k++) {
+        size_t base = k * TBC3D_PLANE;
+        for (size_t j = 1; j < TBC3D_NY - 1; j++) {
+            size_t right_idx = base + j * TBC3D_NX + (TBC3D_NX - 1);
+            size_t src_idx = base + j * TBC3D_NX + 1;
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15,
+                                       field->T[src_idx],
+                                       field->T[right_idx]);
+        }
+    }
+
+    /* Verify bottom face (j=0): Dirichlet 99.0 across all k */
+    for (size_t k = 0; k < TBC3D_NZ; k++) {
+        size_t base = k * TBC3D_PLANE;
+        for (size_t i = 0; i < TBC3D_NX; i++) {
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15, 99.0, field->T[base + i]);
+        }
+    }
+
+    /* Verify top face (j=ny-1): Dirichlet 77.0 across all k */
+    for (size_t k = 0; k < TBC3D_NZ; k++) {
+        size_t base = k * TBC3D_PLANE;
+        for (size_t i = 0; i < TBC3D_NX; i++) {
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15, 77.0,
+                                       field->T[base + (TBC3D_NY - 1) * TBC3D_NX + i]);
+        }
+    }
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+/* ============================================================================
  * MAIN
  * ============================================================================ */
 
@@ -553,5 +679,6 @@ int main(void) {
     RUN_TEST(test_heat_source);
     RUN_TEST(test_thermal_bc_dirichlet_neumann);
     RUN_TEST(test_thermal_bc_all_periodic_noop);
+    RUN_TEST(test_thermal_bc_3d_front_back);
     return UNITY_END();
 }
