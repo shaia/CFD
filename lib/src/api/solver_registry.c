@@ -1247,6 +1247,8 @@ static cfd_status_t explicit_euler_omp_solve(ns_solver_t* solver, flow_field* fi
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
+    cfd_status_t rc = check_energy_unsupported(params);
+    if (rc != CFD_SUCCESS) return rc;
 
     explicit_euler_omp_impl(field, grid, params);
 
@@ -1340,6 +1342,8 @@ static cfd_status_t rk2_omp_solve(ns_solver_t* solver, flow_field* field, const 
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
+    cfd_status_t rc = check_energy_unsupported(params);
+    if (rc != CFD_SUCCESS) return rc;
 
     cfd_status_t status = rk2_omp_impl(field, grid, params);
 
@@ -1468,6 +1472,8 @@ static cfd_status_t projection_omp_solve(ns_solver_t* solver, flow_field* field,
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
+    cfd_status_t rc = check_energy_unsupported(params);
+    if (rc != CFD_SUCCESS) return rc;
 
     cfd_status_t status = solve_projection_method_omp(field, grid, params);
     if (status != CFD_SUCCESS) {

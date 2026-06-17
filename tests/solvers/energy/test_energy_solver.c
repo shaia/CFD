@@ -702,6 +702,77 @@ static void test_thermal_bc_3d_front_back(void) {
 }
 
 /* ============================================================================
+ * TEST 11: Energy unsupported on non-CPU solve path
+ *
+ * The energy equation is only implemented in scalar CPU backends. Non-CPU
+ * backends must reject alpha>0 / beta!=0 with CFD_ERROR_UNSUPPORTED rather than
+ * silently running a momentum-only solve. This locks in the contract for the
+ * solver_solve() entry point of the OMP backends, whose step path was already
+ * guarded but whose solve path previously was not.
+ * ============================================================================ */
+
+static void test_energy_unsupported_omp_solve(void) {
+    const char* omp_solvers[] = {
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
+        NS_SOLVER_TYPE_RK2_OMP,
+        NS_SOLVER_TYPE_PROJECTION_OMP,
+    };
+    const size_t n_solvers = sizeof(omp_solvers) / sizeof(omp_solvers[0]);
+    const size_t nx = 5, ny = 5;
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    for (size_t s = 0; s < n_solvers; s++) {
+        grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+        TEST_ASSERT_NOT_NULL(g);
+        grid_initialize_uniform(g);
+
+        flow_field* field = flow_field_create(nx, ny, 1);
+        TEST_ASSERT_NOT_NULL(field);
+        for (size_t n = 0; n < nx * ny; n++) {
+            field->rho[n] = 1.0;
+            field->T[n] = 300.0;
+        }
+
+        ns_solver_t* solver = cfd_solver_create(registry, omp_solvers[s]);
+        if (!solver) {
+            /* OMP backend not compiled in — skip without failing */
+            flow_field_destroy(field);
+            grid_destroy(g);
+            continue;
+        }
+
+        /* Init with energy disabled so backends that probe sub-solver
+         * availability (e.g. projection_omp checks OMP CG) succeed. */
+        ns_solver_params_t params = ns_solver_params_default();
+        cfd_status_t init_status = solver_init(solver, g, &params);
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
+            /* OMP sub-solver unavailable — skip without failing */
+            solver_destroy(solver);
+            flow_field_destroy(field);
+            grid_destroy(g);
+            continue;
+        }
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, init_status);
+
+        /* Now enable the energy equation and expect rejection. */
+        params.alpha = 0.01;
+        ns_solver_stats_t stats = ns_solver_stats_default();
+        cfd_status_t solve_status = solver_solve(solver, field, g, &params, &stats);
+        TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_UNSUPPORTED, solve_status,
+                                  "OMP solve must reject energy equation params");
+
+        solver_destroy(solver);
+        flow_field_destroy(field);
+        grid_destroy(g);
+    }
+
+    cfd_registry_destroy(registry);
+}
+
+/* ============================================================================
  * MAIN
  * ============================================================================ */
 
@@ -716,5 +787,6 @@ int main(void) {
     RUN_TEST(test_thermal_bc_dirichlet_neumann);
     RUN_TEST(test_thermal_bc_all_periodic);
     RUN_TEST(test_thermal_bc_3d_front_back);
+    RUN_TEST(test_energy_unsupported_omp_solve);
     return UNITY_END();
 }
