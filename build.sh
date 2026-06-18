@@ -177,7 +177,19 @@ build_with_tests() {
 }
 
 # Run tests
+#
+# By default, long-running physics-validation and cross-arch tests are excluded
+# to keep local pre-commit runs fast (these are covered by dedicated CI jobs).
+# Pass 'all' (or set RUN_ALL_TESTS=1) to run the full suite locally. Any extra
+# arguments are forwarded to ctest (e.g. '$0 test -R GridTest').
 test() {
+    local run_all="${RUN_ALL_TESTS:-0}"
+
+    if [[ "${1:-}" == "all" || "${1:-}" == "--all" || "${1:-}" == "full" ]]; then
+        run_all=1
+        shift
+    fi
+
     print_status "Running tests..."
     if [[ ! -d "$BUILD_DIR" ]]; then
         print_error "Build directory not found. Run '$0 build-tests' first."
@@ -186,7 +198,13 @@ test() {
 
     cd "$BUILD_DIR"
     if [[ -f "CTestTestfile.cmake" ]]; then
-        ctest -C "$CMAKE_BUILD_TYPE" --output-on-failure
+        if [[ "$run_all" == "1" ]]; then
+            print_status "Including long-running validation and cross-arch tests"
+            ctest -C "$CMAKE_BUILD_TYPE" --output-on-failure "$@"
+        else
+            print_status "Excluding long-running tests (validation, cross-arch); use '$0 test all' to include them"
+            ctest -C "$CMAKE_BUILD_TYPE" --output-on-failure -LE "cross-arch|validation" "$@"
+        fi
         cd ..
         print_success "Tests completed"
     else
@@ -486,7 +504,7 @@ help() {
     echo "  configure          Configure CMake"
     echo "  build              Build project (library + examples)"
     echo "  build-tests        Build project with tests enabled"
-    echo "  test               Run tests"
+    echo "  test [all]         Run tests (fast subset; 'all' includes long-running validation)"
     echo "  install            Install project"
     echo "  run                Run example programs"
     echo "  package            Create distribution package"
@@ -501,12 +519,15 @@ help() {
     echo ""
     echo "Environment Variables:"
     echo "  CMAKE_BUILD_TYPE   Build type (Debug|Release) [default: Debug]"
+    echo "  RUN_ALL_TESTS      Set to 1 to include long-running tests in 'test' [default: 0]"
     echo ""
     echo "Examples:"
     echo "  $0 build                    # Build in Debug mode"
     echo "  CMAKE_BUILD_TYPE=Release $0 build  # Build in Release mode"
     echo "  $0 clean-all                # Clean everything (build + output)"
-    echo "  $0 full                     # Complete clean build with tests"
+    echo "  $0 test                     # Run fast subset (excludes long validation tests)"
+    echo "  $0 test all                 # Run the full suite including validation"
+    echo "  $0 full                     # Complete clean build with full test suite"
     echo "  $0 run                      # Run all example programs"
     echo ""
 }
@@ -537,7 +558,8 @@ main() {
             build_with_tests
             ;;
         test)
-            test
+            shift
+            test "$@"
             ;;
         install)
             install
@@ -557,7 +579,7 @@ main() {
             print_header
             clean
             build_with_tests
-            test
+            test all
             print_success "Full build cycle complete!"
             ;;
         format)
