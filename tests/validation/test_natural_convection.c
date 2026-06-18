@@ -137,7 +137,8 @@ static double compute_nu_hot_wall(const flow_field* field, double dx, double L) 
  * velocities and the hot-wall Nusselt number against the reference values.
  * ============================================================================ */
 
-static void run_dvd_benchmark(double Ra, size_t n, double dt, int max_steps,
+static void run_dvd_benchmark(const char* solver_name, double Ra, size_t n,
+                              double dt, int max_steps,
                               double tol_rel, double ref_umax, double ref_vmax,
                               double ref_nu) {
     /* Derive diffusivities: nu*alpha = g*beta*dT*L^3 / Ra,  Pr = nu/alpha */
@@ -197,9 +198,26 @@ static void run_dvd_benchmark(double Ra, size_t n, double dt, int max_steps,
     TEST_ASSERT_NOT_NULL(registry);
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
-    TEST_ASSERT_NOT_NULL(solver);
-    TEST_ASSERT_EQUAL(CFD_SUCCESS, solver_init(solver, g, &params));
+    ns_solver_t* solver = cfd_solver_create(registry, solver_name);
+    if (!solver) {
+        /* Backend not compiled in — skip without failing */
+        printf("\n  [skip] de Vahl Davis: solver '%s' unavailable\n", solver_name);
+        cfd_registry_destroy(registry);
+        flow_field_destroy(field);
+        grid_destroy(g);
+        return;
+    }
+    cfd_status_t init_status = solver_init(solver, g, &params);
+    if (init_status == CFD_ERROR_UNSUPPORTED) {
+        /* OMP sub-solver (e.g. OMP CG) unavailable — skip without failing */
+        printf("\n  [skip] de Vahl Davis: solver '%s' init unsupported\n", solver_name);
+        solver_destroy(solver);
+        cfd_registry_destroy(registry);
+        flow_field_destroy(field);
+        grid_destroy(g);
+        return;
+    }
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, init_status);
 
     /* March to steady state via kinetic-energy residual */
     ns_solver_stats_t stats = ns_solver_stats_default();
@@ -283,9 +301,11 @@ static void test_dvd_ra1e3(void) {
      * steps; observed error vs de Vahl Davis is ~1% (velocities) / ~2.5% (Nu),
      * so the 10% gate carries ample margin for cross-platform float variance.
      * The 30k cap is a regression backstop (never hit when converging). */
-    run_dvd_benchmark(/*Ra*/ 1000.0, /*n*/ 41, /*dt*/ 0.002, /*max_steps*/ 30000,
+    run_dvd_benchmark(NS_SOLVER_TYPE_PROJECTION,
+                      /*Ra*/ 1000.0, /*n*/ 41, /*dt*/ 0.002, /*max_steps*/ 30000,
                       /*tol_rel*/ 0.10, /*u*/ 3.649, /*v*/ 3.697, /*Nu*/ 1.117);
 }
+
 
 /* ============================================================================
  * Release tier: Ra = 1e3 grid refinement (only under -DCAVITY_FULL_VALIDATION=ON)
@@ -299,8 +319,22 @@ static void test_dvd_ra1e3(void) {
  * ============================================================================ */
 
 #if CAVITY_FULL_VALIDATION
+/* OMP backend at the coarse resolution: validates that the energy equation +
+ * Boussinesq buoyancy reproduce the de Vahl Davis reference on a parallelized
+ * solver. Gated behind full validation (Release tier) — in a Debug build the
+ * per-step OpenMP overhead on this small grid makes it far too slow for the
+ * always-on CI tier. Skips cleanly if the OMP backend is not built. */
+static void test_dvd_ra1e3_omp(void) {
+    run_dvd_benchmark(NS_SOLVER_TYPE_PROJECTION_OMP,
+                      /*Ra*/ 1000.0, /*n*/ 41, /*dt*/ 0.002, /*max_steps*/ 30000,
+                      /*tol_rel*/ 0.10, /*u*/ 3.649, /*v*/ 3.697, /*Nu*/ 1.117);
+}
+
 static void test_dvd_ra1e3_fine(void) {
-    run_dvd_benchmark(/*Ra*/ 1000.0, /*n*/ 81, /*dt*/ 0.0008, /*max_steps*/ 40000,
+    /* Expensive 81x81 validation runs on the optimized OMP backend (project
+     * policy: long-running validation must not use the scalar reference). */
+    run_dvd_benchmark(NS_SOLVER_TYPE_PROJECTION_OMP,
+                      /*Ra*/ 1000.0, /*n*/ 81, /*dt*/ 0.0008, /*max_steps*/ 40000,
                       /*tol_rel*/ 0.05, /*u*/ 3.649, /*v*/ 3.697, /*Nu*/ 1.117);
 }
 #endif
@@ -313,6 +347,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_dvd_ra1e3);
 #if CAVITY_FULL_VALIDATION
+    RUN_TEST(test_dvd_ra1e3_omp);
     RUN_TEST(test_dvd_ra1e3_fine);
 #endif
     return UNITY_END();

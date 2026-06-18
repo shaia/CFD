@@ -4,6 +4,8 @@
 #include "cfd/core/memory.h"
 
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/energy_solver.h"
+#include "../../energy/energy_solver_internal.h"
 #include "../boundary_copy_utils.h"
 #include <math.h>
 #include <omp.h>
@@ -57,12 +59,17 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
     double* v_new = (double*)cfd_calloc(total, sizeof(double));
     double* w_new = (double*)cfd_calloc(total, sizeof(double));
     double* p_new = (double*)cfd_calloc(total, sizeof(double));
+    int needs_T_ws = (params->alpha > 0.0 || params->beta != 0.0);
+    double* T_energy_ws = needs_T_ws
+        ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
 
-    if (!u_new || !v_new || !w_new || !p_new) {
+    if (!u_new || !v_new || !w_new || !p_new ||
+        (needs_T_ws && !T_energy_ws)) {
         cfd_free(u_new);
         cfd_free(v_new);
         cfd_free(w_new);
         cfd_free(p_new);
+        cfd_free(T_energy_ws);
         return CFD_ERROR_NOMEM;
     }
 
@@ -142,6 +149,10 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
                                    exp(-params->source_decay_rate * iter * conservative_dt);
                     }
 
+                    // Boussinesq buoyancy source (no-op when beta == 0)
+                    energy_compute_buoyancy(field->T[idx], params,
+                                            &source_u, &source_v, &source_w);
+
                     // Update u
                     double du = conservative_dt * (-field->u[idx] * du_dx - field->v[idx] * du_dy
                                                    - field->w[idx] * du_dz
@@ -190,13 +201,31 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
         memcpy(field->w, w_new, total * sizeof(double));
         memcpy(field->p, p_new, total * sizeof(double));
 
+        // Energy equation: advance temperature using updated velocity
+        {
+            cfd_status_t energy_status = energy_step_explicit_omp_with_workspace(
+                field, grid, params, conservative_dt,
+                iter * conservative_dt, T_energy_ws, total);
+            if (energy_status != CFD_SUCCESS) {
+                cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
+                cfd_free(p_new); cfd_free(T_energy_ws);
+                return energy_status;
+            }
+        }
+
         // Store caller-set boundary values before apply_boundary_conditions overwrites them,
-        // then restore them afterward.
+        // then restore them afterward. Then apply configured thermal BCs.
         copy_boundary_velocities_3d(u_new, v_new, w_new,
                                     field->u, field->v, field->w, nx, ny, nz);
         apply_boundary_conditions(field, grid);
         copy_boundary_velocities_3d(field->u, field->v, field->w,
                                     u_new, v_new, w_new, nx, ny, nz);
+        cfd_status_t bc_status = energy_apply_thermal_bcs(field, params);
+        if (bc_status != CFD_SUCCESS) {
+            cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
+            cfd_free(p_new); cfd_free(T_energy_ws);
+            return bc_status;
+        }
 
         // Check for NaN/Inf values
         int has_nan = 0;
@@ -215,6 +244,7 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
             cfd_free(v_new);
             cfd_free(w_new);
             cfd_free(p_new);
+            cfd_free(T_energy_ws);
             cfd_set_error(CFD_ERROR_DIVERGED,
                           "NaN/Inf detected in explicit_euler_omp step");
             return CFD_ERROR_DIVERGED;
@@ -225,6 +255,7 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
     cfd_free(v_new);
     cfd_free(w_new);
     cfd_free(p_new);
+    cfd_free(T_energy_ws);
 
     return CFD_SUCCESS;
 }

@@ -14,6 +14,8 @@
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/energy_solver.h"
+#include "../../energy/energy_solver_internal.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -46,7 +48,7 @@
  * ============================================================================ */
 
 static void compute_rhs_omp(const double* u, const double* v, const double* w,
-                             const double* p, const double* rho,
+                             const double* p, const double* rho, const double* T,
                              double* rhs_u, double* rhs_v, double* rhs_w,
                              double* rhs_p,
                              const grid* grid, const ns_solver_params_t* params,
@@ -160,6 +162,12 @@ static void compute_rhs_omp(const double* u, const double* v, const double* w,
                 compute_source_terms(grid->x[i], grid->y[j], z_coord, iter, dt,
                                      params, &source_u, &source_v, &source_w);
 
+                /* Boussinesq buoyancy source */
+                if (T) {
+                    energy_compute_buoyancy(T[idx], params,
+                                            &source_u, &source_v, &source_w);
+                }
+
                 /* RHS for u-momentum */
                 rhs_u[idx] = -u[idx] * du_dx - v[idx] * du_dy - w[idx] * du_dz
                              - dp_dx / rho[idx]
@@ -239,13 +247,18 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
     double* v0 = (double*)cfd_calloc(total, sizeof(double));
     double* w0 = (double*)cfd_calloc(total, sizeof(double));
     double* p0 = (double*)cfd_calloc(total, sizeof(double));
+    int needs_T_ws = (params->alpha > 0.0 || params->beta != 0.0);
+    double* T_energy_ws = needs_T_ws
+        ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
 
     if (!k1_u || !k1_v || !k1_w || !k1_p ||
         !k2_u || !k2_v || !k2_w || !k2_p ||
-        !u0 || !v0 || !w0 || !p0) {
+        !u0 || !v0 || !w0 || !p0 ||
+        (needs_T_ws && !T_energy_ws)) {
         cfd_free(k1_u); cfd_free(k1_v); cfd_free(k1_w); cfd_free(k1_p);
         cfd_free(k2_u); cfd_free(k2_v); cfd_free(k2_w); cfd_free(k2_p);
         cfd_free(u0); cfd_free(v0); cfd_free(w0); cfd_free(p0);
+        cfd_free(T_energy_ws);
         return CFD_ERROR_NOMEM;
     }
 
@@ -266,7 +279,7 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
         memset(k1_w, 0, bytes);
         memset(k1_p, 0, bytes);
 
-        compute_rhs_omp(field->u, field->v, field->w, field->p, field->rho,
+        compute_rhs_omp(field->u, field->v, field->w, field->p, field->rho, field->T,
                          k1_u, k1_v, k1_w, k1_p,
                          grid, params, nx, ny, nz,
                          stride_z, k_start, k_end, inv_2dz, inv_dz2,
@@ -299,7 +312,7 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
         memset(k2_w, 0, bytes);
         memset(k2_p, 0, bytes);
 
-        compute_rhs_omp(field->u, field->v, field->w, field->p, field->rho,
+        compute_rhs_omp(field->u, field->v, field->w, field->p, field->rho, field->T,
                          k2_u, k2_v, k2_w, k2_p,
                          grid, params, nx, ny, nz,
                          stride_z, k_start, k_end, inv_2dz, inv_dz2,
@@ -322,8 +335,23 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
             }
         }
 
-        /* Apply BCs to final state only (after the full RK2 step) */
+        /* Energy equation: advance temperature after RK2 velocity update */
+        {
+            cfd_status_t energy_status = energy_step_explicit_omp_with_workspace(
+                field, grid, params, dt, iter * dt, T_energy_ws, total);
+            if (energy_status != CFD_SUCCESS) {
+                status = energy_status;
+                goto cleanup;
+            }
+        }
+
+        /* Apply BCs to final state only (after the full RK2 step).
+         * Then apply configured thermal BCs (overwrites periodic T values). */
         apply_boundary_conditions(field, grid);
+        status = energy_apply_thermal_bcs(field, params);
+        if (status != CFD_SUCCESS) {
+            goto cleanup;
+        }
 
         /* NaN / Inf check (parallelized) */
         {
@@ -347,6 +375,7 @@ cleanup:
     cfd_free(k1_u); cfd_free(k1_v); cfd_free(k1_w); cfd_free(k1_p);
     cfd_free(k2_u); cfd_free(k2_v); cfd_free(k2_w); cfd_free(k2_p);
     cfd_free(u0); cfd_free(v0); cfd_free(w0); cfd_free(p0);
+    cfd_free(T_energy_ws);
 
     return status;
 }

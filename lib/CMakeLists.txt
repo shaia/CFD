@@ -163,6 +163,8 @@ set(CFD_OMP_SOURCES
     src/solvers/navier_stokes/omp/solver_explicit_euler_omp.c
     src/solvers/navier_stokes/omp/solver_projection_omp.c
     src/solvers/navier_stokes/omp/solver_rk2_omp.c
+    # Energy equation solver - OMP
+    src/solvers/energy/omp/energy_solver_omp.c
     # Linear solvers - OMP
     src/solvers/linear/omp/linear_solver_redblack_omp.c
     src/solvers/linear/omp/linear_solver_cg_omp.c
