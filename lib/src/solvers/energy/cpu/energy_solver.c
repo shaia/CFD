@@ -194,3 +194,141 @@ void energy_compute_buoyancy(double T_local, const ns_solver_params_t* params,
     *source_v += -params->beta * dT * params->gravity[1];
     *source_w += -params->beta * dT * params->gravity[2];
 }
+
+/* A face may only request a thermal BC type the energy solver implements. */
+static int is_supported_thermal_bc(bc_type_t type) {
+    return type == BC_TYPE_PERIODIC || type == BC_TYPE_NEUMANN ||
+           type == BC_TYPE_DIRICHLET;
+}
+
+cfd_status_t energy_apply_thermal_bcs(flow_field* field,
+                                      const ns_solver_params_t* params) {
+    if (!field || !params || !field->T) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "energy_apply_thermal_bcs: field, params, and T must be non-NULL");
+        return CFD_ERROR_INVALID;
+    }
+    /* alpha <= 0 means the energy equation is disabled: a legitimate no-op. */
+    if (params->alpha <= 0.0) return CFD_SUCCESS;
+
+    const ns_thermal_bc_config_t* tbc = &params->thermal_bc;
+
+    size_t nx = field->nx;
+    size_t ny = field->ny;
+    size_t nz = field->nz;
+    size_t plane = nx * ny;
+
+    /* Reject unsupported per-face BC types so misconfiguration (e.g. an
+     * accidental BC_TYPE_NOSLIP/INLET) fails loudly instead of silently
+     * leaving that face unchanged. Front/back only apply in 3D. */
+    if (!is_supported_thermal_bc(tbc->left) || !is_supported_thermal_bc(tbc->right) ||
+        !is_supported_thermal_bc(tbc->bottom) || !is_supported_thermal_bc(tbc->top) ||
+        (nz > 1 && (!is_supported_thermal_bc(tbc->front) ||
+                    !is_supported_thermal_bc(tbc->back)))) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "energy_apply_thermal_bcs: unsupported thermal BC type on a face "
+                      "(only PERIODIC, NEUMANN, DIRICHLET are valid)");
+        return CFD_ERROR_INVALID;
+    }
+
+    /* A requested BC must fit the grid: Neumann needs >= 2 cells, Periodic >= 3. */
+    if (((tbc->left == BC_TYPE_NEUMANN || tbc->right == BC_TYPE_NEUMANN) && nx < 2) ||
+        ((tbc->bottom == BC_TYPE_NEUMANN || tbc->top == BC_TYPE_NEUMANN) && ny < 2) ||
+        ((tbc->left == BC_TYPE_PERIODIC || tbc->right == BC_TYPE_PERIODIC) && nx < 3) ||
+        ((tbc->bottom == BC_TYPE_PERIODIC || tbc->top == BC_TYPE_PERIODIC) && ny < 3) ||
+        (nz > 1 && (tbc->back == BC_TYPE_NEUMANN || tbc->front == BC_TYPE_NEUMANN) && nz < 2) ||
+        (nz > 1 && (tbc->back == BC_TYPE_PERIODIC || tbc->front == BC_TYPE_PERIODIC) && nz < 3)) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "energy_apply_thermal_bcs: grid too small for the requested thermal BC type");
+        return CFD_ERROR_INVALID;
+    }
+
+    /* Left face (i=0) */
+    for (size_t k = 0; k < nz; k++) {
+        size_t base = k * plane;
+        for (size_t j = 0; j < ny; j++) {
+            size_t idx = base + j * nx;
+            if (tbc->left == BC_TYPE_DIRICHLET)
+                field->T[idx] = tbc->dirichlet_values.left;
+            else if (tbc->left == BC_TYPE_NEUMANN)
+                field->T[idx] = field->T[idx + 1];
+            else if (tbc->left == BC_TYPE_PERIODIC)
+                field->T[idx] = field->T[base + j * nx + (nx - 2)];
+        }
+    }
+
+    /* Right face (i=nx-1) */
+    for (size_t k = 0; k < nz; k++) {
+        size_t base = k * plane;
+        for (size_t j = 0; j < ny; j++) {
+            size_t idx = base + j * nx + (nx - 1);
+            if (tbc->right == BC_TYPE_DIRICHLET)
+                field->T[idx] = tbc->dirichlet_values.right;
+            else if (tbc->right == BC_TYPE_NEUMANN)
+                field->T[idx] = field->T[idx - 1];
+            else if (tbc->right == BC_TYPE_PERIODIC)
+                field->T[idx] = field->T[base + j * nx + 1];
+        }
+    }
+
+    /* Bottom face (j=0) — runs after left/right, overwrites shared corners */
+    for (size_t k = 0; k < nz; k++) {
+        size_t base = k * plane;
+        for (size_t i = 0; i < nx; i++) {
+            size_t idx = base + i;
+            if (tbc->bottom == BC_TYPE_DIRICHLET)
+                field->T[idx] = tbc->dirichlet_values.bottom;
+            else if (tbc->bottom == BC_TYPE_NEUMANN)
+                field->T[idx] = field->T[idx + nx];
+            else if (tbc->bottom == BC_TYPE_PERIODIC)
+                field->T[idx] = field->T[base + (ny - 2) * nx + i];
+        }
+    }
+
+    /* Top face (j=ny-1) */
+    for (size_t k = 0; k < nz; k++) {
+        size_t base = k * plane;
+        for (size_t i = 0; i < nx; i++) {
+            size_t idx = base + (ny - 1) * nx + i;
+            if (tbc->top == BC_TYPE_DIRICHLET)
+                field->T[idx] = tbc->dirichlet_values.top;
+            else if (tbc->top == BC_TYPE_NEUMANN)
+                field->T[idx] = field->T[idx - nx];
+            else if (tbc->top == BC_TYPE_PERIODIC)
+                field->T[idx] = field->T[base + nx + i];
+        }
+    }
+
+    /* Back face (k=0) — only when nz > 1 */
+    if (nz > 1) {
+        for (size_t j = 0; j < ny; j++) {
+            for (size_t i = 0; i < nx; i++) {
+                size_t idx = j * nx + i;
+                if (tbc->back == BC_TYPE_DIRICHLET)
+                    field->T[idx] = tbc->dirichlet_values.back;
+                else if (tbc->back == BC_TYPE_NEUMANN)
+                    field->T[idx] = field->T[plane + idx];
+                else if (tbc->back == BC_TYPE_PERIODIC)
+                    field->T[idx] = field->T[(nz - 2) * plane + idx];
+            }
+        }
+    }
+
+    /* Front face (k=nz-1) — only when nz > 1 */
+    if (nz > 1) {
+        size_t front_base = (nz - 1) * plane;
+        for (size_t j = 0; j < ny; j++) {
+            for (size_t i = 0; i < nx; i++) {
+                size_t off = j * nx + i;
+                if (tbc->front == BC_TYPE_DIRICHLET)
+                    field->T[front_base + off] = tbc->dirichlet_values.front;
+                else if (tbc->front == BC_TYPE_NEUMANN)
+                    field->T[front_base + off] = field->T[(nz - 2) * plane + off];
+                else if (tbc->front == BC_TYPE_PERIODIC)
+                    field->T[front_base + off] = field->T[plane + off];
+            }
+        }
+    }
+
+    return CFD_SUCCESS;
+}

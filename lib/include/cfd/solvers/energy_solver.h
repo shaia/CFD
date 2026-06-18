@@ -61,6 +61,31 @@ CFD_LIBRARY_EXPORT void energy_compute_buoyancy(double T_local, const ns_solver_
                                                  double* source_u, double* source_v,
                                                  double* source_w);
 
+/**
+ * Apply thermal boundary conditions to the temperature field.
+ *
+ * For each face configured as DIRICHLET, sets T to the specified value.
+ * For each face configured as NEUMANN, copies from adjacent interior cell.
+ * For PERIODIC faces (default), copies from the opposite interior cell.
+ *
+ * Faces are applied sequentially in the order left, right, bottom, top, and
+ * (in 3D) back, front. Later faces overwrite cells shared with earlier ones,
+ * so at an edge or corner the last-applied face wins: e.g. the bottom/top
+ * Dirichlet value overrides the left/right value in the shared corner, and in
+ * 3D the back/front faces overwrite the entire k=0 / k=nz-1 planes. Configure
+ * adjacent faces with this precedence in mind when corner values matter.
+ *
+ * Only active when params->alpha > 0; returns CFD_SUCCESS (no-op) otherwise.
+ *
+ * @param field  Flow field (T is updated in-place)
+ * @param params Solver parameters containing thermal_bc config
+ * @return CFD_SUCCESS, or CFD_ERROR_INVALID if field/params are NULL, a face
+ *         requests an unsupported BC type, or the grid is too small for a
+ *         requested BC type.
+ */
+CFD_LIBRARY_EXPORT cfd_status_t energy_apply_thermal_bcs(flow_field* field,
+                                                         const ns_solver_params_t* params);
+
 #ifdef __cplusplus
 }
 #endif

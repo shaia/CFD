@@ -440,6 +440,380 @@ static void test_heat_source(void) {
 }
 
 /* ============================================================================
+ * TEST 7: Thermal BC — Mixed Dirichlet / Neumann
+ *
+ * Configure Dirichlet on left/right (fixed T) and Neumann on top/bottom
+ * (zero-gradient). After calling energy_apply_thermal_bcs, verify:
+ *   - Left/right boundaries have the Dirichlet values
+ *   - Top/bottom boundaries equal the adjacent interior row
+ * ============================================================================ */
+
+#define TBC_NX 11
+#define TBC_NY 11
+
+static void test_thermal_bc_dirichlet_neumann(void) {
+    grid* g = grid_create(TBC_NX, TBC_NY, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* field = flow_field_create(TBC_NX, TBC_NY, 1);
+    TEST_ASSERT_NOT_NULL(field);
+
+    /* Fill T with a recognizable pattern: T = 100 + i + j*10 */
+    for (size_t j = 0; j < TBC_NY; j++) {
+        for (size_t i = 0; i < TBC_NX; i++) {
+            size_t idx = j * TBC_NX + i;
+            field->T[idx] = 100.0 + (double)i + (double)j * 10.0;
+            field->rho[idx] = 1.0;
+        }
+    }
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;  /* Must be > 0 to activate thermal BCs */
+    params.thermal_bc.left   = BC_TYPE_DIRICHLET;
+    params.thermal_bc.right  = BC_TYPE_DIRICHLET;
+    params.thermal_bc.bottom = BC_TYPE_NEUMANN;
+    params.thermal_bc.top    = BC_TYPE_NEUMANN;
+    params.thermal_bc.dirichlet_values.left  = 500.0;
+    params.thermal_bc.dirichlet_values.right = 200.0;
+
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, energy_apply_thermal_bcs(field, &params));
+
+    /* Verify Dirichlet on left (i=0) and right (i=nx-1) */
+    for (size_t j = 0; j < TBC_NY; j++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, 500.0, field->T[j * TBC_NX + 0]);
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, 200.0, field->T[j * TBC_NX + (TBC_NX - 1)]);
+    }
+
+    /* Verify Neumann on bottom (j=0): T[0,i] == T[1,i] */
+    for (size_t i = 0; i < TBC_NX; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, field->T[1 * TBC_NX + i],
+                                   field->T[0 * TBC_NX + i]);
+    }
+
+    /* Verify Neumann on top (j=ny-1): T[ny-1,i] == T[ny-2,i] */
+    for (size_t i = 0; i < TBC_NX; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, field->T[(TBC_NY - 2) * TBC_NX + i],
+                                   field->T[(TBC_NY - 1) * TBC_NX + i]);
+    }
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+/* ============================================================================
+ * TEST 8: Thermal BC — All Periodic
+ *
+ * Default thermal_bc config (all PERIODIC) copies boundary cells from the
+ * opposite interior cell.  Verify:
+ *   - Interior cells are unchanged
+ *   - Boundary cells equal the opposite interior cell
+ * ============================================================================ */
+
+#define PER_NX 9
+#define PER_NY 9
+
+static void test_thermal_bc_all_periodic(void) {
+    grid* g = grid_create(PER_NX, PER_NY, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* field = flow_field_create(PER_NX, PER_NY, 1);
+    TEST_ASSERT_NOT_NULL(field);
+
+    /* Fill T with a recognizable pattern: T = 100 + i + j*10 */
+    for (size_t j = 0; j < PER_NY; j++) {
+        for (size_t i = 0; i < PER_NX; i++) {
+            size_t idx = j * PER_NX + i;
+            field->T[idx] = 100.0 + (double)i + (double)j * 10.0;
+            field->rho[idx] = 1.0;
+        }
+    }
+
+    /* Save original interior T for comparison */
+    double T_orig[PER_NX * PER_NY];
+    memcpy(T_orig, field->T, sizeof(T_orig));
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;  /* Energy enabled, all-periodic by default */
+
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, energy_apply_thermal_bcs(field, &params));
+
+    /* Interior cells (1..nx-2, 1..ny-2) should be unchanged */
+    for (size_t j = 1; j < PER_NY - 1; j++) {
+        for (size_t i = 1; i < PER_NX - 1; i++) {
+            size_t idx = j * PER_NX + i;
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[idx], field->T[idx]);
+        }
+    }
+
+    /* Left face (i=0): should equal interior column i=nx-2 (before bottom/top overwrite) */
+    /* Bottom/top periodic run after left/right, so j=0 and j=ny-1 are overwritten.
+     * Check interior rows only. */
+    for (size_t j = 1; j < PER_NY - 1; j++) {
+        size_t left_idx = j * PER_NX;
+        size_t src_idx  = j * PER_NX + (PER_NX - 2);
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[src_idx], field->T[left_idx]);
+    }
+
+    /* Right face (i=nx-1): should equal interior column i=1 */
+    for (size_t j = 1; j < PER_NY - 1; j++) {
+        size_t right_idx = j * PER_NX + (PER_NX - 1);
+        size_t src_idx   = j * PER_NX + 1;
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[src_idx], field->T[right_idx]);
+    }
+
+    /* Bottom face (j=0): copies from j=ny-2, but left/right periodic may have
+     * modified i=0 and i=nx-1 in that row. Check interior columns. */
+    for (size_t i = 1; i < PER_NX - 1; i++) {
+        size_t bot_idx = i;
+        size_t src_idx = (PER_NY - 2) * PER_NX + i;
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[src_idx], field->T[bot_idx]);
+    }
+
+    /* Top face (j=ny-1): copies from j=1 */
+    for (size_t i = 1; i < PER_NX - 1; i++) {
+        size_t top_idx = (PER_NY - 1) * PER_NX + i;
+        size_t src_idx = PER_NX + i;
+        TEST_ASSERT_DOUBLE_WITHIN(1e-15, T_orig[src_idx], field->T[top_idx]);
+    }
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+/* ============================================================================
+ * TEST 9: 3D Thermal BCs — Front/Back Dirichlet + Neumann
+ *
+ * Create a small 3D field (nz=5) and verify:
+ *   - Back face (k=0): Dirichlet sets T to specified value
+ *   - Front face (k=nz-1): Neumann copies from adjacent interior plane
+ *   - Left/right: Periodic copies from opposite interior column
+ *   - Bottom/top: Dirichlet values overwrite corners correctly
+ * ============================================================================ */
+
+#define TBC3D_NX 7
+#define TBC3D_NY 7
+#define TBC3D_NZ 5
+#define TBC3D_PLANE ((size_t)(TBC3D_NX) * TBC3D_NY)
+
+static void test_thermal_bc_3d_front_back(void) {
+    grid* g = grid_create(TBC3D_NX, TBC3D_NY, TBC3D_NZ,
+                          0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* field = flow_field_create(TBC3D_NX, TBC3D_NY, TBC3D_NZ);
+    TEST_ASSERT_NOT_NULL(field);
+
+    /* Fill T with a recognizable 3D pattern: T = k*1000 + j*100 + i */
+    for (size_t k = 0; k < TBC3D_NZ; k++) {
+        for (size_t j = 0; j < TBC3D_NY; j++) {
+            for (size_t i = 0; i < TBC3D_NX; i++) {
+                size_t idx = k * TBC3D_PLANE + j * TBC3D_NX + i;
+                field->T[idx] = (double)k * 1000.0 + (double)j * 100.0 + (double)i;
+                field->rho[idx] = 1.0;
+            }
+        }
+    }
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;  /* Enable thermal BCs */
+
+    /* Back = Dirichlet(50), Front = Neumann, Left/Right = Periodic,
+     * Bottom = Dirichlet(99), Top = Dirichlet(77) */
+    params.thermal_bc.back   = BC_TYPE_DIRICHLET;
+    params.thermal_bc.front  = BC_TYPE_NEUMANN;
+    params.thermal_bc.left   = BC_TYPE_PERIODIC;
+    params.thermal_bc.right  = BC_TYPE_PERIODIC;
+    params.thermal_bc.bottom = BC_TYPE_DIRICHLET;
+    params.thermal_bc.top    = BC_TYPE_DIRICHLET;
+    params.thermal_bc.dirichlet_values.back   = 50.0;
+    params.thermal_bc.dirichlet_values.bottom = 99.0;
+    params.thermal_bc.dirichlet_values.top    = 77.0;
+
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, energy_apply_thermal_bcs(field, &params));
+
+    /* Verify back face (k=0): back Dirichlet runs after bottom/top,
+     * so the entire k=0 plane should be 50.0. */
+    for (size_t j = 0; j < TBC3D_NY; j++) {
+        for (size_t i = 0; i < TBC3D_NX; i++) {
+            size_t idx = j * TBC3D_NX + i;
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15, 50.0, field->T[idx]);
+        }
+    }
+
+    /* Verify front face (k=nz-1): Neumann copies from k=nz-2 */
+    size_t front_base = (TBC3D_NZ - 1) * TBC3D_PLANE;
+    size_t interior_base = (TBC3D_NZ - 2) * TBC3D_PLANE;
+    for (size_t j = 1; j < TBC3D_NY - 1; j++) {
+        for (size_t i = 1; i < TBC3D_NX - 1; i++) {
+            size_t off = j * TBC3D_NX + i;
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15,
+                                       field->T[interior_base + off],
+                                       field->T[front_base + off]);
+        }
+    }
+
+    /* Verify left face (i=0): Periodic copies from i=nx-2 */
+    for (size_t k = 1; k < TBC3D_NZ - 1; k++) {
+        size_t base = k * TBC3D_PLANE;
+        for (size_t j = 1; j < TBC3D_NY - 1; j++) {
+            size_t left_idx = base + j * TBC3D_NX;
+            size_t src_idx = base + j * TBC3D_NX + (TBC3D_NX - 2);
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15,
+                                       field->T[src_idx],
+                                       field->T[left_idx]);
+        }
+    }
+
+    /* Verify right face (i=nx-1): Periodic copies from i=1 */
+    for (size_t k = 1; k < TBC3D_NZ - 1; k++) {
+        size_t base = k * TBC3D_PLANE;
+        for (size_t j = 1; j < TBC3D_NY - 1; j++) {
+            size_t right_idx = base + j * TBC3D_NX + (TBC3D_NX - 1);
+            size_t src_idx = base + j * TBC3D_NX + 1;
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15,
+                                       field->T[src_idx],
+                                       field->T[right_idx]);
+        }
+    }
+
+    /* Verify bottom face (j=0): Dirichlet 99.0 at interior k planes.
+     * k=0 is overwritten by back Dirichlet, k=nz-1 by front Neumann. */
+    for (size_t k = 1; k < TBC3D_NZ - 1; k++) {
+        size_t base = k * TBC3D_PLANE;
+        for (size_t i = 0; i < TBC3D_NX; i++) {
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15, 99.0, field->T[base + i]);
+        }
+    }
+
+    /* Verify top face (j=ny-1): Dirichlet 77.0 at interior k planes */
+    for (size_t k = 1; k < TBC3D_NZ - 1; k++) {
+        size_t base = k * TBC3D_PLANE;
+        for (size_t i = 0; i < TBC3D_NX; i++) {
+            TEST_ASSERT_DOUBLE_WITHIN(1e-15, 77.0,
+                                       field->T[base + (TBC3D_NY - 1) * TBC3D_NX + i]);
+        }
+    }
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+/* ============================================================================
+ * TEST 11: Thermal BC invalid configuration is rejected
+ *
+ * energy_apply_thermal_bcs must surface misconfiguration as CFD_ERROR_INVALID
+ * rather than silently leaving a face unchanged: NULL inputs and unsupported
+ * per-face BC types (e.g. BC_TYPE_NOSLIP) are errors. alpha<=0 stays a no-op.
+ * ============================================================================ */
+
+static void test_thermal_bc_invalid_config(void) {
+    const size_t nx = 5, ny = 5;
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+    flow_field* field = flow_field_create(nx, ny, 1);
+    TEST_ASSERT_NOT_NULL(field);
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;
+
+    /* NULL field/params -> CFD_ERROR_INVALID */
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, energy_apply_thermal_bcs(NULL, &params));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, energy_apply_thermal_bcs(field, NULL));
+
+    /* Unsupported per-face BC type -> CFD_ERROR_INVALID */
+    params.thermal_bc.left = BC_TYPE_NOSLIP;
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, energy_apply_thermal_bcs(field, &params));
+
+    /* A valid configuration still succeeds */
+    params.thermal_bc.left = BC_TYPE_DIRICHLET;
+    params.thermal_bc.dirichlet_values.left = 300.0;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, energy_apply_thermal_bcs(field, &params));
+
+    /* alpha<=0 is a no-op success regardless of (otherwise invalid) config */
+    params.alpha = 0.0;
+    params.thermal_bc.left = BC_TYPE_NOSLIP;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, energy_apply_thermal_bcs(field, &params));
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+/* ============================================================================
+ * TEST 12: Energy unsupported on non-CPU solve path
+ *
+ * The energy equation is only implemented in scalar CPU backends. Non-CPU
+ * backends must reject alpha>0 / beta!=0 with CFD_ERROR_UNSUPPORTED rather than
+ * silently running a momentum-only solve. This locks in the contract for the
+ * solver_solve() entry point of the OMP backends, whose step path was already
+ * guarded but whose solve path previously was not.
+ * ============================================================================ */
+
+static void test_energy_unsupported_omp_solve(void) {
+    const char* omp_solvers[] = {
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
+        NS_SOLVER_TYPE_RK2_OMP,
+        NS_SOLVER_TYPE_PROJECTION_OMP,
+    };
+    const size_t n_solvers = sizeof(omp_solvers) / sizeof(omp_solvers[0]);
+    const size_t nx = 5, ny = 5;
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    for (size_t s = 0; s < n_solvers; s++) {
+        grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+        TEST_ASSERT_NOT_NULL(g);
+        grid_initialize_uniform(g);
+
+        flow_field* field = flow_field_create(nx, ny, 1);
+        TEST_ASSERT_NOT_NULL(field);
+        for (size_t n = 0; n < nx * ny; n++) {
+            field->rho[n] = 1.0;
+            field->T[n] = 300.0;
+        }
+
+        ns_solver_t* solver = cfd_solver_create(registry, omp_solvers[s]);
+        if (!solver) {
+            /* OMP backend not compiled in — skip without failing */
+            flow_field_destroy(field);
+            grid_destroy(g);
+            continue;
+        }
+
+        /* Init with energy disabled so backends that probe sub-solver
+         * availability (e.g. projection_omp checks OMP CG) succeed. */
+        ns_solver_params_t params = ns_solver_params_default();
+        cfd_status_t init_status = solver_init(solver, g, &params);
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
+            /* OMP sub-solver unavailable — skip without failing */
+            solver_destroy(solver);
+            flow_field_destroy(field);
+            grid_destroy(g);
+            continue;
+        }
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, init_status);
+
+        /* Now enable the energy equation and expect rejection. */
+        params.alpha = 0.01;
+        ns_solver_stats_t stats = ns_solver_stats_default();
+        cfd_status_t solve_status = solver_solve(solver, field, g, &params, &stats);
+        TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_UNSUPPORTED, solve_status,
+                                  "OMP solve must reject energy equation params");
+
+        solver_destroy(solver);
+        flow_field_destroy(field);
+        grid_destroy(g);
+    }
+
+    cfd_registry_destroy(registry);
+}
+
+/* ============================================================================
  * MAIN
  * ============================================================================ */
 
@@ -451,5 +825,10 @@ int main(void) {
     RUN_TEST(test_buoyancy_source);
     RUN_TEST(test_backward_compatibility);
     RUN_TEST(test_heat_source);
+    RUN_TEST(test_thermal_bc_dirichlet_neumann);
+    RUN_TEST(test_thermal_bc_all_periodic);
+    RUN_TEST(test_thermal_bc_3d_front_back);
+    RUN_TEST(test_thermal_bc_invalid_config);
+    RUN_TEST(test_energy_unsupported_omp_solve);
     return UNITY_END();
 }

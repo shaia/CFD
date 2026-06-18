@@ -19,6 +19,7 @@
 
 #include "cfd/cfd_export.h"
 
+#include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
 #include <stddef.h>
@@ -91,6 +92,30 @@ typedef double (*ns_heat_source_func_t)(double x, double y, double z, double t,
                                          void* context);
 
 /**
+ * Per-face thermal boundary condition configuration.
+ *
+ * Each face can independently be PERIODIC (default), NEUMANN (zero-gradient /
+ * adiabatic), or DIRICHLET (fixed temperature). When a face is DIRICHLET, its
+ * value is read from the corresponding field of `dirichlet_values`.
+ *
+ * Zero-initialization produces an all-PERIODIC configuration
+ * (BC_TYPE_PERIODIC == 0), matching the solver's default
+ * `apply_boundary_conditions` behavior. This is not a "no change" mode:
+ * periodic thermal boundaries are actively enforced unless callers
+ * explicitly set `thermal_bc` for non-periodic thermal walls (for example,
+ * DIRICHLET or NEUMANN faces).
+ */
+typedef struct {
+    bc_type_t left;    /**< BC type for x=0 face */
+    bc_type_t right;   /**< BC type for x=Lx face */
+    bc_type_t bottom;  /**< BC type for y=0 face */
+    bc_type_t top;     /**< BC type for y=Ly face */
+    bc_type_t front;   /**< BC type for z=Lz face (3D only) */
+    bc_type_t back;    /**< BC type for z=0 face (3D only) */
+    bc_dirichlet_values_t dirichlet_values;  /**< Fixed values for Dirichlet faces */
+} ns_thermal_bc_config_t;
+
+/**
  * Navier-Stokes solver parameters
  */
 typedef struct {
@@ -125,6 +150,9 @@ typedef struct {
     /* Custom heat source callback (NULL = no heat source) */
     ns_heat_source_func_t heat_source_func;  /**< Heat source function pointer */
     void* heat_source_context;                /**< User context for heat_source_func */
+
+    /* Thermal boundary conditions (zero-initialized = all PERIODIC = no change) */
+    ns_thermal_bc_config_t thermal_bc;
 } ns_solver_params_t;
 
 

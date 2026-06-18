@@ -343,14 +343,11 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
 
         /* Apply BCs to final state only (after the full RK2 step).
          * This updates ghost cells for the next step's k1 evaluation.
-         * Preserve temperature so caller-specified thermal BCs are not
-         * overwritten by the generic periodic BC application. */
-        if (field->T && T_energy_ws) {
-            memcpy(T_energy_ws, field->T, bytes);
-            apply_boundary_conditions(field, grid);
-            memcpy(field->T, T_energy_ws, bytes);
-        } else {
-            apply_boundary_conditions(field, grid);
+         * Then apply configured thermal BCs (overwrites periodic T values). */
+        apply_boundary_conditions(field, grid);
+        status = energy_apply_thermal_bcs(field, params);
+        if (status != CFD_SUCCESS) {
+            goto cleanup;
         }
 
         /* NaN / Inf check */
