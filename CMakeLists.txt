@@ -496,7 +496,7 @@ if(BUILD_TESTS)
             CavityBackend_ProjectionAvx2 CavityBackend_ProjectionOmp
             CavityBackend_ProjectionGpu CavityBackend_EulerAvx2
             CavityBackend_EulerOmp CavityBackend_Consistency
-            PROPERTIES TIMEOUT 14400 LABELS "validation"
+            PROPERTIES TIMEOUT 14400 LABELS "validation" PROCESSORS 2
         )
         # Consistency waits for all backends to finish
         set_tests_properties(CavityBackend_Consistency PROPERTIES
@@ -581,6 +581,19 @@ if(BUILD_TESTS)
     # This test requires AVX2+OpenMP and is run only in the dedicated CI job
     add_test(NAME SolverArchitectureTest COMMAND test_solver_architecture)
     set_tests_properties(SolverArchitectureTest PROPERTIES LABELS "cross-arch")
+
+    # OpenMP-threaded tests spawn multiple threads each. Declaring PROCESSORS lets
+    # CTest's --parallel scheduler avoid stacking several many-thread tests at once
+    # (complements the OMP_NUM_THREADS cap in build.sh).
+    set_tests_properties(
+        SolverExplicitEulerOmpTest
+        SolverProjectionOmpTest
+        SolverRk2OmpTest
+        GhiaEulerOmpTest
+        GhiaProjectionOmpTest
+        OMPConsistencyTest
+        PROPERTIES PROCESSORS 2
+    )
 endif()
 
 # Documentation target (Doxygen)
