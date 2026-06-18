@@ -17,6 +17,8 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
+#include "cfd/solvers/energy_solver.h"
+#include "../../energy/energy_solver_internal.h"
 
 #include "../boundary_copy_utils.h"
 
@@ -284,6 +286,10 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
                 compute_source_terms(x_coord, y_coord, z_coord, ctx->iter_count, dt, params,
                                      &source_u, &source_v, &source_w);
 
+                // Boussinesq buoyancy source (no-op when beta == 0)
+                energy_compute_buoyancy(field->T[idx], params,
+                                        &source_u, &source_v, &source_w);
+
                 // Intermediate velocity (without pressure gradient)
                 u_star[idx] = u + (dt * (-conv_u + visc_u + source_u));
                 v_star[idx] = v + (dt * (-conv_v + visc_v + source_v));
@@ -433,6 +439,23 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
 
     // Update pressure field
     memcpy(field->p, p_new, size * sizeof(double));
+
+    // Energy equation: advance temperature after velocity correction
+    {
+        cfd_status_t energy_status = energy_step_explicit_avx2_with_workspace(
+            field, grid, params, dt, ctx->iter_count * dt, NULL, 0);
+        if (energy_status != CFD_SUCCESS) {
+            return energy_status;
+        }
+    }
+
+    // Apply configured thermal BCs to temperature field
+    {
+        cfd_status_t bc_status = energy_apply_thermal_bcs(field, params);
+        if (bc_status != CFD_SUCCESS) {
+            return bc_status;
+        }
+    }
 
     // Copy boundary velocity values from star arrays (which have caller's BCs)
     copy_boundary_velocities_3d(field->u, field->v, field->w, u_star, v_star, w_star,

@@ -32,6 +32,8 @@
 #include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/energy_solver.h"
+#include "../../energy/energy_solver_internal.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -96,7 +98,7 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
 
 static void rk2_rhs_point(
     const double* u, const double* v, const double* w,
-    const double* p, const double* rho,
+    const double* p, const double* rho, const double* T,
     double* rhs_u, double* rhs_v, double* rhs_w, double* rhs_p,
     const grid* g, const ns_solver_params_t* params,
     size_t idx, size_t il, size_t ir, size_t jd, size_t ju,
@@ -169,6 +171,11 @@ static void rk2_rhs_point(
     compute_source_terms(g->x[i], g->y[j], z_coord, iter, dt, params,
                          &source_u, &source_v, &source_w);
 
+    /* Boussinesq buoyancy source (no-op when beta == 0) */
+    if (T) {
+        energy_compute_buoyancy(T[idx], params, &source_u, &source_v, &source_w);
+    }
+
     rhs_u[idx] = -(u[idx] * du_dx) - (v[idx] * du_dy) - (w[idx] * du_dz)
                  - dp_dx / rho[idx]
                  + (nu * (d2u_dx2 + d2u_dy2 + d2u_dz2))
@@ -207,7 +214,7 @@ static inline __m256d avx2_clamp(__m256d x, __m256d lo, __m256d hi) {
  */
 static void compute_rhs_row(
     const double* u, const double* v, const double* w,
-    const double* p, const double* rho,
+    const double* p, const double* rho, const double* T,
     double* rhs_u, double* rhs_v, double* rhs_w, double* rhs_p,
     const rk2_avx2_context_t* ctx, const grid* g,
     const ns_solver_params_t* params, size_t j, size_t k, int iter, double dt)
@@ -244,7 +251,7 @@ static void compute_rhs_row(
         size_t ir  = idx + 1;
         size_t kd  = kd_off + j * nx + si;
         size_t ku  = ku_off + j * nx + si;
-        rk2_rhs_point(u, v, w, p, rho, rhs_u, rhs_v, rhs_w, rhs_p, g, params,
+        rk2_rhs_point(u, v, w, p, rho, T, rhs_u, rhs_v, rhs_w, rhs_p, g, params,
                        idx, il, ir, jd_row + si, ju_row + si, kd, ku,
                        inv_2dz, inv_dz2, si, j, k, nz, iter, dt);
     }
@@ -419,6 +426,12 @@ static void compute_rhs_row(
                                      z_coord, iter, dt, params,
                                      &src_u_arr[lane], &src_v_arr[lane],
                                      &src_w_arr[lane]);
+                /* Boussinesq buoyancy source (no-op when beta == 0) */
+                if (T) {
+                    energy_compute_buoyancy(T[j_off + (size_t)i + (size_t)lane], params,
+                                            &src_u_arr[lane], &src_v_arr[lane],
+                                            &src_w_arr[lane]);
+                }
             }
             __m256d src_u_v = _mm256_loadu_pd(src_u_arr);
             __m256d src_v_v = _mm256_loadu_pd(src_v_arr);
@@ -493,7 +506,7 @@ static void compute_rhs_row(
             size_t ir  = (si == nx - 2) ? j_off + 1 : idx + 1;  /* periodic at last point */
             size_t kd  = kd_off + j * nx + si;
             size_t ku  = ku_off + j * nx + si;
-            rk2_rhs_point(u, v, w, p, rho, rhs_u, rhs_v, rhs_w, rhs_p, g, params,
+            rk2_rhs_point(u, v, w, p, rho, T, rhs_u, rhs_v, rhs_w, rhs_p, g, params,
                            idx, il, ir, jd_row + si, ju_row + si, kd, ku,
                            inv_2dz, inv_dz2, si, j, k, nz, iter, dt);
         }
@@ -506,7 +519,7 @@ static void compute_rhs_row(
  */
 static void compute_rhs_avx2(
     const double* u, const double* v, const double* w,
-    const double* p, const double* rho,
+    const double* p, const double* rho, const double* T,
     double* rhs_u, double* rhs_v, double* rhs_w, double* rhs_p,
     const rk2_avx2_context_t* ctx, const grid* g,
     const ns_solver_params_t* params, int iter, double dt)
@@ -518,7 +531,7 @@ static void compute_rhs_avx2(
         #pragma omp parallel for schedule(static)
 #endif
         for (j = 1; j < ny_int - 1; j++) {
-            compute_rhs_row(u, v, w, p, rho, rhs_u, rhs_v, rhs_w, rhs_p,
+            compute_rhs_row(u, v, w, p, rho, T, rhs_u, rhs_v, rhs_w, rhs_p,
                             ctx, g, params, (size_t)j, k, iter, dt);
         }
     }
@@ -549,7 +562,7 @@ static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
         memset(ctx->k1_v, 0, bytes);
         memset(ctx->k1_w, 0, bytes);
         memset(ctx->k1_p, 0, bytes);
-        compute_rhs_avx2(field->u, field->v, field->w, field->p, field->rho,
+        compute_rhs_avx2(field->u, field->v, field->w, field->p, field->rho, field->T,
                          ctx->k1_u, ctx->k1_v, ctx->k1_w, ctx->k1_p,
                          ctx, g, params, iter, dt);
 
@@ -583,7 +596,7 @@ static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
         memset(ctx->k2_v, 0, bytes);
         memset(ctx->k2_w, 0, bytes);
         memset(ctx->k2_p, 0, bytes);
-        compute_rhs_avx2(field->u, field->v, field->w, field->p, field->rho,
+        compute_rhs_avx2(field->u, field->v, field->w, field->p, field->rho, field->T,
                          ctx->k2_u, ctx->k2_v, ctx->k2_w, ctx->k2_p,
                          ctx, g, params, iter, dt);
 
@@ -608,8 +621,22 @@ static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
             }
         }
 
-        /* Apply BCs to final state only */
+        /* Energy equation: advance temperature after the full RK2 step */
+        {
+            cfd_status_t energy_status = energy_step_explicit_avx2_with_workspace(
+                field, g, params, dt, iter * dt, NULL, 0);
+            if (energy_status != CFD_SUCCESS) {
+                status = energy_status;
+                goto cleanup;
+            }
+        }
+
+        /* Apply BCs to final state only, then configured thermal BCs */
         apply_boundary_conditions(field, g);
+        status = energy_apply_thermal_bcs(field, params);
+        if (status != CFD_SUCCESS) {
+            goto cleanup;
+        }
 
         /* NaN / Inf check (parallelized) */
         {

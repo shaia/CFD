@@ -23,6 +23,8 @@
 #include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/energy_solver.h"
+#include "../../energy/energy_solver_internal.h"
 
 #include "../boundary_copy_utils.h"
 
@@ -222,6 +224,12 @@ typedef struct {
     __m256d zero;
     __m256d inv_2dz_vec;
     __m256d inv_dz2_vec;
+    /* Boussinesq buoyancy: accel = -beta*(T - T_ref)*g. Zero beta -> no-op. */
+    __m256d neg_beta_vec;
+    __m256d t_ref_vec;
+    __m256d gx_vec;
+    __m256d gy_vec;
+    __m256d gz_vec;
 } simd_constants;
 
 static void init_simd_constants(simd_constants* c, const ns_solver_params_t* params,
@@ -243,6 +251,11 @@ static void init_simd_constants(simd_constants* c, const ns_solver_params_t* par
     c->zero = _mm256_setzero_pd();
     c->inv_2dz_vec = _mm256_set1_pd(inv_2dz);
     c->inv_dz2_vec = _mm256_set1_pd(inv_dz2);
+    c->neg_beta_vec = _mm256_set1_pd(-params->beta);
+    c->t_ref_vec = _mm256_set1_pd(params->T_ref);
+    c->gx_vec = _mm256_set1_pd(params->gravity[0]);
+    c->gy_vec = _mm256_set1_pd(params->gravity[1]);
+    c->gz_vec = _mm256_set1_pd(params->gravity[2]);
 }
 
 static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field, const grid* grid,
@@ -375,6 +388,15 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
             _mm256_mul_pd(sc->dt_vec, _mm256_add_pd(_mm256_sub_pd(term_visc_w, term_pres_z),
                                                     _mm256_sub_pd(sc->zero, conv_w)));
 
+        /* Boussinesq buoyancy: dvel += dt * (-beta*(T - T_ref)) * g.
+         * When beta == 0 this adds exactly 0.0, matching the scalar path. */
+        __m256d Tcell = _mm256_loadu_pd(&field->T[idx]);
+        __m256d buoy = _mm256_mul_pd(sc->neg_beta_vec, _mm256_sub_pd(Tcell, sc->t_ref_vec));
+        __m256d dt_buoy = _mm256_mul_pd(sc->dt_vec, buoy);
+        du = _mm256_add_pd(du, _mm256_mul_pd(dt_buoy, sc->gx_vec));
+        dv = _mm256_add_pd(dv, _mm256_mul_pd(dt_buoy, sc->gy_vec));
+        dw = _mm256_add_pd(dw, _mm256_mul_pd(dt_buoy, sc->gz_vec));
+
         du = vector_fmin(sc->one_vec, vector_fmax(sc->neg_one_vec, du));
         dv = vector_fmin(sc->one_vec, vector_fmax(sc->neg_one_vec, dv));
         dw = vector_fmin(sc->one_vec, vector_fmax(sc->neg_one_vec, dw));
@@ -475,6 +497,9 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
             source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]);
         }
 
+        /* Boussinesq buoyancy source (no-op when beta == 0) */
+        energy_compute_buoyancy(field->T[idx], params, &source_u, &source_v, &source_w);
+
         double u_c = field->u[idx];
         double v_c = field->v[idx];
         double w_c = field->w[idx];
@@ -568,12 +593,28 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     memcpy(field->w, ctx->w_new, size * sizeof(double));
     memcpy(field->p, ctx->p_new, size * sizeof(double));
 
-    // Store caller-set boundary values before apply_boundary_conditions overwrites them
+    // Energy equation: advance temperature using updated velocity
+    {
+        cfd_status_t energy_status = energy_step_explicit_avx2_with_workspace(
+            field, grid, params, conservative_dt, 0.0, NULL, 0);
+        if (energy_status != CFD_SUCCESS) {
+            return energy_status;
+        }
+    }
+
+    // Store caller-set boundary values before apply_boundary_conditions overwrites them,
+    // then restore them. Then apply configured thermal BCs.
     copy_boundary_velocities_3d(ctx->u_new, ctx->v_new, ctx->w_new,
                                 field->u, field->v, field->w, nx, ny, ctx->nz);
     apply_boundary_conditions(field, grid);
     copy_boundary_velocities_3d(field->u, field->v, field->w,
                                 ctx->u_new, ctx->v_new, ctx->w_new, nx, ny, ctx->nz);
+    {
+        cfd_status_t bc_status = energy_apply_thermal_bcs(field, params);
+        if (bc_status != CFD_SUCCESS) {
+            return bc_status;
+        }
+    }
 
     if (stats) {
         stats->iterations = 1;

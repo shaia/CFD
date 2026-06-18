@@ -140,6 +140,8 @@ set(CFD_SIMD_SOURCES
     src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c
     src/solvers/navier_stokes/avx2/solver_projection_avx2.c
     src/solvers/navier_stokes/avx2/solver_rk2_avx2.c
+    # Energy equation solver - SIMD
+    src/solvers/energy/avx2/energy_solver_avx2.c
     # Linear solvers - SIMD
     src/solvers/linear/simd/linear_solver_simd_dispatch.c
     src/solvers/linear/avx2/linear_solver_jacobi_avx2.c
