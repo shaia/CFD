@@ -300,6 +300,10 @@ if(BUILD_TESTS)
     # Energy equation tests
     add_executable(test_energy_solver tests/solvers/energy/test_energy_solver.c)
     add_executable(test_natural_convection tests/validation/test_natural_convection.c)
+    # Release-only: also run the Ra=1e4 de Vahl Davis tier (finer grid, slower)
+    if(CAVITY_FULL_VALIDATION)
+        target_compile_definitions(test_natural_convection PRIVATE CAVITY_FULL_VALIDATION=1)
+    endif()
 
     # Mathematical accuracy tests
     add_executable(test_finite_differences tests/math/test_finite_differences.c)
