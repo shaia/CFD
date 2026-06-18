@@ -78,6 +78,7 @@ typedef struct {
     double inv_2dz;
     double inv_dz2;
     int initialized;
+    int iter_count;  /* Step counter for advancing time-dependent thermal terms */
 } explicit_euler_simd_context;
 
 // Public API functions
@@ -603,7 +604,8 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     // Energy equation: advance temperature using updated velocity
     {
         cfd_status_t energy_status = energy_step_explicit_avx2_with_workspace(
-            field, grid, params, conservative_dt, 0.0, ctx->T_ws, size);
+            field, grid, params, conservative_dt,
+            ctx->iter_count * conservative_dt, ctx->T_ws, size);
         if (energy_status != CFD_SUCCESS) {
             return energy_status;
         }
@@ -642,5 +644,6 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
         return CFD_ERROR_DIVERGED;
     }
 
+    ctx->iter_count++;
     return CFD_SUCCESS;
 }
