@@ -70,6 +70,7 @@ typedef struct {
     double* k1_u; double* k1_v; double* k1_w; double* k1_p;
     double* k2_u; double* k2_v; double* k2_w; double* k2_p;
     double* u0;   double* v0;   double* w0;   double* p0;
+    double* T_ws;    /* Reusable scratch for the energy step (avoids per-step alloc) */
     double* dx_inv;  /* 1/(2*dx[i]) for i = 0..nx-1 */
     double* dy_inv;  /* 1/(2*dy[j]) for j = 0..ny-1 */
     size_t nx, ny, nz;
@@ -624,7 +625,7 @@ static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
         /* Energy equation: advance temperature after the full RK2 step */
         {
             cfd_status_t energy_status = energy_step_explicit_avx2_with_workspace(
-                field, g, params, dt, iter * dt, NULL, 0);
+                field, g, params, dt, iter * dt, ctx->T_ws, n);
             if (energy_status != CFD_SUCCESS) {
                 status = energy_status;
                 goto cleanup;
@@ -727,19 +728,21 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
     ctx->v0     = (double*)cfd_aligned_malloc(bytes);
     ctx->w0     = (double*)cfd_aligned_malloc(bytes);
     ctx->p0     = (double*)cfd_aligned_malloc(bytes);
+    ctx->T_ws   = (double*)cfd_aligned_malloc(bytes);
     ctx->dx_inv = (double*)cfd_aligned_malloc(ctx->nx * sizeof(double));
     ctx->dy_inv = (double*)cfd_aligned_malloc(ctx->ny * sizeof(double));
 
     if (!ctx->k1_u || !ctx->k1_v || !ctx->k1_w || !ctx->k1_p ||
         !ctx->k2_u || !ctx->k2_v || !ctx->k2_w || !ctx->k2_p ||
         !ctx->u0   || !ctx->v0   || !ctx->w0   || !ctx->p0   ||
-        !ctx->dx_inv || !ctx->dy_inv) {
+        !ctx->T_ws || !ctx->dx_inv || !ctx->dy_inv) {
         cfd_aligned_free(ctx->k1_u); cfd_aligned_free(ctx->k1_v);
         cfd_aligned_free(ctx->k1_w); cfd_aligned_free(ctx->k1_p);
         cfd_aligned_free(ctx->k2_u); cfd_aligned_free(ctx->k2_v);
         cfd_aligned_free(ctx->k2_w); cfd_aligned_free(ctx->k2_p);
         cfd_aligned_free(ctx->u0);   cfd_aligned_free(ctx->v0);
         cfd_aligned_free(ctx->w0);   cfd_aligned_free(ctx->p0);
+        cfd_aligned_free(ctx->T_ws);
         cfd_aligned_free(ctx->dx_inv);
         cfd_aligned_free(ctx->dy_inv);
         cfd_free(ctx);
@@ -779,6 +782,7 @@ void rk2_avx2_destroy(ns_solver_t* solver)
         cfd_aligned_free(ctx->k2_w); cfd_aligned_free(ctx->k2_p);
         cfd_aligned_free(ctx->u0);   cfd_aligned_free(ctx->v0);
         cfd_aligned_free(ctx->w0);   cfd_aligned_free(ctx->p0);
+        cfd_aligned_free(ctx->T_ws);
         cfd_aligned_free(ctx->dx_inv);
         cfd_aligned_free(ctx->dy_inv);
     }

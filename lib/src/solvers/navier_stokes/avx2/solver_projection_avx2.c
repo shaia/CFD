@@ -55,6 +55,7 @@ typedef struct {
     double* p_new;
     double* rhs;
     double* u_new;  /* used as p_temp for Poisson solver */
+    double* T_ws;   /* Reusable scratch for the energy step (avoids per-step alloc) */
     size_t nx;
     size_t ny;
     size_t nz;
@@ -128,9 +129,10 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     ctx->p_new  = (double*)cfd_aligned_malloc(size);
     ctx->rhs    = (double*)cfd_aligned_malloc(size);
     ctx->u_new  = (double*)cfd_aligned_malloc(size);
+    ctx->T_ws   = (double*)cfd_aligned_malloc(size);
 
     if (!ctx->u_star || !ctx->v_star || !ctx->w_star || !ctx->p_new ||
-        !ctx->rhs || !ctx->u_new) {
+        !ctx->rhs || !ctx->u_new || !ctx->T_ws) {
         if (ctx->u_star) {
             cfd_aligned_free(ctx->u_star);
         }
@@ -148,6 +150,9 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         }
         if (ctx->u_new) {
             cfd_aligned_free(ctx->u_new);
+        }
+        if (ctx->T_ws) {
+            cfd_aligned_free(ctx->T_ws);
         }
         cfd_free(ctx);
         return CFD_ERROR_NOMEM;
@@ -168,6 +173,7 @@ void projection_simd_destroy(struct NSSolver* solver) {
             cfd_aligned_free(ctx->p_new);
             cfd_aligned_free(ctx->rhs);
             cfd_aligned_free(ctx->u_new);
+            cfd_aligned_free(ctx->T_ws);
         }
         cfd_free(ctx);
         solver->context = NULL;
@@ -443,7 +449,7 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     // Energy equation: advance temperature after velocity correction
     {
         cfd_status_t energy_status = energy_step_explicit_avx2_with_workspace(
-            field, grid, params, dt, ctx->iter_count * dt, NULL, 0);
+            field, grid, params, dt, ctx->iter_count * dt, ctx->T_ws, size);
         if (energy_status != CFD_SUCCESS) {
             return energy_status;
         }

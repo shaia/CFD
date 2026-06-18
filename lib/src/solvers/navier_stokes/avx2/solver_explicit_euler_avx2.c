@@ -66,6 +66,7 @@ typedef struct {
     double* v_new;
     double* w_new;
     double* p_new;
+    double* T_ws;  /* Reusable scratch for the energy step (avoids per-step alloc) */
     double* dx_inv;
     double* dy_inv;
     size_t nx;
@@ -128,10 +129,12 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
     ctx->v_new = (double*)cfd_aligned_malloc(field_size);
     ctx->w_new = (double*)cfd_aligned_malloc(field_size);
     ctx->p_new = (double*)cfd_aligned_malloc(field_size);
+    ctx->T_ws  = (double*)cfd_aligned_malloc(field_size);
     ctx->dx_inv = (double*)cfd_aligned_malloc(ctx->nx * sizeof(double));
     ctx->dy_inv = (double*)cfd_aligned_malloc(ctx->ny * sizeof(double));
 
-    if (!ctx->u_new || !ctx->v_new || !ctx->w_new || !ctx->p_new || !ctx->dx_inv || !ctx->dy_inv) {
+    if (!ctx->u_new || !ctx->v_new || !ctx->w_new || !ctx->p_new || !ctx->T_ws ||
+        !ctx->dx_inv || !ctx->dy_inv) {
         if (ctx->u_new) {
             cfd_aligned_free(ctx->u_new);
         }
@@ -143,6 +146,9 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
         }
         if (ctx->p_new) {
             cfd_aligned_free(ctx->p_new);
+        }
+        if (ctx->T_ws) {
+            cfd_aligned_free(ctx->T_ws);
         }
         if (ctx->dx_inv) {
             cfd_aligned_free(ctx->dx_inv);
@@ -190,6 +196,7 @@ void explicit_euler_simd_destroy(struct NSSolver* solver) {
             cfd_aligned_free(ctx->v_new);
             cfd_aligned_free(ctx->w_new);
             cfd_aligned_free(ctx->p_new);
+            cfd_aligned_free(ctx->T_ws);
             cfd_aligned_free(ctx->dx_inv);
             cfd_aligned_free(ctx->dy_inv);
         }
@@ -596,7 +603,7 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     // Energy equation: advance temperature using updated velocity
     {
         cfd_status_t energy_status = energy_step_explicit_avx2_with_workspace(
-            field, grid, params, conservative_dt, 0.0, NULL, 0);
+            field, grid, params, conservative_dt, 0.0, ctx->T_ws, size);
         if (energy_status != CFD_SUCCESS) {
             return energy_status;
         }
