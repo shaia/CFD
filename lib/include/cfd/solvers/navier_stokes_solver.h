@@ -98,8 +98,12 @@ typedef double (*ns_heat_source_func_t)(double x, double y, double z, double t,
  * adiabatic), or DIRICHLET (fixed temperature). When a face is DIRICHLET, its
  * value is read from the corresponding field of `dirichlet_values`.
  *
- * Zero-initialization produces all-PERIODIC (BC_TYPE_PERIODIC == 0),
- * preserving backward compatibility.
+ * Zero-initialization produces an all-PERIODIC configuration
+ * (BC_TYPE_PERIODIC == 0), matching the solver's default
+ * `apply_boundary_conditions` behavior. This is not a "no change" mode:
+ * periodic thermal boundaries are actively enforced unless callers
+ * explicitly set `thermal_bc` for non-periodic thermal walls (for example,
+ * DIRICHLET or NEUMANN faces).
  */
 typedef struct {
     bc_type_t left;    /**< BC type for x=0 face */
