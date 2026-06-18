@@ -550,7 +550,12 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         apply_boundary_conditions(field, grid);
         copy_boundary_velocities_3d(field->u, field->v, field->w,
                                     u_new, v_new, w_new, nx, ny, nz);
-        energy_apply_thermal_bcs(field, params);
+        cfd_status_t bc_status = energy_apply_thermal_bcs(field, params);
+        if (bc_status != CFD_SUCCESS) {
+            cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
+            cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
+            return bc_status;
+        }
 
         /* NaN/Inf check */
         int has_nan = 0;

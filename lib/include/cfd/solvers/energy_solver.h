@@ -68,13 +68,16 @@ CFD_LIBRARY_EXPORT void energy_compute_buoyancy(double T_local, const ns_solver_
  * For each face configured as NEUMANN, copies from adjacent interior cell.
  * For PERIODIC faces (default), copies from the opposite interior cell.
  *
- * Only active when params->alpha > 0. Returns immediately otherwise.
+ * Only active when params->alpha > 0; returns CFD_SUCCESS (no-op) otherwise.
  *
  * @param field  Flow field (T is updated in-place)
  * @param params Solver parameters containing thermal_bc config
+ * @return CFD_SUCCESS, or CFD_ERROR_INVALID if field/params are NULL, a face
+ *         requests an unsupported BC type, or the grid is too small for a
+ *         requested BC type.
  */
-CFD_LIBRARY_EXPORT void energy_apply_thermal_bcs(flow_field* field,
-                                                  const ns_solver_params_t* params);
+CFD_LIBRARY_EXPORT cfd_status_t energy_apply_thermal_bcs(flow_field* field,
+                                                         const ns_solver_params_t* params);
 
 #ifdef __cplusplus
 }

@@ -265,7 +265,13 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         }
 
         /* Apply configured thermal BCs to temperature field */
-        energy_apply_thermal_bcs(field, params);
+        cfd_status_t bc_status = energy_apply_thermal_bcs(field, params);
+        if (bc_status != CFD_SUCCESS) {
+            cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
+            cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+            cfd_free(T_energy_ws);
+            return bc_status;
+        }
 
         /* Restore caller-set boundary conditions */
         copy_boundary_velocities_3d(field->u, field->v, field->w,

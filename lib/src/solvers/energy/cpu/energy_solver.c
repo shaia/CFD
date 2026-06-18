@@ -195,10 +195,21 @@ void energy_compute_buoyancy(double T_local, const ns_solver_params_t* params,
     *source_w += -params->beta * dT * params->gravity[2];
 }
 
-void energy_apply_thermal_bcs(flow_field* field,
-                               const ns_solver_params_t* params) {
-    if (!field || !params || !field->T) return;
-    if (params->alpha <= 0.0) return;
+/* A face may only request a thermal BC type the energy solver implements. */
+static int is_supported_thermal_bc(bc_type_t type) {
+    return type == BC_TYPE_PERIODIC || type == BC_TYPE_NEUMANN ||
+           type == BC_TYPE_DIRICHLET;
+}
+
+cfd_status_t energy_apply_thermal_bcs(flow_field* field,
+                                      const ns_solver_params_t* params) {
+    if (!field || !params || !field->T) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "energy_apply_thermal_bcs: field, params, and T must be non-NULL");
+        return CFD_ERROR_INVALID;
+    }
+    /* alpha <= 0 means the energy equation is disabled: a legitimate no-op. */
+    if (params->alpha <= 0.0) return CFD_SUCCESS;
 
     const ns_thermal_bc_config_t* tbc = &params->thermal_bc;
 
@@ -207,13 +218,30 @@ void energy_apply_thermal_bcs(flow_field* field,
     size_t nz = field->nz;
     size_t plane = nx * ny;
 
-    /* Guard: Neumann needs >= 2 cells, Periodic needs >= 3 cells */
-    if ((tbc->left == BC_TYPE_NEUMANN || tbc->right == BC_TYPE_NEUMANN) && nx < 2) return;
-    if ((tbc->bottom == BC_TYPE_NEUMANN || tbc->top == BC_TYPE_NEUMANN) && ny < 2) return;
-    if ((tbc->left == BC_TYPE_PERIODIC || tbc->right == BC_TYPE_PERIODIC) && nx < 3) return;
-    if ((tbc->bottom == BC_TYPE_PERIODIC || tbc->top == BC_TYPE_PERIODIC) && ny < 3) return;
-    if (nz > 1 && (tbc->back == BC_TYPE_NEUMANN || tbc->front == BC_TYPE_NEUMANN) && nz < 2) return;
-    if (nz > 1 && (tbc->back == BC_TYPE_PERIODIC || tbc->front == BC_TYPE_PERIODIC) && nz < 3) return;
+    /* Reject unsupported per-face BC types so misconfiguration (e.g. an
+     * accidental BC_TYPE_NOSLIP/INLET) fails loudly instead of silently
+     * leaving that face unchanged. Front/back only apply in 3D. */
+    if (!is_supported_thermal_bc(tbc->left) || !is_supported_thermal_bc(tbc->right) ||
+        !is_supported_thermal_bc(tbc->bottom) || !is_supported_thermal_bc(tbc->top) ||
+        (nz > 1 && (!is_supported_thermal_bc(tbc->front) ||
+                    !is_supported_thermal_bc(tbc->back)))) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "energy_apply_thermal_bcs: unsupported thermal BC type on a face "
+                      "(only PERIODIC, NEUMANN, DIRICHLET are valid)");
+        return CFD_ERROR_INVALID;
+    }
+
+    /* A requested BC must fit the grid: Neumann needs >= 2 cells, Periodic >= 3. */
+    if (((tbc->left == BC_TYPE_NEUMANN || tbc->right == BC_TYPE_NEUMANN) && nx < 2) ||
+        ((tbc->bottom == BC_TYPE_NEUMANN || tbc->top == BC_TYPE_NEUMANN) && ny < 2) ||
+        ((tbc->left == BC_TYPE_PERIODIC || tbc->right == BC_TYPE_PERIODIC) && nx < 3) ||
+        ((tbc->bottom == BC_TYPE_PERIODIC || tbc->top == BC_TYPE_PERIODIC) && ny < 3) ||
+        (nz > 1 && (tbc->back == BC_TYPE_NEUMANN || tbc->front == BC_TYPE_NEUMANN) && nz < 2) ||
+        (nz > 1 && (tbc->back == BC_TYPE_PERIODIC || tbc->front == BC_TYPE_PERIODIC) && nz < 3)) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "energy_apply_thermal_bcs: grid too small for the requested thermal BC type");
+        return CFD_ERROR_INVALID;
+    }
 
     /* Left face (i=0) */
     for (size_t k = 0; k < nz; k++) {
@@ -301,4 +329,6 @@ void energy_apply_thermal_bcs(flow_field* field,
             }
         }
     }
+
+    return CFD_SUCCESS;
 }

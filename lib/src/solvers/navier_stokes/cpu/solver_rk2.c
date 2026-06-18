@@ -345,7 +345,10 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
          * This updates ghost cells for the next step's k1 evaluation.
          * Then apply configured thermal BCs (overwrites periodic T values). */
         apply_boundary_conditions(field, grid);
-        energy_apply_thermal_bcs(field, params);
+        status = energy_apply_thermal_bcs(field, params);
+        if (status != CFD_SUCCESS) {
+            goto cleanup;
+        }
 
         /* NaN / Inf check */
         for (size_t n = 0; n < total; n++) {

@@ -477,7 +477,7 @@ static void test_thermal_bc_dirichlet_neumann(void) {
     params.thermal_bc.dirichlet_values.left  = 500.0;
     params.thermal_bc.dirichlet_values.right = 200.0;
 
-    energy_apply_thermal_bcs(field, &params);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, energy_apply_thermal_bcs(field, &params));
 
     /* Verify Dirichlet on left (i=0) and right (i=nx-1) */
     for (size_t j = 0; j < TBC_NY; j++) {
@@ -537,7 +537,7 @@ static void test_thermal_bc_all_periodic(void) {
     ns_solver_params_t params = ns_solver_params_default();
     params.alpha = 0.01;  /* Energy enabled, all-periodic by default */
 
-    energy_apply_thermal_bcs(field, &params);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, energy_apply_thermal_bcs(field, &params));
 
     /* Interior cells (1..nx-2, 1..ny-2) should be unchanged */
     for (size_t j = 1; j < PER_NY - 1; j++) {
@@ -632,7 +632,7 @@ static void test_thermal_bc_3d_front_back(void) {
     params.thermal_bc.dirichlet_values.bottom = 99.0;
     params.thermal_bc.dirichlet_values.top    = 77.0;
 
-    energy_apply_thermal_bcs(field, &params);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, energy_apply_thermal_bcs(field, &params));
 
     /* Verify back face (k=0): back Dirichlet runs after bottom/top,
      * so the entire k=0 plane should be 50.0. */
@@ -702,7 +702,48 @@ static void test_thermal_bc_3d_front_back(void) {
 }
 
 /* ============================================================================
- * TEST 11: Energy unsupported on non-CPU solve path
+ * TEST 11: Thermal BC invalid configuration is rejected
+ *
+ * energy_apply_thermal_bcs must surface misconfiguration as CFD_ERROR_INVALID
+ * rather than silently leaving a face unchanged: NULL inputs and unsupported
+ * per-face BC types (e.g. BC_TYPE_NOSLIP) are errors. alpha<=0 stays a no-op.
+ * ============================================================================ */
+
+static void test_thermal_bc_invalid_config(void) {
+    const size_t nx = 5, ny = 5;
+    grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+    flow_field* field = flow_field_create(nx, ny, 1);
+    TEST_ASSERT_NOT_NULL(field);
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;
+
+    /* NULL field/params -> CFD_ERROR_INVALID */
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, energy_apply_thermal_bcs(NULL, &params));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, energy_apply_thermal_bcs(field, NULL));
+
+    /* Unsupported per-face BC type -> CFD_ERROR_INVALID */
+    params.thermal_bc.left = BC_TYPE_NOSLIP;
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, energy_apply_thermal_bcs(field, &params));
+
+    /* A valid configuration still succeeds */
+    params.thermal_bc.left = BC_TYPE_DIRICHLET;
+    params.thermal_bc.dirichlet_values.left = 300.0;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, energy_apply_thermal_bcs(field, &params));
+
+    /* alpha<=0 is a no-op success regardless of (otherwise invalid) config */
+    params.alpha = 0.0;
+    params.thermal_bc.left = BC_TYPE_NOSLIP;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, energy_apply_thermal_bcs(field, &params));
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+/* ============================================================================
+ * TEST 12: Energy unsupported on non-CPU solve path
  *
  * The energy equation is only implemented in scalar CPU backends. Non-CPU
  * backends must reject alpha>0 / beta!=0 with CFD_ERROR_UNSUPPORTED rather than
@@ -787,6 +828,7 @@ int main(void) {
     RUN_TEST(test_thermal_bc_dirichlet_neumann);
     RUN_TEST(test_thermal_bc_all_periodic);
     RUN_TEST(test_thermal_bc_3d_front_back);
+    RUN_TEST(test_thermal_bc_invalid_config);
     RUN_TEST(test_energy_unsupported_omp_solve);
     return UNITY_END();
 }
