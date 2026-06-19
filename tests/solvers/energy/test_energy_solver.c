@@ -759,9 +759,16 @@ static void test_thermal_bc_invalid_config(void) {
 
 /* Advance `solver_name` for `steps` steps of left-hot/right-cold heat
  * conduction, writing the final temperature field into T_out (size CONSIST_N).
- * Returns solver_init's status when init fails (CFD_ERROR_UNSUPPORTED => the
- * caller should skip), otherwise the solver_solve status. Returns
- * CFD_ERROR_UNSUPPORTED if the solver name is not registered (backend absent). */
+ *
+ * Return value distinguishes "backend genuinely unavailable" (caller should
+ * skip) from "backend present but rejected the energy run" (caller should
+ * fail):
+ *   CFD_ERROR_NOT_FOUND   - solver name not registered, or init returned
+ *                           CFD_ERROR_UNSUPPORTED (backend/sub-solver absent)
+ *   other init error      - propagated as-is (real failure)
+ *   solver_solve's status - when init succeeded; a solve-time
+ *                           CFD_ERROR_UNSUPPORTED therefore surfaces as a
+ *                           failure rather than a silent skip. */
 static cfd_status_t run_energy_case(ns_solver_registry_t* registry,
                                     const char* solver_name, int steps,
                                     double* T_out) {
@@ -778,10 +785,10 @@ static cfd_status_t run_energy_case(ns_solver_registry_t* registry,
 
     ns_solver_t* solver = cfd_solver_create(registry, solver_name);
     if (!solver) {
-        /* Backend not compiled in — signal skip */
+        /* Backend not registered — signal skip */
         flow_field_destroy(field);
         grid_destroy(g);
-        return CFD_ERROR_UNSUPPORTED;
+        return CFD_ERROR_NOT_FOUND;
     }
 
     ns_solver_params_t params = ns_solver_params_default();
@@ -796,8 +803,15 @@ static cfd_status_t run_energy_case(ns_solver_registry_t* registry,
     params.thermal_bc.dirichlet_values.right = 280.0;
 
     cfd_status_t status = solver_init(solver, g, &params);
-    if (status == CFD_SUCCESS) {
+    if (status == CFD_ERROR_UNSUPPORTED) {
+        /* Backend present but cannot initialize this config (e.g. a required
+         * SIMD sub-solver is absent) — treat as a skip, not a failure. */
+        status = CFD_ERROR_NOT_FOUND;
+    } else if (status == CFD_SUCCESS) {
         ns_solver_stats_t stats = ns_solver_stats_default();
+        /* A solve-time CFD_ERROR_UNSUPPORTED is returned as-is so the caller
+         * fails: init accepted the solver, so rejecting the energy params now
+         * is a real regression, not an absent backend. */
         status = solver_solve(solver, field, g, &params, &stats);
         if (status == CFD_SUCCESS) {
             memcpy(T_out, field->T, CONSIST_N * sizeof(double));
@@ -840,9 +854,11 @@ static void test_energy_optimized_matches_scalar(void) {
         TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, ss,
                                   "scalar energy solve must succeed");
 
-        /* Optimized backend: skip cleanly if it (or its sub-solver) is absent. */
+        /* Optimized backend: skip cleanly only if it (or its sub-solver) is
+         * genuinely absent. A present backend that rejects the energy params
+         * at solve time returns CFD_ERROR_UNSUPPORTED here and must fail. */
         cfd_status_t os = run_energy_case(registry, pairs[p].optimized, steps, T_opt);
-        if (os == CFD_ERROR_UNSUPPORTED) {
+        if (os == CFD_ERROR_NOT_FOUND) {
             continue;
         }
         TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, os,
