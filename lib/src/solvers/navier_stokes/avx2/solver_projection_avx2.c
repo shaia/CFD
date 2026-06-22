@@ -17,6 +17,8 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
+#include "cfd/solvers/energy_solver.h"
+#include "../../energy/energy_solver_internal.h"
 
 #include "../boundary_copy_utils.h"
 
@@ -53,6 +55,7 @@ typedef struct {
     double* p_new;
     double* rhs;
     double* u_new;  /* used as p_temp for Poisson solver */
+    double* T_ws;   /* Reusable scratch for the energy step (avoids per-step alloc) */
     size_t nx;
     size_t ny;
     size_t nz;
@@ -126,9 +129,10 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     ctx->p_new  = (double*)cfd_aligned_malloc(size);
     ctx->rhs    = (double*)cfd_aligned_malloc(size);
     ctx->u_new  = (double*)cfd_aligned_malloc(size);
+    ctx->T_ws   = (double*)cfd_aligned_malloc(size);
 
     if (!ctx->u_star || !ctx->v_star || !ctx->w_star || !ctx->p_new ||
-        !ctx->rhs || !ctx->u_new) {
+        !ctx->rhs || !ctx->u_new || !ctx->T_ws) {
         if (ctx->u_star) {
             cfd_aligned_free(ctx->u_star);
         }
@@ -146,6 +150,9 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         }
         if (ctx->u_new) {
             cfd_aligned_free(ctx->u_new);
+        }
+        if (ctx->T_ws) {
+            cfd_aligned_free(ctx->T_ws);
         }
         cfd_free(ctx);
         return CFD_ERROR_NOMEM;
@@ -166,6 +173,7 @@ void projection_simd_destroy(struct NSSolver* solver) {
             cfd_aligned_free(ctx->p_new);
             cfd_aligned_free(ctx->rhs);
             cfd_aligned_free(ctx->u_new);
+            cfd_aligned_free(ctx->T_ws);
         }
         cfd_free(ctx);
         solver->context = NULL;
@@ -283,6 +291,10 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
                 double z_coord = (ctx->nz > 1 && grid->z) ? grid->z[k] : 0.0;
                 compute_source_terms(x_coord, y_coord, z_coord, ctx->iter_count, dt, params,
                                      &source_u, &source_v, &source_w);
+
+                // Boussinesq buoyancy source (no-op when beta == 0)
+                energy_compute_buoyancy(field->T[idx], params,
+                                        &source_u, &source_v, &source_w);
 
                 // Intermediate velocity (without pressure gradient)
                 u_star[idx] = u + (dt * (-conv_u + visc_u + source_u));
@@ -433,6 +445,23 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
 
     // Update pressure field
     memcpy(field->p, p_new, size * sizeof(double));
+
+    // Energy equation: advance temperature after velocity correction
+    {
+        cfd_status_t energy_status = energy_step_explicit_avx2_with_workspace(
+            field, grid, params, dt, ctx->iter_count * dt, ctx->T_ws, size);
+        if (energy_status != CFD_SUCCESS) {
+            return energy_status;
+        }
+    }
+
+    // Apply configured thermal BCs to temperature field
+    {
+        cfd_status_t bc_status = energy_apply_thermal_bcs(field, params);
+        if (bc_status != CFD_SUCCESS) {
+            return bc_status;
+        }
+    }
 
     // Copy boundary velocity values from star arrays (which have caller's BCs)
     copy_boundary_velocities_3d(field->u, field->v, field->w, u_star, v_star, w_star,

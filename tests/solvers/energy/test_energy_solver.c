@@ -743,71 +743,136 @@ static void test_thermal_bc_invalid_config(void) {
 }
 
 /* ============================================================================
- * TEST 12: Energy unsupported on non-CPU solve path
+ * TEST 12: Energy equation cross-backend consistency (OMP vs scalar)
  *
- * The energy equation is only implemented in scalar CPU backends. Non-CPU
- * backends must reject alpha>0 / beta!=0 with CFD_ERROR_UNSUPPORTED rather than
- * silently running a momentum-only solve. This locks in the contract for the
- * solver_solve() entry point of the OMP backends, whose step path was already
- * guarded but whose solve path previously was not.
+ * The energy equation + thermal BCs are now implemented on the OMP backends.
+ * Each OMP solver must (a) accept alpha>0 instead of returning
+ * CFD_ERROR_UNSUPPORTED, and (b) produce a temperature field that matches its
+ * scalar counterpart, since both share identical numerics. A heat-conduction
+ * setup (left-hot / right-cold Dirichlet faces, quiescent flow) is advanced on
+ * both backends and the final T fields are compared.
  * ============================================================================ */
 
-static void test_energy_unsupported_omp_solve(void) {
-    const char* omp_solvers[] = {
-        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
-        NS_SOLVER_TYPE_RK2_OMP,
-        NS_SOLVER_TYPE_PROJECTION_OMP,
+#define CONSIST_NX 9
+#define CONSIST_NY 9
+#define CONSIST_N  (CONSIST_NX * CONSIST_NY)
+
+/* Advance `solver_name` for `steps` steps of left-hot/right-cold heat
+ * conduction, writing the final temperature field into T_out (size CONSIST_N).
+ *
+ * Return value distinguishes "backend genuinely unavailable" (caller should
+ * skip) from "backend present but rejected the energy run" (caller should
+ * fail):
+ *   CFD_ERROR_NOT_FOUND   - solver name not registered, or init returned
+ *                           CFD_ERROR_UNSUPPORTED (backend/sub-solver absent)
+ *   other init error      - propagated as-is (real failure)
+ *   solver_solve's status - when init succeeded; a solve-time
+ *                           CFD_ERROR_UNSUPPORTED therefore surfaces as a
+ *                           failure rather than a silent skip. */
+static cfd_status_t run_energy_case(ns_solver_registry_t* registry,
+                                    const char* solver_name, int steps,
+                                    double* T_out) {
+    grid* g = grid_create(CONSIST_NX, CONSIST_NY, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    if (!g) return CFD_ERROR_NOMEM;
+    grid_initialize_uniform(g);
+
+    flow_field* field = flow_field_create(CONSIST_NX, CONSIST_NY, 1);
+    if (!field) { grid_destroy(g); return CFD_ERROR_NOMEM; }
+    for (size_t n = 0; n < CONSIST_N; n++) {
+        field->rho[n] = 1.0;
+        field->T[n] = 300.0;
+    }
+
+    ns_solver_t* solver = cfd_solver_create(registry, solver_name);
+    if (!solver) {
+        /* Backend not registered — signal skip */
+        flow_field_destroy(field);
+        grid_destroy(g);
+        return CFD_ERROR_NOT_FOUND;
+    }
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.05;
+    params.dt = 0.001;
+    params.max_iter = steps;
+    params.thermal_bc.left = BC_TYPE_DIRICHLET;
+    params.thermal_bc.right = BC_TYPE_DIRICHLET;
+    params.thermal_bc.bottom = BC_TYPE_NEUMANN;
+    params.thermal_bc.top = BC_TYPE_NEUMANN;
+    params.thermal_bc.dirichlet_values.left = 320.0;
+    params.thermal_bc.dirichlet_values.right = 280.0;
+
+    cfd_status_t status = solver_init(solver, g, &params);
+    if (status == CFD_ERROR_UNSUPPORTED) {
+        /* Backend present but cannot initialize this config (e.g. a required
+         * SIMD sub-solver is absent) — treat as a skip, not a failure. */
+        status = CFD_ERROR_NOT_FOUND;
+    } else if (status == CFD_SUCCESS) {
+        ns_solver_stats_t stats = ns_solver_stats_default();
+        /* A solve-time CFD_ERROR_UNSUPPORTED is returned as-is so the caller
+         * fails: init accepted the solver, so rejecting the energy params now
+         * is a real regression, not an absent backend. */
+        status = solver_solve(solver, field, g, &params, &stats);
+        if (status == CFD_SUCCESS) {
+            memcpy(T_out, field->T, CONSIST_N * sizeof(double));
+        }
+    }
+
+    solver_destroy(solver);
+    flow_field_destroy(field);
+    grid_destroy(g);
+    return status;
+}
+
+static void test_energy_optimized_matches_scalar(void) {
+    /* Each optimized backend (OMP and AVX2) must accept the energy equation and
+     * reproduce the scalar reference temperature field. */
+    const struct {
+        const char* scalar;
+        const char* optimized;
+    } pairs[] = {
+        { NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP },
+        { NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK2_OMP },
+        { NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OMP },
+        { NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED },
+        { NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK2_OPTIMIZED },
+        { NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED },
     };
-    const size_t n_solvers = sizeof(omp_solvers) / sizeof(omp_solvers[0]);
-    const size_t nx = 5, ny = 5;
+    const size_t n_pairs = sizeof(pairs) / sizeof(pairs[0]);
+    const int steps = 20;
 
     ns_solver_registry_t* registry = cfd_registry_create();
     TEST_ASSERT_NOT_NULL(registry);
     cfd_registry_register_defaults(registry);
 
-    for (size_t s = 0; s < n_solvers; s++) {
-        grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
-        TEST_ASSERT_NOT_NULL(g);
-        grid_initialize_uniform(g);
+    for (size_t p = 0; p < n_pairs; p++) {
+        double T_scalar[CONSIST_N];
+        double T_opt[CONSIST_N];
 
-        flow_field* field = flow_field_create(nx, ny, 1);
-        TEST_ASSERT_NOT_NULL(field);
-        for (size_t n = 0; n < nx * ny; n++) {
-            field->rho[n] = 1.0;
-            field->T[n] = 300.0;
-        }
+        /* Scalar reference must always succeed. */
+        cfd_status_t ss = run_energy_case(registry, pairs[p].scalar, steps, T_scalar);
+        TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, ss,
+                                  "scalar energy solve must succeed");
 
-        ns_solver_t* solver = cfd_solver_create(registry, omp_solvers[s]);
-        if (!solver) {
-            /* OMP backend not compiled in — skip without failing */
-            flow_field_destroy(field);
-            grid_destroy(g);
+        /* Optimized backend: skip cleanly only if it (or its sub-solver) is
+         * genuinely absent. A present backend that rejects the energy params
+         * at solve time returns CFD_ERROR_UNSUPPORTED here and must fail. */
+        cfd_status_t os = run_energy_case(registry, pairs[p].optimized, steps, T_opt);
+        if (os == CFD_ERROR_NOT_FOUND) {
             continue;
         }
+        TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, os,
+                                  "optimized solve must accept energy equation params");
 
-        /* Init with energy disabled so backends that probe sub-solver
-         * availability (e.g. projection_omp checks OMP CG) succeed. */
-        ns_solver_params_t params = ns_solver_params_default();
-        cfd_status_t init_status = solver_init(solver, g, &params);
-        if (init_status == CFD_ERROR_UNSUPPORTED) {
-            /* OMP sub-solver unavailable — skip without failing */
-            solver_destroy(solver);
-            flow_field_destroy(field);
-            grid_destroy(g);
-            continue;
+        /* Tolerance is moderate (not machine-epsilon): the AVX2 momentum kernel
+         * uses fused multiply-add, so the advecting velocity field differs from
+         * the scalar path at FP-epsilon and accumulates over the run. A real
+         * stencil/BC bug would diverge by O(1), far above this bound. */
+        for (size_t n = 0; n < CONSIST_N; n++) {
+            TEST_ASSERT_DOUBLE_WITHIN_MESSAGE(
+                1e-3, T_scalar[n], T_opt[n],
+                "optimized temperature field must match scalar reference");
         }
-        TEST_ASSERT_EQUAL(CFD_SUCCESS, init_status);
-
-        /* Now enable the energy equation and expect rejection. */
-        params.alpha = 0.01;
-        ns_solver_stats_t stats = ns_solver_stats_default();
-        cfd_status_t solve_status = solver_solve(solver, field, g, &params, &stats);
-        TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_UNSUPPORTED, solve_status,
-                                  "OMP solve must reject energy equation params");
-
-        solver_destroy(solver);
-        flow_field_destroy(field);
-        grid_destroy(g);
     }
 
     cfd_registry_destroy(registry);
@@ -829,6 +894,6 @@ int main(void) {
     RUN_TEST(test_thermal_bc_all_periodic);
     RUN_TEST(test_thermal_bc_3d_front_back);
     RUN_TEST(test_thermal_bc_invalid_config);
-    RUN_TEST(test_energy_unsupported_omp_solve);
+    RUN_TEST(test_energy_optimized_matches_scalar);
     return UNITY_END();
 }

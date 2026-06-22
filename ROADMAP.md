@@ -290,10 +290,10 @@ Find eigenvalues/eigenvectors for stability analysis.
 
 ### 2.1 Energy Equation (P1)
 
-- [ ] Temperature advection-diffusion
-- [ ] Thermal boundary conditions
-- [ ] Buoyancy coupling (Boussinesq approximation)
-- [ ] Heat source terms
+- [x] Temperature advection-diffusion
+- [x] Thermal boundary conditions
+- [x] Buoyancy coupling (Boussinesq approximation)
+- [x] Heat source terms
 - [ ] Conjugate heat transfer
 - [ ] Variable properties (viscosity/density as function of T)
 - [ ] Temperature-dependent thermal conductivity
@@ -684,9 +684,9 @@ Alternative to full C inference (Phase 7). Python handles training/orchestration
 
 ### v0.3.0 - Heat Transfer
 
-- [ ] Energy equation
-- [ ] Thermal boundary conditions
-- [ ] Natural convection validation
+- [x] Energy equation
+- [x] Thermal boundary conditions
+- [x] Natural convection validation
 
 ### v0.4.0 - Turbulence
 

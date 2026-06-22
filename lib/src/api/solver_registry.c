@@ -37,16 +37,20 @@ static double compute_max_temperature(const flow_field* field) {
     return max_t;
 }
 
-/* Check if energy equation params are set on a backend that doesn't support them */
+#ifdef CFD_HAS_CUDA
+/* Reject energy-equation params on the GPU backend, which does not yet
+ * implement the energy equation. The CPU, OMP, and SIMD backends now support
+ * it, so only the CUDA wrappers (below) still need this guard. */
 static cfd_status_t check_energy_unsupported(const ns_solver_params_t* params) {
     if (params->alpha > 0.0 || params->beta != 0.0) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "Energy equation (alpha/beta) not supported by this backend; "
-                      "use a scalar CPU solver (explicit_euler, projection, rk2)");
+                      "Energy equation (alpha/beta) not supported by the GPU backend; "
+                      "use a CPU, OMP, or SIMD solver");
         return CFD_ERROR_UNSUPPORTED;
     }
     return CFD_SUCCESS;
 }
+#endif /* CFD_HAS_CUDA */
 
 // Forward declarations for internal solver implementations
 // These are not part of the public API
@@ -724,8 +728,6 @@ static ns_solver_t* create_rk2_optimized_solver(void) {
 static cfd_status_t explicit_euler_simd_step_guarded(ns_solver_t* solver, flow_field* field,
                                                       const grid* grid, const ns_solver_params_t* params,
                                                       ns_solver_stats_t* stats) {
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
     return explicit_euler_simd_step(solver, field, grid, params, stats);
 }
 
@@ -734,9 +736,6 @@ static cfd_status_t explicit_euler_simd_solve(ns_solver_t* solver, flow_field* f
     if (!solver || !field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
-
     for (int i = 0; i < params->max_iter; i++) {
         cfd_status_t status = explicit_euler_simd_step(solver, field, grid, params, NULL);
         if (status != CFD_SUCCESS) {
@@ -907,8 +906,6 @@ static ns_solver_t* create_projection_solver(void) {
 static cfd_status_t projection_simd_step_guarded(ns_solver_t* solver, flow_field* field,
                                                    const grid* grid, const ns_solver_params_t* params,
                                                    ns_solver_stats_t* stats) {
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
     return projection_simd_step(solver, field, grid, params, stats);
 }
 
@@ -917,9 +914,6 @@ static cfd_status_t projection_simd_solve(ns_solver_t* solver, flow_field* field
     if (!solver || !field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
-
     // Use the step function which utilizes the persistent context
     for (int i = 0; i < params->max_iter; i++) {
         cfd_status_t status = projection_simd_step(solver, field, grid, params,
@@ -1214,9 +1208,6 @@ static cfd_status_t explicit_euler_omp_step(ns_solver_t* solver, flow_field* fie
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
-
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
@@ -1247,9 +1238,6 @@ static cfd_status_t explicit_euler_omp_solve(ns_solver_t* solver, flow_field* fi
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
-
     explicit_euler_omp_impl(field, grid, params);
 
     if (stats) {
@@ -1303,9 +1291,6 @@ static cfd_status_t rk2_omp_step(ns_solver_t* solver, flow_field* field, const g
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
-
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
@@ -1342,9 +1327,6 @@ static cfd_status_t rk2_omp_solve(ns_solver_t* solver, flow_field* field, const 
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
-
     cfd_status_t status = rk2_omp_impl(field, grid, params);
 
     if (stats) {
@@ -1430,9 +1412,6 @@ static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, 
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
-
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
@@ -1472,9 +1451,6 @@ static cfd_status_t projection_omp_solve(ns_solver_t* solver, flow_field* field,
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
-
     cfd_status_t status = solve_projection_method_omp(field, grid, params);
     if (status != CFD_SUCCESS) {
         return status;
