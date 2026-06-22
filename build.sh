@@ -39,6 +39,17 @@ print_header() {
     echo -e "${BLUE}================================${NC}\n"
 }
 
+# Detect the number of available CPUs (portable across Linux/macOS)
+detect_cpus() {
+    if command -v nproc >/dev/null 2>&1; then
+        nproc
+    elif command -v sysctl >/dev/null 2>&1; then
+        sysctl -n hw.ncpu 2>/dev/null || echo 4
+    else
+        echo 4
+    fi
+}
+
 # Check if we're in the right directory
 check_directory() {
     if [[ ! -f "CMakeLists.txt" ]]; then
@@ -196,14 +207,21 @@ test() {
         exit 1
     fi
 
+    # Parallel test execution. Override the job count with CTEST_PARALLEL=N,
+    # and bound per-test OpenMP threads with OMP_NUM_THREADS to avoid
+    # oversubscription when many ctest jobs run concurrently.
+    local jobs="${CTEST_PARALLEL:-$(detect_cpus)}"
+    export OMP_NUM_THREADS="${OMP_NUM_THREADS:-2}"
+    print_status "Running with ctest --parallel $jobs (OMP_NUM_THREADS=$OMP_NUM_THREADS)"
+
     cd "$BUILD_DIR"
     if [[ -f "CTestTestfile.cmake" ]]; then
         if [[ "$run_all" == "1" ]]; then
             print_status "Including long-running validation and cross-arch tests"
-            ctest -C "$CMAKE_BUILD_TYPE" --output-on-failure "$@"
+            ctest -C "$CMAKE_BUILD_TYPE" --output-on-failure --parallel "$jobs" "$@"
         else
             print_status "Excluding long-running tests (validation, cross-arch); use '$0 test all' to include them"
-            ctest -C "$CMAKE_BUILD_TYPE" --output-on-failure -LE "cross-arch|validation" "$@"
+            ctest -C "$CMAKE_BUILD_TYPE" --output-on-failure --parallel "$jobs" -LE "cross-arch|validation" "$@"
         fi
         cd ..
         print_success "Tests completed"

@@ -330,6 +330,15 @@ static void test_dvd_ra1e3_omp(void) {
                       /*tol_rel*/ 0.10, /*u*/ 3.649, /*v*/ 3.697, /*Nu*/ 1.117);
 }
 
+/* Same benchmark on the AVX2 projection backend: validates that vectorized
+ * buoyancy + the AVX2 energy step reproduce the de Vahl Davis reference.
+ * Skips cleanly if the SIMD backend is not built. */
+static void test_dvd_ra1e3_avx2(void) {
+    run_dvd_benchmark(NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
+                      /*Ra*/ 1000.0, /*n*/ 41, /*dt*/ 0.002, /*max_steps*/ 30000,
+                      /*tol_rel*/ 0.10, /*u*/ 3.649, /*v*/ 3.697, /*Nu*/ 1.117);
+}
+
 static void test_dvd_ra1e3_fine(void) {
     /* Expensive 81x81 validation runs on the optimized OMP backend (project
      * policy: long-running validation must not use the scalar reference). */
@@ -348,6 +357,7 @@ int main(void) {
     RUN_TEST(test_dvd_ra1e3);
 #if CAVITY_FULL_VALIDATION
     RUN_TEST(test_dvd_ra1e3_omp);
+    RUN_TEST(test_dvd_ra1e3_avx2);
     RUN_TEST(test_dvd_ra1e3_fine);
 #endif
     return UNITY_END();
