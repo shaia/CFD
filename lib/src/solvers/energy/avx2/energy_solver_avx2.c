@@ -147,6 +147,18 @@ cfd_status_t energy_step_explicit_avx2_with_workspace(
     size_t n_interior = nx - 2;
     size_t i_tail = 1 + (n_interior / 4) * 4;
 
+#if USE_AVX
+    const __m256d inv_2dx_v = _mm256_set1_pd(inv_2dx);
+    const __m256d inv_2dy_v = _mm256_set1_pd(inv_2dy);
+    const __m256d inv_2dz_v = _mm256_set1_pd(inv_2dz);
+    const __m256d inv_dx2_v = _mm256_set1_pd(inv_dx2);
+    const __m256d inv_dy2_v = _mm256_set1_pd(inv_dy2);
+    const __m256d inv_dz2_v = _mm256_set1_pd(inv_dz2);
+    const __m256d alpha_v   = _mm256_set1_pd(alpha);
+    const __m256d dt_v      = _mm256_set1_pd(dt);
+    const __m256d two_v     = _mm256_set1_pd(2.0);
+#endif
+
     for (size_t k = k_start; k < k_end; k++) {
         size_t k_offset = k * stride_z;
         int j;
@@ -157,16 +169,6 @@ cfd_status_t energy_step_explicit_avx2_with_workspace(
             size_t row = k_offset + (size_t)j * nx;
 
 #if USE_AVX
-            const __m256d inv_2dx_v = _mm256_set1_pd(inv_2dx);
-            const __m256d inv_2dy_v = _mm256_set1_pd(inv_2dy);
-            const __m256d inv_2dz_v = _mm256_set1_pd(inv_2dz);
-            const __m256d inv_dx2_v = _mm256_set1_pd(inv_dx2);
-            const __m256d inv_dy2_v = _mm256_set1_pd(inv_dy2);
-            const __m256d inv_dz2_v = _mm256_set1_pd(inv_dz2);
-            const __m256d alpha_v = _mm256_set1_pd(alpha);
-            const __m256d dt_v = _mm256_set1_pd(dt);
-            const __m256d two_v = _mm256_set1_pd(2.0);
-
             for (size_t i = 1; i < i_tail; i += 4) {
                 size_t idx = row + i;
 
