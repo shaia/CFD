@@ -977,16 +977,19 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
             ctx->d_u_bc, ctx->d_v_bc, ctx->d_w_bc, nx, ny, nz);
 
         // Step 5: Energy equation — advance temperature with the corrected
-        // velocity, then enforce thermal BCs. Interior is written to d_T_new;
-        // the DtoD copy carries it back into d_T and the BC kernels overwrite
-        // every boundary face (so the uninitialized d_T_new boundary is never read).
+        // velocity, then enforce thermal BCs. The kernel writes the new interior
+        // to d_T_new; swapping d_T/d_T_new (instead of a DtoD copy, like the
+        // Poisson loop above) makes d_T the updated field, and the BC kernels
+        // then overwrite every boundary face so the stale swapped-in boundary is
+        // never read by the next iteration.
         if (energy_on) {
             kernel_energy_step<<<grid_dim, block, 0, ctx->stream>>>(
                 ctx->d_T, ctx->d_u, ctx->d_v, ctx->d_w, ctx->d_T_new,
                 nx, ny, stride_z, k_start, k_end, params->alpha,
                 inv_2dx, inv_2dy, inv_2dz, inv_dx2, inv_dy2, inv_dz2, dt);
-            cudaMemcpyAsync(ctx->d_T, ctx->d_T_new, ctx->size * sizeof(double),
-                            cudaMemcpyDeviceToDevice, ctx->stream);
+            double* tmp_T = ctx->d_T;
+            ctx->d_T = ctx->d_T_new;
+            ctx->d_T_new = tmp_T;
             apply_thermal_bcs_gpu(ctx->d_T, nx, ny, nz, &params->thermal_bc, ctx->stream);
         }
     }
