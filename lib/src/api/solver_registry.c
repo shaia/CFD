@@ -24,6 +24,25 @@
 #include <omp.h>
 #endif
 
+/* Compute max velocity magnitude (sqrt(u^2+v^2+w^2)) and max |pressure| for
+ * stats reporting. Iterates over the full nx*ny*nz field and includes the w
+ * component so 3D runs report correct values (w is always allocated; it stays
+ * zero for 2D nz=1 grids, so 2D results are unchanged). */
+static void compute_max_velocity_pressure(const flow_field* field, double* max_vel,
+                                          double* max_p) {
+    double mv = 0.0;
+    double mp = 0.0;
+    size_t n = field->nx * field->ny * field->nz;
+    for (size_t i = 0; i < n; i++) {
+        double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]) +
+                          (field->w[i] * field->w[i]));
+        if (vel > mv) mv = vel;
+        if (fabs(field->p[i]) > mp) mp = fabs(field->p[i]);
+    }
+    *max_vel = mv;
+    *max_p = mp;
+}
+
 /* Compute max T for stats reporting */
 static double compute_max_temperature(const flow_field* field) {
     double max_t = 0.0;
@@ -764,11 +783,7 @@ static cfd_status_t rk4_step(ns_solver_t* solver, flow_field* field, const grid*
         stats->iterations = 1;
         double max_vel = 0.0;
         double max_p = 0.0;
-        for (size_t i = 0; i < field->nx * field->ny; i++) {
-            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
-        }
+        compute_max_velocity_pressure(field, &max_vel, &max_p);
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
@@ -791,11 +806,7 @@ static cfd_status_t rk4_solve(ns_solver_t* solver, flow_field* field, const grid
         stats->iterations = params->max_iter;
         double max_vel = 0.0;
         double max_p = 0.0;
-        for (size_t i = 0; i < field->nx * field->ny; i++) {
-            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
-            if (vel > max_vel) max_vel = vel;
-            if (fabs(field->p[i]) > max_p) max_p = fabs(field->p[i]);
-        }
+        compute_max_velocity_pressure(field, &max_vel, &max_p);
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
@@ -1525,12 +1536,13 @@ static cfd_status_t rk4_omp_step(ns_solver_t* solver, flow_field* field, const g
         stats->iterations = 1;
         double max_vel = 0.0, max_p = 0.0;
         ptrdiff_t i;
-        ptrdiff_t n = (ptrdiff_t)(field->nx * field->ny);
+        ptrdiff_t n = (ptrdiff_t)(field->nx * field->ny * field->nz);
 #if _OPENMP >= 201107
         #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
 #endif
         for (i = 0; i < n; i++) {
-            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
+            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]) +
+                              (field->w[i] * field->w[i]));
             if (vel > max_vel) {
                 max_vel = vel;
             }
@@ -1558,12 +1570,13 @@ static cfd_status_t rk4_omp_solve(ns_solver_t* solver, flow_field* field, const 
         stats->iterations = params->max_iter;
         double max_vel = 0.0, max_p = 0.0;
         ptrdiff_t i;
-        ptrdiff_t n = (ptrdiff_t)(field->nx * field->ny);
+        ptrdiff_t n = (ptrdiff_t)(field->nx * field->ny * field->nz);
 #if _OPENMP >= 201107
         #pragma omp parallel for reduction(max: max_vel, max_p) schedule(static)
 #endif
         for (i = 0; i < n; i++) {
-            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]));
+            double vel = sqrt((field->u[i] * field->u[i]) + (field->v[i] * field->v[i]) +
+                              (field->w[i] * field->w[i]));
             if (vel > max_vel) {
                 max_vel = vel;
             }
