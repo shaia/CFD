@@ -39,8 +39,9 @@ typedef struct {
     /* Performance tuning */
     int block_size_x;          /**< CUDA block size X (default: 16) */
     int block_size_y;          /**< CUDA block size Y (default: 16) */
-    int poisson_max_iter;      /**< Max Poisson iterations on GPU (default: 1000) */
-    double poisson_tolerance;  /**< Poisson convergence tolerance (default: 1e-6) */
+    int poisson_max_iter;      /**< Max Poisson iterations on GPU; iteration cap (default: 1000) */
+    double poisson_tolerance;  /**< Poisson relative-residual tolerance: stop when
+                                    ||r|| <= poisson_tolerance * ||r0|| (default: 1e-3) */
 
     /* Memory management */
     int persistent_memory;     /**< Keep GPU memory allocated between steps (default: 1) */

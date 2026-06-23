@@ -3,7 +3,7 @@
  *
  * Key optimizations:
  * - Jacobi iteration for Poisson (fully parallel, no red-black dependency)
- * - Reduced Poisson iterations (50 instead of 1000)
+ * - Poisson iterations bounded by a relative-residual convergence check (early exit)
  * - Fixed predictor step logic
  * - Pointer swapping instead of memcpy for Poisson iterations
  * - Unified boundary conditions via bc_apply_*_gpu() functions
@@ -126,6 +126,47 @@ __global__ void kernel_poisson_jacobi(const double* __restrict__ p_old, double* 
             p_new[idx] = (sum - rhs[idx]) * inv_factor;
         }
     }
+}
+
+// Poisson residual: r = rhs - (Laplacian p), where Laplacian p = sum_neighbors - factor*p
+// (same 7-point stencil as kernel_poisson_jacobi). Accumulates sum(r^2) over the interior
+// into a single device scalar via a block reduction + atomicAdd. Used to drive the
+// relative-residual convergence check that bounds the Jacobi iteration count.
+__global__ void kernel_poisson_residual_sq(const double* __restrict__ p,
+                                           const double* __restrict__ rhs,
+                                           double* __restrict__ out_sumsq,
+                                           size_t nx, size_t ny,
+                                           size_t stride_z, int k_start, int k_end,
+                                           double inv_dx2, double inv_dy2, double inv_dz2,
+                                           double factor) {
+    extern __shared__ double sdata[];
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
+    int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
+
+    double local = 0.0;
+    if (i < nx - 1 && j < ny - 1) {
+        for (int k = k_start; k <= k_end; k++) {
+            size_t idx = k * stride_z + IDX_2D(i, j, nx);
+            double sum = (p[idx + 1] + p[idx - 1]) * inv_dx2
+                       + (p[idx + nx] + p[idx - nx]) * inv_dy2
+                       + (p[idx + stride_z] + p[idx - stride_z]) * inv_dz2;
+            double r = rhs[idx] - (sum - factor * p[idx]);
+            local += r * r;
+        }
+    }
+
+    sdata[tid] = local;
+    __syncthreads();
+
+    // Tree reduction within the block
+    for (int s = (blockDim.x * blockDim.y) / 2; s > 0; s >>= 1) {
+        if (tid < s)
+            sdata[tid] += sdata[tid + s];
+        __syncthreads();
+    }
+    if (tid == 0)
+        atomicAdd(out_sumsq, sdata[0]);
 }
 
 // Predictor step - compute u*, v*, w* without pressure
@@ -504,8 +545,8 @@ gpu_config_t gpu_config_default(void) {
     config.min_steps = 10;
     config.block_size_x = 16;
     config.block_size_y = 16;
-    config.poisson_max_iter = 50;  // Reduced from 1000
-    config.poisson_tolerance = 1e-4;
+    config.poisson_max_iter = 1000;  // Cap; the relative-residual check below exits early
+    config.poisson_tolerance = 1e-3;  // Relative residual reduction (||r|| <= tol*||r0||)
     config.persistent_memory = 1;
     config.async_transfers = 1;
     config.sync_after_kernel = 0;
@@ -844,6 +885,24 @@ static void apply_thermal_bcs_gpu(double* d_T, size_t nx, size_t ny, size_t nz,
     }
 }
 
+// Compute the L2 norm of the Poisson residual (rhs - Laplacian p) for the pressure field
+// `d_p_field`. Uses ctx->d_residual as the reduction accumulator and the same grid_dim/block
+// launch config as the Jacobi sweep. Synchronizes only ctx->stream (not the device).
+static double poisson_residual_norm(struct gpu_solver_context_impl* ctx, const double* d_p_field,
+                                    dim3 grid_dim, dim3 block,
+                                    size_t nx, size_t ny, size_t stride_z, int k_start, int k_end,
+                                    double inv_dx2, double inv_dy2, double inv_dz2, double factor) {
+    size_t shmem = (size_t)block.x * block.y * sizeof(double);
+    cudaMemsetAsync(ctx->d_residual, 0, sizeof(double), ctx->stream);
+    kernel_poisson_residual_sq<<<grid_dim, block, shmem, ctx->stream>>>(
+        d_p_field, ctx->d_rhs, ctx->d_residual, nx, ny, stride_z, k_start, k_end,
+        inv_dx2, inv_dy2, inv_dz2, factor);
+    double h_sumsq = 0.0;
+    cudaMemcpyAsync(&h_sumsq, ctx->d_residual, sizeof(double), cudaMemcpyDeviceToHost, ctx->stream);
+    cudaStreamSynchronize(ctx->stream);
+    return sqrt(h_sumsq);
+}
+
 cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
@@ -946,18 +1005,34 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         kernel_scale_rhs<<<grid_dim, block, 0, ctx->stream>>>(
             ctx->d_rhs, nx, ny, stride_z, k_start, k_end, 1.0 / dt);
 
-        // Step 3: Solve Poisson with Jacobi (pointer swap, 7-point stencil)
+        // Step 3: Solve Poisson with Jacobi (pointer swap, 7-point stencil).
+        // Iterate until the relative residual drops below cfg.poisson_tolerance,
+        // capped at cfg.poisson_max_iter. The residual is checked every CHECK_EVERY
+        // sweeps to amortize the reduction; warm-started steps converge in few sweeps.
+        const int CHECK_EVERY = 20;
+        const double RES_FLOOR = 1e-30;
         double* p_src = ctx->d_p;
         double* p_dst = ctx->d_p_new;
-        for (int pi = 0; pi < cfg.poisson_max_iter; pi++) {
-            kernel_poisson_jacobi<<<grid_dim, block, 0, ctx->stream>>>(
-                p_src, p_dst, ctx->d_rhs, nx, ny,
-                stride_z, k_start, k_end,
-                inv_dx2, inv_dy2, inv_dz2, inv_factor);
-            bc_apply_scalar_3d_gpu(p_dst, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
-            double* tmp = p_src;
-            p_src = p_dst;
-            p_dst = tmp;
+        double r0 = poisson_residual_norm(ctx, p_src, grid_dim, block, nx, ny, stride_z,
+                                          k_start, k_end, inv_dx2, inv_dy2, inv_dz2, factor);
+        if (r0 > RES_FLOOR) {
+            for (int pi = 0; pi < cfg.poisson_max_iter; pi++) {
+                kernel_poisson_jacobi<<<grid_dim, block, 0, ctx->stream>>>(
+                    p_src, p_dst, ctx->d_rhs, nx, ny,
+                    stride_z, k_start, k_end,
+                    inv_dx2, inv_dy2, inv_dz2, inv_factor);
+                bc_apply_scalar_3d_gpu(p_dst, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
+                double* tmp = p_src;
+                p_src = p_dst;
+                p_dst = tmp;
+                if ((pi + 1) % CHECK_EVERY == 0) {
+                    double rnorm = poisson_residual_norm(ctx, p_src, grid_dim, block, nx, ny,
+                                                         stride_z, k_start, k_end,
+                                                         inv_dx2, inv_dy2, inv_dz2, factor);
+                    if (rnorm <= cfg.poisson_tolerance * r0 || rnorm <= RES_FLOOR)
+                        break;
+                }
+            }
         }
         // Ensure result is in d_p
         if (p_src != ctx->d_p) {
