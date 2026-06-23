@@ -11,9 +11,10 @@ A production-grade computational fluid dynamics (CFD) library in C for solving 2
 ## Features
 
 - 🚀 **Multiple Backends**: CPU (scalar), SIMD (AVX2/NEON), OpenMP, CUDA
-- 🔧 **Pluggable Solvers**: Explicit Euler, Projection Method (Chorin's algorithm)
+- 🔧 **Pluggable Solvers**: Explicit Euler, RK2 (Heun), Projection Method (Chorin's algorithm)
 - 📊 **Linear Solvers**: Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB
-- 🎯 **Validated**: Ghia lid-driven cavity, Taylor-Green vortex benchmarks
+- 🌡️ **Heat Transfer**: Energy equation (advection–diffusion) + Boussinesq buoyancy + thermal BCs
+- 🎯 **Validated**: Ghia lid-driven cavity, Taylor-Green vortex, Poiseuille flow, natural convection benchmarks
 - 📈 **VTK/CSV Output**: Ready for ParaView, VisIt visualization
 - ⚡ **Performance**: SIMD-optimized with runtime CPU detection
 - 🌐 **3D Support**: Full 3D simulations with nz>1, branch-free 2D compatibility
@@ -93,11 +94,14 @@ int main(void) {
     }
 
     // Export results to VTK
-    write_vtk_file("output/result.vtk", sim->field, sim->grid);
+    grid* g = sim->grid;
+    write_vtk_flow_field("output/result.vtk", sim->field,
+                         g->nx, g->ny, g->nz,
+                         g->xmin, g->xmax, g->ymin, g->ymax, g->zmin, g->zmax);
 
     // Cleanup
     free_simulation(sim);
-    cfd_cleanup();
+    cfd_finalize();
 
     return 0;
 }
@@ -114,7 +118,9 @@ int main(void) {
 | `projection_optimized` | SIMD | SIMD-optimized projection (AVX2/NEON) |
 | `projection_omp` | OpenMP | Multi-threaded projection |
 | `projection_jacobi_gpu` | GPU | CUDA-accelerated projection |
-| `rk2` | Scalar | 2nd-order Runge-Kutta |
+| `rk2` | Scalar | 2nd-order Runge-Kutta (Heun) |
+| `rk2_optimized` | SIMD | SIMD-optimized RK2 (AVX2/NEON) |
+| `rk2_omp` | OpenMP | Multi-threaded RK2 |
 
 ## Project Structure
 
@@ -221,7 +227,7 @@ If you use this library in your research, please cite:
 @software{cfd_framework,
   title = {CFD Framework: A Modular C Library for Computational Fluid Dynamics},
   author = {Shaia Halevy},
-  year = {2025},
+  year = {2026},
   url = {https://github.com/shaia/CFD}
 }
 ```
