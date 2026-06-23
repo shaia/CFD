@@ -1143,29 +1143,35 @@ static ns_solver_t* create_explicit_euler_gpu_solver(void) {
 static cfd_status_t gpu_projection_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
-    (void)stats;
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
+    /* The GPU projection backend implements the energy equation (advection-
+     * diffusion + Boussinesq buoyancy + per-face thermal BCs). Heat-source
+     * callbacks and unsupported thermal BC types are rejected inside
+     * solve_projection_method_gpu. */
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
     /* Override thresholds to allow single-step GPU execution on small grids */
     gpu_config_t cfg = gpu_config_default();
     cfg.min_grid_size = 1;
     cfg.min_steps = 1;
-    return solve_projection_method_gpu(field, grid, &step_params, &cfg);
+    cfd_status_t rc = solve_projection_method_gpu(field, grid, &step_params, &cfg);
+    if (rc == CFD_SUCCESS && stats) {
+        stats->max_temperature = compute_max_temperature(field);
+    }
+    return rc;
 }
 
 static cfd_status_t gpu_projection_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
-    (void)stats;
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
     /* Override thresholds to allow GPU execution on small grids */
     gpu_config_t cfg = gpu_config_default();
     cfg.min_grid_size = 1;
     cfg.min_steps = 1;
-    return solve_projection_method_gpu(field, grid, params, &cfg);
+    cfd_status_t rc = solve_projection_method_gpu(field, grid, params, &cfg);
+    if (rc == CFD_SUCCESS && stats) {
+        stats->max_temperature = compute_max_temperature(field);
+    }
+    return rc;
 }
 
 static ns_solver_t* create_projection_gpu_solver(void) {

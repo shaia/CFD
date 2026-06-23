@@ -33,6 +33,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 | **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | —    |
 |                     | Projection     | done | done     | —        | done     | done |
 |                     | RK2 (Heun)     | done | done     | —        | done     | —    |
+| **Energy Eq.**      | Advec-diff + Boussinesq + thermal BCs | done | done | — | done | done |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
 |                     | SOR            | done | done     | done     | —        | —    |
 |                     | Red-Black SOR  | done | done     | done     | done     | —    |
@@ -46,7 +47,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no multigrid)
 - [ ] No restart/checkpoint capability
-- [ ] GPU backends limited to projection solver only — missing: Explicit Euler GPU, RK2 GPU, and all modular linear solvers (Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB)
+- [ ] GPU backends limited to the projection solver (now including the energy equation) — missing: Explicit Euler GPU, RK2 GPU, and all modular linear solvers (Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB)
 
 ### Known Issues
 
@@ -293,7 +294,8 @@ Find eigenvalues/eigenvectors for stability analysis.
 - [x] Temperature advection-diffusion
 - [x] Thermal boundary conditions
 - [x] Buoyancy coupling (Boussinesq approximation)
-- [x] Heat source terms
+- [x] Heat source terms (CPU/OMP/AVX2; not supported on GPU — host callback)
+- [x] Backend coverage: scalar, OMP, AVX2, and CUDA (GPU projection solver). GPU validated against the de Vahl Davis natural-convection benchmark.
 - [ ] Conjugate heat transfer
 - [ ] Variable properties (viscosity/density as function of T)
 - [ ] Temperature-dependent thermal conductivity
