@@ -4,9 +4,9 @@
 
 A production-grade computational fluid dynamics (CFD) library in C for solving 2D/3D incompressible Navier-Stokes equations.
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
-[![Version](https://img.shields.io/badge/version-0.3.x-orange)]()
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/shaia/CFD/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.3.x-orange)](https://github.com/shaia/CFD/releases)
 
 ## Features
 
@@ -110,7 +110,7 @@ int main(void) {
 ## Available Solvers
 
 | Solver | Backend | Description |
-|--------|---------|-------------|
+| ------ | ------- | ----------- |
 | `explicit_euler` | Scalar | Basic explicit Euler |
 | `explicit_euler_optimized` | SIMD | SIMD-optimized Euler (AVX2/NEON) |
 | `explicit_euler_omp` | OpenMP | Multi-threaded Euler |
@@ -124,7 +124,7 @@ int main(void) {
 
 ## Project Structure
 
-```
+```text
 .
 ├── lib/                    # CFD Library
 │   ├── include/cfd/        # Public headers
@@ -154,9 +154,11 @@ int main(void) {
 ## Examples
 
 ### 1. Minimal Example
+
 ```bash
 ./build/Release/minimal_example
 ```
+
 Simplest possible usage - 50 lines showing library basics.
 
 ### 2. Minimal 3D Example
@@ -164,6 +166,7 @@ Simplest possible usage - 50 lines showing library basics.
 ```bash
 ./build/Release/minimal_example_3d
 ```
+
 3D simulation on a 16×16×16 grid — demonstrates 3D API usage.
 
 ### 3. Lid-Driven Cavity
@@ -171,12 +174,15 @@ Simplest possible usage - 50 lines showing library basics.
 ```bash
 ./build/Release/lid_driven_cavity 100
 ```
+
 Classic CFD benchmark validated against Ghia et al. (1982).
 
 ### 4. Custom Boundary Conditions
+
 ```bash
 ./build/Release/custom_boundary_conditions
 ```
+
 Flow around cylinder with complex geometry.
 
 See [examples documentation](docs/guides/examples.md) for more details.
@@ -186,7 +192,7 @@ See [examples documentation](docs/guides/examples.md) for more details.
 Typical performance (100x50 grid, 50 steps, Release mode):
 
 | Solver | Time | Speedup |
-|--------|------|---------|
+| ------ | ---- | ------- |
 | explicit_euler | 2.6ms | 1.0x |
 | explicit_euler_optimized | 0.9ms | 2.9x |
 | projection | 19.0ms | 1.0x |
@@ -206,6 +212,7 @@ ctest --test-dir build -C Debug -R "Validation" --output-on-failure
 ```
 
 60+ tests covering:
+
 - Unit tests for core functionality
 - Solver accuracy and convergence
 - Physics validation benchmarks
@@ -235,6 +242,7 @@ If you use this library in your research, please cite:
 ## Support
 
 For questions, bug reports, or feature requests, please:
+
 - Check existing [documentation](docs/index.md)
 - Review [examples](docs/guides/examples.md)
 - See [architecture guide](docs/architecture/architecture.md) for design details
