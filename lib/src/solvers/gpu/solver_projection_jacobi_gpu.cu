@@ -873,6 +873,19 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                           "GPU energy: unsupported thermal BC type on a face");
             return CFD_ERROR_INVALID;
         }
+        // A requested BC must fit the grid: Neumann reads the adjacent interior
+        // cell (needs >= 2), Periodic wraps via (nx-2)/(ny-2)/(nz-2) (needs >= 3).
+        // Mirrors the grid-size guard in energy_apply_thermal_bcs (scalar path).
+        if (((tbc->left == BC_TYPE_NEUMANN || tbc->right == BC_TYPE_NEUMANN) && nx < 2) ||
+            ((tbc->bottom == BC_TYPE_NEUMANN || tbc->top == BC_TYPE_NEUMANN) && ny < 2) ||
+            ((tbc->left == BC_TYPE_PERIODIC || tbc->right == BC_TYPE_PERIODIC) && nx < 3) ||
+            ((tbc->bottom == BC_TYPE_PERIODIC || tbc->top == BC_TYPE_PERIODIC) && ny < 3) ||
+            (nz > 1 && (tbc->back == BC_TYPE_NEUMANN || tbc->front == BC_TYPE_NEUMANN) && nz < 2) ||
+            (nz > 1 && (tbc->back == BC_TYPE_PERIODIC || tbc->front == BC_TYPE_PERIODIC) && nz < 3)) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                          "GPU energy: grid too small for the requested thermal BC type");
+            return CFD_ERROR_INVALID;
+        }
     }
 
     double dx = grid->dx[0], dy = grid->dy[0], dt = params->dt, nu = params->mu;
