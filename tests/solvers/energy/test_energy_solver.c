@@ -879,6 +879,160 @@ static void test_energy_optimized_matches_scalar(void) {
 }
 
 /* ============================================================================
+ * TEST 13: GPU energy equation — diffusion decay sanity
+ *
+ * The GPU projection backend uses a different Poisson algorithm (Jacobi +
+ * relaxation) than the scalar/OMP/AVX2 CG path, so its advected temperature
+ * does not match the scalar reference to 1e-3 — a cross-backend equality test
+ * (test_energy_optimized_matches_scalar) is inappropriate for it. Instead we
+ * check physical behavior: a Gaussian temperature pulse in quiescent flow with
+ * adiabatic walls must diffuse (peak decreases, field stays finite/positive).
+ * Skips cleanly when no CUDA device is present.
+ * ============================================================================ */
+
+#define GPU_NX 33
+#define GPU_NY 33
+
+static void test_energy_gpu_diffusion_decay(void) {
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    if (!solver) {
+        /* No CUDA device / GPU backend not registered — skip. */
+        cfd_registry_destroy(registry);
+        TEST_IGNORE_MESSAGE("GPU projection solver unavailable");
+        return;
+    }
+
+    grid* g = grid_create(GPU_NX, GPU_NY, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+    flow_field* field = flow_field_create(GPU_NX, GPU_NY, 1);
+    TEST_ASSERT_NOT_NULL(field);
+
+    const double cx = 0.5, cy = 0.5, sigma = 0.15;
+    double T_peak_initial = 0.0;
+    for (size_t j = 0; j < GPU_NY; j++) {
+        for (size_t i = 0; i < GPU_NX; i++) {
+            size_t idx = j * GPU_NX + i;
+            field->u[idx] = 0.0; field->v[idx] = 0.0; field->w[idx] = 0.0;
+            field->p[idx] = 0.0; field->rho[idx] = 1.0;
+            double x = g->x[i], y = g->y[j];
+            double r2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+            field->T[idx] = 10.0 * exp(-r2 / (sigma * sigma));
+            if (field->T[idx] > T_peak_initial) T_peak_initial = field->T[idx];
+        }
+    }
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;
+    params.dt = 0.0002;
+    params.max_iter = 50;
+    /* Adiabatic (zero-gradient) walls so the pulse simply diffuses. */
+    params.thermal_bc.left = BC_TYPE_NEUMANN;
+    params.thermal_bc.right = BC_TYPE_NEUMANN;
+    params.thermal_bc.bottom = BC_TYPE_NEUMANN;
+    params.thermal_bc.top = BC_TYPE_NEUMANN;
+
+    cfd_status_t init_status = solver_init(solver, g, &params);
+    if (init_status == CFD_ERROR_UNSUPPORTED) {
+        solver_destroy(solver);
+        flow_field_destroy(field);
+        grid_destroy(g);
+        cfd_registry_destroy(registry);
+        TEST_IGNORE_MESSAGE("GPU projection init unsupported");
+        return;
+    }
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, init_status);
+
+    ns_solver_stats_t stats = ns_solver_stats_default();
+    cfd_status_t solve_status = solver_solve(solver, field, g, &params, &stats);
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, solve_status,
+                              "GPU energy solve must succeed");
+
+    double T_peak_final = 0.0;
+    int all_finite = 1;
+    for (size_t n = 0; n < (size_t)(GPU_NX * GPU_NY); n++) {
+        if (!isfinite(field->T[n])) all_finite = 0;
+        if (field->T[n] > T_peak_final) T_peak_final = field->T[n];
+    }
+    printf("  GPU diffusion: T_peak initial=%.4f, final=%.4f\n",
+           T_peak_initial, T_peak_final);
+
+    TEST_ASSERT_TRUE_MESSAGE(all_finite, "GPU temperature field must stay finite");
+    TEST_ASSERT_TRUE_MESSAGE(T_peak_final < T_peak_initial,
+                             "GPU diffusion must lower the peak temperature");
+    TEST_ASSERT_TRUE_MESSAGE(T_peak_final > 0.0,
+                             "GPU temperature must remain positive");
+
+    solver_destroy(solver);
+    flow_field_destroy(field);
+    grid_destroy(g);
+    cfd_registry_destroy(registry);
+}
+
+/* ============================================================================
+ * TEST 14: GPU energy equation rejects host heat-source callbacks
+ *
+ * A host C function pointer cannot run on the device, so the GPU projection
+ * solver must surface CFD_ERROR_UNSUPPORTED when heat_source_func is set with
+ * the energy equation enabled (rather than silently ignoring the source).
+ * Skips cleanly when no CUDA device is present.
+ * ============================================================================ */
+
+static void test_energy_gpu_rejects_heat_source(void) {
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    if (!solver) {
+        cfd_registry_destroy(registry);
+        TEST_IGNORE_MESSAGE("GPU projection solver unavailable");
+        return;
+    }
+
+    grid* g = grid_create(GPU_NX, GPU_NY, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+    flow_field* field = flow_field_create(GPU_NX, GPU_NY, 1);
+    TEST_ASSERT_NOT_NULL(field);
+    for (size_t n = 0; n < (size_t)(GPU_NX * GPU_NY); n++) {
+        field->rho[n] = 1.0;
+        field->T[n] = 300.0;
+    }
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 0.01;
+    params.dt = 0.0002;
+    params.max_iter = 1;
+    params.heat_source_func = uniform_heat_source;  /* not supported on GPU */
+
+    cfd_status_t init_status = solver_init(solver, g, &params);
+    if (init_status == CFD_ERROR_UNSUPPORTED) {
+        solver_destroy(solver);
+        flow_field_destroy(field);
+        grid_destroy(g);
+        cfd_registry_destroy(registry);
+        TEST_IGNORE_MESSAGE("GPU projection init unsupported");
+        return;
+    }
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, init_status);
+
+    ns_solver_stats_t stats = ns_solver_stats_default();
+    cfd_status_t solve_status = solver_solve(solver, field, g, &params, &stats);
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_UNSUPPORTED, solve_status,
+                              "GPU energy must reject host heat_source_func");
+
+    solver_destroy(solver);
+    flow_field_destroy(field);
+    grid_destroy(g);
+    cfd_registry_destroy(registry);
+}
+
+/* ============================================================================
  * MAIN
  * ============================================================================ */
 
@@ -895,5 +1049,7 @@ int main(void) {
     RUN_TEST(test_thermal_bc_3d_front_back);
     RUN_TEST(test_thermal_bc_invalid_config);
     RUN_TEST(test_energy_optimized_matches_scalar);
+    RUN_TEST(test_energy_gpu_diffusion_decay);
+    RUN_TEST(test_energy_gpu_rejects_heat_source);
     return UNITY_END();
 }

@@ -138,10 +138,12 @@ typedef struct {
     void* source_context;           /**< User context for source_func */
 
     /* Energy equation parameters (alpha > 0 enables energy equation).
-     * NOTE: Energy coupling (temperature advection/diffusion and Boussinesq
-     * buoyancy) is currently only implemented in scalar CPU backends
-     * (explicit_euler, projection, rk2). OMP, AVX2, and GPU backends will
-     * return CFD_ERROR_UNSUPPORTED if alpha > 0 or beta != 0. */
+     * Energy coupling (temperature advection/diffusion and Boussinesq buoyancy)
+     * is implemented on the scalar CPU, OMP, and AVX2 backends for all solver
+     * types, and on the CUDA backend for the GPU projection solver. The GPU path
+     * does not support host heat_source_func callbacks (returns
+     * CFD_ERROR_UNSUPPORTED) and accepts only PERIODIC/NEUMANN/DIRICHLET thermal
+     * BC types. */
     double alpha;           /**< Thermal diffusivity k/(rho*cp) [m^2/s], 0 = disabled */
     double beta;            /**< Thermal expansion coefficient [1/K] (Boussinesq) */
     double T_ref;           /**< Reference temperature [K] for Boussinesq */

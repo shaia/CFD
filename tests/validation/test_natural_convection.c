@@ -339,6 +339,17 @@ static void test_dvd_ra1e3_avx2(void) {
                       /*tol_rel*/ 0.10, /*u*/ 3.649, /*v*/ 3.697, /*Nu*/ 1.117);
 }
 
+/* Same benchmark on the CUDA projection backend: validates that the GPU
+ * Boussinesq buoyancy + per-face thermal BCs + energy step reproduce the de
+ * Vahl Davis reference. Skips cleanly if no CUDA device is present. Gated behind
+ * full validation: the per-step GPU wrapper re-creates its device context each
+ * solver_step, so step-by-step marching is slow — acceptable only at release tier. */
+static void test_dvd_ra1e3_gpu(void) {
+    run_dvd_benchmark(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+                      /*Ra*/ 1000.0, /*n*/ 41, /*dt*/ 0.002, /*max_steps*/ 30000,
+                      /*tol_rel*/ 0.10, /*u*/ 3.649, /*v*/ 3.697, /*Nu*/ 1.117);
+}
+
 static void test_dvd_ra1e3_fine(void) {
     /* Expensive 81x81 validation runs on the optimized OMP backend (project
      * policy: long-running validation must not use the scalar reference). */
@@ -358,6 +369,7 @@ int main(void) {
 #if CAVITY_FULL_VALIDATION
     RUN_TEST(test_dvd_ra1e3_omp);
     RUN_TEST(test_dvd_ra1e3_avx2);
+    RUN_TEST(test_dvd_ra1e3_gpu);
     RUN_TEST(test_dvd_ra1e3_fine);
 #endif
     return UNITY_END();
