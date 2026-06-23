@@ -4,16 +4,17 @@
 
 A production-grade computational fluid dynamics (CFD) library in C for solving 2D/3D incompressible Navier-Stokes equations.
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
-[![Version](https://img.shields.io/badge/version-0.3.x-orange)]()
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/shaia/CFD/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.3.x-orange)](https://github.com/shaia/CFD/releases)
 
 ## Features
 
 - 🚀 **Multiple Backends**: CPU (scalar), SIMD (AVX2/NEON), OpenMP, CUDA
-- 🔧 **Pluggable Solvers**: Explicit Euler, Projection Method (Chorin's algorithm)
+- 🔧 **Pluggable Solvers**: Explicit Euler, RK2 (Heun), Projection Method (Chorin's algorithm)
 - 📊 **Linear Solvers**: Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB
-- 🎯 **Validated**: Ghia lid-driven cavity, Taylor-Green vortex benchmarks
+- 🌡️ **Heat Transfer**: Energy equation (advection–diffusion) + Boussinesq buoyancy + thermal BCs
+- 🎯 **Validated**: Ghia lid-driven cavity, Taylor-Green vortex, Poiseuille flow, natural convection benchmarks
 - 📈 **VTK/CSV Output**: Ready for ParaView, VisIt visualization
 - ⚡ **Performance**: SIMD-optimized with runtime CPU detection
 - 🌐 **3D Support**: Full 3D simulations with nz>1, branch-free 2D compatibility
@@ -93,11 +94,14 @@ int main(void) {
     }
 
     // Export results to VTK
-    write_vtk_file("output/result.vtk", sim->field, sim->grid);
+    grid* g = sim->grid;
+    write_vtk_flow_field("output/result.vtk", sim->field,
+                         g->nx, g->ny, g->nz,
+                         g->xmin, g->xmax, g->ymin, g->ymax, g->zmin, g->zmax);
 
     // Cleanup
     free_simulation(sim);
-    cfd_cleanup();
+    cfd_finalize();
 
     return 0;
 }
@@ -106,7 +110,7 @@ int main(void) {
 ## Available Solvers
 
 | Solver | Backend | Description |
-|--------|---------|-------------|
+| ------ | ------- | ----------- |
 | `explicit_euler` | Scalar | Basic explicit Euler |
 | `explicit_euler_optimized` | SIMD | SIMD-optimized Euler (AVX2/NEON) |
 | `explicit_euler_omp` | OpenMP | Multi-threaded Euler |
@@ -114,11 +118,13 @@ int main(void) {
 | `projection_optimized` | SIMD | SIMD-optimized projection (AVX2/NEON) |
 | `projection_omp` | OpenMP | Multi-threaded projection |
 | `projection_jacobi_gpu` | GPU | CUDA-accelerated projection |
-| `rk2` | Scalar | 2nd-order Runge-Kutta |
+| `rk2` | Scalar | 2nd-order Runge-Kutta (Heun) |
+| `rk2_optimized` | SIMD | SIMD-optimized RK2 (AVX2/NEON) |
+| `rk2_omp` | OpenMP | Multi-threaded RK2 |
 
 ## Project Structure
 
-```
+```text
 .
 ├── lib/                    # CFD Library
 │   ├── include/cfd/        # Public headers
@@ -148,9 +154,11 @@ int main(void) {
 ## Examples
 
 ### 1. Minimal Example
+
 ```bash
 ./build/Release/minimal_example
 ```
+
 Simplest possible usage - 50 lines showing library basics.
 
 ### 2. Minimal 3D Example
@@ -158,6 +166,7 @@ Simplest possible usage - 50 lines showing library basics.
 ```bash
 ./build/Release/minimal_example_3d
 ```
+
 3D simulation on a 16×16×16 grid — demonstrates 3D API usage.
 
 ### 3. Lid-Driven Cavity
@@ -165,12 +174,15 @@ Simplest possible usage - 50 lines showing library basics.
 ```bash
 ./build/Release/lid_driven_cavity 100
 ```
+
 Classic CFD benchmark validated against Ghia et al. (1982).
 
 ### 4. Custom Boundary Conditions
+
 ```bash
 ./build/Release/custom_boundary_conditions
 ```
+
 Flow around cylinder with complex geometry.
 
 See [examples documentation](docs/guides/examples.md) for more details.
@@ -180,7 +192,7 @@ See [examples documentation](docs/guides/examples.md) for more details.
 Typical performance (100x50 grid, 50 steps, Release mode):
 
 | Solver | Time | Speedup |
-|--------|------|---------|
+| ------ | ---- | ------- |
 | explicit_euler | 2.6ms | 1.0x |
 | explicit_euler_optimized | 0.9ms | 2.9x |
 | projection | 19.0ms | 1.0x |
@@ -200,6 +212,7 @@ ctest --test-dir build -C Debug -R "Validation" --output-on-failure
 ```
 
 60+ tests covering:
+
 - Unit tests for core functionality
 - Solver accuracy and convergence
 - Physics validation benchmarks
@@ -221,7 +234,7 @@ If you use this library in your research, please cite:
 @software{cfd_framework,
   title = {CFD Framework: A Modular C Library for Computational Fluid Dynamics},
   author = {Shaia Halevy},
-  year = {2025},
+  year = {2026},
   url = {https://github.com/shaia/CFD}
 }
 ```
@@ -229,6 +242,7 @@ If you use this library in your research, please cite:
 ## Support
 
 For questions, bug reports, or feature requests, please:
+
 - Check existing [documentation](docs/index.md)
 - Review [examples](docs/guides/examples.md)
 - See [architecture guide](docs/architecture/architecture.md) for design details
