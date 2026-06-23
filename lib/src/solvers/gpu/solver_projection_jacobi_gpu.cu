@@ -17,6 +17,7 @@
 #include "cfd/core/math_utils.h"
 #include "cfd/core/memory.h"
 #include "cfd/core/gpu_device.h"
+#include "cfd/solvers/navier_stokes_solver.h"
 
 #include <cstdio>
 #include <cstdint>
@@ -62,6 +63,8 @@ struct gpu_solver_context_impl {
     double* d_w_new;
     double* d_p_new;
     double* d_rhs;
+    double* d_T;              // Temperature field (energy equation)
+    double* d_T_new;          // Scratch for the energy advection-diffusion step
     double* d_residual;
     double* d_x;
     double* d_y;
@@ -130,11 +133,14 @@ __global__ void kernel_predictor(const double* __restrict__ u, const double* __r
                                  const double* __restrict__ w,
                                  double* __restrict__ u_star, double* __restrict__ v_star,
                                  double* __restrict__ w_star,
+                                 const double* __restrict__ T,
                                  size_t nx, size_t ny,
                                  size_t stride_z, int k_start, int k_end,
                                  double dt, double nu,
                                  double inv_2dx, double inv_2dy, double inv_2dz,
-                                 double inv_dx2, double inv_dy2, double inv_dz2) {
+                                 double inv_dx2, double inv_dy2, double inv_dz2,
+                                 double beta, double T_ref,
+                                 double gx, double gy, double gz) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
@@ -168,6 +174,13 @@ __global__ void kernel_predictor(const double* __restrict__ u, const double* __r
                        + (w[idx + nx] - 2.0 * w_c + w[idx - nx]) * inv_dy2
                        + (w[idx + stride_z] - 2.0 * w_c + w[idx - stride_z]) * inv_dz2;
             double w_new = w_c + dt * (-(u_c * dw_dx + v_c * dw_dy + w_c * dw_dz) + nu * d2w);
+
+            // Boussinesq buoyancy source: source = -beta*(T-T_ref)*g (no-op when beta==0).
+            // Matches energy_compute_buoyancy; applied as u_star += dt*source.
+            double buoy = -beta * (T[idx] - T_ref);
+            u_new += dt * buoy * gx;
+            v_new += dt * buoy * gy;
+            w_new += dt * buoy * gz;
 
             u_star[idx] = ::fmax((double)-MAX_VELOCITY, ::fmin((double)MAX_VELOCITY, (double)u_new));
             v_star[idx] = ::fmax((double)-MAX_VELOCITY, ::fmin((double)MAX_VELOCITY, (double)v_new));
@@ -299,6 +312,110 @@ __global__ void kernel_scale_rhs(double* __restrict__ rhs, size_t nx, size_t ny,
             size_t idx = k * stride_z + IDX_2D(i, j, nx);
             rhs[idx] *= scale;
         }
+    }
+}
+
+// Energy equation: explicit-Euler advection-diffusion of temperature.
+// dT/dt + u*grad(T) = alpha*lap(T). Same central-difference numerics as the
+// scalar/AVX2 reference (energy_solver_avx2.c). Interior only; boundary values
+// are written afterwards by the thermal-BC kernels. Branch-free 3D: stride_z=0
+// and inv_2dz=inv_dz2=0 collapse the z-terms when nz==1.
+__global__ void kernel_energy_step(const double* __restrict__ T,
+                                   const double* __restrict__ u,
+                                   const double* __restrict__ v,
+                                   const double* __restrict__ w,
+                                   double* __restrict__ T_new,
+                                   size_t nx, size_t ny,
+                                   size_t stride_z, int k_start, int k_end,
+                                   double alpha,
+                                   double inv_2dx, double inv_2dy, double inv_2dz,
+                                   double inv_dx2, double inv_dy2, double inv_dz2,
+                                   double dt) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
+    int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
+    if (i < nx - 1 && j < ny - 1) {
+        for (int k = k_start; k <= k_end; k++) {
+            size_t idx = k * stride_z + IDX_2D(i, j, nx);
+            double T_c = T[idx];
+
+            double dT_dx = (T[idx + 1] - T[idx - 1]) * inv_2dx;
+            double dT_dy = (T[idx + nx] - T[idx - nx]) * inv_2dy;
+            double dT_dz = (T[idx + stride_z] - T[idx - stride_z]) * inv_2dz;
+            double adv = u[idx] * dT_dx + v[idx] * dT_dy + w[idx] * dT_dz;
+
+            double d2x = (T[idx + 1] - 2.0 * T_c + T[idx - 1]) * inv_dx2;
+            double d2y = (T[idx + nx] - 2.0 * T_c + T[idx - nx]) * inv_dy2;
+            double d2z = (T[idx + stride_z] - 2.0 * T_c + T[idx - stride_z]) * inv_dz2;
+            double diff = alpha * (d2x + d2y + d2z);
+
+            T_new[idx] = T_c + dt * (diff - adv);
+        }
+    }
+}
+
+// Per-face thermal boundary conditions, mirroring energy_apply_thermal_bcs
+// (energy/cpu/energy_solver.c). Each kernel writes one boundary face; the host
+// launches them sequentially in the order left, right, bottom, top, back, front
+// so shared corners/edges resolve with last-applied-wins precedence, matching
+// the scalar reference. type uses bc_type_t (PERIODIC/NEUMANN/DIRICHLET).
+
+// x-faces: one thread per (j,k). is_right selects i=nx-1 vs i=0.
+__global__ void kernel_thermal_xface(double* __restrict__ T, size_t nx, size_t ny, size_t nz,
+                                     size_t plane, int is_right, int type, double value) {
+    size_t tid = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= ny * nz) return;
+    size_t k = tid / ny;
+    size_t j = tid % ny;
+    size_t base = k * plane;
+    if (!is_right) {
+        size_t idx = base + j * nx;  // i=0
+        if (type == BC_TYPE_DIRICHLET) T[idx] = value;
+        else if (type == BC_TYPE_NEUMANN) T[idx] = T[idx + 1];
+        else if (type == BC_TYPE_PERIODIC) T[idx] = T[base + j * nx + (nx - 2)];
+    } else {
+        size_t idx = base + j * nx + (nx - 1);  // i=nx-1
+        if (type == BC_TYPE_DIRICHLET) T[idx] = value;
+        else if (type == BC_TYPE_NEUMANN) T[idx] = T[idx - 1];
+        else if (type == BC_TYPE_PERIODIC) T[idx] = T[base + j * nx + 1];
+    }
+}
+
+// y-faces: one thread per (i,k). is_top selects j=ny-1 vs j=0.
+__global__ void kernel_thermal_yface(double* __restrict__ T, size_t nx, size_t ny, size_t nz,
+                                     size_t plane, int is_top, int type, double value) {
+    size_t tid = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= nx * nz) return;
+    size_t k = tid / nx;
+    size_t i = tid % nx;
+    size_t base = k * plane;
+    if (!is_top) {
+        size_t idx = base + i;  // j=0
+        if (type == BC_TYPE_DIRICHLET) T[idx] = value;
+        else if (type == BC_TYPE_NEUMANN) T[idx] = T[idx + nx];
+        else if (type == BC_TYPE_PERIODIC) T[idx] = T[base + (ny - 2) * nx + i];
+    } else {
+        size_t idx = base + (ny - 1) * nx + i;  // j=ny-1
+        if (type == BC_TYPE_DIRICHLET) T[idx] = value;
+        else if (type == BC_TYPE_NEUMANN) T[idx] = T[idx - nx];
+        else if (type == BC_TYPE_PERIODIC) T[idx] = T[base + nx + i];
+    }
+}
+
+// z-faces (3D only): one thread per (i,j). is_front selects k=nz-1 vs k=0.
+__global__ void kernel_thermal_zface(double* __restrict__ T, size_t nx, size_t ny, size_t nz,
+                                     size_t plane, int is_front, int type, double value) {
+    size_t off = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (off >= plane) return;
+    if (!is_front) {
+        size_t idx = off;  // k=0 (back)
+        if (type == BC_TYPE_DIRICHLET) T[idx] = value;
+        else if (type == BC_TYPE_NEUMANN) T[idx] = T[plane + off];
+        else if (type == BC_TYPE_PERIODIC) T[idx] = T[(nz - 2) * plane + off];
+    } else {
+        size_t fb = (nz - 1) * plane;  // k=nz-1 (front)
+        if (type == BC_TYPE_DIRICHLET) T[fb + off] = value;
+        else if (type == BC_TYPE_NEUMANN) T[fb + off] = T[(nz - 2) * plane + off];
+        else if (type == BC_TYPE_PERIODIC) T[fb + off] = T[plane + off];
     }
 }
 
@@ -513,6 +630,8 @@ gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, size_t nz, const g
         cudaMalloc(&ctx->d_w_new, bytes) != cudaSuccess ||
         cudaMalloc(&ctx->d_p_new, bytes) != cudaSuccess ||
         cudaMalloc(&ctx->d_rhs, bytes) != cudaSuccess ||
+        cudaMalloc(&ctx->d_T, bytes) != cudaSuccess ||
+        cudaMalloc(&ctx->d_T_new, bytes) != cudaSuccess ||
         cudaMalloc(&ctx->d_residual, sizeof(double)) != cudaSuccess ||
         cudaMalloc(&ctx->d_x, nx * sizeof(double)) != cudaSuccess ||
         cudaMalloc(&ctx->d_y, ny * sizeof(double)) != cudaSuccess ||
@@ -526,9 +645,9 @@ gpu_solver_context_t* gpu_solver_create(size_t nx, size_t ny, size_t nz, const g
     }
     ctx->memory_allocated = 1;
     ctx->initialized = 1;
-    // 13 field-sized buffers + coordinate/spacing arrays + 1 residual scalar
+    // 15 field-sized buffers + coordinate/spacing arrays + 1 residual scalar
     ctx->stats.memory_allocated =
-        bytes * 13 + (nx + ny + nx - 1 + ny - 1 + 1) * sizeof(double);
+        bytes * 15 + (nx + ny + nx - 1 + ny - 1 + 1) * sizeof(double);
     return (gpu_solver_context_t*)ctx;
 }
 
@@ -546,6 +665,8 @@ void gpu_solver_destroy(gpu_solver_context_t* ctx_void) {
     cudaFree(ctx->d_w_new);
     cudaFree(ctx->d_p_new);
     cudaFree(ctx->d_rhs);
+    cudaFree(ctx->d_T);
+    cudaFree(ctx->d_T_new);
     cudaFree(ctx->d_residual);
     cudaFree(ctx->d_x);
     cudaFree(ctx->d_y);
@@ -573,6 +694,11 @@ cfd_status_t gpu_solver_upload(gpu_solver_context_t* ctx_void, const flow_field*
         CUDA_CHECK(cudaMemsetAsync(ctx->d_w, 0, bytes, ctx->stream));
     CUDA_CHECK(cudaMemcpyAsync(ctx->d_p, field->p, bytes, cudaMemcpyHostToDevice, ctx->stream));
     CUDA_CHECK(cudaMemcpyAsync(ctx->d_rho, field->rho, bytes, cudaMemcpyHostToDevice, ctx->stream));
+    // Temperature field (energy equation); zero-fill when the caller has no T field
+    if (field->T)
+        CUDA_CHECK(cudaMemcpyAsync(ctx->d_T, field->T, bytes, cudaMemcpyHostToDevice, ctx->stream));
+    else
+        CUDA_CHECK(cudaMemsetAsync(ctx->d_T, 0, bytes, ctx->stream));
     // Store initial boundary values for preserving caller-set BCs (e.g., lid-driven cavity)
     CUDA_CHECK(cudaMemcpyAsync(ctx->d_u_bc, field->u, bytes, cudaMemcpyHostToDevice, ctx->stream));
     CUDA_CHECK(cudaMemcpyAsync(ctx->d_v_bc, field->v, bytes, cudaMemcpyHostToDevice, ctx->stream));
@@ -594,6 +720,8 @@ cfd_status_t gpu_solver_download(gpu_solver_context_t* ctx_void, flow_field* fie
     if (field->w)
         CUDA_CHECK(cudaMemcpyAsync(field->w, ctx->d_w, bytes, cudaMemcpyDeviceToHost, ctx->stream));
     CUDA_CHECK(cudaMemcpyAsync(field->p, ctx->d_p, bytes, cudaMemcpyDeviceToHost, ctx->stream));
+    if (field->T)
+        CUDA_CHECK(cudaMemcpyAsync(field->T, ctx->d_T, bytes, cudaMemcpyDeviceToHost, ctx->stream));
     CUDA_CHECK(cudaStreamSynchronize(ctx->stream));
     return CFD_SUCCESS;
 }
@@ -689,6 +817,33 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
     return CFD_SUCCESS;
 }
 
+// Only PERIODIC/NEUMANN/DIRICHLET are valid thermal BC types (mirrors the
+// scalar is_supported_thermal_bc guard in energy/cpu/energy_solver.c).
+static int thermal_bc_type_ok(bc_type_t t) {
+    return t == BC_TYPE_PERIODIC || t == BC_TYPE_NEUMANN || t == BC_TYPE_DIRICHLET;
+}
+
+// Apply per-face thermal BCs to d_T, replicating energy_apply_thermal_bcs:
+// faces are launched in order left, right, bottom, top, back, front on a single
+// stream so shared corners/edges resolve with last-applied-wins precedence.
+static void apply_thermal_bcs_gpu(double* d_T, size_t nx, size_t ny, size_t nz,
+                                  const ns_thermal_bc_config_t* tbc, cudaStream_t stream) {
+    size_t plane = nx * ny;
+    int blk = 256;
+    int g_x = (int)((ny * nz + blk - 1) / blk);
+    int g_y = (int)((nx * nz + blk - 1) / blk);
+    int g_z = (int)((plane + blk - 1) / blk);
+    const bc_dirichlet_values_t* dv = &tbc->dirichlet_values;
+    kernel_thermal_xface<<<g_x, blk, 0, stream>>>(d_T, nx, ny, nz, plane, 0, (int)tbc->left,   dv->left);
+    kernel_thermal_xface<<<g_x, blk, 0, stream>>>(d_T, nx, ny, nz, plane, 1, (int)tbc->right,  dv->right);
+    kernel_thermal_yface<<<g_y, blk, 0, stream>>>(d_T, nx, ny, nz, plane, 0, (int)tbc->bottom, dv->bottom);
+    kernel_thermal_yface<<<g_y, blk, 0, stream>>>(d_T, nx, ny, nz, plane, 1, (int)tbc->top,    dv->top);
+    if (nz > 1) {
+        kernel_thermal_zface<<<g_z, blk, 0, stream>>>(d_T, nx, ny, nz, plane, 0, (int)tbc->back,  dv->back);
+        kernel_thermal_zface<<<g_z, blk, 0, stream>>>(d_T, nx, ny, nz, plane, 1, (int)tbc->front, dv->front);
+    }
+}
+
 cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
@@ -697,6 +852,28 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
     size_t nx = field->nx, ny = field->ny, nz = field->nz;
     if (!gpu_should_use(&cfg, nx, ny, nz, params->max_iter))
         return CFD_ERROR;
+
+    // Energy equation (alpha>0): host heat-source callbacks cannot run on the
+    // device, and only PERIODIC/NEUMANN/DIRICHLET thermal BCs are supported.
+    int energy_on = (params->alpha > 0.0);
+    if (energy_on) {
+        if (params->heat_source_func != NULL) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                          "GPU energy solver does not support host heat_source_func callbacks; "
+                          "use a CPU, OMP, or AVX2 solver");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+        const ns_thermal_bc_config_t* tbc = &params->thermal_bc;
+        int ok = thermal_bc_type_ok(tbc->left) && thermal_bc_type_ok(tbc->right) &&
+                 thermal_bc_type_ok(tbc->bottom) && thermal_bc_type_ok(tbc->top);
+        if (nz > 1)
+            ok = ok && thermal_bc_type_ok(tbc->front) && thermal_bc_type_ok(tbc->back);
+        if (!ok) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                          "GPU energy: unsupported thermal BC type on a face");
+            return CFD_ERROR_INVALID;
+        }
+    }
 
     double dx = grid->dx[0], dy = grid->dy[0], dt = params->dt, nu = params->mu;
     double inv_2dx = 0.5 / dx, inv_2dy = 0.5 / dy, inv_dx2 = 1.0 / (dx * dx),
@@ -739,8 +916,11 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         kernel_predictor<<<grid_dim, block, 0, ctx->stream>>>(
             ctx->d_u, ctx->d_v, ctx->d_w,
             ctx->d_u_new, ctx->d_v_new, ctx->d_w_new,
+            ctx->d_T,
             nx, ny, stride_z, k_start, k_end,
-            dt, nu, inv_2dx, inv_2dy, inv_2dz, inv_dx2, inv_dy2, inv_dz2);
+            dt, nu, inv_2dx, inv_2dy, inv_2dz, inv_dx2, inv_dy2, inv_dz2,
+            params->beta, params->T_ref,
+            params->gravity[0], params->gravity[1], params->gravity[2]);
         // Copy caller-set boundary values to u*/v*/w* (preserves lid-driven cavity BCs)
         kernel_copy_velocity_boundaries<<<bc_grid, bc_block, 0, ctx->stream>>>(
             ctx->d_u_new, ctx->d_v_new, ctx->d_w_new,
@@ -782,6 +962,20 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         kernel_copy_velocity_boundaries<<<bc_grid, bc_block, 0, ctx->stream>>>(
             ctx->d_u, ctx->d_v, ctx->d_w,
             ctx->d_u_bc, ctx->d_v_bc, ctx->d_w_bc, nx, ny, nz);
+
+        // Step 5: Energy equation — advance temperature with the corrected
+        // velocity, then enforce thermal BCs. Interior is written to d_T_new;
+        // the DtoD copy carries it back into d_T and the BC kernels overwrite
+        // every boundary face (so the uninitialized d_T_new boundary is never read).
+        if (energy_on) {
+            kernel_energy_step<<<grid_dim, block, 0, ctx->stream>>>(
+                ctx->d_T, ctx->d_u, ctx->d_v, ctx->d_w, ctx->d_T_new,
+                nx, ny, stride_z, k_start, k_end, params->alpha,
+                inv_2dx, inv_2dy, inv_2dz, inv_dx2, inv_dy2, inv_dz2, dt);
+            cudaMemcpyAsync(ctx->d_T, ctx->d_T_new, ctx->size * sizeof(double),
+                            cudaMemcpyDeviceToDevice, ctx->stream);
+            apply_thermal_bcs_gpu(ctx->d_T, nx, ny, nz, &params->thermal_bc, ctx->stream);
+        }
     }
 
     cudaStreamSynchronize(ctx->stream);
