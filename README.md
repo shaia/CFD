@@ -6,7 +6,7 @@ A production-grade computational fluid dynamics (CFD) library in C for solving 2
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
-[![Version](https://img.shields.io/badge/version-0.1.x-orange)]()
+[![Version](https://img.shields.io/badge/version-0.3.x-orange)]()
 
 ## Features
 

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-23
+
+### Added
+
+- **Energy equation solver** with Boussinesq buoyancy coupling — advection-diffusion
+  transport of temperature with buoyancy feedback into the momentum equations and
+  thermal boundary conditions. Implemented across CPU, AVX2, OpenMP, and CUDA GPU backends.
+- **Thermal boundary conditions** (including adiabatic walls) wired through all backends
+- **Natural convection validation** test (`tests/validation/test_natural_convection.c`)
+- **SOR SIMD variants** (AVX2 + NEON) using the Block SOR technique
+- **Structured logging API** with level filtering and component tags
+- **ThreadSanitizer CI job** for data race detection, plus enhanced AddressSanitizer options
+- **3D Poiseuille flow validation** test with analytical reference
+  (`tests/validation/test_poiseuille_3d.c`, `tests/validation/poiseuille_3d_reference.h`)
+- **7 math-subsystem test files** closing identified coverage gaps: CG scaling,
+  3D finite differences, non-uniform grid, OMP consistency, optimal omega,
+  residual computation, and solver breakdown/robustness
+
+### Changed
+
+- All SOR and Red-Black SOR solvers now auto-compute the optimal relaxation factor
+  omega from grid dimensions using the Jacobi spectral radius formula; set
+  `params.omega > 0` to override
+- ROADMAP reorganized with accurate status and priority-based phasing
+
+### Fixed
+
+- OMP Red-Black SOR Poisson solver convergence failure on larger grids
+  (root cause: hard-coded omega=1.5 was suboptimal; resolved by auto-computed omega)
+- Grid convergence is now strictly monotonic (enforced via test) after switching
+  projection Poisson solves to CG
+- Adiabatic boundary condition corner overwrites in the natural convection test
+
 ## [0.2.0] - 2026-03-04
 
 ### Added
@@ -210,7 +243,8 @@ _Note: v0.0.4 was skipped due to release pipeline testing._
 - Basic boundary condition support
 - Unity testing framework integration
 
-[Unreleased]: https://github.com/shaia/CFD/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/shaia/CFD/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/shaia/CFD/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/shaia/CFD/compare/v0.1.6...v0.2.0
 [0.1.6]: https://github.com/shaia/CFD/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/shaia/CFD/compare/v0.1.0...v0.1.5
