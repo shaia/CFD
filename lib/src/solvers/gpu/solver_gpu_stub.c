@@ -21,7 +21,7 @@ gpu_config_t gpu_config_default(void) {
     config.block_size_x = 16;
     config.block_size_y = 16;
     config.poisson_max_iter = 1000;
-    config.poisson_tolerance = 1e-6;
+    config.poisson_tolerance = 1e-3;  // Match the CUDA gpu_config_default() and header docs
     config.persistent_memory = 1;
     config.async_transfers = 1;
     config.sync_after_kernel = 0;
