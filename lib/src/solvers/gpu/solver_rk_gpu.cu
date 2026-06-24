@@ -342,11 +342,14 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
     cudaMemcpyAsync(d_v_bc, field->v, bytes, cudaMemcpyHostToDevice, stream);
     if (field->w) cudaMemcpyAsync(d_w_bc, field->w, bytes, cudaMemcpyHostToDevice, stream);
     else          cudaMemsetAsync(d_w_bc, 0, bytes, stream);
-    if (cudaStreamSynchronize(stream) != cudaSuccess) {
-        fprintf(stderr, "CUDA error in RK GPU solve (upload): %s\n",
-                cudaGetErrorString(cudaGetLastError()));
-        status = CFD_ERROR;
-        goto cleanup;
+    {
+        cudaError_t serr = cudaStreamSynchronize(stream);
+        if (serr != cudaSuccess) {
+            fprintf(stderr, "CUDA error in RK GPU solve (upload): %s\n",
+                    cudaGetErrorString(serr));
+            status = CFD_ERROR;
+            goto cleanup;
+        }
     }
 
     {
@@ -445,9 +448,10 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
         // Sync the time-stepping loop before downloading; a failure here means
         // an async memcpy/memset or kernel launch failed, so skip the download
         // and report the error rather than returning partial/undefined results.
-        if (cudaStreamSynchronize(stream) != cudaSuccess) {
+        cudaError_t serr = cudaStreamSynchronize(stream);
+        if (serr != cudaSuccess) {
             fprintf(stderr, "CUDA error in RK GPU solve (time-stepping): %s\n",
-                    cudaGetErrorString(cudaGetLastError()));
+                    cudaGetErrorString(serr));
             status = CFD_ERROR;
             goto cleanup;
         }
@@ -458,9 +462,10 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
         if (field->w) cudaMemcpyAsync(field->w, d_w, bytes, cudaMemcpyDeviceToHost, stream);
         cudaMemcpyAsync(field->p, d_p, bytes, cudaMemcpyDeviceToHost, stream);
         if (field->T) cudaMemcpyAsync(field->T, d_T, bytes, cudaMemcpyDeviceToHost, stream);
-        if (cudaStreamSynchronize(stream) != cudaSuccess) {
+        serr = cudaStreamSynchronize(stream);
+        if (serr != cudaSuccess) {
             fprintf(stderr, "CUDA error in RK GPU solve (download): %s\n",
-                    cudaGetErrorString(cudaGetLastError()));
+                    cudaGetErrorString(serr));
             status = CFD_ERROR;
         }
 
