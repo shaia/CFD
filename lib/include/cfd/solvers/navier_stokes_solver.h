@@ -383,9 +383,11 @@ CFD_LIBRARY_EXPORT ns_solver_t* cfd_solver_create_checked(ns_solver_registry_t* 
 #define NS_SOLVER_TYPE_RK2                      "rk2"
 #define NS_SOLVER_TYPE_RK2_OMP                  "rk2_omp"
 #define NS_SOLVER_TYPE_RK2_OPTIMIZED            "rk2_optimized"
+#define NS_SOLVER_TYPE_RK2_GPU                  "rk2_gpu"
 #define NS_SOLVER_TYPE_RK4                      "rk4"
 #define NS_SOLVER_TYPE_RK4_OMP                  "rk4_omp"
 #define NS_SOLVER_TYPE_RK4_OPTIMIZED            "rk4_optimized"
+#define NS_SOLVER_TYPE_RK4_GPU                  "rk4_gpu"
 #define NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU    "projection_jacobi_gpu"
 
 /**

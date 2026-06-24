@@ -222,6 +222,32 @@ CFD_LIBRARY_EXPORT cfd_status_t solve_projection_method_gpu(flow_field* field, c
                                                             const ns_solver_params_t* params,
                                                             const gpu_config_t* config);
 
+/**
+ * GPU-accelerated RK2 (Heun's method) Navier-Stokes solver
+ * Runs params->max_iter explicit RK2 steps on the device.
+ * @param field Flow field to solve
+ * @param grid Grid configuration (uniform spacing required)
+ * @param params NSSolver parameters
+ * @param config GPU configuration
+ * @return CFD_SUCCESS on success
+ */
+CFD_LIBRARY_EXPORT cfd_status_t solve_rk2_method_gpu(flow_field* field, const grid* grid,
+                                                     const ns_solver_params_t* params,
+                                                     const gpu_config_t* config);
+
+/**
+ * GPU-accelerated RK4 (classical Runge-Kutta) Navier-Stokes solver
+ * Runs params->max_iter explicit RK4 steps on the device.
+ * @param field Flow field to solve
+ * @param grid Grid configuration (uniform spacing required)
+ * @param params NSSolver parameters
+ * @param config GPU configuration
+ * @return CFD_SUCCESS on success
+ */
+CFD_LIBRARY_EXPORT cfd_status_t solve_rk4_method_gpu(flow_field* field, const grid* grid,
+                                                     const ns_solver_params_t* params,
+                                                     const gpu_config_t* config);
+
 #ifdef __cplusplus
 }
 #endif
