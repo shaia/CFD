@@ -894,18 +894,38 @@ static void apply_thermal_bcs_gpu(double* d_T, size_t nx, size_t ny, size_t nz,
 // Compute the L2 norm of the Poisson residual (rhs - Laplacian p) for the pressure field
 // `d_p_field`. Uses ctx->d_residual as the reduction accumulator and the same grid_dim/block
 // launch config as the Jacobi sweep. Synchronizes only ctx->stream (not the device).
+// Returns -1.0 if any CUDA call fails, so the caller can fall back to a fixed iteration
+// count rather than acting on a bogus residual.
 static double poisson_residual_norm(struct gpu_solver_context_impl* ctx, const double* d_p_field,
                                     dim3 grid_dim, dim3 block,
                                     size_t nx, size_t ny, size_t stride_z, int k_start, int k_end,
                                     double inv_dx2, double inv_dy2, double inv_dz2, double factor) {
     size_t shmem = (size_t)block.x * block.y * sizeof(double);
-    cudaMemsetAsync(ctx->d_residual, 0, sizeof(double), ctx->stream);
+    cudaError_t err = cudaMemsetAsync(ctx->d_residual, 0, sizeof(double), ctx->stream);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
+        return -1.0;
+    }
     kernel_poisson_residual_sq<<<grid_dim, block, shmem, ctx->stream>>>(
         d_p_field, ctx->d_rhs, ctx->d_residual, nx, ny, stride_z, k_start, k_end,
         inv_dx2, inv_dy2, inv_dz2, factor);
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
+        return -1.0;
+    }
     double h_sumsq = 0.0;
-    cudaMemcpyAsync(&h_sumsq, ctx->d_residual, sizeof(double), cudaMemcpyDeviceToHost, ctx->stream);
-    cudaStreamSynchronize(ctx->stream);
+    err = cudaMemcpyAsync(&h_sumsq, ctx->d_residual, sizeof(double), cudaMemcpyDeviceToHost,
+                          ctx->stream);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
+        return -1.0;
+    }
+    err = cudaStreamSynchronize(ctx->stream);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
+        return -1.0;
+    }
     return sqrt(h_sumsq);
 }
 
@@ -1021,7 +1041,10 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         double* p_dst = ctx->d_p_new;
         double r0 = poisson_residual_norm(ctx, p_src, grid_dim, block, nx, ny, stride_z,
                                           k_start, k_end, inv_dx2, inv_dy2, inv_dz2, factor);
-        if (r0 > RES_FLOOR) {
+        // r0 < 0 signals a residual-evaluation failure: fall back to the full iteration
+        // cap with no early-exit (conservative — more sweeps, never fewer).
+        int can_check = (r0 >= 0.0);
+        if (!can_check || r0 > RES_FLOOR) {
             for (int pi = 0; pi < cfg.poisson_max_iter; pi++) {
                 kernel_poisson_jacobi<<<grid_dim, block, 0, ctx->stream>>>(
                     p_src, p_dst, ctx->d_rhs, nx, ny,
@@ -1031,11 +1054,11 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                 double* tmp = p_src;
                 p_src = p_dst;
                 p_dst = tmp;
-                if ((pi + 1) % CHECK_EVERY == 0) {
+                if (can_check && (pi + 1) % CHECK_EVERY == 0) {
                     double rnorm = poisson_residual_norm(ctx, p_src, grid_dim, block, nx, ny,
                                                          stride_z, k_start, k_end,
                                                          inv_dx2, inv_dy2, inv_dz2, factor);
-                    if (rnorm <= cfg.poisson_tolerance * r0 || rnorm <= RES_FLOOR)
+                    if (rnorm >= 0.0 && (rnorm <= cfg.poisson_tolerance * r0 || rnorm <= RES_FLOOR))
                         break;
                 }
             }
