@@ -50,6 +50,26 @@ cmake --build build --config Debug
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
+### Windows CUDA builds
+
+Use the `build.ps1` wrapper for CUDA builds on Windows:
+
+```powershell
+.\build.ps1 all                 # configure + build + fast test subset (CUDA preset)
+.\build.ps1 configure           # cmake --preset windows-msvc-cuda
+.\build.ps1 build -Config Release
+.\build.ps1 test -All           # include long-running validation/cross-arch tests
+```
+
+**Why:** when CUDA is enabled, `nvcc` runs with `--use-local-env` and spawns a `cmd /c`
+subprocess to set up the MSVC host-compiler environment. A long inherited `PATH` (mine had
+grown to ~7140 chars / 164 entries) overflows `cmd.exe`'s ~8191-char limit, and that subprocess
+dies with a swallowed `exit 1` and no diagnostic. `build.ps1` deduplicates `PATH` and drops
+non-existent directories **for the build process only** (it never writes your persistent
+environment), keeping the length safely under the limit. If your persistent user `PATH` is the
+problem and you also build CUDA from an IDE or plain terminal, prune it once (dedupe entries,
+remove dead directories) so non-wrapper builds work too.
+
 ### Linux/macOS Quick Build
 
 ```bash
@@ -121,6 +141,11 @@ int main(void) {
 | `rk2` | Scalar | 2nd-order Runge-Kutta (Heun) |
 | `rk2_optimized` | SIMD | SIMD-optimized RK2 (AVX2/NEON) |
 | `rk2_omp` | OpenMP | Multi-threaded RK2 |
+| `rk2_gpu` | GPU | CUDA-accelerated RK2 |
+| `rk4` | Scalar | 4th-order Runge-Kutta (classical) |
+| `rk4_optimized` | SIMD | SIMD-optimized RK4 (AVX2/NEON) |
+| `rk4_omp` | OpenMP | Multi-threaded RK4 |
+| `rk4_gpu` | GPU | CUDA-accelerated RK4 |
 
 ## Project Structure
 

@@ -32,8 +32,8 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 | ------------------- | -------------- | ---- | -------- | -------- | -------- | ---- |
 | **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | —    |
 |                     | Projection     | done | done     | —        | done     | done |
-|                     | RK2 (Heun)     | done | done     | —        | done     | —    |
-|                     | RK4 (classical)| done | done     | —        | done     | —    |
+|                     | RK2 (Heun)     | done | done     | —        | done     | done |
+|                     | RK4 (classical)| done | done     | —        | done     | done |
 | **Energy Eq.**      | Advec-diff + Boussinesq + thermal BCs | done | done | — | done | done |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
 |                     | SOR            | done | done     | done     | —        | —    |
@@ -48,7 +48,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no multigrid)
 - [ ] No restart/checkpoint capability
-- [ ] GPU backends limited to the projection solver (now including the energy equation) — missing: Explicit Euler GPU, RK2 GPU, and all modular linear solvers (Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB)
+- [ ] GPU backends cover the projection and RK2/RK4 solvers (all including the energy equation) — missing: Explicit Euler GPU and all modular linear solvers (Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB)
 
 ### Known Issues
 

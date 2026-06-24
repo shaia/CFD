@@ -98,6 +98,12 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params,
                                          const gpu_config_t* config);
+cfd_status_t solve_rk2_method_gpu(flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params,
+                                  const gpu_config_t* config);
+cfd_status_t solve_rk4_method_gpu(flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params,
+                                  const gpu_config_t* config);
 int gpu_is_available(void);
 
 // SIMD solver functions
@@ -166,6 +172,8 @@ static ns_solver_t* create_projection_optimized_solver(void);
 #ifdef CFD_HAS_CUDA
 static ns_solver_t* create_explicit_euler_gpu_solver(void);
 static ns_solver_t* create_projection_gpu_solver(void);
+static ns_solver_t* create_rk2_gpu_solver(void);
+static ns_solver_t* create_rk4_gpu_solver(void);
 #endif
 #ifdef CFD_ENABLE_OPENMP
 static ns_solver_t* create_explicit_euler_omp_solver(void);
@@ -239,6 +247,8 @@ void cfd_registry_register_defaults(ns_solver_registry_t* registry) {
                           create_explicit_euler_gpu_solver);
     cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
                           create_projection_gpu_solver);
+    cfd_registry_register(registry, NS_SOLVER_TYPE_RK2_GPU, create_rk2_gpu_solver);
+    cfd_registry_register(registry, NS_SOLVER_TYPE_RK4_GPU, create_rk4_gpu_solver);
 #endif
 
     // Register OpenMP solvers
@@ -1266,6 +1276,116 @@ static ns_solver_t* create_projection_gpu_solver(void) {
     s->apply_boundary = NULL;
     s->compute_dt = NULL;
 
+    return s;
+}
+
+/**
+ * Built-in solvers: GPU-accelerated RK2 / RK4 explicit time integrators.
+ * Stateless (init/destroy == NULL) — each step/solve uploads, runs the RK
+ * kernels, and downloads. The driver implements the energy equation, Boussinesq
+ * buoyancy, and thermal BCs; host source/heat-source callbacks and non-uniform
+ * grids are rejected with CFD_ERROR_UNSUPPORTED.
+ */
+
+static cfd_status_t gpu_rk2_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                 const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    (void)solver;
+    ns_solver_params_t step_params = *params;
+    step_params.max_iter = 1;
+    gpu_config_t cfg = gpu_config_default();
+    cfg.min_grid_size = 1;
+    cfg.min_steps = 1;
+    cfd_status_t rc = solve_rk2_method_gpu(field, grid, &step_params, &cfg);
+    if (rc == CFD_SUCCESS && stats) {
+        stats->max_temperature = compute_max_temperature(field);
+    }
+    return rc;
+}
+
+static cfd_status_t gpu_rk2_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    (void)solver;
+    gpu_config_t cfg = gpu_config_default();
+    cfg.min_grid_size = 1;
+    cfg.min_steps = 1;
+    cfd_status_t rc = solve_rk2_method_gpu(field, grid, params, &cfg);
+    if (rc == CFD_SUCCESS && stats) {
+        stats->max_temperature = compute_max_temperature(field);
+    }
+    return rc;
+}
+
+static cfd_status_t gpu_rk4_step(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                 const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    (void)solver;
+    ns_solver_params_t step_params = *params;
+    step_params.max_iter = 1;
+    gpu_config_t cfg = gpu_config_default();
+    cfg.min_grid_size = 1;
+    cfg.min_steps = 1;
+    cfd_status_t rc = solve_rk4_method_gpu(field, grid, &step_params, &cfg);
+    if (rc == CFD_SUCCESS && stats) {
+        stats->max_temperature = compute_max_temperature(field);
+    }
+    return rc;
+}
+
+static cfd_status_t gpu_rk4_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    (void)solver;
+    gpu_config_t cfg = gpu_config_default();
+    cfg.min_grid_size = 1;
+    cfg.min_steps = 1;
+    cfd_status_t rc = solve_rk4_method_gpu(field, grid, params, &cfg);
+    if (rc == CFD_SUCCESS && stats) {
+        stats->max_temperature = compute_max_temperature(field);
+    }
+    return rc;
+}
+
+static ns_solver_t* create_rk2_gpu_solver(void) {
+    if (!gpu_is_available()) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED, "CUDA GPU not available at runtime");
+        return NULL;
+    }
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
+    if (!s) {
+        return NULL;
+    }
+    s->name = NS_SOLVER_TYPE_RK2_GPU;
+    s->description = "GPU-accelerated RK2 (Heun's method) explicit time integration (CUDA)";
+    s->version = "1.0.0";
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
+    s->backend = NS_SOLVER_BACKEND_CUDA;
+    s->init = NULL;
+    s->destroy = NULL;
+    s->step = gpu_rk2_step;
+    s->solve = gpu_rk2_solve;
+    s->apply_boundary = NULL;
+    s->compute_dt = NULL;
+    return s;
+}
+
+static ns_solver_t* create_rk4_gpu_solver(void) {
+    if (!gpu_is_available()) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED, "CUDA GPU not available at runtime");
+        return NULL;
+    }
+    ns_solver_t* s = (ns_solver_t*)cfd_calloc(1, sizeof(*s));
+    if (!s) {
+        return NULL;
+    }
+    s->name = NS_SOLVER_TYPE_RK4_GPU;
+    s->description = "GPU-accelerated RK4 (classical Runge-Kutta) explicit time integration (CUDA)";
+    s->version = "1.0.0";
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
+    s->backend = NS_SOLVER_BACKEND_CUDA;
+    s->init = NULL;
+    s->destroy = NULL;
+    s->step = gpu_rk4_step;
+    s->solve = gpu_rk4_solve;
+    s->apply_boundary = NULL;
+    s->compute_dt = NULL;
     return s;
 }
 #endif /* CFD_HAS_CUDA */
