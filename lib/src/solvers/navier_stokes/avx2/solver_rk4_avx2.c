@@ -1,6 +1,6 @@
 /**
- * @file solver_rk2_avx2.c
- * @brief RK2 (Heun's method) - AVX2 + OpenMP implementation
+ * @file solver_rk4_avx2.c
+ * @brief RK4 (classical Runge-Kutta) - AVX2 + OpenMP implementation
  *
  * AVX2-only backend. Returns CFD_ERROR_UNSUPPORTED if AVX2 is unavailable.
  * Uses persistent aligned buffers in context to avoid per-step allocation.
@@ -11,11 +11,12 @@
  *   i = nx-2    : scalar (periodic ir wrap)
  *   Remainder between AVX2 end and nx-2: scalar (no wrapping)
  *
- * Algorithm: identical to scalar/OMP RK2.
+ * Algorithm: identical to scalar/OMP RK4.
  *   k1 = RHS(Q^n)
- *   Q_pred = Q^n + dt*k1
- *   k2 = RHS(Q_pred)
- *   Q^{n+1} = Q^n + (dt/2)*(k1 + k2)
+ *   k2 = RHS(Q^n + (dt/2)*k1)
+ *   k3 = RHS(Q^n + (dt/2)*k2)
+ *   k4 = RHS(Q^n + dt*k3)
+ *   Q^{n+1} = Q^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
  *   BCs applied to final state only.
  *
  * Branch-free 3D: when nz==1, stride_z=0 and inv_2dz/inv_dz2=0.0 cause all
@@ -66,6 +67,8 @@
 typedef struct {
     double* k1_u; double* k1_v; double* k1_w; double* k1_p;
     double* k2_u; double* k2_v; double* k2_w; double* k2_p;
+    double* k3_u; double* k3_v; double* k3_w; double* k3_p;
+    double* k4_u; double* k4_v; double* k4_w; double* k4_p;
     double* u0;   double* v0;   double* w0;   double* p0;
     double* T_ws;    /* Reusable scratch for the energy step (avoids per-step alloc) */
     double* dx_inv;  /* 1/(2*dx[i]) for i = 0..nx-1 */
@@ -75,14 +78,14 @@ typedef struct {
     size_t k_start, k_end;
     double inv_2dz, inv_dz2;
     int initialized;
-} rk2_avx2_context_t;
+} rk4_avx2_context_t;
 
-/* Shared AVX2 momentum RHS kernel (also #include-d by solver_rk4_avx2.c).
+/* Shared AVX2 momentum RHS kernel (also #include-d by solver_rk2_avx2.c).
  * RHS_CTX_T selects this solver's context type for the vectorized kernels;
  * USE_AVX2 and <immintrin.h> are already set above. Provides ns_rhs_point,
  * avx2_clamp, compute_rhs_row, compute_rhs_avx2 and the shared RHS clamp
  * constants. */
-#define RHS_CTX_T rk2_avx2_context_t
+#define RHS_CTX_T rk4_avx2_context_t
 #include "../momentum_rhs/ns_momentum_rhs_avx2.h"
 #undef RHS_CTX_T
 
@@ -90,21 +93,47 @@ typedef struct {
  * PUBLIC API DECLARATIONS
  * ============================================================================ */
 
-cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
+cfd_status_t rk4_avx2_init(ns_solver_t* solver, const grid* g,
                              const ns_solver_params_t* params);
-void         rk2_avx2_destroy(ns_solver_t* solver);
-cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g,
+void         rk4_avx2_destroy(ns_solver_t* solver);
+cfd_status_t rk4_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g,
                              const ns_solver_params_t* params, ns_solver_stats_t* stats);
 
 
 /* ============================================================================
- * RK2 AVX2 MAIN LOOP  (compiled only when AVX2 is available;
+ * AVX2 STAGE UPDATE + MAIN LOOP  (compiled only when AVX2 is available;
  * the vectorized RHS kernels live in ../momentum_rhs/ns_momentum_rhs_avx2.h)
  * ============================================================================ */
 
 #if USE_AVX2
 
-static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
+/* Intermediate stage update (parallelized): field = Q^n + factor * k_stage,
+ * with velocity clamping. */
+static void apply_stage_update_avx2(
+    flow_field* field, const rk4_avx2_context_t* ctx,
+    const double* ku, const double* kv, const double* kw, const double* kp,
+    double factor, ptrdiff_t n_int)
+{
+    ptrdiff_t kk;
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
+    for (kk = 0; kk < n_int; kk++) {
+        field->u[kk] = fmax(-MAX_VELOCITY_LIMIT,
+                      fmin( MAX_VELOCITY_LIMIT, ctx->u0[kk] + factor * ku[kk]));
+        field->v[kk] = fmax(-MAX_VELOCITY_LIMIT,
+                      fmin( MAX_VELOCITY_LIMIT, ctx->v0[kk] + factor * kv[kk]));
+        field->w[kk] = fmax(-MAX_VELOCITY_LIMIT,
+                      fmin( MAX_VELOCITY_LIMIT, ctx->w0[kk] + factor * kw[kk]));
+        field->p[kk] = ctx->p0[kk] + factor * kp[kk];
+    }
+}
+
+/* ============================================================================
+ * RK4 AVX2 MAIN LOOP
+ * ============================================================================ */
+
+static cfd_status_t rk4_avx2_impl(flow_field* field, rk4_avx2_context_t* ctx,
                                     const grid* g, const ns_solver_params_t* params)
 {
     size_t n     = ctx->nx * ctx->ny * ctx->nz;
@@ -129,32 +158,9 @@ static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
                          ctx->k1_u, ctx->k1_v, ctx->k1_w, ctx->k1_p,
                          ctx, g, params, iter, dt);
 
-        /* ---- Intermediate: field = Q^n + dt*k1 ---- */
-        {
-            ptrdiff_t k;
-#ifdef _OPENMP
-            #pragma omp parallel for schedule(static)
-#endif
-            for (k = 0; k < n_int; k++) {
-                field->u[k] = fmax(-MAX_VELOCITY_LIMIT,
-                              fmin( MAX_VELOCITY_LIMIT,
-                                    ctx->u0[k] + dt * ctx->k1_u[k]));
-                field->v[k] = fmax(-MAX_VELOCITY_LIMIT,
-                              fmin( MAX_VELOCITY_LIMIT,
-                                    ctx->v0[k] + dt * ctx->k1_v[k]));
-                field->w[k] = fmax(-MAX_VELOCITY_LIMIT,
-                              fmin( MAX_VELOCITY_LIMIT,
-                                    ctx->w0[k] + dt * ctx->k1_w[k]));
-                field->p[k] = ctx->p0[k] + dt * ctx->k1_p[k];
-            }
-        }
-
-        /* NOTE: Do NOT apply BCs between RK stages.
-         * The ghost cells carry zero-derivative evolution (k1[ghost]=0),
-         * consistent with the semi-discrete ODE. Applying BCs here would
-         * reduce RK2 to first-order temporal accuracy. */
-
-        /* ---- Stage 2: k2 = RHS(Q_pred) ---- */
+        /* ---- Stage 2: k2 = RHS(Q^n + (dt/2)*k1) ---- */
+        apply_stage_update_avx2(field, ctx, ctx->k1_u, ctx->k1_v, ctx->k1_w, ctx->k1_p,
+                                0.5 * dt, n_int);
         memset(ctx->k2_u, 0, bytes);
         memset(ctx->k2_v, 0, bytes);
         memset(ctx->k2_w, 0, bytes);
@@ -163,28 +169,55 @@ static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
                          ctx->k2_u, ctx->k2_v, ctx->k2_w, ctx->k2_p,
                          ctx, g, params, iter, dt);
 
-        /* ---- Final update: Q^{n+1} = Q^n + (dt/2)*(k1 + k2) ---- */
+        /* ---- Stage 3: k3 = RHS(Q^n + (dt/2)*k2) ---- */
+        apply_stage_update_avx2(field, ctx, ctx->k2_u, ctx->k2_v, ctx->k2_w, ctx->k2_p,
+                                0.5 * dt, n_int);
+        memset(ctx->k3_u, 0, bytes);
+        memset(ctx->k3_v, 0, bytes);
+        memset(ctx->k3_w, 0, bytes);
+        memset(ctx->k3_p, 0, bytes);
+        compute_rhs_avx2(field->u, field->v, field->w, field->p, field->rho, field->T,
+                         ctx->k3_u, ctx->k3_v, ctx->k3_w, ctx->k3_p,
+                         ctx, g, params, iter, dt);
+
+        /* ---- Stage 4: k4 = RHS(Q^n + dt*k3) ---- */
+        apply_stage_update_avx2(field, ctx, ctx->k3_u, ctx->k3_v, ctx->k3_w, ctx->k3_p,
+                                dt, n_int);
+        memset(ctx->k4_u, 0, bytes);
+        memset(ctx->k4_v, 0, bytes);
+        memset(ctx->k4_w, 0, bytes);
+        memset(ctx->k4_p, 0, bytes);
+        compute_rhs_avx2(field->u, field->v, field->w, field->p, field->rho, field->T,
+                         ctx->k4_u, ctx->k4_v, ctx->k4_w, ctx->k4_p,
+                         ctx, g, params, iter, dt);
+
+        /* NOTE: Do NOT apply BCs between RK stages.
+         * The ghost cells carry zero-derivative evolution (k[ghost]=0),
+         * consistent with the semi-discrete ODE. Applying BCs here would
+         * reduce RK4 to first-order temporal accuracy. */
+
+        /* ---- Final update: Q^{n+1} = Q^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4) ---- */
         {
-            double half_dt = 0.5 * dt;
-            ptrdiff_t k;
+            double sixth_dt = dt / 6.0;
+            ptrdiff_t kk;
 #ifdef _OPENMP
             #pragma omp parallel for schedule(static)
 #endif
-            for (k = 0; k < n_int; k++) {
-                field->u[k] = fmax(-MAX_VELOCITY_LIMIT,
+            for (kk = 0; kk < n_int; kk++) {
+                field->u[kk] = fmax(-MAX_VELOCITY_LIMIT,
                               fmin( MAX_VELOCITY_LIMIT,
-                                    ctx->u0[k] + half_dt * (ctx->k1_u[k] + ctx->k2_u[k])));
-                field->v[k] = fmax(-MAX_VELOCITY_LIMIT,
+                                    ctx->u0[kk] + sixth_dt * (ctx->k1_u[kk] + 2.0 * ctx->k2_u[kk] + 2.0 * ctx->k3_u[kk] + ctx->k4_u[kk])));
+                field->v[kk] = fmax(-MAX_VELOCITY_LIMIT,
                               fmin( MAX_VELOCITY_LIMIT,
-                                    ctx->v0[k] + half_dt * (ctx->k1_v[k] + ctx->k2_v[k])));
-                field->w[k] = fmax(-MAX_VELOCITY_LIMIT,
+                                    ctx->v0[kk] + sixth_dt * (ctx->k1_v[kk] + 2.0 * ctx->k2_v[kk] + 2.0 * ctx->k3_v[kk] + ctx->k4_v[kk])));
+                field->w[kk] = fmax(-MAX_VELOCITY_LIMIT,
                               fmin( MAX_VELOCITY_LIMIT,
-                                    ctx->w0[k] + half_dt * (ctx->k1_w[k] + ctx->k2_w[k])));
-                field->p[k] = ctx->p0[k] + half_dt * (ctx->k1_p[k] + ctx->k2_p[k]);
+                                    ctx->w0[kk] + sixth_dt * (ctx->k1_w[kk] + 2.0 * ctx->k2_w[kk] + 2.0 * ctx->k3_w[kk] + ctx->k4_w[kk])));
+                field->p[kk] = ctx->p0[kk] + sixth_dt * (ctx->k1_p[kk] + 2.0 * ctx->k2_p[kk] + 2.0 * ctx->k3_p[kk] + ctx->k4_p[kk]);
             }
         }
 
-        /* Energy equation: advance temperature after the full RK2 step */
+        /* Energy equation: advance temperature after the full RK4 step */
         {
             cfd_status_t energy_status = energy_step_explicit_avx2_with_workspace(
                 field, g, params, dt, iter * dt, ctx->T_ws, n);
@@ -204,13 +237,13 @@ static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
         /* NaN / Inf check (parallelized) */
         {
             int has_nan = 0;
-            ptrdiff_t k;
+            ptrdiff_t kk;
 #ifdef _OPENMP
             #pragma omp parallel for reduction(|:has_nan) schedule(static)
 #endif
-            for (k = 0; k < n_int; k++) {
-                if (!isfinite(field->u[k]) || !isfinite(field->v[k]) ||
-                    !isfinite(field->w[k]) || !isfinite(field->p[k])) {
+            for (kk = 0; kk < n_int; kk++) {
+                if (!isfinite(field->u[kk]) || !isfinite(field->v[kk]) ||
+                    !isfinite(field->w[kk]) || !isfinite(field->p[kk])) {
                     has_nan = 1;
                 }
             }
@@ -231,7 +264,7 @@ cleanup:
  * PUBLIC API IMPLEMENTATIONS
  * ============================================================================ */
 
-cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
+cfd_status_t rk4_avx2_init(ns_solver_t* solver, const grid* g,
                              const ns_solver_params_t* params)
 {
     (void)params;
@@ -249,8 +282,8 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
         return CFD_ERROR_INVALID;
     }
 
-    rk2_avx2_context_t* ctx =
-        (rk2_avx2_context_t*)cfd_calloc(1, sizeof(rk2_avx2_context_t));
+    rk4_avx2_context_t* ctx =
+        (rk4_avx2_context_t*)cfd_calloc(1, sizeof(rk4_avx2_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
@@ -286,6 +319,14 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
     ctx->k2_v   = (double*)cfd_aligned_malloc(bytes);
     ctx->k2_w   = (double*)cfd_aligned_malloc(bytes);
     ctx->k2_p   = (double*)cfd_aligned_malloc(bytes);
+    ctx->k3_u   = (double*)cfd_aligned_malloc(bytes);
+    ctx->k3_v   = (double*)cfd_aligned_malloc(bytes);
+    ctx->k3_w   = (double*)cfd_aligned_malloc(bytes);
+    ctx->k3_p   = (double*)cfd_aligned_malloc(bytes);
+    ctx->k4_u   = (double*)cfd_aligned_malloc(bytes);
+    ctx->k4_v   = (double*)cfd_aligned_malloc(bytes);
+    ctx->k4_w   = (double*)cfd_aligned_malloc(bytes);
+    ctx->k4_p   = (double*)cfd_aligned_malloc(bytes);
     ctx->u0     = (double*)cfd_aligned_malloc(bytes);
     ctx->v0     = (double*)cfd_aligned_malloc(bytes);
     ctx->w0     = (double*)cfd_aligned_malloc(bytes);
@@ -296,12 +337,18 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
 
     if (!ctx->k1_u || !ctx->k1_v || !ctx->k1_w || !ctx->k1_p ||
         !ctx->k2_u || !ctx->k2_v || !ctx->k2_w || !ctx->k2_p ||
+        !ctx->k3_u || !ctx->k3_v || !ctx->k3_w || !ctx->k3_p ||
+        !ctx->k4_u || !ctx->k4_v || !ctx->k4_w || !ctx->k4_p ||
         !ctx->u0   || !ctx->v0   || !ctx->w0   || !ctx->p0   ||
         !ctx->T_ws || !ctx->dx_inv || !ctx->dy_inv) {
         cfd_aligned_free(ctx->k1_u); cfd_aligned_free(ctx->k1_v);
         cfd_aligned_free(ctx->k1_w); cfd_aligned_free(ctx->k1_p);
         cfd_aligned_free(ctx->k2_u); cfd_aligned_free(ctx->k2_v);
         cfd_aligned_free(ctx->k2_w); cfd_aligned_free(ctx->k2_p);
+        cfd_aligned_free(ctx->k3_u); cfd_aligned_free(ctx->k3_v);
+        cfd_aligned_free(ctx->k3_w); cfd_aligned_free(ctx->k3_p);
+        cfd_aligned_free(ctx->k4_u); cfd_aligned_free(ctx->k4_v);
+        cfd_aligned_free(ctx->k4_w); cfd_aligned_free(ctx->k4_p);
         cfd_aligned_free(ctx->u0);   cfd_aligned_free(ctx->v0);
         cfd_aligned_free(ctx->w0);   cfd_aligned_free(ctx->p0);
         cfd_aligned_free(ctx->T_ws);
@@ -322,26 +369,30 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
     solver->context  = ctx;
 
 #ifdef _OPENMP
-    CFD_LOG_INFO("solver", "RK2 SIMD: AVX2 + OpenMP enabled (%d threads)", omp_get_max_threads());
+    CFD_LOG_INFO("solver", "RK4 SIMD: AVX2 + OpenMP enabled (%d threads)", omp_get_max_threads());
 #else
-    CFD_LOG_INFO("solver", "RK2 SIMD: AVX2 enabled (OpenMP disabled)");
+    CFD_LOG_INFO("solver", "RK4 SIMD: AVX2 enabled (OpenMP disabled)");
 #endif
 
     return CFD_SUCCESS;
 #endif
 }
 
-void rk2_avx2_destroy(ns_solver_t* solver)
+void rk4_avx2_destroy(ns_solver_t* solver)
 {
     if (!solver || !solver->context) {
         return;
     }
-    rk2_avx2_context_t* ctx = (rk2_avx2_context_t*)solver->context;
+    rk4_avx2_context_t* ctx = (rk4_avx2_context_t*)solver->context;
     if (ctx->initialized) {
         cfd_aligned_free(ctx->k1_u); cfd_aligned_free(ctx->k1_v);
         cfd_aligned_free(ctx->k1_w); cfd_aligned_free(ctx->k1_p);
         cfd_aligned_free(ctx->k2_u); cfd_aligned_free(ctx->k2_v);
         cfd_aligned_free(ctx->k2_w); cfd_aligned_free(ctx->k2_p);
+        cfd_aligned_free(ctx->k3_u); cfd_aligned_free(ctx->k3_v);
+        cfd_aligned_free(ctx->k3_w); cfd_aligned_free(ctx->k3_p);
+        cfd_aligned_free(ctx->k4_u); cfd_aligned_free(ctx->k4_v);
+        cfd_aligned_free(ctx->k4_w); cfd_aligned_free(ctx->k4_p);
         cfd_aligned_free(ctx->u0);   cfd_aligned_free(ctx->v0);
         cfd_aligned_free(ctx->w0);   cfd_aligned_free(ctx->p0);
         cfd_aligned_free(ctx->T_ws);
@@ -352,7 +403,7 @@ void rk2_avx2_destroy(ns_solver_t* solver)
     solver->context = NULL;
 }
 
-cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g,
+cfd_status_t rk4_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g,
                              const ns_solver_params_t* params, ns_solver_stats_t* stats)
 {
 #if !USE_AVX2
@@ -366,7 +417,7 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
         return CFD_ERROR_INVALID;
     }
 
-    rk2_avx2_context_t* ctx = (rk2_avx2_context_t*)solver->context;
+    rk4_avx2_context_t* ctx = (rk4_avx2_context_t*)solver->context;
     if (field->nx != ctx->nx || field->ny != ctx->ny || field->nz != ctx->nz) {
         return CFD_ERROR_INVALID;
     }
@@ -374,7 +425,7 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
-    cfd_status_t status = rk2_avx2_impl(field, ctx, g, &step_params);
+    cfd_status_t status = rk4_avx2_impl(field, ctx, g, &step_params);
 
     if (stats) {
         stats->iterations = 1;
@@ -403,7 +454,7 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
 #endif
 }
 
-cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* g,
+cfd_status_t rk4_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* g,
                               const ns_solver_params_t* params, ns_solver_stats_t* stats)
 {
 #if !USE_AVX2
@@ -417,14 +468,14 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
         return CFD_ERROR_INVALID;
     }
 
-    rk2_avx2_context_t* ctx = (rk2_avx2_context_t*)solver->context;
+    rk4_avx2_context_t* ctx = (rk4_avx2_context_t*)solver->context;
     if (field->nx != ctx->nx || field->ny != ctx->ny || field->nz != ctx->nz) {
         return CFD_ERROR_INVALID;
     }
 
     /* Call impl directly so its internal loop runs iter=0..max_iter-1,
      * giving compute_source_terms the correct iteration index. */
-    cfd_status_t status = rk2_avx2_impl(field, ctx, g, params);
+    cfd_status_t status = rk4_avx2_impl(field, ctx, g, params);
 
     if (stats) {
         stats->iterations = params->max_iter;

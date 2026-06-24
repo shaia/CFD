@@ -23,3 +23,13 @@ If:
   PathMatch: .*/simd_template/.*
 Diagnostics:
   Suppress: ['*']
+
+---
+
+# Shared NS momentum RHS kernels are #include-only: they rely on the includer
+# having defined RHS_CTX_T / USE_AVX2 and included grid/energy headers first,
+# so they cannot be parsed standalone. Suppress all diagnostics for them.
+If:
+  PathMatch: .*/momentum_rhs/.*
+Diagnostics:
+  Suppress: ['*']

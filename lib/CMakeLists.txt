@@ -117,6 +117,7 @@ set(CFD_SCALAR_SOURCES
     # Navier-Stokes solvers - scalar
     src/solvers/navier_stokes/cpu/solver_explicit_euler.c
     src/solvers/navier_stokes/cpu/solver_rk2.c
+    src/solvers/navier_stokes/cpu/solver_rk4.c
     src/solvers/navier_stokes/cpu/solver_projection.c
     # Energy equation solver - scalar
     src/solvers/energy/cpu/energy_solver.c
@@ -140,6 +141,7 @@ set(CFD_SIMD_SOURCES
     src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c
     src/solvers/navier_stokes/avx2/solver_projection_avx2.c
     src/solvers/navier_stokes/avx2/solver_rk2_avx2.c
+    src/solvers/navier_stokes/avx2/solver_rk4_avx2.c
     # Energy equation solver - SIMD
     src/solvers/energy/avx2/energy_solver_avx2.c
     # Linear solvers - SIMD
@@ -165,6 +167,7 @@ set(CFD_OMP_SOURCES
     src/solvers/navier_stokes/omp/solver_explicit_euler_omp.c
     src/solvers/navier_stokes/omp/solver_projection_omp.c
     src/solvers/navier_stokes/omp/solver_rk2_omp.c
+    src/solvers/navier_stokes/omp/solver_rk4_omp.c
     # Energy equation solver - OMP
     src/solvers/energy/omp/energy_solver_omp.c
     # Linear solvers - OMP

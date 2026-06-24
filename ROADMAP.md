@@ -33,6 +33,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 | **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | —    |
 |                     | Projection     | done | done     | —        | done     | done |
 |                     | RK2 (Heun)     | done | done     | —        | done     | —    |
+|                     | RK4 (classical)| done | done     | —        | done     | —    |
 | **Energy Eq.**      | Advec-diff + Boussinesq + thermal BCs | done | done | — | done | done |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
 |                     | SOR            | done | done     | done     | —        | —    |
@@ -193,15 +194,15 @@ All BC types implemented across all backends (Scalar, AVX2, NEON, OMP, GPU): Dir
 
 Each time integrator requires a scalar (CPU) reference implementation first, then backend variants. See `/add-ns-time-integrator` for the cross-backend workflow.
 
-**Implemented:** RK2 (Heun's method) — all CPU/AVX2/OMP backends, O(dt²) verified.
+**Implemented:**
+
+- RK2 (Heun's method) — all CPU/AVX2/OMP backends, O(dt²) verified.
+- RK4 (classical Runge-Kutta) — all CPU/AVX2/OMP backends, O(dt⁴) verified (pure-ODE self-convergence ratio ~16; Taylor-Green PDE order ~4.0).
 
 **Still needed:**
 
 - [ ] RK2 CUDA (`rk2_gpu`)
-- [ ] RK4 (classical Runge-Kutta) — scalar
-  - [ ] RK4 AVX2+OMP (`rk4_optimized`)
-  - [ ] RK4 OpenMP (`rk4_omp`)
-  - [ ] RK4 CUDA (`rk4_gpu`)
+- [ ] RK4 CUDA (`rk4_gpu`)
 - [ ] Implicit Euler (backward Euler)
 - [ ] Crank-Nicolson (2nd order implicit)
 - [ ] BDF2 (backward differentiation)
