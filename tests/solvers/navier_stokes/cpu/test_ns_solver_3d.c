@@ -1,8 +1,8 @@
 /**
  * 3D Navier-Stokes Solver Tests
  *
- * Validates that the three scalar CPU NS solvers (Explicit Euler, Projection,
- * RK2) correctly handle nz>1 grids and produce identical results when nz=1.
+ * Validates that the scalar CPU NS solvers (Explicit Euler, Projection,
+ * RK2, RK4) correctly handle nz>1 grids and produce identical results when nz=1.
  *
  * Test approach:
  * - Quiescent flow (u=v=w=0, uniform p/rho) on small 3D grids verifies
@@ -206,6 +206,42 @@ void test_3d_rk2_quiescent(void) {
     printf("PASSED\n");
 }
 
+void test_3d_rk4_quiescent(void) {
+    printf("\n=== Test: 3D RK4 Quiescent ===\n");
+
+    size_t nx = 8, ny = 8, nz = 8;
+    grid* g = grid_create(nx, ny, nz, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* field = flow_field_create(nx, ny, nz);
+    TEST_ASSERT_NOT_NULL(field);
+    init_quiescent_3d(field);
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.dt = 1e-4;
+    params.source_amplitude_u = 0.0;
+    params.source_amplitude_v = 0.0;
+
+    cfd_status_t status = run_solver_steps(NS_SOLVER_TYPE_RK4, field, g, &params, 5);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    size_t total = nx * ny * nz;
+    double max_vel = 0.0;
+    for (size_t i = 0; i < total; i++) {
+        double v2 = field->u[i] * field->u[i] + field->v[i] * field->v[i] +
+                    field->w[i] * field->w[i];
+        if (v2 > max_vel) max_vel = v2;
+    }
+    max_vel = sqrt(max_vel);
+    printf("  Max velocity magnitude: %.2e (expect ~0)\n", max_vel);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-6, 0.0, max_vel);
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+    printf("PASSED\n");
+}
+
 /* ========================================================================
  * BACKWARD COMPATIBILITY TESTS
  * Verify nz=1 produces identical results to existing 2D code
@@ -322,6 +358,15 @@ void test_3d_rk2_backward_compat(void) {
     printf("PASSED\n");
 }
 
+void test_3d_rk4_backward_compat(void) {
+    printf("\n=== Test: 3D RK4 Backward Compat (nz=1) ===\n");
+    run_backward_compat_test(NS_SOLVER_TYPE_RK4,
+                             6.88584742267390471e-02,
+                             3.49775875752817156e-02,
+                             1.00000000000000000e+00);
+    printf("PASSED\n");
+}
+
 /* ========================================================================
  * 3D QUIESCENT TESTS — SIMD (_optimized) BACKENDS
  * Skip gracefully if SIMD backend is unavailable.
@@ -383,6 +428,11 @@ void test_3d_projection_optimized_quiescent(void) {
 void test_3d_rk2_optimized_quiescent(void) {
     run_3d_quiescent_optimized(NS_SOLVER_TYPE_RK2_OPTIMIZED,
                                "RK2 Optimized");
+}
+
+void test_3d_rk4_optimized_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_RK4_OPTIMIZED,
+                               "RK4 Optimized");
 }
 
 /* ========================================================================
@@ -501,6 +551,12 @@ void test_3d_rk2_simd_vs_scalar(void) {
                               "RK2 SIMD");
 }
 
+void test_3d_rk4_simd_vs_scalar(void) {
+    run_3d_backend_vs_scalar(NS_SOLVER_TYPE_RK4,
+                              NS_SOLVER_TYPE_RK4_OPTIMIZED,
+                              "RK4 SIMD");
+}
+
 /* ========================================================================
  * 3D QUIESCENT TESTS — OMP BACKENDS
  * Skip gracefully if OMP backend is unavailable.
@@ -521,6 +577,11 @@ void test_3d_rk2_omp_quiescent(void) {
                                "RK2 OMP");
 }
 
+void test_3d_rk4_omp_quiescent(void) {
+    run_3d_quiescent_optimized(NS_SOLVER_TYPE_RK4_OMP,
+                               "RK4 OMP");
+}
+
 /* ========================================================================
  * OMP vs SCALAR CONSISTENCY — 3D
  * Verify OMP produces similar results to scalar on 3D grid.
@@ -538,6 +599,12 @@ void test_3d_rk2_omp_vs_scalar(void) {
                               "RK2 OMP");
 }
 
+void test_3d_rk4_omp_vs_scalar(void) {
+    run_3d_backend_vs_scalar(NS_SOLVER_TYPE_RK4,
+                              NS_SOLVER_TYPE_RK4_OMP,
+                              "RK4 OMP");
+}
+
 /* ========================================================================
  * MAIN
  * ======================================================================== */
@@ -549,29 +616,35 @@ int main(void) {
     RUN_TEST(test_3d_explicit_euler_quiescent);
     RUN_TEST(test_3d_projection_quiescent);
     RUN_TEST(test_3d_rk2_quiescent);
+    RUN_TEST(test_3d_rk4_quiescent);
 
     /* Backward compatibility (nz=1) */
     RUN_TEST(test_3d_explicit_euler_backward_compat);
     RUN_TEST(test_3d_projection_backward_compat);
     RUN_TEST(test_3d_rk2_backward_compat);
+    RUN_TEST(test_3d_rk4_backward_compat);
 
     /* 3D quiescent tests — SIMD (_optimized) */
     RUN_TEST(test_3d_explicit_euler_optimized_quiescent);
     RUN_TEST(test_3d_projection_optimized_quiescent);
     RUN_TEST(test_3d_rk2_optimized_quiescent);
+    RUN_TEST(test_3d_rk4_optimized_quiescent);
 
     /* SIMD vs Scalar consistency on 3D */
     RUN_TEST(test_3d_explicit_euler_simd_vs_scalar);
     RUN_TEST(test_3d_rk2_simd_vs_scalar);
+    RUN_TEST(test_3d_rk4_simd_vs_scalar);
 
     /* 3D quiescent tests — OMP */
     RUN_TEST(test_3d_explicit_euler_omp_quiescent);
     RUN_TEST(test_3d_projection_omp_quiescent);
     RUN_TEST(test_3d_rk2_omp_quiescent);
+    RUN_TEST(test_3d_rk4_omp_quiescent);
 
     /* OMP vs Scalar consistency on 3D */
     RUN_TEST(test_3d_explicit_euler_omp_vs_scalar);
     RUN_TEST(test_3d_rk2_omp_vs_scalar);
+    RUN_TEST(test_3d_rk4_omp_vs_scalar);
 
     return UNITY_END();
 }
