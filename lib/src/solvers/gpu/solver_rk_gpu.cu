@@ -260,6 +260,18 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
         if (e != CFD_SUCCESS)
             return e;
     }
+    // Grid spacing must be present and non-degenerate: the kernels read a single
+    // g->dx[0]/g->dy[0]/g->dz[0] and divide by it, so a NULL array or a zero
+    // first entry would be a NULL dereference / division by zero (the scalar RHS
+    // kernel guards each cell against near-zero dx/dy — mirror that here). This
+    // must run before spacing_is_uniform() and the dx/dy reads below.
+    if (!g->dx || !g->dy || (nz > 1 && !g->dz) ||
+        fabs(g->dx[0]) < 1e-10 || fabs(g->dy[0]) < 1e-10 ||
+        (nz > 1 && fabs(g->dz[0]) < 1e-10)) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "GPU RK solver requires non-zero grid spacing (dx/dy/dz)");
+        return CFD_ERROR_INVALID;
+    }
     // Uniform spacing requirement (CPU RK allows non-uniform x/y; GPU does not).
     if (!spacing_is_uniform(g->dx, nx > 0 ? nx - 1 : 0) ||
         !spacing_is_uniform(g->dy, ny > 0 ? ny - 1 : 0) ||
