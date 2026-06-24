@@ -1039,6 +1039,10 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         const double RES_FLOOR = 1e-30;
         double* p_src = ctx->d_p;
         double* p_dst = ctx->d_p_new;
+        // Enforce the pressure BC on the (warm-started) initial guess before measuring r0:
+        // the residual stencil reads boundary-adjacent cells (e.g. i=1 uses i=0), so a stale
+        // boundary on p_src would skew the baseline and the relative convergence check.
+        bc_apply_scalar_3d_gpu(p_src, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
         double r0 = poisson_residual_norm(ctx, p_src, grid_dim, block, nx, ny, stride_z,
                                           k_start, k_end, inv_dx2, inv_dy2, inv_dz2, factor);
         // r0 < 0 signals a residual-evaluation failure: fall back to the full iteration
