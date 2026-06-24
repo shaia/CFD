@@ -21,6 +21,7 @@
 
 #include <cstdio>
 #include <cstdint>
+#include <cmath>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <math.h>
@@ -1049,9 +1050,11 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         bc_apply_scalar_3d_gpu(p_src, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
         double r0 = poisson_residual_norm(ctx, p_src, grid_dim, block, nx, ny, stride_z,
                                           k_start, k_end, inv_dx2, inv_dy2, inv_dz2, factor);
-        // r0 < 0 signals a residual-evaluation failure: fall back to the full iteration
-        // cap with no early-exit (conservative — more sweeps, never fewer).
-        int can_check = (r0 >= 0.0);
+        // r0 < 0 signals a residual-evaluation failure; a non-finite r0 (Inf/NaN from
+        // overflow) would make the relative test Inf <= tol*Inf spuriously true. Either
+        // case disables residual-based stopping and falls back to the full iteration cap
+        // (conservative — more sweeps, never fewer).
+        int can_check = std::isfinite(r0) && (r0 >= 0.0);
         if (!can_check || r0 > RES_FLOOR) {
             for (int pi = 0; pi < cfg.poisson_max_iter; pi++) {
                 kernel_poisson_jacobi<<<grid_dim, block, 0, ctx->stream>>>(
