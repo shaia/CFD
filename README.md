@@ -52,23 +52,20 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ### Windows CUDA builds
 
-Use the `build.ps1` wrapper for CUDA builds on Windows:
+Use the CUDA configure preset, then build and test as usual:
 
 ```powershell
-.\build.ps1 all                 # configure + build + fast test subset (CUDA preset)
-.\build.ps1 configure           # cmake --preset windows-msvc-cuda
-.\build.ps1 build -Config Release
-.\build.ps1 test -All           # include long-running validation/cross-arch tests
+cmake --preset windows-msvc-cuda     # configure with CUDA enabled
+cmake --build build --config Debug    # or Release
+ctest --test-dir build -C Debug --output-on-failure
 ```
 
-**Why:** when CUDA is enabled, `nvcc` runs with `--use-local-env` and spawns a `cmd /c`
-subprocess to set up the MSVC host-compiler environment. A long inherited `PATH` (mine had
-grown to ~7140 chars / 164 entries) overflows `cmd.exe`'s ~8191-char limit, and that subprocess
-dies with a swallowed `exit 1` and no diagnostic. `build.ps1` deduplicates `PATH` and drops
-non-existent directories **for the build process only** (it never writes your persistent
-environment), keeping the length safely under the limit. If your persistent user `PATH` is the
-problem and you also build CUDA from an IDE or plain terminal, prune it once (dedupe entries,
-remove dead directories) so non-wrapper builds work too.
+**Troubleshooting — `nvcc` build dies with a swallowed `exit 1` and no diagnostic:**
+when CUDA is enabled, `nvcc` runs with `--use-local-env` and spawns a `cmd /c` subprocess to
+set up the MSVC host-compiler environment. A very long inherited `PATH` (e.g. ~7000+ chars)
+overflows `cmd.exe`'s ~8191-char limit and that subprocess dies silently. If you hit this,
+prune your user `PATH` once — dedupe entries and remove non-existent directories — so it stays
+well under the limit, then re-run the build.
 
 ### Linux/macOS Quick Build
 
