@@ -159,9 +159,15 @@ __global__ void kernel_poisson_residual_sq(const double* __restrict__ p,
     sdata[tid] = local;
     __syncthreads();
 
-    // Tree reduction within the block
-    for (int s = (blockDim.x * blockDim.y) / 2; s > 0; s >>= 1) {
-        if (tid < s)
+    // Tree reduction within the block. Handles arbitrary (non-power-of-two) thread
+    // counts: start at the largest power of two >= nthreads and guard the partner
+    // index so no lane is dropped (block_size_x/y are user-configurable via gpu_config_t).
+    unsigned int nthreads = blockDim.x * blockDim.y;
+    unsigned int s = 1;
+    while (s < nthreads)
+        s <<= 1;
+    for (s >>= 1; s > 0; s >>= 1) {
+        if ((unsigned int)tid < s && (unsigned int)tid + s < nthreads)
             sdata[tid] += sdata[tid + s];
         __syncthreads();
     }
