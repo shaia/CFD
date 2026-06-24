@@ -54,31 +54,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 
 #### Active Bugs
 
-**OMP Red-Black SOR Poisson Solver Convergence (P1)** ✅ RESOLVED
-
-Root cause: Hard-coded omega=1.5 was suboptimal for larger grids. For a 33×33 grid, the optimal SOR omega is ~1.83. With omega=1.5, the spectral radius was too high, causing convergence to exceed max iterations.
-
-Fix: All SOR and Red-Black SOR solvers now auto-compute optimal omega from grid dimensions using the Jacobi spectral radius formula: ω_opt = 2/(1+√(1-ρ_J²)). Users can override by setting `params.omega > 0`. Projection backends remain on CG (grid-size-independent).
-
-Action items:
-
-- [x] Profile OMP Red-Black SOR to identify convergence bottleneck — suboptimal omega
-- [x] Compare OMP vs AVX2 Red-Black implementations for differences — identical algorithm
-- [x] Test omega parameter sweep (1.0 to 1.9) for optimal convergence — auto-computed
-- [x] Verify convergence via iteration-count tests — test_optimal_omega.c
-- [x] Consider switch to Chebyshev acceleration or SSOR — not needed, optimal omega suffices
-
-**Grid Convergence Non-Monotonic Behavior (P1)** ✅ RESOLVED
-
-Root cause: Red-Black SOR Poisson solver had insufficient convergence on larger grids. Switching all projection backends to CG (Conjugate Gradient) resolved the issue. Grid convergence is now strictly monotonic (17×17: 0.046, 25×25: 0.037, 33×33: 0.032).
-
-Action items:
-
-- [x] Investigate why 33×33 produces worse results than 25×25 — Red-Black SOR Poisson solver
-- [x] May need more Poisson iterations for larger grids — solved by switch to CG
-- [x] Consider using SIMD Red-Black SOR or multigrid for better accuracy — CG sufficient
-- [x] Remove relaxed tolerance from grid convergence tests
-- [x] Add strict grid convergence test that FAILs if RMS increases with refinement
+_None currently._
 
 #### Limitations
 
