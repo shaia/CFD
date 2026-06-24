@@ -1033,9 +1033,13 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
 
         // Step 3: Solve Poisson with Jacobi (pointer swap, 7-point stencil).
         // Iterate until the relative residual drops below cfg.poisson_tolerance,
-        // capped at cfg.poisson_max_iter. The residual is checked every CHECK_EVERY
+        // capped at cfg.poisson_max_iter. The residual is checked every check_every
         // sweeps to amortize the reduction; warm-started steps converge in few sweeps.
-        const int CHECK_EVERY = 20;
+        // Clamp the period to the iteration cap so a small poisson_max_iter (< 20) still
+        // triggers at least one check and honors the tolerance instead of always running
+        // the full fixed count.
+        const int check_every = (cfg.poisson_max_iter > 0 && cfg.poisson_max_iter < 20)
+                                    ? cfg.poisson_max_iter : 20;
         const double RES_FLOOR = 1e-30;
         double* p_src = ctx->d_p;
         double* p_dst = ctx->d_p_new;
@@ -1058,7 +1062,7 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                 double* tmp = p_src;
                 p_src = p_dst;
                 p_dst = tmp;
-                if (can_check && (pi + 1) % CHECK_EVERY == 0) {
+                if (can_check && (pi + 1) % check_every == 0) {
                     double rnorm = poisson_residual_norm(ctx, p_src, grid_dim, block, nx, ny,
                                                          stride_z, k_start, k_end,
                                                          inv_dx2, inv_dy2, inv_dz2, factor);
