@@ -124,3 +124,25 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
     cfd_set_error(CFD_ERROR_UNSUPPORTED, "GPU projection solver: CUDA not available (compiled without CUDA support)");
     return CFD_ERROR_UNSUPPORTED;
 }
+
+cfd_status_t solve_rk2_method_gpu(flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params, const gpu_config_t* config) {
+    (void)field;
+    (void)grid;
+    (void)params;
+    (void)config;
+
+    cfd_set_error(CFD_ERROR_UNSUPPORTED, "GPU RK2 solver: CUDA not available (compiled without CUDA support)");
+    return CFD_ERROR_UNSUPPORTED;
+}
+
+cfd_status_t solve_rk4_method_gpu(flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params, const gpu_config_t* config) {
+    (void)field;
+    (void)grid;
+    (void)params;
+    (void)config;
+
+    cfd_set_error(CFD_ERROR_UNSUPPORTED, "GPU RK4 solver: CUDA not available (compiled without CUDA support)");
+    return CFD_ERROR_UNSUPPORTED;
+}
