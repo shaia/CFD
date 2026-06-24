@@ -1066,8 +1066,13 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                     double rnorm = poisson_residual_norm(ctx, p_src, grid_dim, block, nx, ny,
                                                          stride_z, k_start, k_end,
                                                          inv_dx2, inv_dy2, inv_dz2, factor);
-                    if (rnorm >= 0.0 && (rnorm <= cfg.poisson_tolerance * r0 || rnorm <= RES_FLOOR))
+                    if (rnorm < 0.0) {
+                        // Residual eval failed: stop checking (avoids per-sweep error spam
+                        // and repeated stream syncs) and run out the fixed iteration cap.
+                        can_check = 0;
+                    } else if (rnorm <= cfg.poisson_tolerance * r0 || rnorm <= RES_FLOOR) {
                         break;
+                    }
                 }
             }
         }
