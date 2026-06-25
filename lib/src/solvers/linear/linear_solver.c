@@ -162,6 +162,10 @@ poisson_solver_t* poisson_solver_create(
             switch (backend) {
                 case POISSON_BACKEND_SIMD:
                     return create_jacobi_simd_solver();
+#ifdef CFD_HAS_CUDA
+                case POISSON_BACKEND_GPU:
+                    return create_jacobi_gpu_solver();
+#endif
                 case POISSON_BACKEND_SCALAR:
                     return create_jacobi_scalar_solver();
                 default:
@@ -200,6 +204,10 @@ poisson_solver_t* poisson_solver_create(
 #ifdef CFD_ENABLE_OPENMP
                 case POISSON_BACKEND_OMP:
                     return create_cg_omp_solver();
+#endif
+#ifdef CFD_HAS_CUDA
+                case POISSON_BACKEND_GPU:
+                    return create_cg_gpu_solver();
 #endif
                 case POISSON_BACKEND_SCALAR:
                     return create_cg_scalar_solver();
