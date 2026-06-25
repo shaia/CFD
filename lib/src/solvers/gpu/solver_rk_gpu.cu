@@ -256,7 +256,7 @@ static int spacing_is_uniform(const double* spacing, size_t count) {
     return 1;
 }
 
-// Shared RK2/RK4 GPU driver. order must be 2 or 4.
+// Shared RK GPU driver. order must be 1 (explicit Euler), 2, or 4.
 static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
                                  const ns_solver_params_t* params,
                                  const gpu_config_t* config, int order) {
