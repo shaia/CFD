@@ -5,8 +5,11 @@
  * Implements the poisson_solver_t interface on the GPU using Conjugate Gradient.
  * This backend is a thin host-buffer wrapper around the shared device-resident
  * CG core in poisson_cg_gpu_solve.cuh: upload x/rhs once, run the full iteration
- * on the GPU, download x once — avoiding per-iteration transfers. The same core
- * is called directly (no host round-trip) by the GPU projection solver.
+ * on the GPU, download x once — avoiding per-iteration field transfers. The same
+ * core is called directly by the GPU projection solver: the pressure/RHS fields
+ * stay device-resident for the whole solve (no per-iteration field round-trip),
+ * though each CG iteration's dot-product reductions still copy a single scalar
+ * back to the host and sync.
  *
  * Sign convention matches the CPU CG reference: the plain Laplacian is negative
  * definite, so CG runs on the SPD operator A = -Laplacian with b = -rhs. The
