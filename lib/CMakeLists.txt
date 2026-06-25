@@ -187,7 +187,7 @@ set(CFD_GPU_STUB_SOURCES
 set(CFD_CUDA_SOURCES
     src/boundary/gpu/boundary_conditions_gpu.cu
     src/boundary/gpu/boundary_conditions_inlet_gpu.cu
-    src/solvers/gpu/solver_projection_jacobi_gpu.cu
+    src/solvers/gpu/solver_projection_gpu.cu
     src/solvers/gpu/solver_rk_gpu.cu
     src/solvers/linear/gpu/poisson_solver_jacobi_gpu.cu
     src/solvers/linear/gpu/poisson_solver_cg_gpu.cu

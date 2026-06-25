@@ -345,7 +345,7 @@ static void test_dvd_ra1e3_avx2(void) {
  * full validation: the per-step GPU wrapper re-creates its device context each
  * solver_step, so step-by-step marching is slow — acceptable only at release tier. */
 static void test_dvd_ra1e3_gpu(void) {
-    run_dvd_benchmark(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+    run_dvd_benchmark(NS_SOLVER_TYPE_PROJECTION_GPU,
                       /*Ra*/ 1000.0, /*n*/ 41, /*dt*/ 0.002, /*max_steps*/ 30000,
                       /*tol_rel*/ 0.10, /*u*/ 3.649, /*v*/ 3.697, /*Nu*/ 1.117);
 }

@@ -234,7 +234,7 @@ void test_projection_cpu_gpu_consistency(void) {
     TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Projection must succeed");
 
     solver_result_t gpu = run_solver(
-        NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+        NS_SOLVER_TYPE_PROJECTION_GPU,
         ARCH_GRID_SIZE, ARCH_GRID_SIZE,
         ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
     );
@@ -282,7 +282,7 @@ void test_all_solvers_instantiate(void) {
     const char* optional_types[] = {
         NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
         NS_SOLVER_TYPE_PROJECTION_OMP,
-        NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+        NS_SOLVER_TYPE_PROJECTION_GPU,
     };
     const char* optional_names[] = {
         "Explicit Euler OMP",

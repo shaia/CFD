@@ -186,7 +186,7 @@ void test_list_by_backend_cuda(void) {
         for (int i = 0; i < count; i++) {
             if (strcmp(names[i], NS_SOLVER_TYPE_EXPLICIT_EULER_GPU) == 0)
                 found_euler_gpu = 1;
-            if (strcmp(names[i], NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU) == 0)
+            if (strcmp(names[i], NS_SOLVER_TYPE_PROJECTION_GPU) == 0)
                 found_projection_gpu = 1;
         }
         TEST_ASSERT_TRUE(found_euler_gpu);
@@ -267,7 +267,7 @@ void test_create_checked_omp_conditional(void) {
 }
 
 void test_create_checked_cuda_conditional(void) {
-    ns_solver_t* solver = cfd_solver_create_checked(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* solver = cfd_solver_create_checked(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
 
     if (gpu_is_available()) {
         TEST_ASSERT_NOT_NULL(solver);
@@ -358,7 +358,7 @@ void test_gpu_solver_backend_field(void) {
         printf("GPU solver creation returned NULL (expected when GPU not available)\n");
     }
 
-    solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
     if (solver != NULL) {
         TEST_ASSERT_EQUAL_INT(NS_SOLVER_BACKEND_CUDA, solver->backend);
         solver_destroy(solver);
@@ -375,7 +375,7 @@ void test_error_message_on_unavailable_backend(void) {
     // Only test if we know a backend is unavailable
     if (!gpu_is_available()) {
         cfd_clear_error();
-        ns_solver_t* solver = cfd_solver_create_checked(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+        ns_solver_t* solver = cfd_solver_create_checked(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
         TEST_ASSERT_NULL(solver);
 
         const char* error = cfd_get_last_error();

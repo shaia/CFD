@@ -150,7 +150,7 @@ static void demonstrate_error_handling(void) {
     }
 
     /* Example 2: Graceful fallback for unavailable backend */
-    solver = cfd_solver_create(registry, "projection_jacobi_gpu");
+    solver = cfd_solver_create(registry, "projection_gpu");
     if (!solver) {
         printf("   Requesting GPU solver... not available\n");
         printf("     Falling back to scalar...\n");

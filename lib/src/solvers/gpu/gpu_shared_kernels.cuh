@@ -5,7 +5,7 @@
  * Single source of truth for the GPU energy step, per-face thermal boundary
  * conditions, caller-set velocity-BC restoration, the CUDA error-check macros,
  * and the energy-parameter support check. Both the projection
- * (`solver_projection_jacobi_gpu.cu`) and Runge-Kutta (`solver_rk_gpu.cu`)
+ * (`solver_projection_gpu.cu`) and Runge-Kutta (`solver_rk_gpu.cu`)
  * backends `#include` this header so the energy/thermal numerics cannot drift.
  *
  * Like the SIMD template headers (lib/src/solvers/linear/simd_template/), the

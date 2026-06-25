@@ -3,13 +3,10 @@
  * @brief Conjugate Gradient Poisson solver — CUDA GPU backend
  *
  * Implements the poisson_solver_t interface on the GPU using Conjugate Gradient.
- * Like the GPU Jacobi backend, it implements `solve` directly (upload once, run
- * the full iteration on-device, download once) to avoid per-iteration transfers.
- *
- * The solve loop is expressed entirely through the shared device primitives in
- * poisson_gpu_primitives.cuh (SPD matvec, dot, axpy, xpay) wrapped in thin host
- * helpers — it contains no raw kernel launches of its own, honoring the project's
- * algorithm-primitive separation rule.
+ * This backend is a thin host-buffer wrapper around the shared device-resident
+ * CG core in poisson_cg_gpu_solve.cuh: upload x/rhs once, run the full iteration
+ * on the GPU, download x once — avoiding per-iteration transfers. The same core
+ * is called directly (no host round-trip) by the GPU projection solver.
  *
  * Sign convention matches the CPU CG reference: the plain Laplacian is negative
  * definite, so CG runs on the SPD operator A = -Laplacian with b = -rhs. The
@@ -20,22 +17,18 @@
  * the CPU CG.
  */
 
-#include "cfd/boundary/boundary_conditions_gpu.cuh"
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/gpu_device.h"
 #include "cfd/solvers/poisson_solver.h"
 
-#include "poisson_gpu_primitives.cuh"
+#include "poisson_cg_gpu_solve.cuh"
 
-#include <cmath>
 #include <cstdlib>
 #include <cuda_runtime.h>
 
 extern "C" {
 #include "../linear_solver_internal.h"
 }
-
-#define CG_GPU_BREAKDOWN 1e-30
 
 /* ============================================================================
  * CONTEXT
@@ -56,55 +49,6 @@ typedef struct {
     double* d_scalar;  /* reduction accumulator (single double) */
     cudaStream_t stream;
 } poisson_cg_gpu_ctx;
-
-/* ============================================================================
- * PRIMITIVE HOST WRAPPERS (one kernel launch each)
- * ============================================================================ */
-
-static void cg_matvec(poisson_cg_gpu_ctx* c, const double* d_in, double* d_out,
-                      dim3 grid, dim3 block) {
-    lin_gpu_kernel_spd_laplacian<<<grid, block, 0, c->stream>>>(
-        d_in, d_out, c->nx, c->ny, c->stride_z, c->k_start, c->k_end,
-        c->inv_dx2, c->inv_dy2, c->inv_dz2, c->factor);
-}
-
-static void cg_residual(poisson_cg_gpu_ctx* c, const double* d_x, double* d_r,
-                        dim3 grid, dim3 block) {
-    lin_gpu_kernel_residual_vec<<<grid, block, 0, c->stream>>>(
-        d_x, c->d_rhs, d_r, c->nx, c->ny, c->stride_z, c->k_start, c->k_end,
-        c->inv_dx2, c->inv_dy2, c->inv_dz2, c->factor);
-}
-
-static void cg_axpy(poisson_cg_gpu_ctx* c, double alpha, const double* d_x, double* d_y,
-                    dim3 grid, dim3 block) {
-    lin_gpu_kernel_axpy<<<grid, block, 0, c->stream>>>(
-        alpha, d_x, d_y, c->nx, c->ny, c->stride_z, c->k_start, c->k_end);
-}
-
-static void cg_xpay(poisson_cg_gpu_ctx* c, const double* d_x, double beta, double* d_y,
-                    dim3 grid, dim3 block) {
-    lin_gpu_kernel_xpay<<<grid, block, 0, c->stream>>>(
-        d_x, beta, d_y, c->nx, c->ny, c->stride_z, c->k_start, c->k_end);
-}
-
-/* Interior dot product (a,b), written to *out. Returns false on CUDA failure so
- * the caller aborts the solve. */
-static bool cg_dot(poisson_cg_gpu_ctx* c, const double* d_a, const double* d_b,
-                   dim3 grid, dim3 block, double* out) {
-    size_t shmem = (size_t)block.x * block.y * sizeof(double);
-    if (cudaMemsetAsync(c->d_scalar, 0, sizeof(double), c->stream) != cudaSuccess)
-        return false;
-    lin_gpu_kernel_dot<<<grid, block, shmem, c->stream>>>(
-        d_a, d_b, c->d_scalar, c->nx, c->ny, c->stride_z, c->k_start, c->k_end);
-    double h = 0.0;
-    if (cudaMemcpyAsync(&h, c->d_scalar, sizeof(double), cudaMemcpyDeviceToHost, c->stream)
-        != cudaSuccess)
-        return false;
-    if (cudaStreamSynchronize(c->stream) != cudaSuccess)
-        return false;
-    *out = h;
-    return true;
-}
 
 /* ============================================================================
  * INTERFACE IMPLEMENTATION
@@ -196,92 +140,38 @@ static cfd_status_t cg_gpu_solve(poisson_solver_t* solver,
         return CFD_ERROR_INVALID;
 
     const poisson_solver_params_t* p = &solver->params;
-    size_t nx = c->nx, ny = c->ny, nz = c->nz;
     size_t bytes = c->size * sizeof(double);
 
-    dim3 block((unsigned)c->block_x, (unsigned)c->block_y);
-    dim3 grid((unsigned)((nx - 2 + block.x - 1) / block.x),
-              (unsigned)((ny - 2 + block.y - 1) / block.y));
-
-    /* Upload x and rhs; zero the working vectors so their boundaries stay 0. */
+    /* Upload x and rhs, then run the full CG on-device via the shared core. */
     if (cudaMemcpyAsync(c->d_x, x, bytes, cudaMemcpyHostToDevice, c->stream) != cudaSuccess
-        || cudaMemcpyAsync(c->d_rhs, rhs, bytes, cudaMemcpyHostToDevice, c->stream) != cudaSuccess
-        || cudaMemsetAsync(c->d_r, 0, bytes, c->stream) != cudaSuccess
-        || cudaMemsetAsync(c->d_p, 0, bytes, c->stream) != cudaSuccess
-        || cudaMemsetAsync(c->d_Ap, 0, bytes, c->stream) != cudaSuccess) {
-        return CFD_ERROR;
-    }
-
-    /* BC on the initial guess, then r0 = b - A x0, p0 = r0. */
-    bc_apply_scalar_3d_gpu(c->d_x, nx, ny, nz, BC_TYPE_NEUMANN, c->stream);
-    cg_residual(c, c->d_x, c->d_r, grid, block);
-    if (cudaMemcpyAsync(c->d_p, c->d_r, bytes, cudaMemcpyDeviceToDevice, c->stream) != cudaSuccess)
+        || cudaMemcpyAsync(c->d_rhs, rhs, bytes, cudaMemcpyHostToDevice, c->stream) != cudaSuccess)
         return CFD_ERROR;
 
-    double rho = 0.0;
-    if (!cg_dot(c, c->d_r, c->d_r, grid, block, &rho))
-        return CFD_ERROR;
-    double initial_res = sqrt(rho);
+    cg_gpu_solve_params cgp = {p->tolerance, p->absolute_tolerance, p->max_iterations};
+    cg_gpu_solve_result cgr = {0};
+    cfd_status_t rc = cg_gpu_solve_device(
+        c->d_x, c->d_rhs, c->d_r, c->d_p, c->d_Ap, c->d_scalar,
+        c->nx, c->ny, c->nz, c->stride_z, c->k_start, c->k_end,
+        c->inv_dx2, c->inv_dy2, c->inv_dz2, c->factor,
+        c->block_x, c->block_y, c->stream, &cgp, &cgr);
+    if (rc == CFD_ERROR || rc == CFD_ERROR_INVALID)
+        return rc;  /* CUDA failure — solution undefined, skip the download */
 
-    double tol = p->tolerance * initial_res;
-    if (tol < p->absolute_tolerance)
-        tol = p->absolute_tolerance;
-
-    double res = initial_res;
-    int iter = 0;
-    int converged = (initial_res < p->absolute_tolerance);
-    int stagnated = 0;
-
-    while (!converged && iter < p->max_iterations) {
-        cg_matvec(c, c->d_p, c->d_Ap, grid, block);          /* Ap = A p          */
-        double p_dot_Ap = 0.0;
-        if (!cg_dot(c, c->d_p, c->d_Ap, grid, block, &p_dot_Ap))
-            return CFD_ERROR;
-        if (fabs(p_dot_Ap) < CG_GPU_BREAKDOWN) {
-            stagnated = 1;  /* singular direction */
-            break;
-        }
-
-        double alpha = rho / p_dot_Ap;
-        cg_axpy(c, alpha, c->d_p, c->d_x, grid, block);      /* x += alpha p      */
-        cg_axpy(c, -alpha, c->d_Ap, c->d_r, grid, block);    /* r -= alpha Ap     */
-
-        double rho_new = 0.0;
-        if (!cg_dot(c, c->d_r, c->d_r, grid, block, &rho_new))
-            return CFD_ERROR;
-        res = sqrt(rho_new);
-        iter++;
-
-        if (res < tol || res < p->absolute_tolerance) {
-            converged = 1;
-            break;
-        }
-        if (fabs(rho) < CG_GPU_BREAKDOWN) {
-            stagnated = 1;
-            break;
-        }
-
-        double beta = rho_new / rho;
-        cg_xpay(c, c->d_r, beta, c->d_p, grid, block);       /* p = r + beta p    */
-        rho = rho_new;
-    }
-
-    /* Final Neumann BC on the solution, then download. */
-    bc_apply_scalar_3d_gpu(c->d_x, nx, ny, nz, BC_TYPE_NEUMANN, c->stream);
+    /* Download the solution (the core already synchronized the stream). */
     if (cudaMemcpyAsync(x, c->d_x, bytes, cudaMemcpyDeviceToHost, c->stream) != cudaSuccess)
         return CFD_ERROR;
     if (cudaStreamSynchronize(c->stream) != cudaSuccess)
         return CFD_ERROR;
 
     if (stats) {
-        stats->initial_residual = initial_res;
-        stats->final_residual = res;
-        stats->iterations = iter;
-        stats->status = converged    ? POISSON_CONVERGED
-                        : stagnated  ? POISSON_STAGNATED
-                                     : POISSON_MAX_ITER;
+        stats->initial_residual = cgr.initial_residual;
+        stats->final_residual = cgr.final_residual;
+        stats->iterations = cgr.iterations;
+        stats->status = cgr.converged   ? POISSON_CONVERGED
+                        : cgr.stagnated ? POISSON_STAGNATED
+                                        : POISSON_MAX_ITER;
     }
-    return converged ? CFD_SUCCESS : CFD_ERROR_MAX_ITER;
+    return rc;
 }
 
 /* ============================================================================

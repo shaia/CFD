@@ -254,7 +254,7 @@ void test_gpu_solver_multiple_steps(void) {
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* s = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* s = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
     if (s == NULL) {
         printf("Skipping test_gpu_solver_multiple_steps - GPU solver not available via registry\n");
         cfd_registry_destroy(registry);
@@ -418,7 +418,7 @@ void test_gpu_solver_lid_driven_cavity(void) {
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* s = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* s = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
     if (s == NULL) {
         printf("Skipping test_gpu_solver_lid_driven_cavity - GPU solver not available via registry\n");
         cfd_registry_destroy(registry);
@@ -532,7 +532,7 @@ void test_gpu_solver_execution(void) {
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* s = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* s = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
 
     if (s == NULL) {
         printf("Skipping test_gpu_solver_execution - GPU solver not available via registry\n");
