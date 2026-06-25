@@ -230,14 +230,17 @@ static cfd_status_t cg_gpu_solve(poisson_solver_t* solver,
     double res = initial_res;
     int iter = 0;
     int converged = (initial_res < p->absolute_tolerance);
+    int stagnated = 0;
 
     while (!converged && iter < p->max_iterations) {
         cg_matvec(c, c->d_p, c->d_Ap, grid, block);          /* Ap = A p          */
         double p_dot_Ap = 0.0;
         if (!cg_dot(c, c->d_p, c->d_Ap, grid, block, &p_dot_Ap))
             return CFD_ERROR;
-        if (fabs(p_dot_Ap) < CG_GPU_BREAKDOWN)
-            break;  /* stagnation / singular direction */
+        if (fabs(p_dot_Ap) < CG_GPU_BREAKDOWN) {
+            stagnated = 1;  /* singular direction */
+            break;
+        }
 
         double alpha = rho / p_dot_Ap;
         cg_axpy(c, alpha, c->d_p, c->d_x, grid, block);      /* x += alpha p      */
@@ -253,8 +256,10 @@ static cfd_status_t cg_gpu_solve(poisson_solver_t* solver,
             converged = 1;
             break;
         }
-        if (fabs(rho) < CG_GPU_BREAKDOWN)
+        if (fabs(rho) < CG_GPU_BREAKDOWN) {
+            stagnated = 1;
             break;
+        }
 
         double beta = rho_new / rho;
         cg_xpay(c, c->d_r, beta, c->d_p, grid, block);       /* p = r + beta p    */
@@ -272,7 +277,9 @@ static cfd_status_t cg_gpu_solve(poisson_solver_t* solver,
         stats->initial_residual = initial_res;
         stats->final_residual = res;
         stats->iterations = iter;
-        stats->status = converged ? POISSON_CONVERGED : POISSON_MAX_ITER;
+        stats->status = converged    ? POISSON_CONVERGED
+                        : stagnated  ? POISSON_STAGNATED
+                                     : POISSON_MAX_ITER;
     }
     return converged ? CFD_SUCCESS : CFD_ERROR_MAX_ITER;
 }
