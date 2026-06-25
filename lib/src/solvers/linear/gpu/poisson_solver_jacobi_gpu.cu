@@ -190,7 +190,13 @@ static cfd_status_t jacobi_gpu_solve(poisson_solver_t* solver,
         tol_target = tol_abs;
 
     int max_iter = p->max_iterations;
-    int check_every = (max_iter > 0 && max_iter < 20) ? max_iter : 20;
+    /* Each convergence check is a device-side reduction + stream sync, so never
+     * poll more often than every CHECK_FLOOR iterations; honor a larger explicit
+     * check_interval. A small max_iter still polls once at the final iteration. */
+    const int CHECK_FLOOR = 20;
+    int check_every = p->check_interval > CHECK_FLOOR ? p->check_interval : CHECK_FLOOR;
+    if (max_iter > 0 && check_every > max_iter)
+        check_every = max_iter;
 
     double res = r0;
     int iter = 0;
@@ -238,8 +244,11 @@ static cfd_status_t jacobi_gpu_solve(poisson_solver_t* solver,
         return CFD_ERROR;
 
     if (stats) {
-        stats->initial_residual = r0;
-        stats->final_residual = res;
+        /* jac_residual_norm() returns -1.0 when the device reduction fails;
+         * normalize such failures to NaN so stats never report a nonsensical
+         * negative residual. */
+        stats->initial_residual = (std::isfinite(r0) && r0 >= 0.0) ? r0 : NAN;
+        stats->final_residual = (std::isfinite(res) && res >= 0.0) ? res : NAN;
         stats->iterations = iter;
         stats->status = converged ? POISSON_CONVERGED : POISSON_MAX_ITER;
     }
