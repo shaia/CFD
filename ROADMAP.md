@@ -2,7 +2,7 @@
 
 This document outlines the development roadmap for achieving a commercial-grade, open-source CFD library.
 
-## Current State (v0.2.0)
+## Current State (v0.3.0)
 
 ### What We Have
 
@@ -48,7 +48,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no multigrid)
 - [ ] No restart/checkpoint capability
-- [ ] GPU backends cover the projection and RK2/RK4 solvers (all including the energy equation) — missing: Explicit Euler GPU and all modular linear solvers (Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB)
+- [ ] GPU backends cover Explicit Euler, projection, and RK2/RK4 solvers (all including the energy equation) — missing modular linear solvers: SOR, Red-Black SOR, BiCGSTAB (Jacobi and CG/PCG GPU done)
 
 ### Known Issues
 
@@ -142,8 +142,8 @@ All BC types implemented across all backends (Scalar, AVX2, NEON, OMP, GPU): Dir
         primitives in `poisson_gpu_primitives.cuh`; validated to machine precision vs CPU CG)
   - [ ] Red-Black SOR GPU
   - [ ] BiCGSTAB GPU
-  - [ ] Rewire `solve_projection_method_gpu` to use the standalone GPU CG for the pressure
-        solve (currently uses its own in-file converging-Jacobi loop; works, lower priority)
+  - [x] Rewire `solve_projection_method_gpu` to use the standalone GPU CG for the pressure
+        solve (now calls `cg_gpu_solve_device` on-device, no host round-trip — PR #189)
 - [ ] ILU preconditioner
 - [ ] Geometric multigrid
 - [ ] Algebraic multigrid (AMG) solver
@@ -175,13 +175,12 @@ Each time integrator requires a scalar (CPU) reference implementation first, the
 
 **Implemented:**
 
-- RK2 (Heun's method) — all CPU/AVX2/OMP backends, O(dt²) verified.
-- RK4 (classical Runge-Kutta) — all CPU/AVX2/OMP backends, O(dt⁴) verified (pure-ODE self-convergence ratio ~16; Taylor-Green PDE order ~4.0).
+- RK2 (Heun's method) — all CPU/AVX2/OMP/GPU backends, O(dt²) verified.
+- RK4 (classical Runge-Kutta) — all CPU/AVX2/OMP/GPU backends, O(dt⁴) verified (pure-ODE self-convergence ratio ~16; Taylor-Green PDE order ~4.0).
+- RK2/RK4 CUDA (`rk2_gpu`, `rk4_gpu`) — shared `solve_rk_gpu(..., order)` driver in `solver_rk_gpu.cu`.
 
 **Still needed:**
 
-- [ ] RK2 CUDA (`rk2_gpu`)
-- [ ] RK4 CUDA (`rk4_gpu`)
 - [ ] Implicit Euler (backward Euler)
 - [ ] Crank-Nicolson (2nd order implicit)
 - [ ] BDF2 (backward differentiation)
@@ -654,7 +653,7 @@ Alternative to full C inference (Phase 7). Python handles training/orchestration
 
 ## Version Milestones
 
-### v0.1.7 - Current Release
+### v0.1.7
 
 - [x] Stretched grid formula fix, tanh-based stretching, grid unit tests
 
@@ -664,11 +663,12 @@ Alternative to full C inference (Phase 7). Python handles training/orchestration
 - [x] Phase 5-7: SIMD, OMP, CUDA backends for 3D
 - [x] Phase 8: 3D VTK output, examples, validation (Taylor-Green 3D, Poiseuille 3D)
 
-### v0.3.0 - Heat Transfer
+### v0.3.0 - Heat Transfer (Current Release)
 
 - [x] Energy equation
 - [x] Thermal boundary conditions
 - [x] Natural convection validation
+- [x] GPU backends: Explicit Euler, projection (on-device CG pressure solve), RK2/RK4, energy equation; standalone GPU Jacobi/CG Poisson solvers
 
 ### v0.4.0 - Turbulence
 
