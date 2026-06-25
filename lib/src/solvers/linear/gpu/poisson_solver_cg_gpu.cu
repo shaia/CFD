@@ -28,6 +28,7 @@
 #include "poisson_gpu_primitives.cuh"
 
 #include <cmath>
+#include <cstdlib>
 #include <cuda_runtime.h>
 
 extern "C" {

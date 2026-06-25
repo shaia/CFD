@@ -24,6 +24,7 @@
 #include "poisson_gpu_primitives.cuh"
 
 #include <cmath>
+#include <cstdlib>
 #include <cuda_runtime.h>
 
 /* Internal-header helpers (poisson_solver_compute_3d_bounds, inv_dz2, etc.) are
