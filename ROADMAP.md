@@ -39,7 +39,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 |                     | SOR            | done | done     | done     | —        | —    |
 |                     | Red-Black SOR  | done | done     | done     | done     | —    |
 |                     | CG / PCG       | done | done     | done     | done     | done |
-|                     | BiCGSTAB       | done | done     | done     | —        | —    |
+|                     | BiCGSTAB       | done | done     | done     | —        | done |
 | **Boundary Conds**  | All types      | done | done     | done     | done     | done |
 
 ### What's Missing
@@ -48,7 +48,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no multigrid)
 - [ ] No restart/checkpoint capability
-- [ ] GPU backends cover Explicit Euler, projection, and RK2/RK4 solvers (all including the energy equation) — missing modular linear solvers: SOR, Red-Black SOR, BiCGSTAB (Jacobi and CG/PCG GPU done)
+- [ ] GPU backends cover Explicit Euler, projection, and RK2/RK4 solvers (all including the energy equation) — missing modular linear solvers: SOR, Red-Black SOR (Jacobi, CG/PCG, and BiCGSTAB GPU done)
 
 ### Known Issues
 
@@ -141,7 +141,8 @@ All BC types implemented across all backends (Scalar, AVX2, NEON, OMP, GPU): Dir
   - [x] CG GPU — `lib/src/solvers/linear/gpu/poisson_solver_cg_gpu.cu` (shared device
         primitives in `poisson_gpu_primitives.cuh`; validated to machine precision vs CPU CG)
   - [ ] Red-Black SOR GPU
-  - [ ] BiCGSTAB GPU
+  - [x] BiCGSTAB GPU — `lib/src/solvers/linear/gpu/poisson_solver_bicgstab_gpu.cu` (reuses the
+        shared `poisson_gpu_primitives.cuh` kernels; validated vs CPU BiCGSTAB)
   - [x] Rewire `solve_projection_method_gpu` to use the standalone GPU CG for the pressure
         solve (now calls `cg_gpu_solve_device` on-device, no host round-trip — PR #189)
 - [ ] ILU preconditioner

@@ -219,6 +219,10 @@ poisson_solver_t* poisson_solver_create(
             switch (backend) {
                 case POISSON_BACKEND_SIMD:
                     return create_bicgstab_simd_solver();
+#ifdef CFD_HAS_CUDA
+                case POISSON_BACKEND_GPU:
+                    return create_bicgstab_gpu_solver();
+#endif
                 case POISSON_BACKEND_SCALAR:
                     return create_bicgstab_scalar_solver();
                 default:
