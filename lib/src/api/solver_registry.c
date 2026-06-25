@@ -61,21 +61,6 @@ static double compute_max_temperature(const flow_field* field) {
     return max_t;
 }
 
-#ifdef CFD_HAS_CUDA
-/* Reject energy-equation params on the GPU backend, which does not yet
- * implement the energy equation. The CPU, OMP, and SIMD backends now support
- * it, so only the CUDA wrappers (below) still need this guard. */
-static cfd_status_t check_energy_unsupported(const ns_solver_params_t* params) {
-    if (params->alpha > 0.0 || params->beta != 0.0) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "Energy equation (alpha/beta) not supported by the GPU backend; "
-                      "use a CPU, OMP, or SIMD solver");
-        return CFD_ERROR_UNSUPPORTED;
-    }
-    return CFD_SUCCESS;
-}
-#endif /* CFD_HAS_CUDA */
-
 // Forward declarations for internal solver implementations
 // These are not part of the public API
 cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params);
@@ -98,6 +83,9 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
 cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params,
                                          const gpu_config_t* config);
+cfd_status_t solve_explicit_euler_method_gpu(flow_field* field, const grid* grid,
+                                             const ns_solver_params_t* params,
+                                             const gpu_config_t* config);
 cfd_status_t solve_rk2_method_gpu(flow_field* field, const grid* grid,
                                   const ns_solver_params_t* params,
                                   const gpu_config_t* config);
@@ -1063,126 +1051,39 @@ static ns_solver_t* create_projection_optimized_solver(void) {
 #ifdef CFD_HAS_CUDA
 /**
  * Built-in solver: GPU-Accelerated Explicit Euler
- * Uses CUDA for GPU acceleration (requires CUDA support)
+ *
+ * Forward-Euler momentum integrator on the device, sharing the RK GPU driver
+ * (solve_rk_gpu with order==1) — a genuine explicit Euler matching the scalar
+ * solver_explicit_euler.c (conservative_dt cap, per-step increment clamp,
+ * pressure-from-divergence update, periodic BCs, source + Boussinesq buoyancy,
+ * energy equation). Stateless like the RK2/RK4 GPU wrappers below.
  */
-
-typedef struct {
-    gpu_solver_context_t* gpu_ctx;
-    gpu_config_t gpu_config_t;
-    int use_gpu;
-} gpu_solver_wrapper_context;
-
-static cfd_status_t gpu_euler_init(ns_solver_t* solver, const grid* grid, const ns_solver_params_t* params) {
-    gpu_solver_wrapper_context* ctx =
-        (gpu_solver_wrapper_context*)cfd_malloc(sizeof(gpu_solver_wrapper_context));
-    if (!ctx) {
-        return CFD_ERROR;
-    }
-
-    ctx->gpu_config_t = gpu_config_default();
-    ctx->use_gpu = gpu_should_use(&ctx->gpu_config_t, grid->nx, grid->ny, grid->nz, params->max_iter);
-    ctx->gpu_ctx = NULL;
-
-    if (ctx->use_gpu) {
-        ctx->gpu_ctx = gpu_solver_create(grid->nx, grid->ny, grid->nz, &ctx->gpu_config_t);
-        if (!ctx->gpu_ctx) {
-            cfd_free(ctx);
-            CFD_LOG_ERROR("gpu", "GPU Euler init: Failed to create GPU context");
-            return CFD_ERROR_UNSUPPORTED;
-        }
-    }
-
-    solver->context = ctx;
-    return CFD_SUCCESS;
-}
-
-static void gpu_euler_destroy(ns_solver_t* solver) {
-    if (solver->context) {
-        gpu_solver_wrapper_context* ctx = (gpu_solver_wrapper_context*)solver->context;
-        if (ctx->gpu_ctx) {
-            gpu_solver_destroy(ctx->gpu_ctx);
-        }
-        cfd_free(ctx);
-        solver->context = NULL;
-    }
-}
-
 static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                    const ns_solver_params_t* params, ns_solver_stats_t* stats) {
-    gpu_solver_wrapper_context* ctx = (gpu_solver_wrapper_context*)solver->context;
-
-    if (field->nx < 3 || field->ny < 3) {
-        return CFD_ERROR_INVALID;
-    }
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
-
+    (void)solver;
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
-
-    if (ctx && ctx->use_gpu && ctx->gpu_ctx) {
-        // Upload, step, download
-        if (gpu_solver_upload(ctx->gpu_ctx, field) == 0) {
-            gpu_solver_stats_t gpu_stats;
-            if (gpu_solver_step(ctx->gpu_ctx, grid, &step_params, &gpu_stats) == 0) {
-                gpu_solver_download(ctx->gpu_ctx, field);
-
-                if (stats) {
-                    stats->iterations = 1;
-                    stats->elapsed_time_ms = gpu_stats.kernel_time_ms;
-                    // Compute max velocity/pressure
-                    double max_vel = 0.0, max_p = 0.0;
-                    compute_max_velocity_pressure(field, &max_vel, &max_p);
-                    stats->max_velocity = max_vel;
-                    stats->max_pressure = max_p;
-                    stats->max_temperature = compute_max_temperature(field);
-                }
-                return CFD_SUCCESS;
-            }
-        }
-        // GPU operation failed
-        CFD_LOG_ERROR("gpu", "GPU Euler step: GPU operation failed");
-        return CFD_ERROR_INVALID;
+    gpu_config_t cfg = gpu_config_default();
+    cfg.min_grid_size = 1;
+    cfg.min_steps = 1;
+    cfd_status_t rc = solve_explicit_euler_method_gpu(field, grid, &step_params, &cfg);
+    if (rc == CFD_SUCCESS && stats) {
+        stats->max_temperature = compute_max_temperature(field);
     }
-
-    // GPU not available - could be: CUDA not compiled in, gpu_should_use() returned false,
-    // or GPU initialization failed
-    CFD_LOG_ERROR("gpu", "GPU Euler step: GPU solver not initialized");
-    return CFD_ERROR_UNSUPPORTED;
+    return rc;
 }
 
 static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                     const ns_solver_params_t* params, ns_solver_stats_t* stats) {
-    gpu_solver_wrapper_context* ctx = (gpu_solver_wrapper_context*)solver->context;
-
-    if (field->nx < 3 || field->ny < 3) {
-        return CFD_ERROR_INVALID;
+    (void)solver;
+    gpu_config_t cfg = gpu_config_default();
+    cfg.min_grid_size = 1;
+    cfg.min_steps = 1;
+    cfd_status_t rc = solve_explicit_euler_method_gpu(field, grid, params, &cfg);
+    if (rc == CFD_SUCCESS && stats) {
+        stats->max_temperature = compute_max_temperature(field);
     }
-    cfd_status_t rc = check_energy_unsupported(params);
-    if (rc != CFD_SUCCESS) return rc;
-
-    if (ctx && ctx->use_gpu && ctx->gpu_ctx) {
-        // Use full GPU solver
-        solve_navier_stokes_gpu(field, grid, params, &ctx->gpu_config_t);
-
-        if (stats) {
-            stats->iterations = params->max_iter;
-            gpu_solver_stats_t gpu_stats = gpu_solver_get_stats(ctx->gpu_ctx);
-            stats->elapsed_time_ms = gpu_stats.kernel_time_ms;
-
-            double max_vel = 0.0, max_p = 0.0;
-            compute_max_velocity_pressure(field, &max_vel, &max_p);
-            stats->max_velocity = max_vel;
-            stats->max_pressure = max_p;
-            stats->max_temperature = compute_max_temperature(field);
-        }
-        return CFD_SUCCESS;
-    }
-
-    // GPU not available - could be: CUDA not compiled in, gpu_should_use() returned false,
-    // or GPU initialization failed
-    CFD_LOG_ERROR("gpu", "GPU Euler solve: GPU solver not initialized");
-    return CFD_ERROR_UNSUPPORTED;
+    return rc;
 }
 
 static ns_solver_t* create_explicit_euler_gpu_solver(void) {
@@ -1203,8 +1104,8 @@ static ns_solver_t* create_explicit_euler_gpu_solver(void) {
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
     s->backend = NS_SOLVER_BACKEND_CUDA;
 
-    s->init = gpu_euler_init;
-    s->destroy = gpu_euler_destroy;
+    s->init = NULL;
+    s->destroy = NULL;
     s->step = gpu_euler_step;
     s->solve = gpu_euler_solve;
     s->apply_boundary = NULL;

@@ -125,6 +125,19 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
     return CFD_ERROR_UNSUPPORTED;
 }
 
+cfd_status_t solve_explicit_euler_method_gpu(flow_field* field, const grid* grid,
+                                             const ns_solver_params_t* params,
+                                             const gpu_config_t* config) {
+    (void)field;
+    (void)grid;
+    (void)params;
+    (void)config;
+
+    cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                  "GPU explicit Euler solver: CUDA not available (compiled without CUDA support)");
+    return CFD_ERROR_UNSUPPORTED;
+}
+
 cfd_status_t solve_rk2_method_gpu(flow_field* field, const grid* grid,
                                   const ns_solver_params_t* params, const gpu_config_t* config) {
     (void)field;

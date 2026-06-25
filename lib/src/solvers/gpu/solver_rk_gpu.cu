@@ -51,6 +51,12 @@
 #define MAX_DIVERGENCE_LIMIT        10.0
 #define PRESSURE_UPDATE_FACTOR      0.1
 
+// Explicit-Euler-only limits (order==1 path), mirroring solver_explicit_euler.c:
+// the per-step increment is clamped to +/-UPDATE_LIMIT before being added, and dt
+// is capped at DT_CONSERVATIVE_LIMIT. These do NOT apply to the RK2/RK4 paths.
+#define UPDATE_LIMIT          1.0
+#define DT_CONSERVATIVE_LIMIT 0.0001
+
 // ============================================================================
 // CUDA kernels
 // ============================================================================
@@ -198,6 +204,23 @@ __global__ void kernel_axpy1(double* __restrict__ out, const double* __restrict_
     }
 }
 
+// Forward-Euler update (order==1): out = base + clamp(dt*k, +/-UPDATE_LIMIT),
+// then clamp velocity to +/-MAX_VELOCITY_LIMIT when clamp_velocity != 0 (pressure
+// passes clamp_velocity == 0). Mirrors the increment-clamp + velocity-clamp of
+// solver_explicit_euler.c exactly (du = clamp(conservative_dt*rhs); u += du).
+__global__ void kernel_euler_update(double* __restrict__ out, const double* __restrict__ base,
+                                    const double* __restrict__ k, double dt, int clamp_velocity,
+                                    size_t total) {
+    size_t n = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (n < total) {
+        double inc = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dt * k[n]));
+        double val = base[n] + inc;
+        if (clamp_velocity)
+            val = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, val));
+        out[n] = val;
+    }
+}
+
 // Final RK combine: out = base + coef*(w1*k1 + w2*k2 + w3*k3 + w4*k4).
 // RK2 passes (w1,w2,w3,w4)=(1,1,0,0) with coef=dt/2; RK4 (1,2,2,1) with dt/6.
 // Unused stage pointers may alias a live buffer as long as their weight is 0.
@@ -233,13 +256,13 @@ static int spacing_is_uniform(const double* spacing, size_t count) {
     return 1;
 }
 
-// Shared RK2/RK4 GPU driver. order must be 2 or 4.
+// Shared RK GPU driver. order must be 1 (explicit Euler), 2, or 4.
 static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
                                  const ns_solver_params_t* params,
                                  const gpu_config_t* config, int order) {
     if (!field || !g || !params)
         return CFD_ERROR_INVALID;
-    if (order != 2 && order != 4)
+    if (order != 1 && order != 2 && order != 4)
         return CFD_ERROR_INVALID;
 
     gpu_config_t cfg = config ? *config : gpu_config_default();
@@ -355,6 +378,9 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
     {
         int energy_on = (params->alpha > 0.0);
         double dt = params->dt;
+        // Explicit Euler (order==1) caps dt at DT_CONSERVATIVE_LIMIT, matching
+        // solver_explicit_euler.c. For RK2/RK4 dt_eff == dt (no behavior change).
+        double dt_eff = (order == 1) ? fmin(dt, DT_CONSERVATIVE_LIMIT) : dt;
         double mu = params->mu;
         double half_dt = 0.5 * dt;
 
@@ -404,28 +430,42 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
                     params->beta, params->T_ref,
                     params->gravity[0], params->gravity[1], params->gravity[2],
                     params->source_amplitude_u, params->source_amplitude_v,
-                    params->source_decay_rate, iter, dt);
+                    params->source_decay_rate, iter, dt_eff);
             }
 
-            // Final update Q^{n+1}. RK2: dt/2*(k1+k2); RK4: dt/6*(k1+2k2+2k3+k4).
-            // For RK2, stages 2,3 alias d_k[0][*] with zero weight.
-            double coef = (order == 4) ? (dt / 6.0) : (dt / 2.0);
-            double w1 = 1.0, w2 = (order == 4) ? 2.0 : 1.0;
-            double w3 = (order == 4) ? 2.0 : 0.0, w4 = (order == 4) ? 1.0 : 0.0;
-            int i3 = (order == 4) ? 2 : 0;
-            int i4 = (order == 4) ? 3 : 0;
-            kernel_rk_combine<<<g1d, n1d, 0, stream>>>(
-                d_u, d_u0, d_k[0][0], d_k[1][0], d_k[i3][0], d_k[i4][0],
-                w1, w2, w3, w4, coef, 1, total);
-            kernel_rk_combine<<<g1d, n1d, 0, stream>>>(
-                d_v, d_v0, d_k[0][1], d_k[1][1], d_k[i3][1], d_k[i4][1],
-                w1, w2, w3, w4, coef, 1, total);
-            kernel_rk_combine<<<g1d, n1d, 0, stream>>>(
-                d_w, d_w0, d_k[0][2], d_k[1][2], d_k[i3][2], d_k[i4][2],
-                w1, w2, w3, w4, coef, 1, total);
-            kernel_rk_combine<<<g1d, n1d, 0, stream>>>(
-                d_p, d_p0, d_k[0][3], d_k[1][3], d_k[i3][3], d_k[i4][3],
-                w1, w2, w3, w4, coef, 0, total);
+            // Final update Q^{n+1}.
+            if (order == 1) {
+                // Forward Euler with increment clamp: Q += clamp(dt_eff*k, +/-1).
+                // Velocity clamped to +/-MAX_VELOCITY (flag 1); pressure not (flag 0).
+                kernel_euler_update<<<g1d, n1d, 0, stream>>>(
+                    d_u, d_u0, d_k[0][0], dt_eff, 1, total);
+                kernel_euler_update<<<g1d, n1d, 0, stream>>>(
+                    d_v, d_v0, d_k[0][1], dt_eff, 1, total);
+                kernel_euler_update<<<g1d, n1d, 0, stream>>>(
+                    d_w, d_w0, d_k[0][2], dt_eff, 1, total);
+                kernel_euler_update<<<g1d, n1d, 0, stream>>>(
+                    d_p, d_p0, d_k[0][3], dt_eff, 0, total);
+            } else {
+                // RK2: dt/2*(k1+k2); RK4: dt/6*(k1+2k2+2k3+k4).
+                // For RK2, stages 2,3 alias d_k[0][*] with zero weight.
+                double coef = (order == 4) ? (dt / 6.0) : (dt / 2.0);
+                double w1 = 1.0, w2 = (order == 4) ? 2.0 : 1.0;
+                double w3 = (order == 4) ? 2.0 : 0.0, w4 = (order == 4) ? 1.0 : 0.0;
+                int i3 = (order == 4) ? 2 : 0;
+                int i4 = (order == 4) ? 3 : 0;
+                kernel_rk_combine<<<g1d, n1d, 0, stream>>>(
+                    d_u, d_u0, d_k[0][0], d_k[1][0], d_k[i3][0], d_k[i4][0],
+                    w1, w2, w3, w4, coef, 1, total);
+                kernel_rk_combine<<<g1d, n1d, 0, stream>>>(
+                    d_v, d_v0, d_k[0][1], d_k[1][1], d_k[i3][1], d_k[i4][1],
+                    w1, w2, w3, w4, coef, 1, total);
+                kernel_rk_combine<<<g1d, n1d, 0, stream>>>(
+                    d_w, d_w0, d_k[0][2], d_k[1][2], d_k[i3][2], d_k[i4][2],
+                    w1, w2, w3, w4, coef, 1, total);
+                kernel_rk_combine<<<g1d, n1d, 0, stream>>>(
+                    d_p, d_p0, d_k[0][3], d_k[1][3], d_k[i3][3], d_k[i4][3],
+                    w1, w2, w3, w4, coef, 0, total);
+            }
 
             // Energy equation — advance T with the corrected velocity, then
             // enforce thermal BCs (shared kernels). Swap instead of DtoD copy.
@@ -433,7 +473,7 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
                 kernel_energy_step<<<grid_dim, block, 0, stream>>>(
                     d_T, d_u, d_v, d_w, d_T_new,
                     nx, ny, stride_z, k_start, k_end, params->alpha,
-                    inv_2dx, inv_2dy, inv_2dz, inv_dx2, inv_dy2, inv_dz2, dt);
+                    inv_2dx, inv_2dy, inv_2dz, inv_dx2, inv_dy2, inv_dz2, dt_eff);
                 double* tmp_T = d_T;
                 d_T = d_T_new;
                 d_T_new = tmp_T;
@@ -490,6 +530,12 @@ cleanup:
     return status;
 
 #undef RK_ALLOC
+}
+
+cfd_status_t solve_explicit_euler_method_gpu(flow_field* field, const grid* grid,
+                                             const ns_solver_params_t* params,
+                                             const gpu_config_t* config) {
+    return solve_rk_gpu(field, grid, params, config, 1);
 }
 
 cfd_status_t solve_rk2_method_gpu(flow_field* field, const grid* grid,

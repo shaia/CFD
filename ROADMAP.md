@@ -30,15 +30,15 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 
 | Category            | Algorithm      | CPU  | AVX2     | NEON     | OMP      | GPU  |
 | ------------------- | -------------- | ---- | -------- | -------- | -------- | ---- |
-| **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | —    |
+| **N-S Solvers**     | Explicit Euler | done | done     | —        | done     | done |
 |                     | Projection     | done | done     | —        | done     | done |
 |                     | RK2 (Heun)     | done | done     | —        | done     | done |
 |                     | RK4 (classical)| done | done     | —        | done     | done |
 | **Energy Eq.**      | Advec-diff + Boussinesq + thermal BCs | done | done | — | done | done |
-| **Linear Solvers**  | Jacobi         | done | done     | done     | —        | —    |
+| **Linear Solvers**  | Jacobi         | done | done     | done     | —        | done |
 |                     | SOR            | done | done     | done     | —        | —    |
 |                     | Red-Black SOR  | done | done     | done     | done     | —    |
-|                     | CG / PCG       | done | done     | done     | done     | —    |
+|                     | CG / PCG       | done | done     | done     | done     | done |
 |                     | BiCGSTAB       | done | done     | done     | —        | —    |
 | **Boundary Conds**  | All types      | done | done     | done     | done     | done |
 
@@ -136,11 +136,14 @@ All BC types implemented across all backends (Scalar, AVX2, NEON, OMP, GPU): Dir
   - [ ] GMRES OMP
   - [ ] GMRES GPU
 - [ ] SSOR (Symmetric SOR) preconditioner
-- [ ] GPU (CUDA) linear solver backends
-  - [ ] Standalone Jacobi GPU (refactor from monolithic `solver_projection_jacobi_gpu.cu`)
+- [ ] GPU (CUDA) linear solver backends (standalone, in the `poisson_solver_t` abstraction)
+  - [x] Standalone Jacobi GPU — `lib/src/solvers/linear/gpu/poisson_solver_jacobi_gpu.cu`
+  - [x] CG GPU — `lib/src/solvers/linear/gpu/poisson_solver_cg_gpu.cu` (shared device
+        primitives in `poisson_gpu_primitives.cuh`; validated to machine precision vs CPU CG)
   - [ ] Red-Black SOR GPU
-  - [ ] CG GPU
   - [ ] BiCGSTAB GPU
+  - [ ] Rewire `solve_projection_method_gpu` to use the standalone GPU CG for the pressure
+        solve (currently uses its own in-file converging-Jacobi loop; works, lower priority)
 - [ ] ILU preconditioner
 - [ ] Geometric multigrid
 - [ ] Algebraic multigrid (AMG) solver
