@@ -11,7 +11,7 @@
  * - CPU Scalar: projection, explicit_euler
  * - AVX2/SIMD: projection_optimized, explicit_euler_optimized
  * - OpenMP: projection_omp, explicit_euler_omp
- * - CUDA GPU: projection_jacobi_gpu
+ * - CUDA GPU: projection_gpu
  *
  * TEST STRATEGY:
  * ==============
@@ -269,7 +269,7 @@ void test_projection_omp(void) {
 }
 
 void test_projection_gpu(void) {
-    test_backend_validation(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+    test_backend_validation(NS_SOLVER_TYPE_PROJECTION_GPU,
                             "Projection (CUDA GPU)",
                             VALIDATION_STEPS,
                             GHIA_RMS_TARGET_PROJECTION);

@@ -1,12 +1,13 @@
 /**
- * GPU-Accelerated Solver Implementation (CUDA) - Optimized
+ * GPU-Accelerated Projection (Chorin) Solver Implementation (CUDA)
  *
- * Key optimizations:
- * - Jacobi iteration for Poisson (fully parallel, no red-black dependency)
- * - Poisson iterations bounded by a relative-residual convergence check (early exit)
- * - Fixed predictor step logic
- * - Pointer swapping instead of memcpy for Poisson iterations
- * - Unified boundary conditions via bc_apply_*_gpu() functions
+ * Key points:
+ * - Pressure Poisson solved with Conjugate Gradient via the shared device-resident
+ *   core (cg_gpu_solve_device) — grid-size-independent convergence, far fewer
+ *   iterations than Jacobi, and run directly on the on-device pressure/RHS buffers
+ *   with no host round-trip.
+ * - Predictor / divergence / corrector / energy steps all stay on the GPU stream.
+ * - Unified boundary conditions via bc_apply_*_gpu() functions.
  */
 
 #include "cfd/boundary/boundary_conditions_gpu.cuh"
@@ -20,6 +21,7 @@
 #include "cfd/solvers/navier_stokes_solver.h"
 
 #include "gpu_shared_kernels.cuh"
+#include "../linear/gpu/poisson_cg_gpu_solve.cuh"
 
 #include <cstdio>
 #include <cstdint>
@@ -90,72 +92,6 @@ __global__ void kernel_compute_divergence(const double* __restrict__ u,
                      + (w[idx + stride_z] - w[idx - stride_z]) * inv_2dz;
         }
     }
-}
-
-// Fast Jacobi iteration - fully parallel (7-point stencil for 3D)
-__global__ void kernel_poisson_jacobi(const double* __restrict__ p_old, double* __restrict__ p_new,
-                                      const double* __restrict__ rhs, size_t nx, size_t ny,
-                                      size_t stride_z, int k_start, int k_end,
-                                      double inv_dx2, double inv_dy2, double inv_dz2,
-                                      double inv_factor) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
-    int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
-    if (i < nx - 1 && j < ny - 1) {
-        for (int k = k_start; k <= k_end; k++) {
-            size_t idx = k * stride_z + IDX_2D(i, j, nx);
-            double sum = (p_old[idx + 1] + p_old[idx - 1]) * inv_dx2
-                       + (p_old[idx + nx] + p_old[idx - nx]) * inv_dy2
-                       + (p_old[idx + stride_z] + p_old[idx - stride_z]) * inv_dz2;
-            p_new[idx] = (sum - rhs[idx]) * inv_factor;
-        }
-    }
-}
-
-// Poisson residual: r = rhs - (Laplacian p), where Laplacian p = sum_neighbors - factor*p
-// (same 7-point stencil as kernel_poisson_jacobi). Accumulates sum(r^2) over the interior
-// into a single device scalar via a block reduction + atomicAdd. Used to drive the
-// relative-residual convergence check that bounds the Jacobi iteration count.
-__global__ void kernel_poisson_residual_sq(const double* __restrict__ p,
-                                           const double* __restrict__ rhs,
-                                           double* __restrict__ out_sumsq,
-                                           size_t nx, size_t ny,
-                                           size_t stride_z, int k_start, int k_end,
-                                           double inv_dx2, double inv_dy2, double inv_dz2,
-                                           double factor) {
-    extern __shared__ double sdata[];
-    int tid = threadIdx.y * blockDim.x + threadIdx.x;
-    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
-    int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
-
-    double local = 0.0;
-    if (i < nx - 1 && j < ny - 1) {
-        for (int k = k_start; k <= k_end; k++) {
-            size_t idx = k * stride_z + IDX_2D(i, j, nx);
-            double sum = (p[idx + 1] + p[idx - 1]) * inv_dx2
-                       + (p[idx + nx] + p[idx - nx]) * inv_dy2
-                       + (p[idx + stride_z] + p[idx - stride_z]) * inv_dz2;
-            double r = rhs[idx] - (sum - factor * p[idx]);
-            local += r * r;
-        }
-    }
-
-    sdata[tid] = local;
-    __syncthreads();
-
-    // Tree reduction within the block. Handles arbitrary (non-power-of-two) thread
-    // counts: start at the largest power of two >= nthreads and guard the partner
-    // index so no lane is dropped (block_size_x/y are user-configurable via gpu_config_t).
-    unsigned int nthreads = blockDim.x * blockDim.y;
-    unsigned int s = 1;
-    while (s < nthreads)
-        s <<= 1;
-    for (s >>= 1; s > 0; s >>= 1) {
-        if ((unsigned int)tid < s && (unsigned int)tid + s < nthreads)
-            sdata[tid] += sdata[tid + s];
-        __syncthreads();
-    }
-    if (tid == 0)
-        atomicAdd(out_sumsq, sdata[0]);
 }
 
 // Predictor step - compute u*, v*, w* without pressure
@@ -678,44 +614,6 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
 // NOTE: thermal_bc_type_ok and apply_thermal_bcs_gpu are shared with the RK GPU
 // backend and now live in gpu_shared_kernels.cuh (included above).
 
-// Compute the L2 norm of the Poisson residual (rhs - Laplacian p) for the pressure field
-// `d_p_field`. Uses ctx->d_residual as the reduction accumulator and the same grid_dim/block
-// launch config as the Jacobi sweep. Synchronizes only ctx->stream (not the device).
-// Returns -1.0 if any CUDA call fails, so the caller can fall back to a fixed iteration
-// count rather than acting on a bogus residual.
-static double poisson_residual_norm(struct gpu_solver_context_impl* ctx, const double* d_p_field,
-                                    dim3 grid_dim, dim3 block,
-                                    size_t nx, size_t ny, size_t stride_z, int k_start, int k_end,
-                                    double inv_dx2, double inv_dy2, double inv_dz2, double factor) {
-    size_t shmem = (size_t)block.x * block.y * sizeof(double);
-    cudaError_t err = cudaMemsetAsync(ctx->d_residual, 0, sizeof(double), ctx->stream);
-    if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
-        return -1.0;
-    }
-    kernel_poisson_residual_sq<<<grid_dim, block, shmem, ctx->stream>>>(
-        d_p_field, ctx->d_rhs, ctx->d_residual, nx, ny, stride_z, k_start, k_end,
-        inv_dx2, inv_dy2, inv_dz2, factor);
-    err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
-        return -1.0;
-    }
-    double h_sumsq = 0.0;
-    err = cudaMemcpyAsync(&h_sumsq, ctx->d_residual, sizeof(double), cudaMemcpyDeviceToHost,
-                          ctx->stream);
-    if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
-        return -1.0;
-    }
-    err = cudaStreamSynchronize(ctx->stream);
-    if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
-        return -1.0;
-    }
-    return sqrt(h_sumsq);
-}
-
 cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
@@ -741,7 +639,6 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
     double inv_2dz = (nz > 1) ? 0.5 / grid->dz[0] : 0.0;
     double inv_dz2 = (nz > 1) ? 1.0 / (grid->dz[0] * grid->dz[0]) : 0.0;
     double factor = 2.0 * (inv_dx2 + inv_dy2 + inv_dz2);
-    double inv_factor = 1.0 / factor;
     double rho = (field->rho[0] > 1e-10) ? field->rho[0] : 1.0;
     double dt_rho = dt / rho;
 
@@ -771,6 +668,22 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
     int bc_block = 256;
     int bc_grid = (int)((max_bc_dim + bc_block - 1) / bc_block);
 
+    // CG scratch for the pressure (Poisson) solve. The shared device CG core needs
+    // three field-sized working vectors (residual, search direction, A*p) plus a
+    // single-double reduction accumulator. Reuse ctx->d_p_new (freed up now that the
+    // pressure solve is no longer the double-buffered Jacobi) as the search direction
+    // and ctx->d_residual as the accumulator; allocate the remaining two here, once
+    // per call, and free them after the loop.
+    double* d_cg_r = NULL;
+    double* d_cg_Ap = NULL;
+    if (cudaMalloc(&d_cg_r, ctx->size * sizeof(double)) != cudaSuccess
+        || cudaMalloc(&d_cg_Ap, ctx->size * sizeof(double)) != cudaSuccess) {
+        cudaFree(d_cg_r);
+        cudaFree(d_cg_Ap);
+        gpu_solver_destroy(ctx_void);
+        return CFD_ERROR_NOMEM;
+    }
+
     for (int iter = 0; iter < params->max_iter; iter++) {
         // Step 1: Predictor - compute u*, v*, w* without pressure
         kernel_predictor<<<grid_dim, block, 0, ctx->stream>>>(
@@ -793,59 +706,30 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         kernel_scale_rhs<<<grid_dim, block, 0, ctx->stream>>>(
             ctx->d_rhs, nx, ny, stride_z, k_start, k_end, 1.0 / dt);
 
-        // Step 3: Solve Poisson with Jacobi (pointer swap, 7-point stencil).
-        // Iterate until the relative residual drops below cfg.poisson_tolerance,
-        // capped at cfg.poisson_max_iter. The residual is checked every check_every
-        // sweeps to amortize the reduction; warm-started steps converge in few sweeps.
-        // Clamp the period to the iteration cap so a small poisson_max_iter (< 20) still
-        // triggers at least one check and honors the tolerance instead of always running
-        // the full fixed count.
-        const int check_every = (cfg.poisson_max_iter > 0 && cfg.poisson_max_iter < 20)
-                                    ? cfg.poisson_max_iter : 20;
-        const double RES_FLOOR = 1e-30;
-        double* p_src = ctx->d_p;
-        double* p_dst = ctx->d_p_new;
-        // Enforce the pressure BC on the (warm-started) initial guess before measuring r0:
-        // the residual stencil reads boundary-adjacent cells (e.g. i=1 uses i=0), so a stale
-        // boundary on p_src would skew the baseline and the relative convergence check.
-        bc_apply_scalar_3d_gpu(p_src, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
-        double r0 = poisson_residual_norm(ctx, p_src, grid_dim, block, nx, ny, stride_z,
-                                          k_start, k_end, inv_dx2, inv_dy2, inv_dz2, factor);
-        // r0 < 0 signals a residual-evaluation failure; a non-finite r0 (Inf/NaN from
-        // overflow) would make the relative test Inf <= tol*Inf spuriously true. Either
-        // case disables residual-based stopping and falls back to the full iteration cap
-        // (conservative — more sweeps, never fewer).
-        int can_check = std::isfinite(r0) && (r0 >= 0.0);
-        if (!can_check || r0 > RES_FLOOR) {
-            for (int pi = 0; pi < cfg.poisson_max_iter; pi++) {
-                kernel_poisson_jacobi<<<grid_dim, block, 0, ctx->stream>>>(
-                    p_src, p_dst, ctx->d_rhs, nx, ny,
-                    stride_z, k_start, k_end,
-                    inv_dx2, inv_dy2, inv_dz2, inv_factor);
-                bc_apply_scalar_3d_gpu(p_dst, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
-                double* tmp = p_src;
-                p_src = p_dst;
-                p_dst = tmp;
-                if (can_check && (pi + 1) % check_every == 0) {
-                    double rnorm = poisson_residual_norm(ctx, p_src, grid_dim, block, nx, ny,
-                                                         stride_z, k_start, k_end,
-                                                         inv_dx2, inv_dy2, inv_dz2, factor);
-                    if (rnorm < 0.0 || !std::isfinite(rnorm)) {
-                        // Residual eval failed or overflowed (Inf/NaN): a non-finite rnorm
-                        // would spuriously satisfy rnorm <= tol*r0, so stop checking (also
-                        // avoids per-sweep error spam / repeated stream syncs) and run out
-                        // the fixed iteration cap.
-                        can_check = 0;
-                    } else if (rnorm <= cfg.poisson_tolerance * r0 || rnorm <= RES_FLOOR) {
-                        break;
-                    }
-                }
-            }
-        }
-        // Ensure result is in d_p
-        if (p_src != ctx->d_p) {
-            cudaMemcpyAsync(ctx->d_p, p_src, ctx->size * sizeof(double),
-                            cudaMemcpyDeviceToDevice, ctx->stream);
+        // Step 3: Solve the pressure Poisson equation with Conjugate Gradient via the
+        // shared device-resident core (cg_gpu_solve_device) — the same CG used by the
+        // standalone GPU Poisson backend, called directly on ctx->d_p/ctx->d_rhs with no
+        // host round-trip. CG converges in far fewer iterations than Jacobi and its rate
+        // is grid-size-independent. ctx->d_p (pressure) is the in/out guess, warm-started
+        // from the previous projection iteration. The core applies the Neumann pressure BC
+        // internally (start + end). The relative tolerance / iteration cap come from the
+        // GPU config; absolute_tolerance is left at 0 so the relative test governs.
+        cg_gpu_solve_params cgp = {cfg.poisson_tolerance, 0.0, cfg.poisson_max_iter};
+        cg_gpu_solve_result cgr = {0};
+        cfd_status_t prc = cg_gpu_solve_device(
+            ctx->d_p, ctx->d_rhs, d_cg_r, ctx->d_p_new, d_cg_Ap, ctx->d_residual,
+            nx, ny, nz, stride_z, k_start, k_end,
+            inv_dx2, inv_dy2, inv_dz2, factor,
+            cfg.block_size_x, cfg.block_size_y, ctx->stream, &cgp, &cgr);
+        // A genuine CUDA failure is fatal — abort the solve. CFD_ERROR_MAX_ITER (the cap
+        // was hit without reaching tolerance) is treated as non-fatal: a warm-started CG
+        // effectively always converges, and a capped solve still makes progress, matching
+        // the old Jacobi loop's best-effort behavior (it always ran to its cap and continued).
+        if (prc == CFD_ERROR || prc == CFD_ERROR_INVALID) {
+            cudaFree(d_cg_r);
+            cudaFree(d_cg_Ap);
+            gpu_solver_destroy(ctx_void);
+            return prc;
         }
 
         // Step 4: Corrector - project velocity
@@ -879,6 +763,8 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
 
     cudaStreamSynchronize(ctx->stream);
     gpu_solver_download(ctx_void, field);
+    cudaFree(d_cg_r);
+    cudaFree(d_cg_Ap);
     gpu_solver_destroy(ctx_void);
     return CFD_SUCCESS;
 }

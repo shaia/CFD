@@ -1,5 +1,5 @@
 /**
- * Mathematical Validation Tests for GPU Projection Jacobi Solver
+ * Mathematical Validation Tests for GPU Projection (Conjugate Gradient) Solver
  *
  * Tests that GPU implementations produce correct results compared to
  * CPU implementations and verify GPU-specific correctness.
@@ -31,7 +31,7 @@ void tearDown(void) {
 //=============================================================================
 
 static int gpu_solver_available(ns_solver_registry_t* registry) {
-    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
     if (slv == NULL) {
         return 0;
     }
@@ -76,7 +76,7 @@ void test_gpu_solver_creates(void) {
     TEST_ASSERT_NOT_NULL(registry);
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
     if (slv == NULL) {
         printf("GPU solver not available (expected if CUDA not enabled)\n");
         cfd_registry_destroy(registry);
@@ -124,7 +124,7 @@ void test_gpu_cpu_consistency(void) {
     // GPU and CPU may have larger differences due to different algorithms
     // and floating-point order of operations
     test_result result = test_run_consistency(
-        NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+        NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_GPU,
         32, 32, &params, 10, 0.10);  // 10% tolerance
 
     printf("L2 difference in u: %.6e (relative: %.2e)\n",
@@ -164,7 +164,7 @@ void test_gpu_stability(void) {
     params.mu = 0.01;
     params.max_iter = 1;
 
-    test_result result = test_run_stability(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, 64, 64, &params, 50);
+    test_result result = test_run_stability(NS_SOLVER_TYPE_PROJECTION_GPU, 64, 64, &params, 50);
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("GPU solver stable for 50 steps\n");
@@ -200,7 +200,7 @@ void test_gpu_energy_decay(void) {
     params.mu = 0.01;
     params.max_iter = 1;
 
-    test_result result = test_run_energy_decay(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, 32, 32, &params, 30);
+    test_result result = test_run_energy_decay(NS_SOLVER_TYPE_PROJECTION_GPU, 32, 32, &params, 30);
 
     printf("Initial kinetic energy: %.6e\n", result.initial_energy);
     printf("Final kinetic energy: %.6e\n", result.final_energy);
@@ -252,7 +252,7 @@ void test_gpu_various_grid_sizes(void) {
         size_t nx = test_sizes[t][0];
         size_t ny = test_sizes[t][1];
 
-        test_result result = test_run_stability(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, nx, ny, &params, 5);
+        test_result result = test_run_stability(NS_SOLVER_TYPE_PROJECTION_GPU, nx, ny, &params, 5);
 
         printf("Grid %zux%zu: %s\n", nx, ny, result.passed ? "OK" : "FAILED");
         TEST_ASSERT_TRUE_MESSAGE(result.passed, "GPU should handle this grid size");
@@ -318,7 +318,14 @@ void test_gpu_divergence_free(void) {
     params.mu = 0.01;
     params.max_iter = 1;
 
-    test_result result = test_run_divergence_free(NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, 32, 32, &params, 10, 0.1);
+    // Tolerance reflects CG-projection behavior, which the GPU backend now shares with the
+    // CPU/SIMD/OMP projection family (all CG). On a collocated grid the divergence metric uses
+    // a wide central-difference stencil while the pressure Poisson uses the compact 5-point
+    // Laplacian; the resulting odd-even (checkerboard) component is invisible to the CG residual,
+    // so CG projection leaves a higher measured divergence than the previous GPU Jacobi solver,
+    // whose high-frequency damping incidentally suppressed it. The level here matches the
+    // validated CPU CG projection to ~5 significant figures (GPU 1.8997e-1 vs CPU 1.9000e-1).
+    test_result result = test_run_divergence_free(NS_SOLVER_TYPE_PROJECTION_GPU, 32, 32, &params, 10, 0.25);
 
     printf("Divergence norm after projection: %.6e\n", result.error_l2);
 
@@ -335,7 +342,7 @@ int main(void) {
 
     printf("\n");
     printf("================================================\n");
-    printf("  GPU Projection Jacobi NSSolver Validation Tests\n");
+    printf("  GPU Projection (CG) NSSolver Validation Tests\n");
     printf("================================================\n");
 
     RUN_TEST(test_gpu_availability);

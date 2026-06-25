@@ -452,7 +452,7 @@ void test_projection_gpu_bounded(void) {
 
     double initial_div;
     double final_div = run_projection_test(
-        NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+        NS_SOLVER_TYPE_PROJECTION_GPU,
         GRID_MEDIUM, GRID_MEDIUM,
         init_divergent_sinusoidal,
         TEST_STEPS,
@@ -524,7 +524,7 @@ void test_backend_consistency(void) {
         NS_SOLVER_TYPE_PROJECTION,
         NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
         NS_SOLVER_TYPE_PROJECTION_OMP,
-        NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU
+        NS_SOLVER_TYPE_PROJECTION_GPU
     };
     const char* names[] = {"CPU scalar", "AVX2", "OpenMP", "GPU"};
     int num_backends = 4;

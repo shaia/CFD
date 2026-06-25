@@ -175,7 +175,7 @@ jobs:
         run: |
           cd build
           # Check validation output for GPU skip (don't re-run the full test)
-          if [ -f validation_output.txt ] && grep -q "projection_jacobi_gpu.*SKIPPED" validation_output.txt; then
+          if [ -f validation_output.txt ] && grep -q "projection_gpu.*SKIPPED" validation_output.txt; then
             echo "WARNING: GPU backend was skipped despite GPU hardware"
             grep -i "gpu\|GPU" validation_output.txt
           else

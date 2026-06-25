@@ -58,7 +58,7 @@ typedef struct {
 
 static const solver_pair SOLVER_PAIRS[] = {
     {NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU, "Explicit Euler"},
-    {NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, "Projection Method"},
+    {NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, NS_SOLVER_TYPE_PROJECTION_GPU, "Projection Method"},
 };
 #define NUM_SOLVER_PAIRS (sizeof(SOLVER_PAIRS) / sizeof(SOLVER_PAIRS[0]))
 
@@ -311,7 +311,7 @@ static void test_all_solvers(void) {
     const char* all_solvers[] = {
         NS_SOLVER_TYPE_EXPLICIT_EULER,       NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
         NS_SOLVER_TYPE_EXPLICIT_EULER_GPU,   NS_SOLVER_TYPE_PROJECTION,
-        NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+        NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, NS_SOLVER_TYPE_PROJECTION_GPU,
     };
     size_t num_solvers = sizeof(all_solvers) / sizeof(all_solvers[0]);
 
@@ -391,7 +391,7 @@ static void test_large_grid(void) {
         size_t ny = large_sizes[i][1];
 
         benchmark_result result = run_benchmark(nx, ny, 50, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
-                                                NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU, "Projection");
+                                                NS_SOLVER_TYPE_PROJECTION_GPU, "Projection");
 
         const char* winner = (result.speedup >= 1.0) ? "GPU" : "SIMD";
         double best_time = (result.speedup >= 1.0) ? result.gpu_time_ms : result.simd_time_ms;

@@ -20,7 +20,7 @@ static int check_gpu_available(void) {
         ns_solver_registry_t* registry = cfd_registry_create();
         cfd_registry_register_defaults(registry);
 
-        ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+        ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
         gpu_available = (solver != NULL) ? 1 : 0;
 
         if (solver) solver_destroy(solver);
@@ -49,7 +49,7 @@ void test_projection_gpu_ghia_re100(void) {
     }
 
     ghia_result_t result = run_ghia_validation(
-        NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+        NS_SOLVER_TYPE_PROJECTION_GPU,
         33, 33,
         100.0, 1.0,
         FULL_STEPS, FINE_DT
@@ -75,7 +75,7 @@ void test_projection_gpu_stability(void) {
     printf("\n    Testing GPU solver stability...\n");
 
     ghia_result_t result = run_ghia_validation(
-        NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+        NS_SOLVER_TYPE_PROJECTION_GPU,
         25, 25,
         100.0, 1.0,
         MEDIUM_STEPS, FINE_DT

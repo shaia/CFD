@@ -233,7 +233,7 @@ void cfd_registry_register_defaults(ns_solver_registry_t* registry) {
 #ifdef CFD_HAS_CUDA
     cfd_registry_register(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU,
                           create_explicit_euler_gpu_solver);
-    cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU,
+    cfd_registry_register(registry, NS_SOLVER_TYPE_PROJECTION_GPU,
                           create_projection_gpu_solver);
     cfd_registry_register(registry, NS_SOLVER_TYPE_RK2_GPU, create_rk2_gpu_solver);
     cfd_registry_register(registry, NS_SOLVER_TYPE_RK4_GPU, create_rk4_gpu_solver);
@@ -1164,8 +1164,8 @@ static ns_solver_t* create_projection_gpu_solver(void) {
         return NULL;
     }
 
-    s->name = NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU;
-    s->description = "GPU-accelerated projection method with Jacobi iteration (CUDA)";
+    s->name = NS_SOLVER_TYPE_PROJECTION_GPU;
+    s->description = "GPU-accelerated projection method with Conjugate Gradient pressure solve (CUDA)";
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
     s->backend = NS_SOLVER_BACKEND_CUDA;

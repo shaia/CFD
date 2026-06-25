@@ -241,7 +241,7 @@ void test_gpu_3d_quiescent_registry(void) {
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
     if (slv == NULL) {
         printf("Skipping - GPU solver not available via registry\n");
         cfd_registry_destroy(registry);
@@ -437,7 +437,7 @@ void test_gpu_3d_vs_cpu_consistency(void) {
 
     ns_solver_registry_t* reg2 = cfd_registry_create();
     cfd_registry_register_defaults(reg2);
-    ns_solver_t* slv2 = cfd_solver_create(reg2, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* slv2 = cfd_solver_create(reg2, NS_SOLVER_TYPE_PROJECTION_GPU);
     if (slv2 == NULL) {
         printf("Skipping - GPU solver not available via registry\n");
         cfd_registry_destroy(reg2);

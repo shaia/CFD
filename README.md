@@ -134,7 +134,7 @@ int main(void) {
 | `projection` | Scalar | Chorin's projection method |
 | `projection_optimized` | SIMD | SIMD-optimized projection (AVX2/NEON) |
 | `projection_omp` | OpenMP | Multi-threaded projection |
-| `projection_jacobi_gpu` | GPU | CUDA-accelerated projection |
+| `projection_gpu` | GPU | CUDA-accelerated projection (CG pressure solve) |
 | `rk2` | Scalar | 2nd-order Runge-Kutta (Heun) |
 | `rk2_optimized` | SIMD | SIMD-optimized RK2 (AVX2/NEON) |
 | `rk2_omp` | OpenMP | Multi-threaded RK2 |

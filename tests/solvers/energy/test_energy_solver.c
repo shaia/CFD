@@ -898,7 +898,7 @@ static void test_energy_gpu_diffusion_decay(void) {
     TEST_ASSERT_NOT_NULL(registry);
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
     if (!solver) {
         /* No CUDA device / GPU backend not registered — skip. */
         cfd_registry_destroy(registry);
@@ -987,7 +987,7 @@ static void test_energy_gpu_rejects_heat_source(void) {
     TEST_ASSERT_NOT_NULL(registry);
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
     if (!solver) {
         cfd_registry_destroy(registry);
         TEST_IGNORE_MESSAGE("GPU projection solver unavailable");

@@ -348,7 +348,7 @@ void test_cuda_solver_creation_conditional(void) {
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* solver = cfd_solver_create_checked(registry, NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU);
+    ns_solver_t* solver = cfd_solver_create_checked(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
     TEST_ASSERT_NOT_NULL(solver);
     TEST_ASSERT_EQUAL(NS_SOLVER_BACKEND_CUDA, solver->backend);
     solver_destroy(solver);
