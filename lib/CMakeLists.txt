@@ -191,6 +191,7 @@ set(CFD_CUDA_SOURCES
     src/solvers/gpu/solver_rk_gpu.cu
     src/solvers/linear/gpu/poisson_solver_jacobi_gpu.cu
     src/solvers/linear/gpu/poisson_solver_cg_gpu.cu
+    src/solvers/linear/gpu/poisson_solver_bicgstab_gpu.cu
 )
 
 #=============================================================================

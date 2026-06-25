@@ -313,6 +313,60 @@ void test_cg_gpu_matches_cpu(void) {
     cfd_free(p_cpu);
 }
 
+/* GPU BiCGSTAB agrees with the reference CPU BiCGSTAB on the identical problem.
+ * For the symmetric Poisson operator BiCGSTAB is not the natural choice (CG is),
+ * but the backend must still solve it and match its CPU twin to solver tolerance. */
+void test_bicgstab_gpu_matches_cpu(void) {
+    printf("\n    GPU BiCGSTAB vs CPU BiCGSTAB consistency...\n");
+    size_t nx = 33, ny = 33;
+    double dx = (DOMAIN_MAX - DOMAIN_MIN) / (nx - 1);
+    double dy = (DOMAIN_MAX - DOMAIN_MIN) / (ny - 1);
+
+    double* rhs = create_field(nx * ny);
+    double* p_gpu = create_field(nx * ny);
+    double* p_cpu = create_field(nx * ny);
+    TEST_ASSERT_NOT_NULL(rhs);
+    TEST_ASSERT_NOT_NULL(p_gpu);
+    TEST_ASSERT_NOT_NULL(p_cpu);
+    init_rhs(rhs, nx, ny, dx, dy);
+
+    poisson_solver_stats_t sg = poisson_solver_stats_default();
+    int rc_gpu = solve_backend(POISSON_METHOD_BICGSTAB, POISSON_BACKEND_GPU,
+                               p_gpu, rhs, nx, ny, dx, dy, &sg);
+    if (rc_gpu == 0) {
+        printf("      SKIPPED (GPU backend unavailable)\n");
+        cfd_free(rhs);
+        cfd_free(p_gpu);
+        cfd_free(p_cpu);
+        return;
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, rc_gpu, "GPU BiCGSTAB solve failed");
+
+    poisson_solver_stats_t sc = poisson_solver_stats_default();
+    int rc_cpu = solve_backend(POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR,
+                               p_cpu, rhs, nx, ny, dx, dy, &sc);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, rc_cpu, "CPU BiCGSTAB reference solve failed");
+
+    double diff = max_diff_demeaned(p_gpu, p_cpu, nx, ny);
+    double l2_gpu = l2_error_vs_analytical(p_gpu, nx, ny, dx, dy);
+    double l2_cpu = l2_error_vs_analytical(p_cpu, nx, ny, dx, dy);
+    printf("      GPU iters=%d  CPU iters=%d  max|GPU-CPU|(demeaned)=%.3e\n",
+           sg.iterations, sc.iterations, diff);
+    printf("      L2_gpu=%.3e  L2_cpu=%.3e\n", l2_gpu, l2_cpu);
+
+    TEST_ASSERT_TRUE_MESSAGE(diff < 1e-6,
+        "GPU and CPU BiCGSTAB solutions diverge beyond 1e-6");
+    TEST_ASSERT_TRUE_MESSAGE(fabs(l2_gpu - l2_cpu) < 1e-3,
+        "GPU BiCGSTAB accuracy differs from CPU reference");
+    /* Krylov method: must reach tolerance in far fewer iterations than Jacobi. */
+    TEST_ASSERT_TRUE_MESSAGE(sg.iterations < 500,
+        "GPU BiCGSTAB took unexpectedly many iterations");
+
+    cfd_free(rhs);
+    cfd_free(p_gpu);
+    cfd_free(p_cpu);
+}
+
 int main(void) {
     UNITY_BEGIN();
     printf("\n========================================\n");
@@ -321,5 +375,6 @@ int main(void) {
     RUN_TEST(test_jacobi_gpu_manufactured_accuracy);
     RUN_TEST(test_jacobi_gpu_matches_cpu);
     RUN_TEST(test_cg_gpu_matches_cpu);
+    RUN_TEST(test_bicgstab_gpu_matches_cpu);
     return UNITY_END();
 }

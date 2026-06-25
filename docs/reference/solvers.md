@@ -216,6 +216,8 @@ poisson_solver_init(solver, nx, ny, dx, dy, &params);  // Pass params with preco
 - More robust than CG for difficult problems
 - Higher cost per iteration than CG
 
+**Backends:** scalar, SIMD (AVX2/NEON), and CUDA GPU (`POISSON_BACKEND_GPU`).
+
 **Usage:**
 ```c
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_BICGSTAB,

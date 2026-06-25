@@ -53,6 +53,7 @@ poisson_solver_t* create_cg_simd_solver(void);
 /* GPU (CUDA) solvers — defined in linear/gpu/*.cu, linked via cfd_cuda */
 poisson_solver_t* create_jacobi_gpu_solver(void);
 poisson_solver_t* create_cg_gpu_solver(void);
+poisson_solver_t* create_bicgstab_gpu_solver(void);
 #endif
 
 /* BiCGSTAB solvers (for non-symmetric systems) */
