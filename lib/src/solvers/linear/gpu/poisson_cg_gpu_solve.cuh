@@ -181,7 +181,7 @@ static cfd_status_t cg_gpu_solve_device(
 
     double res = initial_res;
     int iter = 0;
-    int converged = (initial_res < params->absolute_tolerance);
+    int converged = (initial_res <= params->absolute_tolerance);
     int stagnated = 0;
 
     while (!converged && iter < params->max_iterations) {
