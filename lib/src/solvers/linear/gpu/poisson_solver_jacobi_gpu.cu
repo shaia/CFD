@@ -93,8 +93,10 @@ static cfd_status_t jacobi_gpu_init(poisson_solver_t* solver,
 
     poisson_jacobi_gpu_ctx* ctx =
         (poisson_jacobi_gpu_ctx*)calloc(1, sizeof(poisson_jacobi_gpu_ctx));
-    if (!ctx)
+    if (!ctx) {
+        cfd_set_error(CFD_ERROR_NOMEM, "Failed to allocate GPU Jacobi solver context");
         return CFD_ERROR_NOMEM;
+    }
 
     ctx->nx = nx;
     ctx->ny = ny;
@@ -249,8 +251,10 @@ static cfd_status_t jacobi_gpu_solve(poisson_solver_t* solver,
 
 extern "C" poisson_solver_t* create_jacobi_gpu_solver(void) {
     poisson_solver_t* solver = (poisson_solver_t*)calloc(1, sizeof(poisson_solver_t));
-    if (!solver)
+    if (!solver) {
+        cfd_set_error(CFD_ERROR_NOMEM, "Failed to allocate GPU Jacobi solver");
         return NULL;
+    }
 
     solver->name = "jacobi_gpu";
     solver->description = "Jacobi iteration (CUDA GPU)";
