@@ -182,6 +182,59 @@ jobs:
             echo "GPU backend ran successfully (or not applicable)"
           fi
 
+      - name: Record cavity RMS results (Re=100/400/1000)
+        if: always()
+        run: |
+          cd build
+          if [ ! -f validation_output.txt ]; then
+            echo "No validation output captured; skipping RMS record." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Pair each "Testing backend: <name> (<solver>) at Re=<N>" line with the
+          # following "RMS_u: .. RMS_v: .." (or SKIPPED) line and emit a table.
+          # POSIX-only awk (field splitting) so it works under mawk or gawk.
+          # Source of the Re=100/400/1000 acceptance criteria: ROADMAP 6.1.1/6.1.5.
+          {
+            echo "## Lid-Driven Cavity RMS vs Ghia (129x129)"
+            echo ""
+            echo "| Re | Backend | RMS_u | RMS_v | Result |"
+            echo "|----|---------|-------|-------|--------|"
+            awk '
+              /Testing backend:/ {
+                re=$NF; sub(/^Re=/, "", re);          # last field is "Re=<N>"
+                name=$0;
+                sub(/^.*Testing backend: /, "", name);
+                sub(/ \([a-z0-9_]+\) at Re=.*$/, "", name);  # drop " (solver) at Re=N", keep backend
+                pending=1; next
+              }
+              pending && /RMS_u:/ {
+                ru=$2; rv=$4;                          # "RMS_u: <ru>  RMS_v: <rv>  (target < <tgt>)"
+                # Parse the per-backend target from the line itself so Euler
+                # (target < 0.15) is judged against its own threshold, not the
+                # projection 0.10. Without this, Euler exceeding 0.15 reads "pass".
+                tgt="";
+                if (match($0, /target < [0-9.]+/)) {
+                  tgt=substr($0, RSTART, RLENGTH); sub(/target < /, "", tgt);
+                }
+                res="pass";
+                if (tgt != "" && ((ru+0) >= (tgt+0) || (rv+0) >= (tgt+0))) res="FAIL";
+                printf "| %s | %s | %s | %s | %s |\n", re, name, ru, rv, res;
+                pending=0; next
+              }
+              pending && /SKIPPED/ {
+                printf "| %s | %s | - | - | skipped |\n", re, name; pending=0; next
+              }
+              pending && /\[FAILED\]/ {
+                # Backend errored before emitting an RMS line — emit a FAIL row so
+                # the regression is visible instead of silently dropped from the table.
+                printf "| %s | %s | - | - | FAIL |\n", re, name; pending=0; next
+              }
+            ' validation_output.txt
+            echo ""
+            echo "_Acceptance: projection RMS < 0.10 for Re=100, 400, 1000."
+            echo "Transcribe these into docs/validation/cavity-backends-validation.md._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Generate summary
         if: always()
         run: |
