@@ -150,11 +150,10 @@ verified. See `/add-ns-time-integrator` for the cross-backend workflow.
 
 ### 1.6 Restart / Checkpoint (P1)
 
-- [~] Binary checkpoint format (`.cfdchk`) — portable, versioned, CRC-protected
-      (`lib/src/io/checkpoint.c`)
-- [~] Save/restore complete simulation state (grid, field, scalar params, time, solver name)
-- [~] Portable across platforms (little-endian fixed-width, endianness marker)
-- [~] Version compatibility (format-version header, rejects unknown versions)
+✅ Done — portable, versioned, CRC-protected binary checkpoint format (`.cfdchk`) saving and
+restoring complete simulation state (grid, field, scalar params, time, solver name);
+little-endian fixed-width encoding with endianness marker and a format-version header that
+rejects unknown versions (`lib/src/io/checkpoint.c`). See CHANGELOG.
 
 ### 1.7 Nonlinear Solvers (P2)
 

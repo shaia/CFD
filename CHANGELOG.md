@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Restart / checkpoint support** — portable, versioned, CRC-protected binary checkpoint
+  format (`.cfdchk`) that saves and restores complete simulation state (grid, flow field,
+  scalar params, time, solver name). Little-endian fixed-width encoding with an endianness
+  marker and a format-version header that rejects unknown versions
+  (`lib/src/io/checkpoint.c`, `lib/include/cfd/io/checkpoint.h`, `tests/io/test_checkpoint.c`).
+
 ## [0.3.0] - 2026-06-23
 
 ### Added

@@ -53,7 +53,14 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ### Windows CUDA builds
 
-Use the CUDA configure preset, then build and test as usual:
+The quickest path is the `build.ps1` wrapper, which prunes `PATH` for the lifetime of the
+process (see troubleshooting below) and runs configure + build + the fast test subset:
+
+```powershell
+.\build.ps1 all       # configure + build + fast test subset (CUDA preset)
+```
+
+Or run the steps manually with the CUDA configure preset:
 
 ```powershell
 cmake --preset windows-msvc-cuda     # configure with CUDA enabled
@@ -66,7 +73,8 @@ when CUDA is enabled, `nvcc` runs with `--use-local-env` and spawns a `cmd /c` s
 set up the MSVC host-compiler environment. A very long inherited `PATH` (e.g. ~7000+ chars)
 overflows `cmd.exe`'s ~8191-char limit and that subprocess dies silently. If you hit this,
 prune your user `PATH` once — dedupe entries and remove non-existent directories — so it stays
-well under the limit, then re-run the build.
+well under the limit, then re-run the build. The `build.ps1` wrapper applies this pruning
+automatically (per-process only; it never writes the persistent environment).
 
 ### Linux/macOS Quick Build
 
