@@ -330,7 +330,12 @@ void test_explicit_euler_omp(void) {
  * Projection backends only: at higher Re the production projection solver is
  * what we validate against Ghia. These need the finer 129x129 grid to resolve
  * the stronger primary vortex and secondary corner vortices, so they are gated
- * behind CAVITY_FULL_VALIDATION and only invoked via their ctest filter. */
+ * behind CAVITY_FULL_VALIDATION and only invoked via their ctest filter.
+ *
+ * The whole block is compiled out unless CAVITY_FULL_VALIDATION is set so the
+ * tests can never run on the 33x33 CI grid — comparing a 33x33 solution against
+ * Re=400/1000 Ghia data would be a meaningless, misleading regression check. */
+#if CAVITY_FULL_VALIDATION
 
 void test_projection_optimized_avx2_re400(void) {
     test_backend_validation(NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
@@ -379,6 +384,8 @@ void test_projection_gpu_re1000(void) {
                             VALIDATION_STEPS_RE1000, VALIDATION_DT_HIGH_RE,
                             GHIA_RMS_TARGET_PROJECTION);
 }
+
+#endif /* CAVITY_FULL_VALIDATION */
 
 /* ============================================================================
  * BACKEND CONSISTENCY TEST
@@ -504,7 +511,9 @@ int main(int argc, char** argv) {
         RUN_TEST(test_projection_gpu);
 
     /* Re=400 / Re=1000 — explicit filter required (full validation, 129x129
-     * only). Never run in the default no-filter CI path. */
+     * only). Compiled out entirely unless CAVITY_FULL_VALIDATION is set, so the
+     * 33x33 CI build cannot run them against high-Re Ghia data even by filter. */
+#if CAVITY_FULL_VALIDATION
     if (filter && strcmp(filter, "projection_avx2_re400") == 0)
         RUN_TEST(test_projection_optimized_avx2_re400);
     if (filter && strcmp(filter, "projection_omp_re400") == 0)
@@ -517,6 +526,7 @@ int main(int argc, char** argv) {
         RUN_TEST(test_projection_omp_re1000);
     if (filter && strcmp(filter, "projection_gpu_re1000") == 0)
         RUN_TEST(test_projection_gpu_re1000);
+#endif /* CAVITY_FULL_VALIDATION */
 
 #if !CAVITY_FULL_VALIDATION
     if (!filter || strcmp(filter, "euler_scalar") == 0)
