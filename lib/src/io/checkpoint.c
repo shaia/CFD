@@ -186,7 +186,9 @@ static void get_string(chk_io* io, char* buf, size_t cap) {
         io->status = CFD_ERROR_INVALID;
         return;
     }
-    if (buf && cap > 0 && (size_t)len + 1 > cap) {
+    // A caller buffer with zero capacity cannot be filled or NUL-terminated, so
+    // treat it as invalid rather than silently discarding the string bytes.
+    if (buf && (cap == 0 || (size_t)len + 1 > cap)) {
         io->status = CFD_ERROR_INVALID;
         return;
     }
