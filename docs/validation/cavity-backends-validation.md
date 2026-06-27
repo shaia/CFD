@@ -99,10 +99,10 @@ To run full validation:
 ```bash
 cmake -DCAVITY_FULL_VALIDATION=ON -B build
 cmake --build build --config Release
-# Re=100 (all backends)
-ctest --test-dir build -C Release -R "CavityBackend_.*" --output-on-failure -j %NUMBER_OF_PROCESSORS%
+# Re=100 (all backends) — exclude the Re=400/1000 tests so only the base cases run
+ctest --test-dir build -C Release -R "CavityBackend_" -E "_Re(400|1000)" --output-on-failure -j "$(nproc)"
 # Re=400 / Re=1000 only
-ctest --test-dir build -C Release -R "CavityBackend_.*_Re(400|1000)" --output-on-failure -j %NUMBER_OF_PROCESSORS%
+ctest --test-dir build -C Release -R "CavityBackend_.*_Re(400|1000)" --output-on-failure -j "$(nproc)"
 ```
 
 The full suite is split into one ctest entry per (backend, Reynolds) so `ctest -j`
