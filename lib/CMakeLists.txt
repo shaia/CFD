@@ -101,6 +101,7 @@ set(CFD_API_SOURCES
 
 # I/O sources (part of core)
 set(CFD_IO_SOURCES
+    src/io/checkpoint.c
     src/io/csv_output.c
     src/io/vtk_output.c
 )

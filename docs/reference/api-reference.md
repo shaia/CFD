@@ -497,6 +497,62 @@ cfd_status_t write_centerline_to_csv(flow_field* field, grid_t* grid,
                                      const char* filename);
 ```
 
+### Restart / Checkpoint
+
+Portable, versioned binary save/restore of the complete simulation state. The
+`.cfdchk` format stores the grid, flow field, scalar solver parameters, the
+accumulated simulation time, and the active solver's registry name. Solver
+context buffers (e.g. Runge-Kutta stages) are pure per-step scratch and are
+**not** stored — on restore the solver is recreated by name and re-initialized,
+giving a bit-exact restart from a step boundary. Custom `source_func` /
+`heat_source_func` callbacks cannot be serialized and must be re-supplied after a
+restore (the in-place restore preserves an existing simulation's callbacks).
+
+```c
+#include "cfd/io/checkpoint.h"
+
+// Low-level (operates on core types; read ALLOCATES grid/field, caller frees)
+cfd_status_t cfd_checkpoint_write(const char* path, const grid* g,
+                                  const flow_field* field,
+                                  const ns_solver_params_t* params,
+                                  double current_time, const char* solver_name,
+                                  const char* run_prefix,
+                                  const char* output_base_dir);
+cfd_status_t cfd_checkpoint_read(const char* path, grid** out_grid,
+                                 flow_field** out_field,
+                                 ns_solver_params_t* out_params,
+                                 double* out_current_time,
+                                 char* out_solver_name, size_t solver_name_cap,
+                                 char* out_run_prefix, size_t run_prefix_cap,
+                                 char* out_output_base_dir, size_t output_base_dir_cap);
+```
+
+```c
+#include "cfd/api/simulation_api.h"
+
+// High-level (operates on simulation_data)
+cfd_status_t     save_simulation_checkpoint(const simulation_data* sim, const char* path);
+simulation_data* load_simulation_from_checkpoint(const char* path);          // fresh sim
+cfd_status_t     restore_simulation_checkpoint(simulation_data* sim, const char* path); // in place
+```
+
+**Example:**
+```c
+// Save mid-run, then resume later in a new process
+save_simulation_checkpoint(sim, "run.cfdchk");
+// ...
+simulation_data* resumed = load_simulation_from_checkpoint("run.cfdchk");
+run_simulation_step(resumed);
+free_simulation(resumed);
+```
+
+Portability is guaranteed by field-by-field little-endian encoding with
+fixed-width integers and IEEE-754 doubles (no raw struct dumps); a header
+endianness marker rejects foreign-endian files and a trailing CRC32 detects
+truncation or corruption. Incompatible magic/version returns
+`CFD_ERROR_INVALID` / `CFD_ERROR_UNSUPPORTED`; truncation or CRC mismatch returns
+`CFD_ERROR_IO`.
+
 ## Memory Management
 
 ### Aligned Allocation

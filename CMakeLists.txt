@@ -209,8 +209,10 @@ if(BUILD_TESTS)
     # Make Unity available
     FetchContent_MakeAvailable(Unity)
     
-    # Enable double precision and formatted print for Unity assertions (PUBLIC propagates to tests)
-    target_compile_definitions(unity PUBLIC UNITY_INCLUDE_DOUBLE UNITY_INCLUDE_PRINT_FORMATTED)
+    # Enable double precision, formatted print, and 64-bit assertions for Unity (PUBLIC propagates to tests).
+    # UNITY_SUPPORT_64 is auto-detected from pointer width on 64-bit builds, but must be forced on for
+    # 32-bit (x86) builds so TEST_ASSERT_EQUAL_UINT64 etc. don't abort with "Unity 64-bit Support Disabled".
+    target_compile_definitions(unity PUBLIC UNITY_INCLUDE_DOUBLE UNITY_INCLUDE_PRINT_FORMATTED UNITY_SUPPORT_64)
 
     # Add the test executables
     add_executable(test_simulation_basic tests/simulation/test_simulation_basic.c)
@@ -219,6 +221,7 @@ if(BUILD_TESTS)
     add_executable(test_decay_prevention tests/simulation/test_decay_prevention.c)
     add_executable(test_output_paths tests/io/test_output_paths.c)
 
+    add_executable(test_checkpoint tests/io/test_checkpoint.c)
     add_executable(test_csv_output tests/io/test_csv_output.c)
     add_executable(test_vtk_output tests/io/test_vtk_output.c)
     add_executable(test_derived_fields tests/simulation/test_derived_fields.c)
@@ -354,6 +357,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_decay_prevention PRIVATE CFD::Library unity)
     target_link_libraries(test_output_paths PRIVATE CFD::Library unity)
 
+    target_link_libraries(test_checkpoint PRIVATE CFD::Library unity)
     target_link_libraries(test_csv_output PRIVATE CFD::Library unity)
     target_link_libraries(test_vtk_output PRIVATE CFD::Library unity)
     target_link_libraries(test_derived_fields PRIVATE CFD::Library unity)
@@ -455,6 +459,7 @@ if(BUILD_TESTS)
     add_test(NAME DecayPreventionTest COMMAND test_decay_prevention)
     add_test(NAME OutputPathsTest COMMAND test_output_paths)
 
+    add_test(NAME CheckpointTest COMMAND test_checkpoint)
     add_test(NAME CsvOutputTest COMMAND test_csv_output)
     add_test(NAME VtkOutputTest COMMAND test_vtk_output)
     add_test(NAME DerivedFieldsTest COMMAND test_derived_fields)

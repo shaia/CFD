@@ -16,6 +16,7 @@ A production-grade computational fluid dynamics (CFD) library in C for solving 2
 - 🌡️ **Heat Transfer**: Energy equation (advection–diffusion) + Boussinesq buoyancy + thermal BCs
 - 🎯 **Validated**: Ghia lid-driven cavity, Taylor-Green vortex, Poiseuille flow, natural convection benchmarks
 - 📈 **VTK/CSV Output**: Ready for ParaView, VisIt visualization
+- 💾 **Restart/Checkpoint**: Portable, versioned binary save/restore of complete simulation state
 - ⚡ **Performance**: SIMD-optimized with runtime CPU detection
 - 🌐 **3D Support**: Full 3D simulations with nz>1, branch-free 2D compatibility
 
