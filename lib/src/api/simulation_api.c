@@ -423,16 +423,19 @@ cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char
     sim_data->params = new_params;
     sim_data->current_time = current_time;
 
-    if (sim_data->run_prefix) {
-        cfd_free(sim_data->run_prefix);
-        sim_data->run_prefix = NULL;
-    }
+    // Allocate the new prefix before releasing the old one, so an allocation
+    // failure leaves the existing prefix (and output behavior) intact.
     if (run_prefix[0] != '\0') {
         size_t len = strlen(run_prefix) + 1;
-        sim_data->run_prefix = (char*)cfd_malloc(len);
-        if (sim_data->run_prefix) {
-            snprintf(sim_data->run_prefix, len, "%s", run_prefix);
+        char* new_prefix = (char*)cfd_malloc(len);
+        if (new_prefix) {
+            snprintf(new_prefix, len, "%s", run_prefix);
+            cfd_free(sim_data->run_prefix);
+            sim_data->run_prefix = new_prefix;
         }
+    } else if (sim_data->run_prefix) {
+        cfd_free(sim_data->run_prefix);
+        sim_data->run_prefix = NULL;
     }
     snprintf(sim_data->output_base_dir, sizeof(sim_data->output_base_dir), "%s",
              output_base_dir[0] ? output_base_dir : "../../artifacts");
