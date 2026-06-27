@@ -112,6 +112,14 @@ const char* output_registry_get_run_dir(output_registry* reg, const char* base_d
     return reg->run_dir;
 }
 
+void output_registry_reset_run_dir(output_registry* reg) {
+    if (!reg) {
+        return;
+    }
+    reg->run_dir_created = 0;
+    reg->run_dir[0] = '\0';
+}
+
 //=============================================================================
 // OUTPUT DISPATCH
 //=============================================================================

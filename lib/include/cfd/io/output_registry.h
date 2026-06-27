@@ -43,6 +43,10 @@ CFD_LIBRARY_EXPORT const char* output_registry_get_run_dir(output_registry* reg,
                                                            const char* run_prefix, size_t nx,
                                                            size_t ny);
 
+// Invalidate the cached run directory so the next get_run_dir() recreates it
+// (e.g. after a checkpoint restore changes the run prefix or base directory).
+CFD_LIBRARY_EXPORT void output_registry_reset_run_dir(output_registry* reg);
+
 // Check if any output of given type is registered
 CFD_LIBRARY_EXPORT int output_registry_has_type(const output_registry* reg,
                                                 output_field_type field_type);

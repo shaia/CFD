@@ -440,6 +440,12 @@ cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char
     snprintf(sim_data->output_base_dir, sizeof(sim_data->output_base_dir), "%s",
              output_base_dir[0] ? output_base_dir : "../../artifacts");
 
+    // The output registry caches its run directory after first use; invalidate it
+    // so the restored run prefix / base directory take effect on the next output.
+    if (sim_data->outputs) {
+        output_registry_reset_run_dir(sim_data->outputs);
+    }
+
     return CFD_SUCCESS;
 }
 
