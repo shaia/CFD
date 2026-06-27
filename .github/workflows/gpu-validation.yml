@@ -182,6 +182,47 @@ jobs:
             echo "GPU backend ran successfully (or not applicable)"
           fi
 
+      - name: Record cavity RMS results (Re=100/400/1000)
+        if: always()
+        run: |
+          cd build
+          if [ ! -f validation_output.txt ]; then
+            echo "No validation output captured; skipping RMS record." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Pair each "Testing backend: <name> (<solver>) at Re=<N>" line with the
+          # following "RMS_u: .. RMS_v: .." (or SKIPPED) line and emit a table.
+          # POSIX-only awk (field splitting) so it works under mawk or gawk.
+          # Source of the Re=100/400/1000 acceptance criteria: ROADMAP 6.1.1/6.1.5.
+          {
+            echo "## Lid-Driven Cavity RMS vs Ghia (129x129)"
+            echo ""
+            echo "| Re | Backend | RMS_u | RMS_v | Result |"
+            echo "|----|---------|-------|-------|--------|"
+            awk '
+              /Testing backend:/ {
+                re=$NF; sub(/^Re=/, "", re);          # last field is "Re=<N>"
+                name=$0;
+                sub(/^.*Testing backend: /, "", name);
+                sub(/ \([a-z0-9_]+\) at Re=.*$/, "", name);  # drop " (solver) at Re=N", keep backend
+                pending=1; next
+              }
+              pending && /RMS_u:/ {
+                ru=$2; rv=$4;                          # "RMS_u: <ru>  RMS_v: <rv>  (target ...)"
+                res="pass";
+                if ($0 ~ /target < 0\.10/ && ((ru+0) >= 0.10 || (rv+0) >= 0.10)) res="FAIL";
+                printf "| %s | %s | %s | %s | %s |\n", re, name, ru, rv, res;
+                pending=0; next
+              }
+              pending && /SKIPPED/ {
+                printf "| %s | %s | - | - | skipped |\n", re, name; pending=0; next
+              }
+            ' validation_output.txt
+            echo ""
+            echo "_Acceptance: projection RMS < 0.10 for Re=100, 400, 1000."
+            echo "Transcribe these into docs/validation/cavity-backends-validation.md._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Generate summary
         if: always()
         run: |
