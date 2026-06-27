@@ -461,6 +461,11 @@ static void check_continuity_for(const char* name) {
     /* Continuous run of N+M steps. */
     flow_field* cont = flow_field_create(nx, ny, 1);
     if (run_steps(name, g, &p, init, N + M, cont) != 0) {
+        /* TEST_IGNORE_MESSAGE longjmps out, skipping the cleanup below, so free
+         * everything allocated so far first to avoid a LeakSanitizer report. */
+        grid_destroy(g);
+        flow_field_destroy(init);
+        flow_field_destroy(cont);
         TEST_IGNORE_MESSAGE("solver/backend unavailable");
     }
 

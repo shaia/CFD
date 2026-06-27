@@ -209,8 +209,10 @@ if(BUILD_TESTS)
     # Make Unity available
     FetchContent_MakeAvailable(Unity)
     
-    # Enable double precision and formatted print for Unity assertions (PUBLIC propagates to tests)
-    target_compile_definitions(unity PUBLIC UNITY_INCLUDE_DOUBLE UNITY_INCLUDE_PRINT_FORMATTED)
+    # Enable double precision, formatted print, and 64-bit assertions for Unity (PUBLIC propagates to tests).
+    # UNITY_SUPPORT_64 is auto-detected from pointer width on 64-bit builds, but must be forced on for
+    # 32-bit (x86) builds so TEST_ASSERT_EQUAL_UINT64 etc. don't abort with "Unity 64-bit Support Disabled".
+    target_compile_definitions(unity PUBLIC UNITY_INCLUDE_DOUBLE UNITY_INCLUDE_PRINT_FORMATTED UNITY_SUPPORT_64)
 
     # Add the test executables
     add_executable(test_simulation_basic tests/simulation/test_simulation_basic.c)
