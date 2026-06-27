@@ -217,6 +217,11 @@ jobs:
               pending && /SKIPPED/ {
                 printf "| %s | %s | - | - | skipped |\n", re, name; pending=0; next
               }
+              pending && /\[FAILED\]/ {
+                # Backend errored before emitting an RMS line — emit a FAIL row so
+                # the regression is visible instead of silently dropped from the table.
+                printf "| %s | %s | - | - | FAIL |\n", re, name; pending=0; next
+              }
             ' validation_output.txt
             echo ""
             echo "_Acceptance: projection RMS < 0.10 for Re=100, 400, 1000."
