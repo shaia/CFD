@@ -531,7 +531,11 @@ cfd_status_t cfd_checkpoint_read(const char* path,
         }
     }
 
-    fclose(fp);
+    // A failed close can surface a buffered read error that the reads missed, so
+    // promote it to a read failure rather than returning success.
+    if (fclose(fp) != 0 && io.status == CFD_SUCCESS) {
+        io.status = CFD_ERROR_IO;
+    }
 
     if (io.status != CFD_SUCCESS) {
         grid_destroy(g);
