@@ -396,7 +396,18 @@ cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char
     new_params.heat_source_func = sim_data->params.heat_source_func;
     new_params.heat_source_context = sim_data->params.heat_source_context;
 
-    // Swap in new state and release the old.
+    // Initialize the new solver against the new grid/params *before* touching the
+    // old state, so a failed init leaves the existing simulation untouched and
+    // only frees the freshly allocated state.
+    cfd_status_t init_st = solver_init(new_solver, new_grid, &new_params);
+    if (init_st != CFD_SUCCESS) {
+        solver_destroy(new_solver);
+        grid_destroy(new_grid);
+        flow_field_destroy(new_field);
+        return init_st;
+    }
+
+    // Init succeeded — swap in new state and release the old.
     if (sim_data->solver) {
         solver_destroy(sim_data->solver);
     }
@@ -407,11 +418,6 @@ cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char
     sim_data->solver = new_solver;
     sim_data->params = new_params;
     sim_data->current_time = current_time;
-
-    cfd_status_t init_st = solver_init(sim_data->solver, sim_data->grid, &sim_data->params);
-    if (init_st != CFD_SUCCESS) {
-        return init_st;
-    }
 
     if (sim_data->run_prefix) {
         cfd_free(sim_data->run_prefix);
