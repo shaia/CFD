@@ -346,9 +346,13 @@ simulation_data* load_simulation_from_checkpoint(const char* path) {
     if (run_prefix[0] != '\0') {
         size_t len = strlen(run_prefix) + 1;
         sim_data->run_prefix = (char*)cfd_malloc(len);
-        if (sim_data->run_prefix) {
-            snprintf(sim_data->run_prefix, len, "%s", run_prefix);
+        if (!sim_data->run_prefix) {
+            // Dropping the prefix would silently change output paths relative to
+            // the checkpoint; fail hard rather than return a partially-restored sim.
+            free_simulation(sim_data);
+            return NULL;
         }
+        snprintf(sim_data->run_prefix, len, "%s", run_prefix);
     }
 
     return sim_data;
