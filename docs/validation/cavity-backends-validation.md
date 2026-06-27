@@ -26,6 +26,11 @@ This document describes the comprehensive backend validation system for the lid-
 ### Backend Consistency
 - Verifies projection backends (CPU, AVX2, OMP) produce consistent results (within 0.1%)
 
+### Reynolds Number Coverage
+- **Re=100** — all projection + Explicit Euler backends (CI 33×33 and full 129×129)
+- **Re=400** — projection backends only (AVX2, OMP, GPU), full 129×129 validation
+- **Re=1000** — projection backends only (AVX2, OMP, GPU), full 129×129 validation
+
 ## Accuracy Targets
 
 The test enforces different accuracy targets based on solver sophistication:
@@ -80,17 +85,28 @@ dt: 0.0005
 ```c
 #define CAVITY_FULL_VALIDATION 1
 
-Grid: 129×129
-Steps: 50000 (250000 for Explicit Euler)
-dt: 0.0002
+Re=100:   Grid 129×129, 50000 steps  (250000 for Explicit Euler), dt 0.0002
+Re=400:   Grid 129×129, 60000 steps  (projection only),           dt 0.0005
+Re=1000:  Grid 129×129, 100000 steps (projection only),           dt 0.0005
 ```
+
+Higher-Reynolds cases run the **projection backends only** (the production solver)
+and require the finer 129×129 grid to resolve the stronger primary vortex and the
+secondary corner vortices. The Re=400/1000 `dt`/step counts are starting points —
+refine them after recording the first full-validation RMS values (see below).
 
 To run full validation:
 ```bash
-cmake -DCAVITY_FULL_VALIDATION=1 -B build
+cmake -DCAVITY_FULL_VALIDATION=ON -B build
 cmake --build build --config Release
-ctest --test-dir build -C Release -R CavityBackendsTest
+# Re=100 (all backends)
+ctest --test-dir build -C Release -R "CavityBackend_.*" --output-on-failure -j %NUMBER_OF_PROCESSORS%
+# Re=400 / Re=1000 only
+ctest --test-dir build -C Release -R "CavityBackend_.*_Re(400|1000)" --output-on-failure -j %NUMBER_OF_PROCESSORS%
 ```
+
+The full suite is split into one ctest entry per (backend, Reynolds) so `ctest -j`
+runs them concurrently; each carries a 4-hour timeout.
 
 ## Current Results (CI Mode, 33×33)
 
@@ -160,19 +176,38 @@ To exclude validation tests (e.g., sanitizer builds):
 ctest -LE validation
 ```
 
+## Full Validation Results (129×129)
+
+Record the RMS values from the `-DCAVITY_FULL_VALIDATION=ON` run here. All entries
+must satisfy RMS < 0.10 (projection). Fill in once the EC2/GPU run completes.
+
+| Re   | Backend       | RMS_u  | RMS_v  | Pass? |
+|------|---------------|--------|--------|-------|
+| 100  | AVX2/SIMD     | _TBD_  | _TBD_  | _TBD_ |
+| 100  | OpenMP        | _TBD_  | _TBD_  | _TBD_ |
+| 100  | CUDA GPU      | _TBD_  | _TBD_  | _TBD_ |
+| 400  | AVX2/SIMD     | _TBD_  | _TBD_  | _TBD_ |
+| 400  | OpenMP        | _TBD_  | _TBD_  | _TBD_ |
+| 400  | CUDA GPU      | _TBD_  | _TBD_  | _TBD_ |
+| 1000 | AVX2/SIMD     | _TBD_  | _TBD_  | _TBD_ |
+| 1000 | OpenMP        | _TBD_  | _TBD_  | _TBD_ |
+| 1000 | CUDA GPU      | _TBD_  | _TBD_  | _TBD_ |
+
+> If Re=1000 does not converge to RMS < 0.10 within the step budget, increase
+> `VALIDATION_STEPS_RE1000` (more physical time) before relaxing the tolerance —
+> the target is a scientific standard, not a tunable.
+
 ## Next Steps
 
 ### Immediate (for v1.0)
-1. Run full 129×129 validation (release mode)
-2. Test with AVX2 enabled build
-3. Test with CUDA GPU (if available)
-4. Verify all backends still pass at 129×129
+1. Run full 129×129 validation (release mode) and fill in the results table above
+2. Tune Re=400/1000 `dt`/step counts if convergence is incomplete
+3. Tick the ROADMAP 6.1.1 / 6.1.5 boxes once recorded
 
 ### Future Enhancements
-1. Add Re=400 and Re=1000 validation
-2. Add grid convergence study (33→65→129→257)
-3. Add backend performance comparison
-4. Add transient accuracy metrics (not just steady-state)
+1. Add grid convergence study (33→65→129→257)
+2. Add backend performance comparison
+3. Add transient accuracy metrics (not just steady-state)
 
 ## References
 

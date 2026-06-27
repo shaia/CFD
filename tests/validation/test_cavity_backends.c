@@ -63,6 +63,18 @@ void tearDown(void) {}
 #define VALIDATION_DT 0.0005
 #endif
 
+/**
+ * Higher-Reynolds (Re=400, Re=1000) parameters for the 129x129 full-validation
+ * run. Higher Re reaches steady state more slowly, so it needs longer physical
+ * time (more steps). dt is bounded by the advective CFL (u_max~1, dx=1/128 ->
+ * CFL~0.06 here) and the diffusive limit (relaxes as Re grows), leaving room
+ * for a larger step than the Re=100 default. These are starting points — refine
+ * after recording the first full-validation RMS values.
+ */
+#define VALIDATION_DT_HIGH_RE   0.0005   /* ~30-50 time units over the step budget */
+#define VALIDATION_STEPS_RE400  60000    /* ~30 time units */
+#define VALIDATION_STEPS_RE1000 100000   /* ~50 time units (slowest to converge) */
+
 /* ============================================================================
  * HELPER: Extract centerline profiles from context
  * ============================================================================ */
@@ -182,17 +194,22 @@ static double compute_ghia_rms(const profile_data_t* data,
  */
 static void test_backend_validation(const char* solver_type,
                                      const char* backend_name,
+                                     double reynolds,
+                                     const double* ghia_u,
+                                     const double* ghia_v,
                                      int max_steps,
+                                     double dt,
                                      double rms_target) {
-    printf("\n    Testing backend: %s (%s)\n", backend_name, solver_type);
+    printf("\n    Testing backend: %s (%s) at Re=%.0f\n",
+           backend_name, solver_type, reynolds);
 
     /* Run simulation */
     cavity_context_t* ctx = NULL;
     cavity_sim_result_t result = cavity_run_with_solver_ctx(
         solver_type,
         VALIDATION_GRID_SIZE, VALIDATION_GRID_SIZE,
-        100.0, 1.0,  /* Re=100, lid_velocity=1.0 */
-        max_steps, VALIDATION_DT,
+        reynolds, 1.0,  /* lid_velocity=1.0 */
+        max_steps, dt,
         &ctx
     );
 
@@ -217,8 +234,8 @@ static void test_backend_validation(const char* solver_type,
     TEST_ASSERT_NOT_NULL_MESSAGE(profiles.y_coords, "Failed to extract profiles");
 
     /* Compute RMS errors vs Ghia */
-    double rms_u = compute_ghia_rms(&profiles, GHIA_Y_COORDS, GHIA_U_RE100, 1);
-    double rms_v = compute_ghia_rms(&profiles, GHIA_X_COORDS, GHIA_V_RE100, 0);
+    double rms_u = compute_ghia_rms(&profiles, GHIA_Y_COORDS, ghia_u, 1);
+    double rms_v = compute_ghia_rms(&profiles, GHIA_X_COORDS, ghia_v, 0);
 
     printf("      RMS_u: %.4f  RMS_v: %.4f  (target < %.2f)\n", rms_u, rms_v, rms_target);
 
@@ -247,31 +264,37 @@ static void test_backend_validation(const char* solver_type,
  * INDIVIDUAL BACKEND TESTS
  * ============================================================================ */
 
+/* ---- Re=100 (validated in both CI 33x33 and full 129x129 modes) ---- */
+
 void test_projection_cpu_scalar(void) {
     test_backend_validation(NS_SOLVER_TYPE_PROJECTION,
                             "Projection (CPU Scalar)",
-                            VALIDATION_STEPS,
+                            100.0, GHIA_U_RE100, GHIA_V_RE100,
+                            VALIDATION_STEPS, VALIDATION_DT,
                             GHIA_RMS_TARGET_PROJECTION);
 }
 
 void test_projection_optimized_avx2(void) {
     test_backend_validation(NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
                             "Projection (AVX2/SIMD)",
-                            VALIDATION_STEPS,
+                            100.0, GHIA_U_RE100, GHIA_V_RE100,
+                            VALIDATION_STEPS, VALIDATION_DT,
                             GHIA_RMS_TARGET_PROJECTION);
 }
 
 void test_projection_omp(void) {
     test_backend_validation(NS_SOLVER_TYPE_PROJECTION_OMP,
                             "Projection (OpenMP)",
-                            VALIDATION_STEPS,
+                            100.0, GHIA_U_RE100, GHIA_V_RE100,
+                            VALIDATION_STEPS, VALIDATION_DT,
                             GHIA_RMS_TARGET_PROJECTION);
 }
 
 void test_projection_gpu(void) {
     test_backend_validation(NS_SOLVER_TYPE_PROJECTION_GPU,
                             "Projection (CUDA GPU)",
-                            VALIDATION_STEPS,
+                            100.0, GHIA_U_RE100, GHIA_V_RE100,
+                            VALIDATION_STEPS, VALIDATION_DT,
                             GHIA_RMS_TARGET_PROJECTION);
 }
 
@@ -280,7 +303,8 @@ void test_explicit_euler_cpu(void) {
     int euler_steps = VALIDATION_STEPS * 5;
     test_backend_validation(NS_SOLVER_TYPE_EXPLICIT_EULER,
                             "Explicit Euler (CPU)",
-                            euler_steps,
+                            100.0, GHIA_U_RE100, GHIA_V_RE100,
+                            euler_steps, VALIDATION_DT,
                             GHIA_RMS_TARGET_EULER);
 }
 
@@ -288,7 +312,8 @@ void test_explicit_euler_optimized(void) {
     int euler_steps = VALIDATION_STEPS * 5;
     test_backend_validation(NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
                             "Explicit Euler (AVX2/SIMD)",
-                            euler_steps,
+                            100.0, GHIA_U_RE100, GHIA_V_RE100,
+                            euler_steps, VALIDATION_DT,
                             GHIA_RMS_TARGET_EULER);
 }
 
@@ -296,8 +321,63 @@ void test_explicit_euler_omp(void) {
     int euler_steps = VALIDATION_STEPS * 5;
     test_backend_validation(NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
                             "Explicit Euler (OpenMP)",
-                            euler_steps,
+                            100.0, GHIA_U_RE100, GHIA_V_RE100,
+                            euler_steps, VALIDATION_DT,
                             GHIA_RMS_TARGET_EULER);
+}
+
+/* ---- Re=400 and Re=1000 (129x129 full validation only) ----
+ * Projection backends only: at higher Re the production projection solver is
+ * what we validate against Ghia. These need the finer 129x129 grid to resolve
+ * the stronger primary vortex and secondary corner vortices, so they are gated
+ * behind CAVITY_FULL_VALIDATION and only invoked via their ctest filter. */
+
+void test_projection_optimized_avx2_re400(void) {
+    test_backend_validation(NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
+                            "Projection (AVX2/SIMD)",
+                            400.0, GHIA_U_RE400, GHIA_V_RE400,
+                            VALIDATION_STEPS_RE400, VALIDATION_DT_HIGH_RE,
+                            GHIA_RMS_TARGET_PROJECTION);
+}
+
+void test_projection_omp_re400(void) {
+    test_backend_validation(NS_SOLVER_TYPE_PROJECTION_OMP,
+                            "Projection (OpenMP)",
+                            400.0, GHIA_U_RE400, GHIA_V_RE400,
+                            VALIDATION_STEPS_RE400, VALIDATION_DT_HIGH_RE,
+                            GHIA_RMS_TARGET_PROJECTION);
+}
+
+void test_projection_gpu_re400(void) {
+    test_backend_validation(NS_SOLVER_TYPE_PROJECTION_GPU,
+                            "Projection (CUDA GPU)",
+                            400.0, GHIA_U_RE400, GHIA_V_RE400,
+                            VALIDATION_STEPS_RE400, VALIDATION_DT_HIGH_RE,
+                            GHIA_RMS_TARGET_PROJECTION);
+}
+
+void test_projection_optimized_avx2_re1000(void) {
+    test_backend_validation(NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
+                            "Projection (AVX2/SIMD)",
+                            1000.0, GHIA_U_RE1000, GHIA_V_RE1000,
+                            VALIDATION_STEPS_RE1000, VALIDATION_DT_HIGH_RE,
+                            GHIA_RMS_TARGET_PROJECTION);
+}
+
+void test_projection_omp_re1000(void) {
+    test_backend_validation(NS_SOLVER_TYPE_PROJECTION_OMP,
+                            "Projection (OpenMP)",
+                            1000.0, GHIA_U_RE1000, GHIA_V_RE1000,
+                            VALIDATION_STEPS_RE1000, VALIDATION_DT_HIGH_RE,
+                            GHIA_RMS_TARGET_PROJECTION);
+}
+
+void test_projection_gpu_re1000(void) {
+    test_backend_validation(NS_SOLVER_TYPE_PROJECTION_GPU,
+                            "Projection (CUDA GPU)",
+                            1000.0, GHIA_U_RE1000, GHIA_V_RE1000,
+                            VALIDATION_STEPS_RE1000, VALIDATION_DT_HIGH_RE,
+                            GHIA_RMS_TARGET_PROJECTION);
 }
 
 /* ============================================================================
@@ -422,6 +502,21 @@ int main(int argc, char** argv) {
         RUN_TEST(test_projection_omp);
     if (!filter || strcmp(filter, "projection_gpu") == 0)
         RUN_TEST(test_projection_gpu);
+
+    /* Re=400 / Re=1000 — explicit filter required (full validation, 129x129
+     * only). Never run in the default no-filter CI path. */
+    if (filter && strcmp(filter, "projection_avx2_re400") == 0)
+        RUN_TEST(test_projection_optimized_avx2_re400);
+    if (filter && strcmp(filter, "projection_omp_re400") == 0)
+        RUN_TEST(test_projection_omp_re400);
+    if (filter && strcmp(filter, "projection_gpu_re400") == 0)
+        RUN_TEST(test_projection_gpu_re400);
+    if (filter && strcmp(filter, "projection_avx2_re1000") == 0)
+        RUN_TEST(test_projection_optimized_avx2_re1000);
+    if (filter && strcmp(filter, "projection_omp_re1000") == 0)
+        RUN_TEST(test_projection_omp_re1000);
+    if (filter && strcmp(filter, "projection_gpu_re1000") == 0)
+        RUN_TEST(test_projection_gpu_re1000);
 
 #if !CAVITY_FULL_VALIDATION
     if (!filter || strcmp(filter, "euler_scalar") == 0)
