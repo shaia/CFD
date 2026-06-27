@@ -57,6 +57,39 @@ static __global__ void lin_gpu_kernel_jacobi(const double* __restrict__ x_old,
 }
 
 /**
+ * Red-Black SOR sweep: one color of an in-place SOR update of nabla^2 x = rhs.
+ *
+ * Updates only cells whose checkerboard color (i+j+k) & 1 == color, reading the
+ * (already updated) opposite-color neighbors. Running the red sweep then the black
+ * sweep as two separate kernel launches makes the launch boundary the color sync
+ * point, reproducing the serial Gauss-Seidel ordering. The per-cell update matches
+ * the CPU reference (linear_solver_redblack.c):
+ *   p_new = (sum_neighbors - rhs) * inv_factor;  x += omega * (p_new - x).
+ */
+static __global__ void lin_gpu_kernel_redblack_sweep(double* __restrict__ x,
+                                                     const double* __restrict__ rhs,
+                                                     int color, double omega,
+                                                     size_t nx, size_t ny,
+                                                     size_t stride_z, int k_start, int k_end,
+                                                     double inv_dx2, double inv_dy2, double inv_dz2,
+                                                     double inv_factor) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
+    int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
+    if (i < (int)nx - 1 && j < (int)ny - 1) {
+        for (int k = k_start; k <= k_end; k++) {
+            if (((i + j + k) & 1) != color)
+                continue;
+            size_t idx = (size_t)k * stride_z + IDX_2D(i, j, nx);
+            double sum = (x[idx + 1] + x[idx - 1]) * inv_dx2
+                       + (x[idx + nx] + x[idx - nx]) * inv_dy2
+                       + (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2;
+            double p_new = (sum - rhs[idx]) * inv_factor;
+            x[idx] += omega * (p_new - x[idx]);
+        }
+    }
+}
+
+/**
  * Apply the Laplacian operator: out = A*x where A is the 5/7-point Laplacian.
  *   out = sum_neighbors - factor*x
  * Used by CG (out = A*p). Interior-only; boundaries must be set by the caller's

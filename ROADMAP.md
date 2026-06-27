@@ -37,7 +37,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 | **Energy Eq.**      | Advec-diff + Boussinesq + thermal BCs | done | done | — | done | done |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | —        | done |
 |                     | SOR            | done | done     | done     | —        | —    |
-|                     | Red-Black SOR  | done | done     | done     | done     | —    |
+|                     | Red-Black SOR  | done | done     | done     | done     | done |
 |                     | CG / PCG       | done | done     | done     | done     | done |
 |                     | BiCGSTAB       | done | done     | done     | —        | done |
 | **Boundary Conds**  | All types      | done | done     | done     | done     | done |
@@ -48,7 +48,7 @@ Each algorithm should have scalar (CPU) + SIMD + OMP + GPU variants. Track gaps 
 - [ ] No turbulence models
 - [ ] Limited linear solvers (no multigrid)
 - [ ] No restart/checkpoint capability
-- [ ] GPU backends cover Explicit Euler, projection, and RK2/RK4 solvers (all including the energy equation) — missing modular linear solvers: SOR, Red-Black SOR (Jacobi, CG/PCG, and BiCGSTAB GPU done)
+- [ ] GPU backends cover Explicit Euler, projection, and RK2/RK4 solvers (all including the energy equation) — missing modular linear solver: SOR (Jacobi, Red-Black SOR, CG/PCG, and BiCGSTAB GPU done)
 
 ### Known Issues
 
@@ -140,7 +140,9 @@ All BC types implemented across all backends (Scalar, AVX2, NEON, OMP, GPU): Dir
   - [x] Standalone Jacobi GPU — `lib/src/solvers/linear/gpu/poisson_solver_jacobi_gpu.cu`
   - [x] CG GPU — `lib/src/solvers/linear/gpu/poisson_solver_cg_gpu.cu` (shared device
         primitives in `poisson_gpu_primitives.cuh`; validated to machine precision vs CPU CG)
-  - [ ] Red-Black SOR GPU
+  - [x] Red-Black SOR GPU — `lib/src/solvers/linear/gpu/poisson_solver_redblack_sor_gpu.cu`
+        (two-launch red/black sweep reusing the shared `lin_gpu_kernel_redblack_sweep`
+        primitive; validated vs CPU Red-Black SOR)
   - [x] BiCGSTAB GPU — `lib/src/solvers/linear/gpu/poisson_solver_bicgstab_gpu.cu` (reuses the
         shared `poisson_gpu_primitives.cuh` kernels; validated vs CPU BiCGSTAB)
   - [x] Rewire `solve_projection_method_gpu` to use the standalone GPU CG for the pressure

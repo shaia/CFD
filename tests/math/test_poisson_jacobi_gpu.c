@@ -367,6 +367,59 @@ void test_bicgstab_gpu_matches_cpu(void) {
     cfd_free(p_cpu);
 }
 
+/* GPU Red-Black SOR agrees with the reference CPU Red-Black SOR on the identical
+ * problem. Both resolve the same optimal omega from the grid dimensions, so they
+ * iterate the same SOR scheme and converge to the same field (up to the additive
+ * Neumann constant). RB-SOR needs more iterations than the Krylov methods but far
+ * fewer than Jacobi. */
+void test_redblack_sor_gpu_matches_cpu(void) {
+    printf("\n    GPU Red-Black SOR vs CPU Red-Black SOR consistency...\n");
+    size_t nx = 33, ny = 33;
+    double dx = (DOMAIN_MAX - DOMAIN_MIN) / (nx - 1);
+    double dy = (DOMAIN_MAX - DOMAIN_MIN) / (ny - 1);
+
+    double* rhs = create_field(nx * ny);
+    double* p_gpu = create_field(nx * ny);
+    double* p_cpu = create_field(nx * ny);
+    TEST_ASSERT_NOT_NULL(rhs);
+    TEST_ASSERT_NOT_NULL(p_gpu);
+    TEST_ASSERT_NOT_NULL(p_cpu);
+    init_rhs(rhs, nx, ny, dx, dy);
+
+    poisson_solver_stats_t sg = poisson_solver_stats_default();
+    int rc_gpu = solve_backend(POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_GPU,
+                               p_gpu, rhs, nx, ny, dx, dy, &sg);
+    if (rc_gpu == 0) {
+        printf("      SKIPPED (GPU backend unavailable)\n");
+        cfd_free(rhs);
+        cfd_free(p_gpu);
+        cfd_free(p_cpu);
+        return;
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, rc_gpu, "GPU Red-Black SOR solve failed");
+
+    poisson_solver_stats_t sc = poisson_solver_stats_default();
+    int rc_cpu = solve_backend(POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR,
+                               p_cpu, rhs, nx, ny, dx, dy, &sc);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, rc_cpu, "CPU Red-Black SOR reference solve failed");
+
+    double diff = max_diff_demeaned(p_gpu, p_cpu, nx, ny);
+    double l2_gpu = l2_error_vs_analytical(p_gpu, nx, ny, dx, dy);
+    double l2_cpu = l2_error_vs_analytical(p_cpu, nx, ny, dx, dy);
+    printf("      GPU iters=%d  CPU iters=%d  max|GPU-CPU|(demeaned)=%.3e\n",
+           sg.iterations, sc.iterations, diff);
+    printf("      L2_gpu=%.3e  L2_cpu=%.3e\n", l2_gpu, l2_cpu);
+
+    TEST_ASSERT_TRUE_MESSAGE(diff < 1e-6,
+        "GPU and CPU Red-Black SOR solutions diverge beyond 1e-6");
+    TEST_ASSERT_TRUE_MESSAGE(fabs(l2_gpu - l2_cpu) < 1e-3,
+        "GPU Red-Black SOR accuracy differs from CPU reference");
+
+    cfd_free(rhs);
+    cfd_free(p_gpu);
+    cfd_free(p_cpu);
+}
+
 int main(void) {
     UNITY_BEGIN();
     printf("\n========================================\n");
@@ -376,5 +429,6 @@ int main(void) {
     RUN_TEST(test_jacobi_gpu_matches_cpu);
     RUN_TEST(test_cg_gpu_matches_cpu);
     RUN_TEST(test_bicgstab_gpu_matches_cpu);
+    RUN_TEST(test_redblack_sor_gpu_matches_cpu);
     return UNITY_END();
 }

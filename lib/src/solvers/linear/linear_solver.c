@@ -191,6 +191,10 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_OMP:
                     return create_redblack_omp_solver();
 #endif
+#ifdef CFD_HAS_CUDA
+                case POISSON_BACKEND_GPU:
+                    return create_redblack_gpu_solver();
+#endif
                 case POISSON_BACKEND_SCALAR:
                     return create_redblack_scalar_solver();
                 default:

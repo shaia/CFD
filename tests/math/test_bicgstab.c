@@ -547,10 +547,18 @@ void test_bicgstab_unsupported_backend(void) {
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_OMP);
     TEST_ASSERT_NULL(solver);
 
-    /* GPU backend not yet implemented for BiCGSTAB */
+    /* GPU backend: create() returns the factory solver whenever the library was
+     * built with CUDA (the device check happens in init, not create). CFD_HAS_CUDA
+     * is a library-compile macro not visible in this test TU, so query the backend
+     * at runtime — backend_available() tracks the same compile-time CUDA support. */
     solver = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_GPU);
-    TEST_ASSERT_NULL(solver);
+    if (poisson_solver_backend_available(POISSON_BACKEND_GPU)) {
+        TEST_ASSERT_NOT_NULL(solver);
+        poisson_solver_destroy(solver);
+    } else {
+        TEST_ASSERT_NULL(solver);
+    }
 }
 
 /**
