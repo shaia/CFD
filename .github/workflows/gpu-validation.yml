@@ -208,9 +208,16 @@ jobs:
                 pending=1; next
               }
               pending && /RMS_u:/ {
-                ru=$2; rv=$4;                          # "RMS_u: <ru>  RMS_v: <rv>  (target ...)"
+                ru=$2; rv=$4;                          # "RMS_u: <ru>  RMS_v: <rv>  (target < <tgt>)"
+                # Parse the per-backend target from the line itself so Euler
+                # (target < 0.15) is judged against its own threshold, not the
+                # projection 0.10. Without this, Euler exceeding 0.15 reads "pass".
+                tgt="";
+                if (match($0, /target < [0-9.]+/)) {
+                  tgt=substr($0, RSTART, RLENGTH); sub(/target < /, "", tgt);
+                }
                 res="pass";
-                if ($0 ~ /target < 0\.10/ && ((ru+0) >= 0.10 || (rv+0) >= 0.10)) res="FAIL";
+                if (tgt != "" && ((ru+0) >= (tgt+0) || (rv+0) >= (tgt+0))) res="FAIL";
                 printf "| %s | %s | %s | %s | %s |\n", re, name, ru, rv, res;
                 pending=0; next
               }
