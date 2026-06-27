@@ -3,6 +3,7 @@
 #include "cfd/core/derived_fields.h"
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
+#include "cfd/io/checkpoint.h"
 #include "cfd/io/output_registry.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
@@ -247,6 +248,185 @@ void free_simulation(simulation_data* sim_data) {
     flow_field_destroy(sim_data->field);
     grid_destroy(sim_data->grid);
     cfd_free(sim_data);
+}
+
+//=============================================================================
+// RESTART / CHECKPOINT
+//=============================================================================
+
+cfd_status_t save_simulation_checkpoint(const simulation_data* sim_data, const char* path) {
+    if (!sim_data || !path) {
+        cfd_set_error(CFD_ERROR_INVALID, "save_simulation_checkpoint: NULL argument");
+        return CFD_ERROR_INVALID;
+    }
+    if (!sim_data->grid || !sim_data->field || !sim_data->solver) {
+        cfd_set_error(CFD_ERROR_INVALID, "save_simulation_checkpoint: simulation not initialized");
+        return CFD_ERROR_INVALID;
+    }
+
+    const char* solver_name = sim_data->solver->name ? sim_data->solver->name : "";
+    return cfd_checkpoint_write(path, sim_data->grid, sim_data->field, &sim_data->params,
+                                sim_data->current_time, solver_name, sim_data->run_prefix,
+                                sim_data->output_base_dir);
+}
+
+simulation_data* load_simulation_from_checkpoint(const char* path) {
+    if (!path) {
+        cfd_set_error(CFD_ERROR_INVALID, "load_simulation_from_checkpoint: NULL path");
+        return NULL;
+    }
+    if (!cfd_is_initialized()) {
+        if (cfd_init() != CFD_SUCCESS) {
+            cfd_set_error(CFD_ERROR, "Failed to initialize CFD library");
+            return NULL;
+        }
+    }
+
+    grid* g = NULL;
+    flow_field* f = NULL;
+    ns_solver_params_t params;
+    double current_time = 0.0;
+    char solver_name[128] = {0};
+    char run_prefix[256] = {0};
+    char output_base_dir[512] = {0};
+
+    cfd_status_t st = cfd_checkpoint_read(path, &g, &f, &params, &current_time, solver_name,
+                                          sizeof(solver_name), run_prefix, sizeof(run_prefix),
+                                          output_base_dir, sizeof(output_base_dir));
+    if (st != CFD_SUCCESS) {
+        return NULL;
+    }
+
+    simulation_data* sim_data = (simulation_data*)cfd_malloc(sizeof(simulation_data));
+    if (!sim_data) {
+        grid_destroy(g);
+        flow_field_destroy(f);
+        return NULL;
+    }
+
+    // Initialize every owned pointer up front so free_simulation() is a safe
+    // cleanup from any failure point below.
+    sim_data->grid = g;
+    sim_data->field = f;
+    sim_data->solver = NULL;
+    sim_data->registry = NULL;
+    sim_data->outputs = NULL;
+    sim_data->run_prefix = NULL;
+    sim_data->params = params;  // custom callbacks remain NULL (documented contract)
+    sim_data->last_stats = ns_solver_stats_default();
+    sim_data->current_time = current_time;
+    snprintf(sim_data->output_base_dir, sizeof(sim_data->output_base_dir), "%s",
+             output_base_dir[0] ? output_base_dir : "../../artifacts");
+
+    sim_data->outputs = output_registry_create();
+    if (!sim_data->outputs) {
+        free_simulation(sim_data);
+        return NULL;
+    }
+
+    sim_data->registry = cfd_registry_create();
+    if (!sim_data->registry) {
+        free_simulation(sim_data);
+        return NULL;
+    }
+    cfd_registry_register_defaults(sim_data->registry);
+
+    sim_data->solver = cfd_solver_create(sim_data->registry, solver_name);
+    if (!sim_data->solver) {
+        cfd_set_error(CFD_ERROR_NOT_FOUND, "load_simulation_from_checkpoint: solver not registered");
+        free_simulation(sim_data);
+        return NULL;
+    }
+
+    if (solver_init(sim_data->solver, sim_data->grid, &sim_data->params) != CFD_SUCCESS) {
+        free_simulation(sim_data);
+        return NULL;
+    }
+
+    if (run_prefix[0] != '\0') {
+        size_t len = strlen(run_prefix) + 1;
+        sim_data->run_prefix = (char*)cfd_malloc(len);
+        if (sim_data->run_prefix) {
+            snprintf(sim_data->run_prefix, len, "%s", run_prefix);
+        }
+    }
+
+    return sim_data;
+}
+
+cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char* path) {
+    if (!sim_data || !path) {
+        cfd_set_error(CFD_ERROR_INVALID, "restore_simulation_checkpoint: NULL argument");
+        return CFD_ERROR_INVALID;
+    }
+    if (!sim_data->registry) {
+        cfd_set_error(CFD_ERROR_INVALID, "restore_simulation_checkpoint: simulation not initialized");
+        return CFD_ERROR_INVALID;
+    }
+
+    grid* new_grid = NULL;
+    flow_field* new_field = NULL;
+    ns_solver_params_t new_params;
+    double current_time = 0.0;
+    char solver_name[128] = {0};
+    char run_prefix[256] = {0};
+    char output_base_dir[512] = {0};
+
+    cfd_status_t st = cfd_checkpoint_read(path, &new_grid, &new_field, &new_params, &current_time,
+                                          solver_name, sizeof(solver_name), run_prefix,
+                                          sizeof(run_prefix), output_base_dir,
+                                          sizeof(output_base_dir));
+    if (st != CFD_SUCCESS) {
+        return st;
+    }
+
+    // Recreate the solver by name before tearing down old state, so a bad name
+    // leaves the existing simulation untouched.
+    ns_solver_t* new_solver = cfd_solver_create(sim_data->registry, solver_name);
+    if (!new_solver) {
+        grid_destroy(new_grid);
+        flow_field_destroy(new_field);
+        cfd_set_error(CFD_ERROR_NOT_FOUND, "restore_simulation_checkpoint: solver not registered");
+        return CFD_ERROR_NOT_FOUND;
+    }
+
+    // Preserve the caller's custom callbacks; only scalar parameters are restored.
+    new_params.source_func = sim_data->params.source_func;
+    new_params.source_context = sim_data->params.source_context;
+    new_params.heat_source_func = sim_data->params.heat_source_func;
+    new_params.heat_source_context = sim_data->params.heat_source_context;
+
+    // Swap in new state and release the old.
+    if (sim_data->solver) {
+        solver_destroy(sim_data->solver);
+    }
+    grid_destroy(sim_data->grid);
+    flow_field_destroy(sim_data->field);
+    sim_data->grid = new_grid;
+    sim_data->field = new_field;
+    sim_data->solver = new_solver;
+    sim_data->params = new_params;
+    sim_data->current_time = current_time;
+
+    cfd_status_t init_st = solver_init(sim_data->solver, sim_data->grid, &sim_data->params);
+    if (init_st != CFD_SUCCESS) {
+        return init_st;
+    }
+
+    if (sim_data->run_prefix) {
+        cfd_free(sim_data->run_prefix);
+        sim_data->run_prefix = NULL;
+    }
+    if (run_prefix[0] != '\0') {
+        size_t len = strlen(run_prefix) + 1;
+        sim_data->run_prefix = (char*)cfd_malloc(len);
+        if (sim_data->run_prefix) {
+            snprintf(sim_data->run_prefix, len, "%s", run_prefix);
+        }
+    }
+    snprintf(sim_data->output_base_dir, sizeof(sim_data->output_base_dir), "%s", output_base_dir);
+
+    return CFD_SUCCESS;
 }
 
 // Static list of available solver names (const strings have static lifetime)

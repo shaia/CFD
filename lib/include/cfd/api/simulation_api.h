@@ -87,6 +87,30 @@ CFD_LIBRARY_EXPORT cfd_status_t run_simulation_solve(simulation_data* sim_data);
 CFD_LIBRARY_EXPORT const ns_solver_stats_t* simulation_get_stats(const simulation_data* sim_data);
 
 //=============================================================================
+// RESTART / CHECKPOINT
+//=============================================================================
+
+// Save the complete simulation state to a binary checkpoint file.
+// Captures grid, flow field, scalar solver parameters, accumulated time, and
+// the active solver's registry name. Custom source/heat callbacks are NOT
+// saved (re-supply them after a restore). See cfd/io/checkpoint.h for details.
+CFD_LIBRARY_EXPORT cfd_status_t save_simulation_checkpoint(const simulation_data* sim_data,
+                                                           const char* path);
+
+// Build a fresh simulation from a checkpoint file (mirrors init_simulation_*).
+// The returned simulation owns its grid/field/solver/registry; free with
+// free_simulation(). Custom callbacks are left NULL. Returns NULL on failure.
+CFD_LIBRARY_EXPORT simulation_data* load_simulation_from_checkpoint(const char* path);
+
+// Restore a checkpoint into an existing simulation, reusing its registry.
+// Reallocates the grid/field (handles dimension changes) and recreates the
+// solver by its stored name. Existing custom callbacks in sim_data->params are
+// preserved (only scalar parameters are overwritten). Returns CFD_ERROR_NOT_FOUND
+// if the stored solver name is not registered.
+CFD_LIBRARY_EXPORT cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data,
+                                                              const char* path);
+
+//=============================================================================
 // OUTPUT CONTROL
 //=============================================================================
 
