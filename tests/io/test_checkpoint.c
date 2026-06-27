@@ -388,6 +388,7 @@ void test_reject_crc_corruption(void) {
     long sz = file_size_of(CK_PATH);
     long off = sz / 2;
     FILE* fp = fopen(CK_PATH, "rb");
+    TEST_ASSERT_NOT_NULL_MESSAGE(fp, "failed to reopen checkpoint for corruption");
     fseek(fp, off, SEEK_SET);
     int orig = fgetc(fp);
     fclose(fp);
