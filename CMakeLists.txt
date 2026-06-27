@@ -505,7 +505,9 @@ if(BUILD_TESTS)
     add_test(NAME CavityReferenceTest COMMAND test_cavity_reference)
     if(CAVITY_FULL_VALIDATION)
         # Split into parallel tests for full validation (ctest -j runs them concurrently)
-        # Re=100 — all projection + Euler backends
+        # Re=100 — optimized backends only (AVX2/OMP/GPU projection, AVX2/OMP
+        # Euler). CPU-scalar is excluded from 129x129 validation per the scalar
+        # testing policy; it runs in CI mode (33x33) via the else() branch below.
         add_test(NAME CavityBackend_ProjectionAvx2 COMMAND test_cavity_backends projection_avx2)
         add_test(NAME CavityBackend_ProjectionOmp COMMAND test_cavity_backends projection_omp)
         add_test(NAME CavityBackend_ProjectionGpu COMMAND test_cavity_backends projection_gpu)

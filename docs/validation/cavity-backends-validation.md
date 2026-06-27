@@ -27,7 +27,7 @@ This document describes the comprehensive backend validation system for the lid-
 - Verifies projection backends (CPU, AVX2, OMP) produce consistent results (within 0.1%)
 
 ### Reynolds Number Coverage
-- **Re=100** — all projection + Explicit Euler backends (CI 33×33 and full 129×129)
+- **Re=100** — projection + Explicit Euler backends. CI 33×33 runs every backend including CPU-scalar; full 129×129 runs the optimized backends only (AVX2/OMP/GPU projection, AVX2/OMP Euler) — CPU-scalar is excluded per the long-validation scalar policy.
 - **Re=400** — projection backends only (AVX2, OMP, GPU), full 129×129 validation
 - **Re=1000** — projection backends only (AVX2, OMP, GPU), full 129×129 validation
 

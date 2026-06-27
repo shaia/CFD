@@ -264,7 +264,10 @@ static void test_backend_validation(const char* solver_type,
  * INDIVIDUAL BACKEND TESTS
  * ============================================================================ */
 
-/* ---- Re=100 (validated in both CI 33x33 and full 129x129 modes) ---- */
+/* ---- Re=100 — CI 33x33 runs every backend below (incl. the CPU-scalar
+ * cases); full 129x129 validation runs the optimized backends only. The
+ * scalar cases are compiled out under CAVITY_FULL_VALIDATION (see main()),
+ * per the long-validation scalar policy. ---- */
 
 void test_projection_cpu_scalar(void) {
     test_backend_validation(NS_SOLVER_TYPE_PROJECTION,
