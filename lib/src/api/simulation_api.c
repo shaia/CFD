@@ -430,7 +430,8 @@ cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char
             snprintf(sim_data->run_prefix, len, "%s", run_prefix);
         }
     }
-    snprintf(sim_data->output_base_dir, sizeof(sim_data->output_base_dir), "%s", output_base_dir);
+    snprintf(sim_data->output_base_dir, sizeof(sim_data->output_base_dir), "%s",
+             output_base_dir[0] ? output_base_dir : "../../artifacts");
 
     return CFD_SUCCESS;
 }
