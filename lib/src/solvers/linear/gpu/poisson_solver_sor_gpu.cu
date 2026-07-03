@@ -177,7 +177,7 @@ static void sor_gpu_destroy(poisson_solver_t* solver) {
 static cfd_status_t sor_gpu_solve(poisson_solver_t* solver,
                                   double* x, double* x_temp, const double* rhs,
                                   poisson_solver_stats_t* stats) {
-    (void)x_temp;  /* host scratch unused: device double-buffer is internal */
+    (void)x_temp;  /* host scratch unused: the solve runs in-place on device */
     if (!solver || !x || !rhs)
         return CFD_ERROR_INVALID;
     poisson_sor_gpu_ctx* ctx = (poisson_sor_gpu_ctx*)solver->context;

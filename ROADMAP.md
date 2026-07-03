@@ -116,7 +116,7 @@ on-device CG.
 - [ ] ILU preconditioner
 - [ ] Geometric multigrid
 - [ ] Algebraic multigrid (AMG) — solver and preconditioner (for CG/GMRES/BiCGSTAB)
-- [x] GPU plain SOR (Block SOR: per-thread tile sweep, double-buffered; closes the matrix)
+- [x] GPU plain SOR (Block SOR: per-thread tile sweep, red-black tile coloring, in-place; closes the matrix)
 
 ### 1.3 Numerical Schemes (P1)
 

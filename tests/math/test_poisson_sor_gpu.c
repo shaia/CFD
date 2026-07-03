@@ -4,8 +4,10 @@
  *
  * Verifies the standalone CUDA plain-SOR backend (POISSON_METHOD_SOR +
  * POISSON_BACKEND_GPU) that plugs into the poisson_solver_t interface. The GPU
- * backend is a "Block SOR": each thread sweeps a small tile sequentially, so the
- * tile halos use stale (previous-iteration) values. It is therefore NOT a
+ * backend is a "Block SOR": each thread sweeps a small tile sequentially, with
+ * red-black *tile* coloring (red pass then black pass per iteration), so a tile's
+ * halo is read from the opposite-color pass rather than written concurrently. It
+ * is therefore NOT a
  * bit-for-bit reproduction of the CPU lexicographic sweep — but it solves the
  * same discrete linear system, so once converged it lands on the same field
  * (up to the additive Neumann constant) as the CPU reference.
