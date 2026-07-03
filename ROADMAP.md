@@ -48,7 +48,7 @@ The single source of truth for backend gaps. Each algorithm targets scalar (CPU)
 |                     | RK4 (classical)| done | done     | —        | done     | done |
 | **Energy Eq.**      | Advec-diff + Boussinesq + thermal BCs | done | done | — | done | done |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | —        | done |
-|                     | SOR            | done | done     | done     | —        | —    |
+|                     | SOR            | done | done     | done     | —        | done |
 |                     | Red-Black SOR  | done | done     | done     | done     | done |
 |                     | CG / PCG       | done | done     | done     | done     | done |
 |                     | BiCGSTAB       | done | done     | done     | —        | done |
@@ -104,8 +104,9 @@ No-slip, Inlet, Outlet, Symmetry, Moving wall, Time-varying). See CHANGELOG.
 ### 1.2 Linear Solvers (P0)
 
 Implemented: Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB (all with SIMD backends; CG is the
-default Poisson solver for projection methods). GPU standalone Jacobi, CG, Red-Black SOR, and
-BiCGSTAB are done and validated vs CPU; `solve_projection_method_gpu` uses on-device CG.
+default Poisson solver for projection methods). GPU standalone Jacobi, CG, Red-Black SOR,
+plain SOR, and BiCGSTAB are done and validated vs CPU; `solve_projection_method_gpu` uses
+on-device CG.
 
 **Still needed:**
 
@@ -115,7 +116,7 @@ BiCGSTAB are done and validated vs CPU; `solve_projection_method_gpu` uses on-de
 - [ ] ILU preconditioner
 - [ ] Geometric multigrid
 - [ ] Algebraic multigrid (AMG) — solver and preconditioner (for CG/GMRES/BiCGSTAB)
-- [ ] GPU plain SOR (the one remaining backend gap in the matrix above)
+- [x] GPU plain SOR (Block SOR: per-thread tile sweep, double-buffered; closes the matrix)
 
 ### 1.3 Numerical Schemes (P1)
 

@@ -90,6 +90,61 @@ static __global__ void lin_gpu_kernel_redblack_sweep(double* __restrict__ x,
 }
 
 /**
+ * Block (tiled) SOR sweep: each thread does a sequential Gauss-Seidel/SOR sweep
+ * over one tile_w x tile_h tile of the interior, in row-major order. Tiles are
+ * parallelized by a red-black *tile* coloring (color = (tile_col+tile_row+k)&1):
+ * a single launch updates only tiles of the requested `color`, and every neighbor
+ * tile has the opposite color (adjacency flips parity), so a tile's halo cells are
+ * never written by another thread in the same pass. Running the two colors as two
+ * launches (the launch boundary is the color sync) gives a consistent ordering, so
+ * unlike a Jacobi-coupled block scheme this is provably convergent for 0<omega<2 —
+ * the auto optimal-omega stays stable.
+ *
+ * Updates are in-place: within the tile the left/down neighbors are already swept
+ * (fresh) and the right/up neighbors are not yet swept (still this-iteration's
+ * start values) — exactly the lexicographic SOR ordering. Cross-tile and
+ * z-neighbors belong to opposite-color tiles, stable this pass. At 1x1 tiles this
+ * degenerates to the cell-level Red-Black SOR. Per-cell update matches the SOR
+ * reference:  p_new = (sum_neighbors - rhs)*inv_factor;  x += omega*(p_new - x).
+ */
+static __global__ void lin_gpu_kernel_block_sor_tile_sweep(double* __restrict__ x,
+                                                           const double* __restrict__ rhs,
+                                                           int color, double omega,
+                                                           int tile_w, int tile_h,
+                                                           size_t nx, size_t ny,
+                                                           size_t stride_z, int k_start, int k_end,
+                                                           double inv_dx2, double inv_dy2, double inv_dz2,
+                                                           double inv_factor) {
+    int tile_col = blockIdx.x * blockDim.x + threadIdx.x;
+    int tile_row = blockIdx.y * blockDim.y + threadIdx.y;
+    int i0 = 1 + tile_col * tile_w;  /* tile origin in interior index space [1, n-1) */
+    int j0 = 1 + tile_row * tile_h;
+    if (i0 >= (int)nx - 1 || j0 >= (int)ny - 1)
+        return;
+
+    for (int k = k_start; k <= k_end; k++) {
+        if (((tile_col + tile_row + k) & 1) != color)
+            continue;  /* this tile belongs to the other color on this k-plane */
+        for (int dj = 0; dj < tile_h; dj++) {
+            int j = j0 + dj;
+            if (j >= (int)ny - 1)
+                break;
+            for (int di = 0; di < tile_w; di++) {
+                int i = i0 + di;
+                if (i >= (int)nx - 1)
+                    break;
+                size_t idx = (size_t)k * stride_z + IDX_2D(i, j, nx);
+                double sum = (x[idx - 1] + x[idx + 1]) * inv_dx2
+                           + (x[idx - nx] + x[idx + nx]) * inv_dy2
+                           + (x[idx - stride_z] + x[idx + stride_z]) * inv_dz2;
+                double p_new = (sum - rhs[idx]) * inv_factor;
+                x[idx] += omega * (p_new - x[idx]);
+            }
+        }
+    }
+}
+
+/**
  * Apply the Laplacian operator: out = A*x where A is the 5/7-point Laplacian.
  *   out = sum_neighbors - factor*x
  * Used by CG (out = A*p). Interior-only; boundaries must be set by the caller's
