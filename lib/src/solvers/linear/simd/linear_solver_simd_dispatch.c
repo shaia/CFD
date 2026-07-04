@@ -48,6 +48,7 @@ extern poisson_solver_t* create_redblack_avx2_solver(void);
 extern poisson_solver_t* create_cg_avx2_solver(void);
 extern poisson_solver_t* create_bicgstab_avx2_solver(void);
 extern poisson_solver_t* create_sor_avx2_solver(void);
+extern poisson_solver_t* create_gmres_avx2_solver(void);
 
 /* NEON implementations (ARM64) */
 extern poisson_solver_t* create_jacobi_neon_solver(void);
@@ -55,6 +56,7 @@ extern poisson_solver_t* create_redblack_neon_solver(void);
 extern poisson_solver_t* create_cg_neon_solver(void);
 extern poisson_solver_t* create_bicgstab_neon_solver(void);
 extern poisson_solver_t* create_sor_neon_solver(void);
+extern poisson_solver_t* create_gmres_neon_solver(void);
 
 /* ============================================================================
  * SIMD BACKEND AVAILABILITY (Runtime + Compile-time detection)
@@ -215,5 +217,26 @@ poisson_solver_t* create_sor_simd_solver(void) {
 
     /* No SIMD backend available - report error and return NULL (no fallback) */
     log_no_simd_available("SOR");
+    return NULL;
+}
+
+/* ============================================================================
+ * GMRES SIMD DISPATCHER
+ * ============================================================================ */
+
+poisson_solver_t* create_gmres_simd_solver(void) {
+    cfd_simd_arch_t arch = cfd_detect_simd_arch();
+
+    /* Check compile-time AND runtime availability before calling factory */
+    if (HAS_AVX2_IMPL && arch == CFD_SIMD_AVX2) {
+        return create_gmres_avx2_solver();
+    }
+
+    if (HAS_NEON_IMPL && arch == CFD_SIMD_NEON) {
+        return create_gmres_neon_solver();
+    }
+
+    /* No SIMD backend available - report error and return NULL (no fallback) */
+    log_no_simd_available("GMRES");
     return NULL;
 }

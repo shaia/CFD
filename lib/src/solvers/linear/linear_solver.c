@@ -43,6 +43,7 @@ poisson_solver_params_t poisson_solver_params_default(void) {
     params.check_interval = 1;
     params.verbose = false;
     params.preconditioner = POISSON_PRECOND_NONE;
+    params.restart = 0;  /* 0 = auto (GMRES_DEFAULT_RESTART); ignored by non-GMRES methods */
     return params;
 }
 
@@ -231,6 +232,20 @@ poisson_solver_t* poisson_solver_create(
                     return create_bicgstab_scalar_solver();
                 default:
                     return NULL;  /* Requested backend not available for BiCGSTAB */
+            }
+
+        case POISSON_METHOD_GMRES:
+            switch (backend) {
+                case POISSON_BACKEND_SIMD:
+                    return create_gmres_simd_solver();
+#ifdef CFD_ENABLE_OPENMP
+                case POISSON_BACKEND_OMP:
+                    return create_gmres_omp_solver();
+#endif
+                case POISSON_BACKEND_SCALAR:
+                    return create_gmres_scalar_solver();
+                default:
+                    return NULL;  /* Requested backend not available for GMRES */
             }
 
         case POISSON_METHOD_MULTIGRID:

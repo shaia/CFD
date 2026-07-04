@@ -61,6 +61,14 @@ poisson_solver_t* create_redblack_gpu_solver(void);
 poisson_solver_t* create_bicgstab_scalar_solver(void);
 poisson_solver_t* create_bicgstab_simd_solver(void);
 
+/* GMRES solvers (restarted GMRES(m) for non-symmetric systems) */
+poisson_solver_t* create_gmres_scalar_solver(void);
+poisson_solver_t* create_gmres_simd_solver(void);
+
+#ifdef CFD_ENABLE_OPENMP
+poisson_solver_t* create_gmres_omp_solver(void);
+#endif
+
 /* ============================================================================
  * CG ALGORITHM CONSTANTS
  * ============================================================================ */
@@ -104,6 +112,25 @@ poisson_solver_t* create_bicgstab_simd_solver(void);
  * If rho, (r_hat,v), or (t,t) falls below this, the algorithm has stagnated.
  */
 #define BICGSTAB_BREAKDOWN_THRESHOLD 1e-30
+
+/* ============================================================================
+ * GMRES ALGORITHM CONSTANTS
+ * ============================================================================ */
+
+/**
+ * Default restart length m for GMRES(m) when params.restart <= 0.
+ * The Krylov basis holds m+1 grid-sized vectors, so this bounds memory.
+ */
+#define GMRES_DEFAULT_RESTART 30
+
+/**
+ * Threshold for detecting GMRES happy (lucky) breakdown.
+ * When the Arnoldi subdiagonal H[j+1,j] (a vector norm) falls below this, the
+ * exact solution already lies in the current Krylov subspace: this signals
+ * CONVERGENCE, not failure. Larger than CG_BREAKDOWN_THRESHOLD because
+ * H[j+1,j] is an sqrt-scaled norm rather than a squared dot product.
+ */
+#define GMRES_BREAKDOWN_THRESHOLD 1e-12
 
 /**
  * Convert size_t to int for OpenMP loop bounds.

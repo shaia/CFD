@@ -414,6 +414,7 @@ typedef enum {
     POISSON_METHOD_CG = 3,
     POISSON_METHOD_PCG = 4,
     POISSON_METHOD_BICGSTAB = 5,
+    POISSON_METHOD_GMRES = 6,       // Restarted GMRES(m) (scalar/SIMD/OMP)
 } poisson_method_t;
 ```
 
@@ -440,6 +441,7 @@ typedef struct {
     int check_interval;         // Convergence check interval (default: 1)
     int verbose;                // Print convergence info (default: 0)
     poisson_precond_t preconditioner;  // Preconditioner (default: NONE)
+    int restart;                // GMRES(m) restart length (default: 0 = auto/30)
 } poisson_solver_params_t;
 
 poisson_solver_params_t poisson_solver_params_default(void);

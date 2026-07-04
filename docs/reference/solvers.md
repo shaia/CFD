@@ -224,6 +224,35 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_BICGSTAB,
                                                  POISSON_BACKEND_SCALAR);
 ```
 
+#### 7. GMRES(m)
+
+**Algorithm:** Restarted Generalized Minimal Residual for non-symmetric systems.
+Builds an orthonormal Krylov basis via Arnoldi + modified Gram-Schmidt and
+minimizes the residual over that basis using incremental Givens rotations,
+restarting every `m` inner iterations to bound memory.
+
+**Characteristics:**
+- Handles non-symmetric matrices; minimizes the residual norm at every step
+- Restart length `m` set via `params.restart` (0 = auto, default 30); bounds the
+  Krylov basis to `m+1` grid-sized vectors
+- Right-preconditioned Jacobi seam (`POISSON_PRECOND_JACOBI`); like PCG, Jacobi
+  preconditioning gives no benefit on a uniform grid (constant diagonal)
+- On the symmetric Poisson operator it converges to the same solution as CG (a
+  useful independent cross-check); its real value is future non-symmetric systems
+
+**Backends:** scalar, SIMD (AVX2/NEON), and OpenMP. A CUDA GPU variant is not yet
+implemented.
+
+**Usage:**
+```c
+poisson_solver_params_t params = poisson_solver_params_default();
+params.restart = 30;  // GMRES(30); 0 selects the default
+
+poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_GMRES,
+                                                 POISSON_BACKEND_SCALAR);
+poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &params);
+```
+
 ### Linear Solver Performance Comparison
 
 **Problem:** 65×65 grid, tolerance = 1e-6
