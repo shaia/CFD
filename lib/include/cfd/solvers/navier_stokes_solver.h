@@ -58,6 +58,10 @@ typedef struct {
     double* p;    /**< pressure */
     double* rho;  /**< density */
     double* T;    /**< temperature */
+    double* turb_k;        /**< turbulent kinetic energy k (always allocated, zero when turbulence disabled) */
+    double* turb_eps;      /**< turbulent dissipation rate epsilon (always allocated, zero when disabled) */
+    double* turb_nu_tilde; /**< Spalart-Allmaras working variable (always allocated, zero when disabled) */
+    double* nu_t;          /**< turbulent (eddy) viscosity (always allocated, zero when disabled) */
     size_t nx;    /**< number of points in x-direction */
     size_t ny;    /**< number of points in y-direction */
     size_t nz;    /**< number of points in z-direction (1 for 2D) */
@@ -116,6 +120,47 @@ typedef struct {
 } ns_thermal_bc_config_t;
 
 /**
+ * RANS turbulence model selection.
+ *
+ * TURB_MODEL_NONE (0) disables turbulence entirely: the momentum equations use
+ * the laminar viscosity only and the turbulence transport step is a no-op.
+ * Zero-initialization is therefore fully backward compatible.
+ */
+typedef enum {
+    TURB_MODEL_NONE = 0,             /**< Laminar (no turbulence model) */
+    TURB_MODEL_K_EPSILON = 1,        /**< Standard k-epsilon (Launder-Spalding) with wall functions */
+    TURB_MODEL_SPALART_ALLMARAS = 2, /**< Spalart-Allmaras one-equation model (no-ft2 variant) */
+} turbulence_model_t;
+
+/**
+ * Per-face turbulence boundary condition configuration.
+ *
+ * Face type meanings for the turbulence fields (k/epsilon or nu_tilde):
+ *  - BC_TYPE_PERIODIC (0, default): wrap-around, matching periodic velocity BCs
+ *  - BC_TYPE_NEUMANN: zero-gradient (typical outlet)
+ *  - BC_TYPE_DIRICHLET: fixed values from k_values/eps_values/nu_tilde_values
+ *    (typical inlet)
+ *  - BC_TYPE_NOSLIP: wall-function wall — standard log-law treatment: friction
+ *    velocity from the log law at the first interior node, equilibrium k and
+ *    epsilon (or nu_tilde) there, and a wall-node eddy viscosity chosen so the
+ *    discrete wall shear stress matches the log law.
+ *
+ * Zero-initialization produces an all-PERIODIC configuration, mirroring
+ * ns_thermal_bc_config_t semantics.
+ */
+typedef struct {
+    bc_type_t left;    /**< BC type for x=0 face */
+    bc_type_t right;   /**< BC type for x=Lx face */
+    bc_type_t bottom;  /**< BC type for y=0 face */
+    bc_type_t top;     /**< BC type for y=Ly face */
+    bc_type_t front;   /**< BC type for z=Lz face (3D only) */
+    bc_type_t back;    /**< BC type for z=0 face (3D only) */
+    bc_dirichlet_values_t k_values;         /**< Fixed k per Dirichlet face */
+    bc_dirichlet_values_t eps_values;       /**< Fixed epsilon per Dirichlet face */
+    bc_dirichlet_values_t nu_tilde_values;  /**< Fixed nu_tilde per Dirichlet face */
+} ns_turbulence_bc_config_t;
+
+/**
  * Navier-Stokes solver parameters
  */
 typedef struct {
@@ -155,6 +200,13 @@ typedef struct {
 
     /* Thermal boundary conditions (zero-initialized = all PERIODIC = no change) */
     ns_thermal_bc_config_t thermal_bc;
+
+    /* RANS turbulence model (TURB_MODEL_NONE = disabled). Implemented on the
+     * scalar CPU backend for 2D uniform grids; OMP/AVX2 turbulence kernels
+     * follow the same numerics. GPU solvers return CFD_ERROR_UNSUPPORTED when
+     * a turbulence model is enabled. */
+    turbulence_model_t turb_model;      /**< Turbulence model selection */
+    ns_turbulence_bc_config_t turb_bc;  /**< Per-face turbulence BCs (zero-init = all PERIODIC) */
 } ns_solver_params_t;
 
 
@@ -201,6 +253,7 @@ typedef struct {
     double max_velocity;     /**< Maximum velocity magnitude */
     double max_pressure;     /**< Maximum pressure */
     double max_temperature;  /**< Maximum temperature (when energy equation active) */
+    double max_nu_t;         /**< Maximum eddy viscosity (when turbulence model active) */
     double cfl_number;       /**< Actual CFL number used */
     double elapsed_time_ms;  /**< Wall clock time for solve */
     cfd_status_t status;     /**< Status of the solve */

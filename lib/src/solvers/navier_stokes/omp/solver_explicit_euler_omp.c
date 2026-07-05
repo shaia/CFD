@@ -3,9 +3,11 @@
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 
-#include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/energy_solver.h"
+#include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/turbulence_solver.h"
 #include "../../energy/energy_solver_internal.h"
+#include "../../turbulence/turbulence_solver_internal.h"
 #include "../boundary_copy_utils.h"
 #include <math.h>
 #include <omp.h>
@@ -62,14 +64,18 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
     int needs_T_ws = (params->alpha > 0.0 || params->beta != 0.0);
     double* T_energy_ws = needs_T_ws
         ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
+    const int turb_on = (params->turb_model != TURB_MODEL_NONE);
+    double* turb_ws = turb_on
+        ? (double*)cfd_calloc(TURB_WORKSPACE_SIZE(total), sizeof(double)) : NULL;
 
     if (!u_new || !v_new || !w_new || !p_new ||
-        (needs_T_ws && !T_energy_ws)) {
+        (needs_T_ws && !T_energy_ws) || (turb_on && !turb_ws)) {
         cfd_free(u_new);
         cfd_free(v_new);
         cfd_free(w_new);
         cfd_free(p_new);
         cfd_free(T_energy_ws);
+        cfd_free(turb_ws);
         return CFD_ERROR_NOMEM;
     }
 
@@ -153,23 +159,57 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
                     energy_compute_buoyancy(field->T[idx], params,
                                             &source_u, &source_v, &source_w);
 
+                    // Viscous terms: laminar or turbulent (face-averaged nu_eff)
+                    double visc_u, visc_v, visc_w;
+                    if (!turb_on) {
+                        visc_u = nu * (d2u_dx2 + d2u_dy2 + d2u_dz2);
+                        visc_v = nu * (d2v_dx2 + d2v_dy2 + d2v_dz2);
+                        visc_w = nu * (d2w_dx2 + d2w_dy2 + d2w_dz2);
+                    } else {
+                        const double* nu_t = field->nu_t;
+                        double dx2 = grid->dx[i] * grid->dx[i];
+                        double dy2 = grid->dy[j] * grid->dy[j];
+                        double nu_xp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]),     1.0);
+                        double nu_xm = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]),     1.0);
+                        double nu_yp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + nx]),    1.0);
+                        double nu_ym = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - nx]),    1.0);
+                        visc_u = (nu_xp * (field->u[idx + 1]  - field->u[idx]) -
+                                  nu_xm * (field->u[idx]      - field->u[idx - 1])) / dx2 +
+                                 (nu_yp * (field->u[idx + nx] - field->u[idx]) -
+                                  nu_ym * (field->u[idx]      - field->u[idx - nx])) / dy2 +
+                                 nu * d2u_dz2;
+                        visc_v = (nu_xp * (field->v[idx + 1]  - field->v[idx]) -
+                                  nu_xm * (field->v[idx]      - field->v[idx - 1])) / dx2 +
+                                 (nu_yp * (field->v[idx + nx] - field->v[idx]) -
+                                  nu_ym * (field->v[idx]      - field->v[idx - nx])) / dy2 +
+                                 nu * d2v_dz2;
+                        visc_w = (nu_xp * (field->w[idx + 1]  - field->w[idx]) -
+                                  nu_xm * (field->w[idx]      - field->w[idx - 1])) / dx2 +
+                                 (nu_yp * (field->w[idx + nx] - field->w[idx]) -
+                                  nu_ym * (field->w[idx]      - field->w[idx - nx])) / dy2 +
+                                 nu * d2w_dz2;
+                        visc_u = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, visc_u));
+                        visc_v = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, visc_v));
+                        visc_w = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, visc_w));
+                    }
+
                     // Update u
                     double du = conservative_dt * (-field->u[idx] * du_dx - field->v[idx] * du_dy
                                                    - field->w[idx] * du_dz
                                                    - dp_dx / fmax(field->rho[idx], 1e-10)
-                                                   + nu * (d2u_dx2 + d2u_dy2 + d2u_dz2) + source_u);
+                                                   + visc_u + source_u);
 
                     // Update v
                     double dv = conservative_dt * (-field->u[idx] * dv_dx - field->v[idx] * dv_dy
                                                    - field->w[idx] * dv_dz
                                                    - dp_dy / fmax(field->rho[idx], 1e-10)
-                                                   + nu * (d2v_dx2 + d2v_dy2 + d2v_dz2) + source_v);
+                                                   + visc_v + source_v);
 
                     // Update w
                     double dw = conservative_dt * (-field->u[idx] * dw_dx - field->v[idx] * dw_dy
                                                    - field->w[idx] * dw_dz
                                                    - dp_dz / fmax(field->rho[idx], 1e-10)
-                                                   + nu * (d2w_dx2 + d2w_dy2 + d2w_dz2) + source_w);
+                                                   + visc_w + source_w);
 
                     du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));
                     dv = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dv));
@@ -223,8 +263,25 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
         cfd_status_t bc_status = energy_apply_thermal_bcs(field, params);
         if (bc_status != CFD_SUCCESS) {
             cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-            cfd_free(p_new); cfd_free(T_energy_ws);
+            cfd_free(p_new); cfd_free(T_energy_ws); cfd_free(turb_ws);
             return bc_status;
+        }
+
+        /* Turbulence transport: advance k-eps/SA with the updated velocity,
+         * then apply turbulence BCs (including wall functions). nu_t is
+         * frozen across the explicit Euler step and updated once per step. */
+        {
+            cfd_status_t turb_status = turbulence_step_explicit_omp_with_workspace(
+                field, grid, params, conservative_dt, iter * conservative_dt,
+                turb_ws, turb_on ? TURB_WORKSPACE_SIZE(total) : 0);
+            if (turb_status == CFD_SUCCESS) {
+                turb_status = turbulence_apply_bcs(field, grid, params);
+            }
+            if (turb_status != CFD_SUCCESS) {
+                cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
+                cfd_free(p_new); cfd_free(T_energy_ws); cfd_free(turb_ws);
+                return turb_status;
+            }
         }
 
         // Check for NaN/Inf values
@@ -245,6 +302,7 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
             cfd_free(w_new);
             cfd_free(p_new);
             cfd_free(T_energy_ws);
+            cfd_free(turb_ws);
             cfd_set_error(CFD_ERROR_DIVERGED,
                           "NaN/Inf detected in explicit_euler_omp step");
             return CFD_ERROR_DIVERGED;
@@ -256,6 +314,7 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
     cfd_free(w_new);
     cfd_free(p_new);
     cfd_free(T_energy_ws);
+    cfd_free(turb_ws);
 
     return CFD_SUCCESS;
 }

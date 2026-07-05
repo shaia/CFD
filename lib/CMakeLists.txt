@@ -122,6 +122,10 @@ set(CFD_SCALAR_SOURCES
     src/solvers/navier_stokes/cpu/solver_projection.c
     # Energy equation solver - scalar
     src/solvers/energy/cpu/energy_solver.c
+    # Turbulence models (RANS) - scalar
+    src/solvers/turbulence/cpu/turbulence_solver.c
+    src/solvers/turbulence/cpu/turbulence_kepsilon.c
+    src/solvers/turbulence/cpu/turbulence_sa.c
     # Linear solvers - scalar implementations only
     src/solvers/linear/cpu/linear_solver_jacobi.c
     src/solvers/linear/cpu/linear_solver_sor.c
@@ -146,6 +150,8 @@ set(CFD_SIMD_SOURCES
     src/solvers/navier_stokes/avx2/solver_rk4_avx2.c
     # Energy equation solver - SIMD
     src/solvers/energy/avx2/energy_solver_avx2.c
+    # Turbulence models (RANS) - SIMD
+    src/solvers/turbulence/avx2/turbulence_solver_avx2.c
     # Linear solvers - SIMD
     src/solvers/linear/simd/linear_solver_simd_dispatch.c
     src/solvers/linear/avx2/linear_solver_jacobi_avx2.c
@@ -174,6 +180,8 @@ set(CFD_OMP_SOURCES
     src/solvers/navier_stokes/omp/solver_rk4_omp.c
     # Energy equation solver - OMP
     src/solvers/energy/omp/energy_solver_omp.c
+    # Turbulence models (RANS) - OMP
+    src/solvers/turbulence/omp/turbulence_solver_omp.c
     # Linear solvers - OMP
     src/solvers/linear/omp/linear_solver_redblack_omp.c
     src/solvers/linear/omp/linear_solver_cg_omp.c

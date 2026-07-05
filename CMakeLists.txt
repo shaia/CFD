@@ -173,6 +173,9 @@ if(BUILD_EXAMPLES)
     add_executable(lid_driven_cavity_direct examples/lid_driven_cavity_direct.c)
     target_link_libraries(lid_driven_cavity_direct PRIVATE CFD::Library)
 
+    add_executable(turbulent_channel examples/turbulent_channel.c)
+    target_link_libraries(turbulent_channel PRIVATE CFD::Library)
+
     # Poiseuille flow with stretched grids
     add_executable(poiseuille_stretched_grid examples/poiseuille_stretched_grid.c)
     target_link_libraries(poiseuille_stretched_grid PRIVATE CFD::Library)
@@ -309,6 +312,14 @@ if(BUILD_TESTS)
     # Energy equation tests
     add_executable(test_energy_solver tests/solvers/energy/test_energy_solver.c)
     add_executable(test_natural_convection tests/validation/test_natural_convection.c)
+
+    # Turbulence model tests
+    add_executable(test_turbulence_kepsilon tests/solvers/turbulence/test_turbulence_kepsilon.c)
+    add_executable(test_turbulence_sa tests/solvers/turbulence/test_turbulence_sa.c)
+    add_executable(test_turbulence_wall_functions tests/solvers/turbulence/test_turbulence_wall_functions.c)
+    add_executable(test_turbulence_disabled_regression tests/solvers/turbulence/test_turbulence_disabled_regression.c)
+    add_executable(test_turbulent_channel tests/validation/test_turbulent_channel.c)
+    add_executable(test_turbulence_cross_backend tests/solvers/turbulence/test_turbulence_cross_backend.c)
     # Release-only: also run the Ra=1e4 de Vahl Davis tier (finer grid, slower)
     if(CAVITY_FULL_VALIDATION)
         target_compile_definitions(test_natural_convection PRIVATE CAVITY_FULL_VALIDATION=1)
@@ -429,6 +440,12 @@ if(BUILD_TESTS)
     target_link_libraries(test_poiseuille_3d PRIVATE CFD::Library unity)
     target_link_libraries(test_energy_solver PRIVATE CFD::Library unity)
     target_link_libraries(test_natural_convection PRIVATE CFD::Library unity)
+    target_link_libraries(test_turbulence_kepsilon PRIVATE CFD::Library unity)
+    target_link_libraries(test_turbulence_sa PRIVATE CFD::Library unity)
+    target_link_libraries(test_turbulence_wall_functions PRIVATE CFD::Library unity)
+    target_link_libraries(test_turbulence_disabled_regression PRIVATE CFD::Library unity)
+    target_link_libraries(test_turbulent_channel PRIVATE CFD::Library unity)
+    target_link_libraries(test_turbulence_cross_backend PRIVATE CFD::Library unity)
     target_link_libraries(test_finite_differences PRIVATE unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_include_directories(test_finite_differences PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/include)
     target_link_libraries(test_finite_differences_3d PRIVATE unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
@@ -579,6 +596,16 @@ if(BUILD_TESTS)
     # Energy equation tests
     add_test(NAME EnergySolverTest COMMAND test_energy_solver)
     add_test(NAME NaturalConvectionTest COMMAND test_natural_convection)
+
+    # Turbulence model tests
+    add_test(NAME TurbulenceKEpsilonTest COMMAND test_turbulence_kepsilon)
+    add_test(NAME TurbulenceSpalartAllmarasTest COMMAND test_turbulence_sa)
+    add_test(NAME TurbulenceWallFunctionsTest COMMAND test_turbulence_wall_functions)
+    add_test(NAME TurbulenceDisabledRegressionTest COMMAND test_turbulence_disabled_regression)
+    add_test(NAME TurbulentChannelTest COMMAND test_turbulent_channel)
+    set_tests_properties(TurbulentChannelTest PROPERTIES LABELS "validation" TIMEOUT 600)
+    add_test(NAME TurbulenceCrossBackendTest COMMAND test_turbulence_cross_backend)
+    set_tests_properties(TurbulenceCrossBackendTest PROPERTIES LABELS "cross-arch")
 
     # Mathematical accuracy tests
     add_test(NAME FiniteDifferencesTest COMMAND test_finite_differences)

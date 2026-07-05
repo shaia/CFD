@@ -3,10 +3,12 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
+#include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
-#include "cfd/solvers/energy_solver.h"
+#include "cfd/solvers/turbulence_solver.h"
 #include "../../energy/energy_solver_internal.h"
+#include "../../turbulence/turbulence_solver_internal.h"
 
 #include "../boundary_copy_utils.h"
 
@@ -70,9 +72,12 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
     int needs_T_ws = (params->alpha > 0.0 || params->beta != 0.0);
     double* T_energy_ws = needs_T_ws
         ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
+    const int turb_on = (params->turb_model != TURB_MODEL_NONE);
+    double* turb_ws = turb_on
+        ? (double*)cfd_calloc(TURB_WORKSPACE_SIZE(total), sizeof(double)) : NULL;
 
     if (!u_star || !v_star || !w_star || !p_new || !p_temp || !rhs ||
-        (needs_T_ws && !T_energy_ws)) {
+        (needs_T_ws && !T_energy_ws) || (turb_on && !turb_ws)) {
         cfd_free(u_star);
         cfd_free(v_star);
         cfd_free(w_star);
@@ -80,6 +85,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
         cfd_free(p_temp);
         cfd_free(rhs);
         cfd_free(T_energy_ws);
+        cfd_free(turb_ws);
         return CFD_ERROR_NOMEM;
     }
 
@@ -125,9 +131,37 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
                     double d2w_dy2 = (field->w[idx + nx] - 2.0 * w + field->w[idx - nx]) / (dy * dy);
                     double d2w_dz2 = (field->w[idx + stride_z] - 2.0 * w + field->w[idx - stride_z]) * inv_dz2;
 
-                    double visc_u = nu * (d2u_dx2 + d2u_dy2 + d2u_dz2);
-                    double visc_v = nu * (d2v_dx2 + d2v_dy2 + d2v_dz2);
-                    double visc_w = nu * (d2w_dx2 + d2w_dy2 + d2w_dz2);
+                    double visc_u, visc_v, visc_w;
+                    if (!turb_on) {
+                        visc_u = nu * (d2u_dx2 + d2u_dy2 + d2u_dz2);
+                        visc_v = nu * (d2v_dx2 + d2v_dy2 + d2v_dz2);
+                        visc_w = nu * (d2w_dx2 + d2w_dy2 + d2w_dz2);
+                    } else {
+                        /* Turbulent: conservative face-averaged effective viscosity
+                         * div((nu + nu_t) grad u). The z-term keeps the laminar nu
+                         * (turbulence is 2D-only; it vanishes when nz == 1). */
+                        const double* nu_t = field->nu_t;
+                        double nu_xp = nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]);
+                        double nu_xm = nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]);
+                        double nu_yp = nu + 0.5 * (nu_t[idx] + nu_t[idx + nx]);
+                        double nu_ym = nu + 0.5 * (nu_t[idx] + nu_t[idx - nx]);
+
+                        visc_u = (nu_xp * (field->u[idx + 1] - u) -
+                                  nu_xm * (u - field->u[idx - 1])) / (dx * dx) +
+                                 (nu_yp * (field->u[idx + nx] - u) -
+                                  nu_ym * (u - field->u[idx - nx])) / (dy * dy) +
+                                 nu * d2u_dz2;
+                        visc_v = (nu_xp * (field->v[idx + 1] - v) -
+                                  nu_xm * (v - field->v[idx - 1])) / (dx * dx) +
+                                 (nu_yp * (field->v[idx + nx] - v) -
+                                  nu_ym * (v - field->v[idx - nx])) / (dy * dy) +
+                                 nu * d2v_dz2;
+                        visc_w = (nu_xp * (field->w[idx + 1] - w) -
+                                  nu_xm * (w - field->w[idx - 1])) / (dx * dx) +
+                                 (nu_yp * (field->w[idx + nx] - w) -
+                                  nu_ym * (w - field->w[idx - nx])) / (dy * dy) +
+                                 nu * d2w_dz2;
+                    }
 
                     double source_u = 0.0;
                     double source_v = 0.0;
@@ -192,6 +226,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             cfd_free(p_temp);
             cfd_free(rhs);
             cfd_free(T_energy_ws);
+            cfd_free(turb_ws);
             return CFD_ERROR_MAX_ITER;
         }
 
@@ -227,7 +262,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             if (energy_status != CFD_SUCCESS) {
                 cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
                 cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
-                cfd_free(T_energy_ws);
+                cfd_free(T_energy_ws); cfd_free(turb_ws);
                 return energy_status;
             }
         }
@@ -237,13 +272,30 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
         if (bc_status != CFD_SUCCESS) {
             cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
             cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
-            cfd_free(T_energy_ws);
+            cfd_free(T_energy_ws); cfd_free(turb_ws);
             return bc_status;
         }
 
         /* Copy boundary velocity values from star arrays (which have caller's BCs) */
         copy_boundary_velocities_3d(field->u, field->v, field->w,
                                     u_star, v_star, w_star, nx, ny, nz);
+
+        /* Turbulence transport: advance k-eps/SA with the corrected velocity,
+         * then apply turbulence BCs (including wall functions) */
+        {
+            cfd_status_t turb_status = turbulence_step_explicit_omp_with_workspace(
+                field, grid, params, dt, iter * dt, turb_ws,
+                turb_on ? TURB_WORKSPACE_SIZE(total) : 0);
+            if (turb_status == CFD_SUCCESS) {
+                turb_status = turbulence_apply_bcs(field, grid, params);
+            }
+            if (turb_status != CFD_SUCCESS) {
+                cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
+                cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+                cfd_free(T_energy_ws); cfd_free(turb_ws);
+                return turb_status;
+            }
+        }
 
         /* Check for NaN/Inf values (parallelized) */
         int has_nan = 0;
@@ -264,6 +316,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             cfd_free(p_temp);
             cfd_free(rhs);
             cfd_free(T_energy_ws);
+            cfd_free(turb_ws);
             return CFD_ERROR_DIVERGED;
         }
     }
@@ -275,5 +328,6 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
     cfd_free(p_temp);
     cfd_free(rhs);
     cfd_free(T_energy_ws);
+    cfd_free(turb_ws);
     return CFD_SUCCESS;
 }

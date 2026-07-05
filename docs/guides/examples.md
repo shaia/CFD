@@ -828,6 +828,56 @@ Part 3: Grid Refinement (Explicit Euler, dt=5e-04, T=0.5)
 
 ---
 
+### 17. turbulent_channel.c
+
+**Purpose:** RANS turbulence model demonstration — turbulent channel flow at Re_τ = 395
+
+**What it demonstrates:**
+
+- Enabling k-ε or Spalart-Allmaras turbulence via `params.turb_model`
+- Configuring wall-function walls with `BC_TYPE_NOSLIP` faces in `params.turb_bc`
+- Calling `turbulence_init_uniform()` before time-stepping
+- Recovering the friction velocity u_τ via `turbulence_wall_u_tau()`
+- Comparing the computed u+ profile against the log law
+- VTK output with the four turbulence scalar fields (`turbulent_kinetic_energy`,
+  `dissipation_rate`, `nu_tilde`, `turbulent_viscosity`)
+
+**Problem setup:**
+
+- Domain: 4 × 2 (channel half-height δ = 1), flow is streamwise-uniform
+- Re_τ = 395, ν = 1/395, ρ = 1; constant body force f_x = u_τ²/δ = 1, so the
+  exact steady friction velocity is u_τ = 1
+- Grid: 16×21 uniform, first-node y+ ≈ 40 (wall-function window 30–100)
+- Bottom/top faces: `BC_TYPE_NOSLIP` (wall functions); left/right periodic
+- Direct solver interface (registry + `solver_step`), marched to a
+  kinetic-energy residual below 1e-6
+
+**Run:**
+```bash
+./turbulent_channel        # k-epsilon (default)
+./turbulent_channel ke     # k-epsilon explicitly
+./turbulent_channel sa     # Spalart-Allmaras
+```
+
+**Expected output (k-ε):**
+```
+  Converged at step 24183 (KE residual 9.98e-07)
+
+Recovered u_tau = 0.9712 (exact force balance: 1.0000)
+
+        y+        u+   log-law       err
+      39.5     14.10     14.17      0.5%
+      79.0     16.24     15.86      2.4%
+     118.5     17.26     16.85      2.5%
+     ...
+     395.0     20.10     19.78      1.6%
+
+Wrote turbulent_channel.vtk (open in ParaView to inspect nu_t/k).
+```
+The SA variant converges similarly (u_τ ≈ 0.969, u+ within ~4% of the log law).
+
+---
+
 ## Visualization
 
 ### VTK Files (ParaView/VisIt)

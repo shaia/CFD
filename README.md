@@ -14,7 +14,8 @@ A production-grade computational fluid dynamics (CFD) library in C for solving 2
 - 🔧 **Pluggable Solvers**: Explicit Euler, RK2 (Heun), Projection Method (Chorin's algorithm)
 - 📊 **Linear Solvers**: Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB
 - 🌡️ **Heat Transfer**: Energy equation (advection–diffusion) + Boussinesq buoyancy + thermal BCs
-- 🎯 **Validated**: Ghia lid-driven cavity, Taylor-Green vortex, Poiseuille flow, natural convection benchmarks
+- 🌀 **Turbulence (RANS)**: Standard k-ε and Spalart-Allmaras with log-law wall functions; validated vs turbulent channel flow at Re_τ = 395
+- 🎯 **Validated**: Ghia lid-driven cavity, Taylor-Green vortex, Poiseuille flow, natural convection, turbulent channel flow
 - 📈 **VTK/CSV Output**: Ready for ParaView, VisIt visualization
 - 💾 **Restart/Checkpoint**: Portable, versioned binary save/restore of complete simulation state
 - ⚡ **Performance**: SIMD-optimized with runtime CPU detection
@@ -152,6 +153,15 @@ int main(void) {
 | `rk4_optimized` | SIMD | SIMD-optimized RK4 (AVX2/NEON) |
 | `rk4_omp` | OpenMP | Multi-threaded RK4 |
 | `rk4_gpu` | GPU | CUDA-accelerated RK4 |
+
+### Turbulence backend coverage
+
+| Feature | Scalar | AVX2 | NEON | OMP | GPU |
+| ------- | ------ | ---- | ---- | --- | --- |
+| k-ε + SA + wall functions | done | done | — | done | — |
+
+GPU NS solvers return `CFD_ERROR_UNSUPPORTED` when a turbulence model is enabled.
+Turbulence is limited to 2D uniform grids in this release.
 
 ## Project Structure
 

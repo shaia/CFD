@@ -260,10 +260,32 @@ typedef struct {
     double rho;             // Density
     int max_iterations;     // Maximum iterations
     double tolerance;       // Convergence tolerance
+    // Turbulence
+    turbulence_model_t        turb_model;  // TURB_MODEL_NONE (default), K_EPSILON, SPALART_ALLMARAS
+    ns_turbulence_bc_config_t turb_bc;    // Per-face turbulence BC types
 } ns_solver_params_t;
 
 ns_solver_params_t ns_solver_params_default(void);
 ```
+
+`turbulence_model_t` is defined in `cfd/solvers/navier_stokes_solver.h`:
+
+```c
+typedef enum {
+    TURB_MODEL_NONE             = 0,  // Laminar (default, zero overhead)
+    TURB_MODEL_K_EPSILON        = 1,  // Standard k-epsilon (Launder-Spalding)
+    TURB_MODEL_SPALART_ALLMARAS = 2,  // Spalart-Allmaras 1-equation (no-ft2)
+} turbulence_model_t;
+```
+
+`ns_turbulence_bc_config_t` holds one BC type per domain face.  Available types:
+
+| Constant | Meaning |
+|----------|---------|
+| `BC_TYPE_PERIODIC` | Periodic (default for all faces) |
+| `BC_TYPE_NEUMANN` | Zero-gradient (outlet) |
+| `BC_TYPE_DIRICHLET` | Fixed inlet values via per-face `k_values` / `eps_values` / `nu_tilde_values` |
+| `BC_TYPE_NOSLIP` | Log-law wall-function treatment |
 
 ### Solver Statistics
 
@@ -273,6 +295,7 @@ typedef struct {
     double residual;        // Final residual
     double elapsed_time;    // Execution time (seconds)
     cfd_status_t status;    // Solver status
+    double max_nu_t;        // Maximum turbulent viscosity (0.0 when laminar)
 } ns_solver_stats_t;
 
 ns_solver_stats_t ns_solver_stats_default(void);
@@ -358,13 +381,18 @@ void flow_field_destroy(flow_field* field);
 
 ```c
 typedef struct {
-    size_t nx, ny, nz;  // Grid dimensions (nz=1 for 2D)
-    double* u;          // x-velocity [nx * ny * nz]
-    double* v;          // y-velocity [nx * ny * nz]
-    double* w;          // z-velocity [nx * ny * nz] (zero for 2D)
-    double* p;          // Pressure [nx * ny * nz]
-    double* rho;        // Density [nx * ny * nz]
-    double* T;          // Temperature [nx * ny * nz]
+    size_t nx, ny, nz;    // Grid dimensions (nz=1 for 2D)
+    double* u;            // x-velocity [nx * ny * nz]
+    double* v;            // y-velocity [nx * ny * nz]
+    double* w;            // z-velocity [nx * ny * nz] (zero for 2D)
+    double* p;            // Pressure [nx * ny * nz]
+    double* rho;          // Density [nx * ny * nz]
+    double* T;            // Temperature [nx * ny * nz]
+    // Turbulence fields (always allocated; zero when TURB_MODEL_NONE)
+    double* turb_k;       // Turbulent kinetic energy k [nx * ny * nz]
+    double* turb_eps;     // Dissipation rate epsilon   [nx * ny * nz]
+    double* turb_nu_tilde;// SA transported variable ν̃  [nx * ny * nz]
+    double* nu_t;         // Turbulent viscosity ν_t    [nx * ny * nz]
 } flow_field;
 ```
 
@@ -463,6 +491,97 @@ typedef struct {
 } poisson_solver_stats_t;
 
 poisson_solver_stats_t poisson_solver_stats_default(void);
+```
+
+## Turbulence API
+
+```c
+#include "cfd/solvers/turbulence_solver.h"
+```
+
+### turbulence_init_uniform
+
+```c
+cfd_status_t turbulence_init_uniform(flow_field* field,
+                                     const ns_solver_params_t* params,
+                                     double k0, double eps0, double nu_tilde0);
+```
+
+Initialize turbulence fields to spatially uniform values.  **Call this once before
+time-stepping whenever `params->turb_model != TURB_MODEL_NONE`.**
+
+- `k0` — initial turbulent kinetic energy (k-ε only; ignored for SA)
+- `eps0` — initial dissipation rate (k-ε only; ignored for SA)
+- `nu_tilde0` — initial SA transported variable (SA only; ignored for k-ε)
+
+Returns `CFD_SUCCESS`, or `CFD_ERROR_INVALID` if `field` or `params` is NULL.
+
+### turbulence_step_explicit
+
+```c
+cfd_status_t turbulence_step_explicit(flow_field* field,
+                                      const grid* g,
+                                      const ns_solver_params_t* params,
+                                      double dt, double time);
+```
+
+Advance the turbulence transport equations by one explicit time step.  This function is
+**called automatically** by all CPU/OMP/AVX2 NS solvers after the velocity and energy steps
+— users normally do not call it directly.
+
+Returns `CFD_SUCCESS` (no-op when `TURB_MODEL_NONE`), `CFD_ERROR_UNSUPPORTED` on a 3D grid
+or non-uniform grid spacing, or `CFD_ERROR_INVALID` for NULL arguments.
+
+### turbulence_apply_bcs
+
+```c
+cfd_status_t turbulence_apply_bcs(flow_field* field,
+                                  const grid* g,
+                                  const ns_solver_params_t* params);
+```
+
+Apply turbulence boundary conditions (periodic, Neumann, Dirichlet, or wall-function) to all
+faces as configured in `params->turb_bc`.  Also called automatically by the NS solvers.
+
+### turbulence_wall_u_tau
+
+```c
+double turbulence_wall_u_tau(double u_p, double y_p, double nu);
+```
+
+Compute the friction velocity u_τ from the first-node parallel velocity `u_p`, wall-normal
+distance `y_p`, and kinematic viscosity `nu` using the log-law (`u+ = ln(y+)/κ + B`) via
+Newton iteration.  Below y+ = 11.63 the linear viscous-sublayer law is used instead.  Used
+internally by the wall-function BC; exposed for testing and post-processing.
+
+### VTK and CSV turbulence output
+
+When a turbulence model is active, `write_vtk_flow_field()` automatically includes four
+additional point-data scalars:
+
+- `turbulent_kinetic_energy` (k)
+- `dissipation_rate` (ε)
+- `nu_tilde` (ν̃)
+- `turbulent_viscosity` (ν_t)
+
+CSV centerline files written by `write_centerline_to_csv()` gain three additional columns:
+`turb_k`, `turb_eps`, `nu_t`.
+
+### Minimal usage example
+
+```c
+sim->params.mu = 1.0 / 395.0;
+sim->params.turb_model = TURB_MODEL_K_EPSILON;
+sim->params.turb_bc.bottom = BC_TYPE_NOSLIP;  /* wall-function walls */
+sim->params.turb_bc.top    = BC_TYPE_NOSLIP;  /* other faces stay PERIODIC */
+
+turbulence_init_uniform(sim->field, &sim->params, k0, eps0, 0.0);
+
+/* run_simulation_step advances k/eps/nu_t automatically */
+for (int step = 0; step < n_steps; step++) {
+    cfd_status_t st = run_simulation_step(sim);
+    if (st != CFD_SUCCESS) { /* handle */ break; }
+}
 ```
 
 ## I/O API

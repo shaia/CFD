@@ -18,7 +18,9 @@
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/solvers/energy_solver.h"
+#include "cfd/solvers/turbulence_solver.h"
 #include "../../energy/energy_solver_internal.h"
+#include "../../turbulence/turbulence_solver_internal.h"
 
 #include "../boundary_copy_utils.h"
 
@@ -55,7 +57,8 @@ typedef struct {
     double* p_new;
     double* rhs;
     double* u_new;  /* used as p_temp for Poisson solver */
-    double* T_ws;   /* Reusable scratch for the energy step (avoids per-step alloc) */
+    double* T_ws;    /* Reusable scratch for the energy step (avoids per-step alloc) */
+    double* turb_ws; /* Reusable scratch for the turbulence step; always allocated */
     size_t nx;
     size_t ny;
     size_t nz;
@@ -123,37 +126,26 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     ctx->inv_2dz  = (grid->nz > 1 && grid->dz) ? 1.0 / (2.0 * dz) : 0.0;
     ctx->inv_dz2  = (grid->nz > 1 && grid->dz) ? 1.0 / (dz * dz) : 0.0;
 
-    ctx->u_star = (double*)cfd_aligned_malloc(size);
-    ctx->v_star = (double*)cfd_aligned_malloc(size);
-    ctx->w_star = (double*)cfd_aligned_malloc(size);
-    ctx->p_new  = (double*)cfd_aligned_malloc(size);
-    ctx->rhs    = (double*)cfd_aligned_malloc(size);
-    ctx->u_new  = (double*)cfd_aligned_malloc(size);
-    ctx->T_ws   = (double*)cfd_aligned_malloc(size);
+    size_t n_total = ctx->nx * ctx->ny * ctx->nz;
+    ctx->u_star  = (double*)cfd_aligned_malloc(size);
+    ctx->v_star  = (double*)cfd_aligned_malloc(size);
+    ctx->w_star  = (double*)cfd_aligned_malloc(size);
+    ctx->p_new   = (double*)cfd_aligned_malloc(size);
+    ctx->rhs     = (double*)cfd_aligned_malloc(size);
+    ctx->u_new   = (double*)cfd_aligned_malloc(size);
+    ctx->T_ws    = (double*)cfd_aligned_malloc(size);
+    ctx->turb_ws = (double*)cfd_calloc(TURB_WORKSPACE_SIZE(n_total), sizeof(double));
 
     if (!ctx->u_star || !ctx->v_star || !ctx->w_star || !ctx->p_new ||
-        !ctx->rhs || !ctx->u_new || !ctx->T_ws) {
-        if (ctx->u_star) {
-            cfd_aligned_free(ctx->u_star);
-        }
-        if (ctx->v_star) {
-            cfd_aligned_free(ctx->v_star);
-        }
-        if (ctx->w_star) {
-            cfd_aligned_free(ctx->w_star);
-        }
-        if (ctx->p_new) {
-            cfd_aligned_free(ctx->p_new);
-        }
-        if (ctx->rhs) {
-            cfd_aligned_free(ctx->rhs);
-        }
-        if (ctx->u_new) {
-            cfd_aligned_free(ctx->u_new);
-        }
-        if (ctx->T_ws) {
-            cfd_aligned_free(ctx->T_ws);
-        }
+        !ctx->rhs || !ctx->u_new || !ctx->T_ws || !ctx->turb_ws) {
+        if (ctx->u_star)   { cfd_aligned_free(ctx->u_star); }
+        if (ctx->v_star)   { cfd_aligned_free(ctx->v_star); }
+        if (ctx->w_star)   { cfd_aligned_free(ctx->w_star); }
+        if (ctx->p_new)    { cfd_aligned_free(ctx->p_new); }
+        if (ctx->rhs)      { cfd_aligned_free(ctx->rhs); }
+        if (ctx->u_new)    { cfd_aligned_free(ctx->u_new); }
+        if (ctx->T_ws)     { cfd_aligned_free(ctx->T_ws); }
+        if (ctx->turb_ws)  { cfd_free(ctx->turb_ws); }
         cfd_free(ctx);
         return CFD_ERROR_NOMEM;
     }
@@ -174,6 +166,7 @@ void projection_simd_destroy(struct NSSolver* solver) {
             cfd_aligned_free(ctx->rhs);
             cfd_aligned_free(ctx->u_new);
             cfd_aligned_free(ctx->T_ws);
+            cfd_free(ctx->turb_ws);
         }
         cfd_free(ctx);
         solver->context = NULL;
@@ -205,6 +198,8 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     double dz = (ctx->nz > 1 && grid->dz) ? grid->dz[0] : 0.0;
     double dt = params->dt;
     double nu = params->mu;  // Viscosity (treated as kinematic for ρ=1)
+
+    const int turb_on = (params->turb_model != TURB_MODEL_NONE);
 
     double* u_star = ctx->u_star;
     double* v_star = ctx->v_star;
@@ -278,9 +273,35 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
                 double d2w_dz2 = (field->w[idx + ctx->stride_z] - 2.0 * w +
                                   field->w[idx - ctx->stride_z]) * ctx->inv_dz2;
 
-                double visc_u = nu * (d2u_dx2 + d2u_dy2 + d2u_dz2);
-                double visc_v = nu * (d2v_dx2 + d2v_dy2 + d2v_dz2);
-                double visc_w = nu * (d2w_dx2 + d2w_dy2 + d2w_dz2);
+                double visc_u, visc_v, visc_w;
+                if (!turb_on) {
+                    visc_u = nu * (d2u_dx2 + d2u_dy2 + d2u_dz2);
+                    visc_v = nu * (d2v_dx2 + d2v_dy2 + d2v_dz2);
+                    visc_w = nu * (d2w_dx2 + d2w_dy2 + d2w_dz2);
+                } else {
+                    const double* nu_t = field->nu_t;
+                    double dx2 = dx * dx;
+                    double dy2 = dy * dy;
+                    double nu_xp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]),      1.0);
+                    double nu_xm = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]),      1.0);
+                    double nu_yp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + nx]),     1.0);
+                    double nu_ym = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - nx]),     1.0);
+                    visc_u = (nu_xp * (field->u[idx + 1]  - u) -
+                              nu_xm * (u - field->u[idx - 1])) / dx2 +
+                             (nu_yp * (field->u[idx + nx] - u) -
+                              nu_ym * (u - field->u[idx - nx])) / dy2 +
+                             nu * d2u_dz2;
+                    visc_v = (nu_xp * (field->v[idx + 1]  - v) -
+                              nu_xm * (v - field->v[idx - 1])) / dx2 +
+                             (nu_yp * (field->v[idx + nx] - v) -
+                              nu_ym * (v - field->v[idx - nx])) / dy2 +
+                             nu * d2v_dz2;
+                    visc_w = (nu_xp * (field->w[idx + 1]  - w) -
+                              nu_xm * (w - field->w[idx - 1])) / dx2 +
+                             (nu_yp * (field->w[idx + nx] - w) -
+                              nu_ym * (w - field->w[idx - nx])) / dy2 +
+                             nu * d2w_dz2;
+                }
 
                 // Source terms
                 double source_u = 0.0;
@@ -466,6 +487,20 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     // Copy boundary velocity values from star arrays (which have caller's BCs)
     copy_boundary_velocities_3d(field->u, field->v, field->w, u_star, v_star, w_star,
                                 nx, ny, ctx->nz);
+
+    // Turbulence transport: advance k-eps/SA with the corrected velocity,
+    // then apply turbulence BCs (including wall functions).
+    {
+        cfd_status_t turb_status = turbulence_step_explicit_avx2_with_workspace(
+            field, grid, params, dt, ctx->iter_count * dt, ctx->turb_ws,
+            turb_on ? TURB_WORKSPACE_SIZE(size) : 0);
+        if (turb_status == CFD_SUCCESS) {
+            turb_status = turbulence_apply_bcs(field, grid, params);
+        }
+        if (turb_status != CFD_SUCCESS) {
+            return turb_status;
+        }
+    }
 
     // Check for NaN
     for (size_t n = 0; n < size; n++) {

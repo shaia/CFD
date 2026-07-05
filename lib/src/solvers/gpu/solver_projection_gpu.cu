@@ -591,6 +591,13 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
+    // RANS turbulence models have no GPU kernels.
+    if (params->turb_model != TURB_MODEL_NONE) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "GPU NS solver does not support turbulence models; "
+                      "use a CPU, OMP, or AVX2 solver");
+        return CFD_ERROR_UNSUPPORTED;
+    }
     gpu_config_t cfg = config ? *config : gpu_config_default();
     if (!gpu_should_use(&cfg, field->nx, field->ny, field->nz, params->max_iter))
         return CFD_ERROR;
@@ -618,6 +625,13 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
+    // RANS turbulence models have no GPU kernels.
+    if (params->turb_model != TURB_MODEL_NONE) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "GPU projection solver does not support turbulence models; "
+                      "use a CPU, OMP, or AVX2 solver");
+        return CFD_ERROR_UNSUPPORTED;
+    }
     gpu_config_t cfg = config ? *config : gpu_config_default();
     size_t nx = field->nx, ny = field->ny, nz = field->nz;
     if (!gpu_should_use(&cfg, nx, ny, nz, params->max_iter))

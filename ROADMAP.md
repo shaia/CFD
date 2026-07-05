@@ -47,6 +47,7 @@ The single source of truth for backend gaps. Each algorithm targets scalar (CPU)
 |                     | RK2 (Heun)     | done | done     | —        | done     | done |
 |                     | RK4 (classical)| done | done     | —        | done     | done |
 | **Energy Eq.**      | Advec-diff + Boussinesq + thermal BCs | done | done | — | done | done |
+| **Turbulence**      | k-ε / SA + wall functions             | done | done | — | done | —    |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | —        | done |
 |                     | SOR            | done | done     | done     | —        | done |
 |                     | Red-Black SOR  | done | done     | done     | done     | done |
@@ -84,7 +85,7 @@ Genuine constraints to be aware of (not backlog items):
 | Phase | Theme | Priority | Status — what remains |
 | ----- | ----- | -------- | --------------------- |
 | 1 | Core Solver Improvements | P0–P3 | GMRES, multigrid, implicit integrators, SIMPLE/PISO, nonlinear & eigenvalue solvers |
-| 2 | Physics Extensions | P1–P3 | Turbulence (RANS), compressible, species, multiphase; energy-eq. extensions |
+| 2 | Physics Extensions | P1–P3 | RANS k-ε/SA ✅; realizable k-ε, k-ω SST remain; compressible, species, multiphase; energy-eq. extensions |
 | 3 | Geometry & Mesh | P1–P2 | Unstructured meshes, mesh I/O, adaptive refinement (3D ✅) |
 | 4 | Scalability & Performance | P1–P2 | MPI, GPU improvements, profiling tools (modular libs ✅) |
 | 5 | I/O & Post-processing | P1–P3 | HDF5, modern VTK XML, in-situ viz (CSV ✅) |
@@ -226,12 +227,16 @@ source via host callback). See CHANGELOG.
 
 ### 2.2 Turbulence Models (P1)
 
-- [ ] Spalart-Allmaras (1-equation)
-- [ ] k-epsilon standard
+- [x] Spalart-Allmaras (1-equation)
+- [x] k-epsilon standard
 - [ ] k-epsilon realizable
 - [ ] k-omega SST
-- [ ] Wall functions
+- [x] Wall functions
 - [ ] Low-Reynolds number treatment
+
+**Done (2D, uniform grids):** standard k-ε and Spalart-Allmaras with log-law wall functions
+on scalar/OMP/AVX2 backends; validated against turbulent channel flow at Re_τ = 395
+(k-ε: u_τ error 2.9%; SA: 3.1%). GPU turbulence not yet implemented.
 
 ### 2.3 Compressible Flow (P2)
 
@@ -507,7 +512,7 @@ easier to support new architectures.
 
 | Milestone | Target |
 | --------- | ------ |
-| **v0.4.0 — Turbulence** | At least one RANS model (k-ε or SA), wall functions, turbulent channel-flow validation |
+| ✅ **v0.4.0 — Turbulence** | *(complete: k-ε + SA, log-law wall functions, turbulent channel-flow validation at Re_τ = 395)* |
 | **v0.5.0 — Parallel Computing** | MPI parallelization, scalability benchmarks, HDF5 parallel I/O |
 | **v0.6.0 — Unstructured Meshes** | Unstructured mesh support, Gmsh import, complex-geometry examples |
 | **v1.0.0 — Production Ready** | All Phase 1–6 features, comprehensive validation, complete docs, stable API, performance optimized |

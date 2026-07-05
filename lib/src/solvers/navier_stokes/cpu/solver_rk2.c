@@ -22,8 +22,10 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/turbulence_solver.h"
 
 #include "../../energy/energy_solver_internal.h"
+#include "../../turbulence/turbulence_solver_internal.h"
 
 #include <math.h>
 #include <string.h>
@@ -95,15 +97,18 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
     int needs_T_ws = (params->alpha > 0.0 || params->beta != 0.0);
     double* T_energy_ws = needs_T_ws
         ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
+    const int turb_on = (params->turb_model != TURB_MODEL_NONE);
+    double* turb_ws = turb_on
+        ? (double*)cfd_calloc(TURB_WORKSPACE_SIZE(total), sizeof(double)) : NULL;
 
     if (!k1_u || !k1_v || !k1_w || !k1_p ||
         !k2_u || !k2_v || !k2_w || !k2_p ||
         !u0 || !v0 || !w0 || !p0 ||
-        (needs_T_ws && !T_energy_ws)) {
+        (needs_T_ws && !T_energy_ws) || (turb_on && !turb_ws)) {
         cfd_free(k1_u); cfd_free(k1_v); cfd_free(k1_w); cfd_free(k1_p);
         cfd_free(k2_u); cfd_free(k2_v); cfd_free(k2_w); cfd_free(k2_p);
         cfd_free(u0); cfd_free(v0); cfd_free(w0); cfd_free(p0);
-        cfd_free(T_energy_ws);
+        cfd_free(T_energy_ws); cfd_free(turb_ws);
         return CFD_ERROR_NOMEM;
     }
 
@@ -124,6 +129,7 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
         memset(k1_p, 0, bytes);
 
         compute_rhs(field->u, field->v, field->w, field->p, field->rho, field->T,
+                     field->nu_t,
                      k1_u, k1_v, k1_w, k1_p,
                      grid, params, nx, ny, nz,
                      stride_z, k_start, k_end, inv_2dz, inv_dz2,
@@ -154,6 +160,7 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
         memset(k2_p, 0, bytes);
 
         compute_rhs(field->u, field->v, field->w, field->p, field->rho, field->T,
+                     field->nu_t,
                      k2_u, k2_v, k2_w, k2_p,
                      grid, params, nx, ny, nz,
                      stride_z, k_start, k_end, inv_2dz, inv_dz2,
@@ -191,6 +198,19 @@ cfd_status_t rk2_impl(flow_field* field, const grid* grid,
             goto cleanup;
         }
 
+        /* Turbulence transport: advance k-eps/SA with the updated velocity,
+         * then apply turbulence BCs (including wall functions). nu_t is
+         * frozen across RK stages and updated once per full step. */
+        status = turbulence_step_explicit_with_workspace(
+            field, grid, params, dt, iter * dt, turb_ws,
+            turb_on ? TURB_WORKSPACE_SIZE(total) : 0);
+        if (status == CFD_SUCCESS) {
+            status = turbulence_apply_bcs(field, grid, params);
+        }
+        if (status != CFD_SUCCESS) {
+            goto cleanup;
+        }
+
         /* NaN / Inf check */
         for (size_t n = 0; n < total; n++) {
             if (!isfinite(field->u[n]) || !isfinite(field->v[n]) ||
@@ -205,7 +225,7 @@ cleanup:
     cfd_free(k1_u); cfd_free(k1_v); cfd_free(k1_w); cfd_free(k1_p);
     cfd_free(k2_u); cfd_free(k2_v); cfd_free(k2_w); cfd_free(k2_p);
     cfd_free(u0); cfd_free(v0); cfd_free(w0); cfd_free(p0);
-    cfd_free(T_energy_ws);
+    cfd_free(T_energy_ws); cfd_free(turb_ws);
 
     return status;
 }

@@ -277,6 +277,13 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
                       "use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
+    // RANS turbulence models have no GPU kernels.
+    if (params->turb_model != TURB_MODEL_NONE) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "GPU RK solver does not support turbulence models; "
+                      "use a CPU, OMP, or AVX2 solver");
+        return CFD_ERROR_UNSUPPORTED;
+    }
     // Energy-equation support (heat_source_func + thermal BC types/grid).
     {
         cfd_status_t e = gpu_check_energy_support(params, nx, ny, nz);

@@ -24,7 +24,9 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/energy_solver.h"
+#include "cfd/solvers/turbulence_solver.h"
 #include "../../energy/energy_solver_internal.h"
+#include "../../turbulence/turbulence_solver_internal.h"
 
 #include "../boundary_copy_utils.h"
 
@@ -66,7 +68,8 @@ typedef struct {
     double* v_new;
     double* w_new;
     double* p_new;
-    double* T_ws;  /* Reusable scratch for the energy step (avoids per-step alloc) */
+    double* T_ws;    /* Reusable scratch for the energy step (avoids per-step alloc) */
+    double* turb_ws; /* Reusable scratch for the turbulence step; always allocated */
     double* dx_inv;
     double* dy_inv;
     size_t nx;
@@ -126,37 +129,26 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
     ctx->inv_2dz  = (grid->nz > 1 && grid->dz) ? 1.0 / (2.0 * grid->dz[0]) : 0.0;
     ctx->inv_dz2  = (grid->nz > 1 && grid->dz) ? 1.0 / (grid->dz[0] * grid->dz[0]) : 0.0;
 
-    ctx->u_new = (double*)cfd_aligned_malloc(field_size);
-    ctx->v_new = (double*)cfd_aligned_malloc(field_size);
-    ctx->w_new = (double*)cfd_aligned_malloc(field_size);
-    ctx->p_new = (double*)cfd_aligned_malloc(field_size);
-    ctx->T_ws  = (double*)cfd_aligned_malloc(field_size);
-    ctx->dx_inv = (double*)cfd_aligned_malloc(ctx->nx * sizeof(double));
-    ctx->dy_inv = (double*)cfd_aligned_malloc(ctx->ny * sizeof(double));
+    size_t n_total = ctx->nx * ctx->ny * ctx->nz;
+    ctx->u_new   = (double*)cfd_aligned_malloc(field_size);
+    ctx->v_new   = (double*)cfd_aligned_malloc(field_size);
+    ctx->w_new   = (double*)cfd_aligned_malloc(field_size);
+    ctx->p_new   = (double*)cfd_aligned_malloc(field_size);
+    ctx->T_ws    = (double*)cfd_aligned_malloc(field_size);
+    ctx->turb_ws = (double*)cfd_calloc(TURB_WORKSPACE_SIZE(n_total), sizeof(double));
+    ctx->dx_inv  = (double*)cfd_aligned_malloc(ctx->nx * sizeof(double));
+    ctx->dy_inv  = (double*)cfd_aligned_malloc(ctx->ny * sizeof(double));
 
     if (!ctx->u_new || !ctx->v_new || !ctx->w_new || !ctx->p_new || !ctx->T_ws ||
-        !ctx->dx_inv || !ctx->dy_inv) {
-        if (ctx->u_new) {
-            cfd_aligned_free(ctx->u_new);
-        }
-        if (ctx->v_new) {
-            cfd_aligned_free(ctx->v_new);
-        }
-        if (ctx->w_new) {
-            cfd_aligned_free(ctx->w_new);
-        }
-        if (ctx->p_new) {
-            cfd_aligned_free(ctx->p_new);
-        }
-        if (ctx->T_ws) {
-            cfd_aligned_free(ctx->T_ws);
-        }
-        if (ctx->dx_inv) {
-            cfd_aligned_free(ctx->dx_inv);
-        }
-        if (ctx->dy_inv) {
-            cfd_aligned_free(ctx->dy_inv);
-        }
+        !ctx->turb_ws || !ctx->dx_inv || !ctx->dy_inv) {
+        if (ctx->u_new)   { cfd_aligned_free(ctx->u_new); }
+        if (ctx->v_new)   { cfd_aligned_free(ctx->v_new); }
+        if (ctx->w_new)   { cfd_aligned_free(ctx->w_new); }
+        if (ctx->p_new)   { cfd_aligned_free(ctx->p_new); }
+        if (ctx->T_ws)    { cfd_aligned_free(ctx->T_ws); }
+        if (ctx->turb_ws) { cfd_free(ctx->turb_ws); }
+        if (ctx->dx_inv)  { cfd_aligned_free(ctx->dx_inv); }
+        if (ctx->dy_inv)  { cfd_aligned_free(ctx->dy_inv); }
         cfd_free(ctx);
         return CFD_ERROR_NOMEM;
     }
@@ -198,6 +190,7 @@ void explicit_euler_simd_destroy(struct NSSolver* solver) {
             cfd_aligned_free(ctx->w_new);
             cfd_aligned_free(ctx->p_new);
             cfd_aligned_free(ctx->T_ws);
+            cfd_free(ctx->turb_ws);
             cfd_aligned_free(ctx->dx_inv);
             cfd_aligned_free(ctx->dy_inv);
         }
@@ -433,10 +426,10 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
 }
 #endif
 
-#if !USE_AVX
-static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* field,
-                               const grid* grid, const ns_solver_params_t* params, size_t j,
-                               double conservative_dt, double t, size_t stride_z, size_t k_offset) {
+static void process_scalar_row_turb(explicit_euler_simd_context* ctx, flow_field* field,
+                                    const grid* grid, const ns_solver_params_t* params, size_t j,
+                                    double conservative_dt, double t, size_t stride_z,
+                                    size_t k_offset, int turb_on_flag) {
     for (size_t i = 1; i < ctx->nx - 1; i++) {
         size_t idx = k_offset + IDX_2D(i, j, ctx->nx);
 
@@ -474,10 +467,6 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
                          ctx->inv_dz2;
 
         double rho = fmax(field->rho[idx], 1e-10);
-        // Using manual define for M_PI just in case it is missed in fallback
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
         double nu = fmin(params->mu / rho, 1.0);
 
         du_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dx));
@@ -512,12 +501,45 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
         double v_c = field->v[idx];
         double w_c = field->w[idx];
 
+        double visc_u, visc_v, visc_w;
+        if (!turb_on_flag) {
+            visc_u = nu * (d2u_dx2 + d2u_dy2 + d2u_dz2);
+            visc_v = nu * (d2v_dx2 + d2v_dy2 + d2v_dz2);
+            visc_w = nu * (d2w_dx2 + d2w_dy2 + d2w_dz2);
+        } else {
+            const double* nu_t = field->nu_t;
+            double dx2 = grid->dx[i] * grid->dx[i];
+            double dy2 = grid->dy[j] * grid->dy[j];
+            double nu_xp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]),     1.0);
+            double nu_xm = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]),     1.0);
+            double nu_yp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + ctx->nx]), 1.0);
+            double nu_ym = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - ctx->nx]), 1.0);
+            visc_u = (nu_xp * (field->u[idx + 1]      - u_c) -
+                      nu_xm * (u_c - field->u[idx - 1])) / dx2 +
+                     (nu_yp * (field->u[idx + ctx->nx] - u_c) -
+                      nu_ym * (u_c - field->u[idx - ctx->nx])) / dy2 +
+                     nu * d2u_dz2;
+            visc_v = (nu_xp * (field->v[idx + 1]      - v_c) -
+                      nu_xm * (v_c - field->v[idx - 1])) / dx2 +
+                     (nu_yp * (field->v[idx + ctx->nx] - v_c) -
+                      nu_ym * (v_c - field->v[idx - ctx->nx])) / dy2 +
+                     nu * d2v_dz2;
+            visc_w = (nu_xp * (field->w[idx + 1]      - w_c) -
+                      nu_xm * (w_c - field->w[idx - 1])) / dx2 +
+                     (nu_yp * (field->w[idx + ctx->nx] - w_c) -
+                      nu_ym * (w_c - field->w[idx - ctx->nx])) / dy2 +
+                     nu * d2w_dz2;
+            visc_u = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, visc_u));
+            visc_v = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, visc_v));
+            visc_w = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, visc_w));
+        }
+
         double du = conservative_dt * (-u_c * du_dx - v_c * du_dy - w_c * du_dz -
-                                       dp_dx / rho + nu * (d2u_dx2 + d2u_dy2 + d2u_dz2) + source_u);
+                                       dp_dx / rho + visc_u + source_u);
         double dv = conservative_dt * (-u_c * dv_dx - v_c * dv_dy - w_c * dv_dz -
-                                       dp_dy / rho + nu * (d2v_dx2 + d2v_dy2 + d2v_dz2) + source_v);
+                                       dp_dy / rho + visc_v + source_v);
         double dw = conservative_dt * (-u_c * dw_dx - v_c * dw_dy - w_c * dw_dz -
-                                       dp_dz / rho + nu * (d2w_dx2 + d2w_dy2 + d2w_dz2) + source_w);
+                                       dp_dz / rho + visc_w + source_w);
 
         du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));
         dv = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, dv));
@@ -534,7 +556,6 @@ static void process_scalar_row(explicit_euler_simd_context* ctx, flow_field* fie
         ctx->p_new[idx] = field->p[idx] + dp;
     }
 }
-#endif
 
 cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field, const grid* grid,
                                       const ns_solver_params_t* params, ns_solver_stats_t* stats) {
@@ -543,6 +564,7 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     }
 
     explicit_euler_simd_context* ctx = (explicit_euler_simd_context*)solver->context;
+    const int turb_on = (params->turb_model != TURB_MODEL_NONE);
 
     if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
         return CFD_ERROR_INVALID;
@@ -565,32 +587,42 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     size_t nx = ctx->nx;
     size_t ny = ctx->ny;
 
-#if USE_AVX
-    simd_constants sc;
-    init_simd_constants(&sc, params, conservative_dt, ctx->inv_2dz, ctx->inv_dz2);
-
     int ny_int = (int)(ctx->ny);
     int j;
-    for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
-        size_t k_offset = k * ctx->stride_z;
+#if USE_AVX
+    if (!turb_on) {
+        simd_constants sc;
+        init_simd_constants(&sc, params, conservative_dt, ctx->inv_2dz, ctx->inv_dz2);
+        for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
+            size_t k_offset = k * ctx->stride_z;
 #ifdef _OPENMP
-        #pragma omp parallel for schedule(static)
+            #pragma omp parallel for schedule(static)
 #endif
-        for (j = 1; j < ny_int - 1; j++) {
-            process_simd_row(ctx, field, grid, (size_t)j, &sc, ctx->stride_z, k_offset);
+            for (j = 1; j < ny_int - 1; j++) {
+                process_simd_row(ctx, field, grid, (size_t)j, &sc, ctx->stride_z, k_offset);
+            }
+        }
+    } else {
+        for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
+            size_t k_offset = k * ctx->stride_z;
+#ifdef _OPENMP
+            #pragma omp parallel for schedule(static)
+#endif
+            for (j = 1; j < ny_int - 1; j++) {
+                process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt,
+                                        0.0, ctx->stride_z, k_offset, 1);
+            }
         }
     }
 #else
-    int ny_int = (int)(ctx->ny);
-    int j;
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
         size_t k_offset = k * ctx->stride_z;
 #ifdef _OPENMP
         #pragma omp parallel for schedule(static)
 #endif
         for (j = 1; j < ny_int - 1; j++) {
-            process_scalar_row(ctx, field, grid, params, (size_t)j, conservative_dt, 0.0,
-                               ctx->stride_z, k_offset);
+            process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt, 0.0,
+                                    ctx->stride_z, k_offset, turb_on);
         }
     }
 #endif
@@ -622,6 +654,21 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
         cfd_status_t bc_status = energy_apply_thermal_bcs(field, params);
         if (bc_status != CFD_SUCCESS) {
             return bc_status;
+        }
+    }
+
+    /* Turbulence transport: advance k-eps/SA with the updated velocity,
+     * then apply turbulence BCs. nu_t is updated once per step. */
+    {
+        cfd_status_t turb_status = turbulence_step_explicit_avx2_with_workspace(
+            field, grid, params, conservative_dt,
+            ctx->iter_count * conservative_dt, ctx->turb_ws,
+            turb_on ? TURB_WORKSPACE_SIZE(size) : 0);
+        if (turb_status == CFD_SUCCESS) {
+            turb_status = turbulence_apply_bcs(field, grid, params);
+        }
+        if (turb_status != CFD_SUCCESS) {
+            return turb_status;
         }
     }
 
