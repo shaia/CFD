@@ -294,9 +294,12 @@ void test_gmres_sinusoidal_rhs(void) {
 }
 
 /**
- * GMRES stats.final_residual must match an independently recomputed true
- * residual. Right preconditioning is chosen precisely so the reported residual
- * is the true unpreconditioned one. Here (no precond) they must agree closely.
+ * After GMRES converges, an independently recomputed true residual must be
+ * small. This cross-checks that the solver's reported convergence corresponds
+ * to a genuinely small unpreconditioned residual (no precond here). Note the
+ * independent check uses the max-norm, whereas stats.final_residual is the
+ * 2-norm the solver measures internally, so this validates smallness rather
+ * than an exact norm-for-norm match.
  */
 void test_gmres_residual_matches_true(void) {
     size_t nx = NX_MEDIUM, ny = NY_MEDIUM;
