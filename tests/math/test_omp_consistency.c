@@ -303,9 +303,10 @@ void test_redblack_omp_vs_scalar(void) {
  * Test: GMRES OMP vs Scalar Consistency
  *
  * Solves the same Poisson problem with both scalar and OMP GMRES solvers, then
- * verifies the solutions are numerically identical. The dense Givens/Hessenberg
- * work is byte-identical scalar in both backends, so only the parallel-reduction
- * dot products introduce rounding differences.
+ * verifies the solutions are numerically consistent (RMS L2 difference within
+ * 1e-9). The dense Givens/Hessenberg work is byte-identical scalar in both
+ * backends, so only the parallel-reduction dot products introduce rounding
+ * differences — the solutions are consistent, not bit-for-bit identical.
  */
 void test_gmres_omp_vs_scalar(void) {
     double dx = (XMAX - XMIN) / (NX - 1);
