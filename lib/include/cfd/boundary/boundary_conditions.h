@@ -693,11 +693,15 @@ CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_uniform(double u_velocity, 
  * Create a default inlet configuration for parabolic velocity profile.
  *
  * Creates a parabolic velocity inlet (fully-developed laminar flow).
- * For left/right inlets: u is parabolic, v is zero.
- * For top/bottom inlets: v is parabolic, u is zero.
+ * The returned config defaults to left edge with u = max_velocity, v = 0.
+ * Use bc_inlet_set_edge() to change the edge, or modify spec.velocity
+ * directly to set different base velocity components.
+ *
+ * Note: The parabolic profile multiplies the base velocity by
+ * 4*position*(1-position), where position is 0 to 1 along the inlet.
  *
  * @param max_velocity  Maximum velocity at center of inlet
- * @return Configured inlet structure
+ * @return Configured inlet structure (default: left edge, +x direction)
  */
 CFD_LIBRARY_EXPORT bc_inlet_config_t bc_inlet_config_parabolic(double max_velocity);
 
