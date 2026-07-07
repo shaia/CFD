@@ -56,7 +56,8 @@ typedef enum {
     POISSON_METHOD_SOR,           /**< Successive Over-Relaxation */
     POISSON_METHOD_REDBLACK_SOR,  /**< Red-Black SOR (parallelizable) */
     POISSON_METHOD_CG,            /**< Conjugate Gradient (for SPD systems) */
-    POISSON_METHOD_BICGSTAB,      /**< BiCGSTAB (future) */
+    POISSON_METHOD_BICGSTAB,      /**< BiCGSTAB (for non-symmetric systems) */
+    POISSON_METHOD_GMRES,         /**< Restarted GMRES(m) (for non-symmetric systems) */
     POISSON_METHOD_MULTIGRID      /**< Multigrid (future) */
 } poisson_solver_method_t;
 
@@ -105,6 +106,7 @@ typedef struct {
     int check_interval;        /**< Check convergence every N iterations (default: 1) */
     bool verbose;              /**< Print iteration progress (default: false) */
     poisson_precond_type_t preconditioner; /**< Preconditioner type (default: NONE) */
+    int restart;               /**< GMRES restart length m (default: 0 = auto/30); ignored by other methods */
 } poisson_solver_params_t;
 
 /**
@@ -391,6 +393,9 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
 #define POISSON_SOLVER_TYPE_BICGSTAB_SCALAR   "bicgstab_scalar"
 #define POISSON_SOLVER_TYPE_BICGSTAB_SIMD     "bicgstab_simd"
 #define POISSON_SOLVER_TYPE_BICGSTAB_GPU      "bicgstab_gpu"
+#define POISSON_SOLVER_TYPE_GMRES_SCALAR      "gmres_scalar"
+#define POISSON_SOLVER_TYPE_GMRES_OMP         "gmres_omp"
+#define POISSON_SOLVER_TYPE_GMRES_SIMD        "gmres_simd"
 
 /* ============================================================================
  * CONVENIENCE API

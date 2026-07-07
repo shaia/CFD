@@ -128,6 +128,7 @@ set(CFD_SCALAR_SOURCES
     src/solvers/linear/cpu/linear_solver_redblack.c
     src/solvers/linear/cpu/linear_solver_cg.c
     src/solvers/linear/cpu/linear_solver_bicgstab.c
+    src/solvers/linear/cpu/linear_solver_gmres.c
 )
 
 # SIMD sources (AVX2/NEON optimized)
@@ -152,11 +153,13 @@ set(CFD_SIMD_SOURCES
     src/solvers/linear/avx2/linear_solver_cg_avx2.c
     src/solvers/linear/avx2/linear_solver_bicgstab_avx2.c
     src/solvers/linear/avx2/linear_solver_sor_avx2.c
+    src/solvers/linear/avx2/linear_solver_gmres_avx2.c
     src/solvers/linear/neon/linear_solver_jacobi_neon.c
     src/solvers/linear/neon/linear_solver_redblack_neon.c
     src/solvers/linear/neon/linear_solver_cg_neon.c
     src/solvers/linear/neon/linear_solver_bicgstab_neon.c
     src/solvers/linear/neon/linear_solver_sor_neon.c
+    src/solvers/linear/neon/linear_solver_gmres_neon.c
 )
 
 # OpenMP sources
@@ -174,6 +177,7 @@ set(CFD_OMP_SOURCES
     # Linear solvers - OMP
     src/solvers/linear/omp/linear_solver_redblack_omp.c
     src/solvers/linear/omp/linear_solver_cg_omp.c
+    src/solvers/linear/omp/linear_solver_gmres_omp.c
 )
 
 # Note: API sources (solver_registry, simulation_api, output_registry) are in

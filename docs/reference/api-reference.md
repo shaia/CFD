@@ -408,14 +408,19 @@ void poisson_solver_destroy(poisson_solver_t* solver);
 
 ```c
 typedef enum {
-    POISSON_METHOD_JACOBI = 0,
-    POISSON_METHOD_SOR = 1,
-    POISSON_METHOD_REDBLACK_SOR = 2,
-    POISSON_METHOD_CG = 3,
-    POISSON_METHOD_PCG = 4,
-    POISSON_METHOD_BICGSTAB = 5,
-} poisson_method_t;
+    POISSON_METHOD_JACOBI,        // Jacobi iteration (fully parallelizable)
+    POISSON_METHOD_GAUSS_SEIDEL,  // Gauss-Seidel iteration
+    POISSON_METHOD_SOR,           // Successive Over-Relaxation
+    POISSON_METHOD_REDBLACK_SOR,  // Red-Black SOR (parallelizable)
+    POISSON_METHOD_CG,            // Conjugate Gradient (SPD systems)
+    POISSON_METHOD_BICGSTAB,      // BiCGSTAB (non-symmetric systems)
+    POISSON_METHOD_GMRES,         // Restarted GMRES(m) (scalar/SIMD/OMP)
+    POISSON_METHOD_MULTIGRID      // Multigrid (future)
+} poisson_solver_method_t;
 ```
+
+> Preconditioning is a separate `preconditioner` field on `poisson_solver_params_t`
+> (see below), not a distinct method — CG becomes PCG when a preconditioner is set.
 
 ### Poisson Backends
 
@@ -436,10 +441,11 @@ typedef struct {
     double tolerance;           // Relative tolerance (default: 1e-6)
     double absolute_tolerance;  // Absolute tolerance (default: 1e-10)
     int max_iterations;         // Max iterations (default: 5000)
-    double omega;               // SOR relaxation (default: 1.5)
+    double omega;               // SOR relaxation (default: 0 = auto-optimal)
     int check_interval;         // Convergence check interval (default: 1)
-    int verbose;                // Print convergence info (default: 0)
-    poisson_precond_t preconditioner;  // Preconditioner (default: NONE)
+    bool verbose;               // Print convergence info (default: false)
+    poisson_precond_type_t preconditioner;  // Preconditioner (default: POISSON_PRECOND_NONE)
+    int restart;                // GMRES(m) restart length (default: 0 = auto/30)
 } poisson_solver_params_t;
 
 poisson_solver_params_t poisson_solver_params_default(void);

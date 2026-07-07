@@ -52,6 +52,7 @@ The single source of truth for backend gaps. Each algorithm targets scalar (CPU)
 |                     | Red-Black SOR  | done | done     | done     | done     | done |
 |                     | CG / PCG       | done | done     | done     | done     | done |
 |                     | BiCGSTAB       | done | done     | done     | —        | done |
+|                     | GMRES(m)       | done | done     | done     | done     | —    |
 | **Boundary Conds**  | All types      | done | done     | done     | done     | done |
 
 ### Known Limitations
@@ -103,15 +104,22 @@ No-slip, Inlet, Outlet, Symmetry, Moving wall, Time-varying). See CHANGELOG.
 
 ### 1.2 Linear Solvers (P0)
 
-Implemented: Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB (all with SIMD backends; CG is the
-default Poisson solver for projection methods). GPU standalone Jacobi, CG, Red-Black SOR,
-plain SOR, and BiCGSTAB are done and validated vs CPU; `solve_projection_method_gpu` uses
+Implemented: Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB, GMRES(m) (all with SIMD backends;
+CG is the default Poisson solver for projection methods). GPU standalone Jacobi, CG, Red-Black
+SOR, plain SOR, and BiCGSTAB are done and validated vs CPU; `solve_projection_method_gpu` uses
 on-device CG.
+
+GMRES(m) with restart is implemented across scalar, AVX2, NEON, and OMP backends (right-
+preconditioned Jacobi seam; validated vs CG on the SPD Poisson problem, with restart-no-stall
+and cross-backend consistency tests). Since the current linear systems are all the symmetric
+pressure-Poisson operator, GMRES is a forward-looking addition (it becomes load-bearing once
+non-symmetric operators arrive, e.g. implicit advection-diffusion in §1.5).
 
 **Still needed:**
 
-- [ ] GMRES (Generalized Minimal Residual) for non-symmetric systems — scalar, AVX2, NEON,
-      OMP, GPU
+- [x] GMRES (Generalized Minimal Residual) for non-symmetric systems — scalar, AVX2, NEON, OMP
+      (done). GPU variant deferred.
+- [ ] GMRES GPU backend (deferred from the initial GMRES landing)
 - [ ] SSOR (Symmetric SOR) preconditioner
 - [ ] ILU preconditioner
 - [ ] Geometric multigrid
