@@ -125,6 +125,7 @@ p_ij^(k+1) = (1-ω)p_ij^k + (ω/4)(p_i-1,j + p_i+1,j + p_i,j-1 + p_i,j+1 - h²f_
 - Sequential row updates (row j depends on j-1)
 - Optimal ω depends on problem
 - SIMD variant uses Block SOR: processes SIMD_WIDTH consecutive cells per block, with intra-block left-neighbor approximation (see [Block SOR technical note](../technical-notes/block-sor-simd.md))
+- GPU variant also uses Block SOR: each thread sweeps an 8×8 tile sequentially (Gauss-Seidel inside the tile), with red-black *tile* coloring (red pass then black pass, two launches per iteration) so a tile's halo is never written by another tile in the same pass — the update is in-place, race-free, and provably convergent for 0<ω<2
 
 **Convergence Rate:** ρ ≈ 1 - 2πh (with optimal ω)
 
@@ -133,6 +134,7 @@ p_ij^(k+1) = (1-ω)p_ij^k + (ω/4)(p_i-1,j + p_i+1,j + p_i,j-1 + p_i,j+1 - h²f_
 |--------|---------|-------------|
 | `sor_scalar` | Scalar | Sequential Gauss-Seidel + SOR relaxation |
 | `sor_simd` | SIMD | Block SOR (auto-detects AVX2/NEON) |
+| `sor_gpu` | GPU | Block SOR (CUDA; per-thread tile sweep, red-black tile coloring, in-place) |
 
 **Usage:**
 ```c
