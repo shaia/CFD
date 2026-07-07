@@ -408,15 +408,19 @@ void poisson_solver_destroy(poisson_solver_t* solver);
 
 ```c
 typedef enum {
-    POISSON_METHOD_JACOBI = 0,
-    POISSON_METHOD_SOR = 1,
-    POISSON_METHOD_REDBLACK_SOR = 2,
-    POISSON_METHOD_CG = 3,
-    POISSON_METHOD_PCG = 4,
-    POISSON_METHOD_BICGSTAB = 5,
-    POISSON_METHOD_GMRES = 6,       // Restarted GMRES(m) (scalar/SIMD/OMP)
-} poisson_method_t;
+    POISSON_METHOD_JACOBI,        // Jacobi iteration (fully parallelizable)
+    POISSON_METHOD_GAUSS_SEIDEL,  // Gauss-Seidel iteration
+    POISSON_METHOD_SOR,           // Successive Over-Relaxation
+    POISSON_METHOD_REDBLACK_SOR,  // Red-Black SOR (parallelizable)
+    POISSON_METHOD_CG,            // Conjugate Gradient (SPD systems)
+    POISSON_METHOD_BICGSTAB,      // BiCGSTAB (non-symmetric systems)
+    POISSON_METHOD_GMRES,         // Restarted GMRES(m) (scalar/SIMD/OMP)
+    POISSON_METHOD_MULTIGRID      // Multigrid (future)
+} poisson_solver_method_t;
 ```
+
+> Preconditioning is a separate `preconditioner` field on `poisson_solver_params_t`
+> (see below), not a distinct method — CG becomes PCG when a preconditioner is set.
 
 ### Poisson Backends
 
