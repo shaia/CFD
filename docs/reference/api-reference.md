@@ -441,10 +441,10 @@ typedef struct {
     double tolerance;           // Relative tolerance (default: 1e-6)
     double absolute_tolerance;  // Absolute tolerance (default: 1e-10)
     int max_iterations;         // Max iterations (default: 5000)
-    double omega;               // SOR relaxation (default: 1.5)
+    double omega;               // SOR relaxation (default: 0 = auto-optimal)
     int check_interval;         // Convergence check interval (default: 1)
-    int verbose;                // Print convergence info (default: 0)
-    poisson_precond_t preconditioner;  // Preconditioner (default: NONE)
+    bool verbose;               // Print convergence info (default: false)
+    poisson_precond_type_t preconditioner;  // Preconditioner (default: POISSON_PRECOND_NONE)
     int restart;                // GMRES(m) restart length (default: 0 = auto/30)
 } poisson_solver_params_t;
 
