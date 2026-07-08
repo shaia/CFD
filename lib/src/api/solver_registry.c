@@ -61,6 +61,18 @@ static double compute_max_temperature(const flow_field* field) {
     return max_t;
 }
 
+/* Maximum eddy viscosity; nu_t is non-negative, so 0.0 means laminar. */
+static double compute_max_nu_t(const flow_field* field) {
+    double max_nt = 0.0;
+    if (field->nu_t) {
+        size_t n = field->nx * field->ny * field->nz;
+        for (size_t i = 0; i < n; i++) {
+            if (field->nu_t[i] > max_nt) max_nt = field->nu_t[i];
+        }
+    }
+    return max_nt;
+}
+
 // Forward declarations for internal solver implementations
 // These are not part of the public API
 cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params);
@@ -590,6 +602,7 @@ static cfd_status_t explicit_euler_step(ns_solver_t* solver, flow_field* field, 
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
 
     return CFD_SUCCESS;
@@ -614,6 +627,7 @@ static cfd_status_t explicit_euler_solve(ns_solver_t* solver, flow_field* field,
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
 
     return CFD_SUCCESS;
@@ -667,6 +681,7 @@ static cfd_status_t rk2_step(ns_solver_t* solver, flow_field* field, const grid*
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
 
     return status;
@@ -690,6 +705,7 @@ static cfd_status_t rk2_solve(ns_solver_t* solver, flow_field* field, const grid
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
 
     return status;
@@ -766,6 +782,7 @@ static cfd_status_t rk4_step(ns_solver_t* solver, flow_field* field, const grid*
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
 
     return status;
@@ -789,6 +806,7 @@ static cfd_status_t rk4_solve(ns_solver_t* solver, flow_field* field, const grid
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
 
     return status;
@@ -865,6 +883,7 @@ static cfd_status_t explicit_euler_simd_solve(ns_solver_t* solver, flow_field* f
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return CFD_SUCCESS;
 }
@@ -942,6 +961,7 @@ static cfd_status_t projection_step(ns_solver_t* solver, flow_field* field, cons
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return CFD_SUCCESS;
 }
@@ -967,6 +987,7 @@ static cfd_status_t projection_solve(ns_solver_t* solver, flow_field* field, con
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return CFD_SUCCESS;
 }
@@ -1022,6 +1043,7 @@ static cfd_status_t projection_simd_solve(ns_solver_t* solver, flow_field* field
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return CFD_SUCCESS;
 }
@@ -1069,6 +1091,7 @@ static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const
     cfd_status_t rc = solve_explicit_euler_method_gpu(field, grid, &step_params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return rc;
 }
@@ -1082,6 +1105,7 @@ static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, cons
     cfd_status_t rc = solve_explicit_euler_method_gpu(field, grid, params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return rc;
 }
@@ -1134,6 +1158,7 @@ static cfd_status_t gpu_projection_step(ns_solver_t* solver, flow_field* field, 
     cfd_status_t rc = solve_projection_method_gpu(field, grid, &step_params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return rc;
 }
@@ -1148,6 +1173,7 @@ static cfd_status_t gpu_projection_solve(ns_solver_t* solver, flow_field* field,
     cfd_status_t rc = solve_projection_method_gpu(field, grid, params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return rc;
 }
@@ -1199,6 +1225,7 @@ static cfd_status_t gpu_rk2_step(ns_solver_t* solver, flow_field* field, const g
     cfd_status_t rc = solve_rk2_method_gpu(field, grid, &step_params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return rc;
 }
@@ -1212,6 +1239,7 @@ static cfd_status_t gpu_rk2_solve(ns_solver_t* solver, flow_field* field, const 
     cfd_status_t rc = solve_rk2_method_gpu(field, grid, params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return rc;
 }
@@ -1227,6 +1255,7 @@ static cfd_status_t gpu_rk4_step(ns_solver_t* solver, flow_field* field, const g
     cfd_status_t rc = solve_rk4_method_gpu(field, grid, &step_params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return rc;
 }
@@ -1240,6 +1269,7 @@ static cfd_status_t gpu_rk4_solve(ns_solver_t* solver, flow_field* field, const 
     cfd_status_t rc = solve_rk4_method_gpu(field, grid, params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return rc;
 }
@@ -1314,6 +1344,7 @@ static cfd_status_t explicit_euler_omp_step(ns_solver_t* solver, flow_field* fie
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return CFD_SUCCESS;
 }
@@ -1333,6 +1364,7 @@ static cfd_status_t explicit_euler_omp_solve(ns_solver_t* solver, flow_field* fi
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return CFD_SUCCESS;
 }
@@ -1381,6 +1413,7 @@ static cfd_status_t rk2_omp_step(ns_solver_t* solver, flow_field* field, const g
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return status;
 }
@@ -1400,6 +1433,7 @@ static cfd_status_t rk2_omp_solve(ns_solver_t* solver, flow_field* field, const 
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return status;
 }
@@ -1448,6 +1482,7 @@ static cfd_status_t rk4_omp_step(ns_solver_t* solver, flow_field* field, const g
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return status;
 }
@@ -1467,6 +1502,7 @@ static cfd_status_t rk4_omp_solve(ns_solver_t* solver, flow_field* field, const 
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return status;
 }
@@ -1544,6 +1580,7 @@ static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, 
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return CFD_SUCCESS;
 }
@@ -1566,6 +1603,7 @@ static cfd_status_t projection_omp_solve(ns_solver_t* solver, flow_field* field,
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = compute_max_temperature(field);
+        stats->max_nu_t = compute_max_nu_t(field);
     }
     return CFD_SUCCESS;
 }

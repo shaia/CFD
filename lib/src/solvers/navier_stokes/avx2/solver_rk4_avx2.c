@@ -460,9 +460,10 @@ cfd_status_t rk4_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
         double max_vel = 0.0, max_p = 0.0;
         ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny * field->nz);
         double max_t = (field->T && n_s > 0) ? field->T[0] : 0.0;
+        double max_nt = 0.0;
         ptrdiff_t ks;
 #if defined(_OPENMP) && (_OPENMP >= 201107)
-        #pragma omp parallel for reduction(max: max_vel, max_p, max_t) schedule(static)
+        #pragma omp parallel for reduction(max: max_vel, max_p, max_t, max_nt) schedule(static)
 #endif
         for (ks = 0; ks < n_s; ks++) {
             double vel = sqrt(field->u[ks] * field->u[ks] +
@@ -472,10 +473,12 @@ cfd_status_t rk4_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
             double ap = fabs(field->p[ks]);
             if (ap > max_p) max_p = ap;
             if (field->T && field->T[ks] > max_t) max_t = field->T[ks];
+            if (field->nu_t && field->nu_t[ks] > max_nt) max_nt = field->nu_t[ks];
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = max_t;
+        stats->max_nu_t = max_nt;
     }
 
     return status;
@@ -510,9 +513,10 @@ cfd_status_t rk4_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
         double max_vel = 0.0, max_p = 0.0;
         ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny * field->nz);
         double max_t = (field->T && n_s > 0) ? field->T[0] : 0.0;
+        double max_nt = 0.0;
         ptrdiff_t ks;
 #if defined(_OPENMP) && (_OPENMP >= 201107)
-        #pragma omp parallel for reduction(max: max_vel, max_p, max_t) schedule(static)
+        #pragma omp parallel for reduction(max: max_vel, max_p, max_t, max_nt) schedule(static)
 #endif
         for (ks = 0; ks < n_s; ks++) {
             double vel = sqrt(field->u[ks] * field->u[ks] +
@@ -522,10 +526,12 @@ cfd_status_t rk4_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
             double ap = fabs(field->p[ks]);
             if (ap > max_p) max_p = ap;
             if (field->T && field->T[ks] > max_t) max_t = field->T[ks];
+            if (field->nu_t && field->nu_t[ks] > max_nt) max_nt = field->nu_t[ks];
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = max_t;
+        stats->max_nu_t = max_nt;
     }
     return status;
 #endif
