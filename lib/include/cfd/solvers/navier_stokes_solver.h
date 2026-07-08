@@ -454,6 +454,7 @@ static inline ns_solver_stats_t ns_solver_stats_default(void) {
     stats.max_velocity = 0.0;
     stats.max_pressure = 0.0;
     stats.max_temperature = 0.0;
+    stats.max_nu_t = 0.0;
     stats.cfl_number = 0.0;
     stats.elapsed_time_ms = 0.0;
     stats.status = CFD_SUCCESS;
