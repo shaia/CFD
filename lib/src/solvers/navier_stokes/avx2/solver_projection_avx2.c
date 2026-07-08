@@ -282,10 +282,10 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
                     const double* nu_t = field->nu_t;
                     double dx2 = dx * dx;
                     double dy2 = dy * dy;
-                    double nu_xp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]),      1.0);
-                    double nu_xm = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]),      1.0);
-                    double nu_yp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + nx]),     1.0);
-                    double nu_ym = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - nx]),     1.0);
+                    double nu_xp = nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]);
+                    double nu_xm = nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]);
+                    double nu_yp = nu + 0.5 * (nu_t[idx] + nu_t[idx + nx]);
+                    double nu_ym = nu + 0.5 * (nu_t[idx] + nu_t[idx - nx]);
                     visc_u = (nu_xp * (field->u[idx + 1]  - u) -
                               nu_xm * (u - field->u[idx - 1])) / dx2 +
                              (nu_yp * (field->u[idx + nx] - u) -
