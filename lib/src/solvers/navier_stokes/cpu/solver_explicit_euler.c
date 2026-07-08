@@ -240,10 +240,13 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
     if (params->turb_model != TURB_MODEL_NONE && field->nu_t) {
         size_t total = field->nx * field->ny * field->nz;
         double nu_t_max = 0.0;
+        double rho_min = field->rho[0];
         for (size_t n = 0; n < total; n++) {
             nu_t_max = max_double(nu_t_max, field->nu_t[n]);
+            rho_min = min_double(rho_min, field->rho[n]);
         }
-        double rho_ref = (field->rho[0] > 1e-10) ? field->rho[0] : 1.0;
+        /* Minimum density gives the largest (most restrictive) local nu */
+        double rho_ref = (rho_min > 1e-10) ? rho_min : 1.0;
         double nu_eff_max = params->mu / rho_ref + nu_t_max;
         if (nu_eff_max > 0.0) {
             int ndim = (grid->nz > 1) ? 3 : 2;
