@@ -338,11 +338,17 @@ if(OpenMP_C_FOUND)
     set(CFD_OMP_BUILD_SOURCES ${CFD_OMP_SOURCES})
     set(CFD_HAS_OMP TRUE)
 else()
-    # Only boundary condition files (they have #ifdef CFD_ENABLE_OPENMP guards)
-    # Solver files require omp.h and can't be compiled without OpenMP
+    # OpenMP not found: compile only files that degrade to a correct serial
+    # implementation without omp.h. The boundary-condition files have
+    # #ifdef CFD_ENABLE_OPENMP guards; the turbulence kernel guards its omp.h
+    # include behind #ifdef _OPENMP and uses only #pragma omp directives (which
+    # no-op), so it stays correct serially — mirroring the always-compiled AVX2
+    # turbulence file and keeping its OMP-named symbol present. The NS and linear
+    # OMP solvers unconditionally require omp.h, so they remain dropped.
     set(CFD_OMP_BUILD_SOURCES
         src/boundary/omp/boundary_conditions_omp.c
         src/boundary/omp/boundary_conditions_outlet_omp.c
+        src/solvers/turbulence/omp/turbulence_solver_omp.c
     )
     set(CFD_HAS_OMP FALSE)
 endif()

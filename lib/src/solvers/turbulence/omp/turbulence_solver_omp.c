@@ -7,6 +7,12 @@
  * Read/write separation (reads field arrays, writes the workspace buffers)
  * makes the loops race-free. Validation, nu_t update, boundary conditions,
  * and wall functions are shared with the scalar backend (boundary-only work).
+ *
+ * This file is always compiled (like the AVX2 backend). It uses only #pragma
+ * omp directives — no OpenMP runtime calls — so when OpenMP is unavailable the
+ * pragmas are ignored and the interior loops run serially. The entry point
+ * therefore always provides a correct implementation, and the OMP-named symbol
+ * is present regardless of whether the toolchain supports OpenMP.
  */
 
 #include "../turbulence_solver_internal.h"
@@ -15,9 +21,12 @@
 #include "cfd/core/memory.h"
 
 #include <math.h>
-#include <omp.h>
 #include <stddef.h>
 #include <string.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 /* OMP k-epsilon transport kernel — numerics identical to
  * turb_kepsilon_step_scalar, j-loop parallelized. */
