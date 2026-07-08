@@ -245,8 +245,10 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
             nu_t_max = max_double(nu_t_max, field->nu_t[n]);
             rho_min = min_double(rho_min, field->rho[n]);
         }
-        /* Minimum density gives the largest (most restrictive) local nu */
-        double rho_ref = (rho_min > 1e-10) ? rho_min : 1.0;
+        /* Minimum density gives the largest (most restrictive) local nu;
+         * floor it like the kernels do (local_nu) rather than substituting
+         * 1.0, which would overestimate the stable dt at low densities. */
+        double rho_ref = max_double(rho_min, 1e-10);
         double nu_eff_max = params->mu / rho_ref + nu_t_max;
         if (nu_eff_max > 0.0) {
             int ndim = (grid->nz > 1) ? 3 : 2;
