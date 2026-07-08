@@ -150,6 +150,14 @@ static cfd_status_t validate_turbulence_args(const flow_field* field, const grid
                       "turbulence_solver: unknown turbulence model");
         return CFD_ERROR_INVALID;
     }
+    /* nu = mu/rho appears in denominators (SA chi, wall functions); mu <= 0
+     * would produce Inf/NaN rather than a diagnosable error. */
+    if (params->mu <= 0.0) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "turbulence_solver: mu must be positive when a "
+                      "turbulence model is active");
+        return CFD_ERROR_INVALID;
+    }
     if (field->nz > 1) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
                       "turbulence_solver: 3D turbulence not supported");
