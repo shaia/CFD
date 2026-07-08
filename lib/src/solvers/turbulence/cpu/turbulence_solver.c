@@ -304,10 +304,14 @@ static void apply_wall_function_node(flow_field* field,
         field->turb_nu_tilde[idx_w] = 0.0;
     }
 
-    /* Wall-shear-matching viscosity (see function comment) */
+    /* Wall-shear-matching viscosity (see function comment), subject to the
+     * same realizability bound as turb_update_nu_t: on very coarse grids or
+     * near-zero u_p the matching formula can blow up and destabilize the
+     * momentum step / time-step estimation. */
     if (u_p > 1e-12) {
         double nu_wall_eff = ut * ut * y_p / u_p;
-        field->nu_t[idx_p] = fmax(2.0 * (nu_wall_eff - nu), 0.0);
+        field->nu_t[idx_p] = fmin(fmax(2.0 * (nu_wall_eff - nu), 0.0),
+                                  TURB_NU_T_MAX_FACTOR * nu);
     } else {
         field->nu_t[idx_p] = 0.0;
     }
