@@ -70,7 +70,7 @@ typedef struct {
     double* k2_u; double* k2_v; double* k2_w; double* k2_p;
     double* u0;   double* v0;   double* w0;   double* p0;
     double* T_ws;    /* Reusable scratch for the energy step (avoids per-step alloc) */
-    double* turb_ws; /* Reusable scratch for the turbulence step; NULL when turb_model==NONE */
+    double* turb_ws; /* Reusable scratch for the turbulence step; always allocated */
     double* dx_inv;  /* 1/(2*dx[i]) for i = 0..nx-1 */
     double* dy_inv;  /* 1/(2*dy[j]) for j = 0..ny-1 */
     size_t nx, ny, nz;
