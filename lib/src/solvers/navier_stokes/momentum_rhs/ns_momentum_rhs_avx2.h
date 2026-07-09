@@ -142,11 +142,12 @@ static void ns_rhs_point(
         visc_v = nu * (d2v_dx2 + d2v_dy2 + d2v_dz2);
         visc_w = nu * (d2w_dx2 + d2w_dy2 + d2w_dz2);
     } else {
-        /* Face-averaged nu_eff, clamped like the laminar nu */
-        double nu_xp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[ir]), 1.0);
-        double nu_xm = fmin(nu + 0.5 * (nu_t[idx] + nu_t[il]), 1.0);
-        double nu_yp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[ju]), 1.0);
-        double nu_ym = fmin(nu + 0.5 * (nu_t[idx] + nu_t[jd]), 1.0);
+        /* Face-averaged nu_eff = nu + nu_t (nu_t already bounded by the
+         * realizability clamp; the flux clamp below caps it) */
+        double nu_xp = nu + 0.5 * (nu_t[idx] + nu_t[ir]);
+        double nu_xm = nu + 0.5 * (nu_t[idx] + nu_t[il]);
+        double nu_yp = nu + 0.5 * (nu_t[idx] + nu_t[ju]);
+        double nu_ym = nu + 0.5 * (nu_t[idx] + nu_t[jd]);
         double inv_dxi2 = 1.0 / dx2;
         double inv_dyj2 = 1.0 / dy2;
 

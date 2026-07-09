@@ -169,10 +169,12 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
                         const double* nu_t = field->nu_t;
                         double dx2 = grid->dx[i] * grid->dx[i];
                         double dy2 = grid->dy[j] * grid->dy[j];
-                        double nu_xp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]),     1.0);
-                        double nu_xm = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]),     1.0);
-                        double nu_yp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + nx]),    1.0);
-                        double nu_ym = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - nx]),    1.0);
+                        /* Face-averaged nu_eff = nu + nu_t (nu_t is bounded by the
+                         * realizability clamp) */
+                        double nu_xp = nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]);
+                        double nu_xm = nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]);
+                        double nu_yp = nu + 0.5 * (nu_t[idx] + nu_t[idx + nx]);
+                        double nu_ym = nu + 0.5 * (nu_t[idx] + nu_t[idx - nx]);
                         visc_u = (nu_xp * (field->u[idx + 1]  - field->u[idx]) -
                                   nu_xm * (field->u[idx]      - field->u[idx - 1])) / dx2 +
                                  (nu_yp * (field->u[idx + nx] - field->u[idx]) -

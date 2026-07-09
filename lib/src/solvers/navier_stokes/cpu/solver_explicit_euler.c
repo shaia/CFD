@@ -535,10 +535,12 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
                         visc_w = nu * (d2w_dx2 + d2w_dy2 + d2w_dz2);
                     } else {
                         const double* nu_t = field->nu_t;
-                        double nu_xp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]), 1.0);
-                        double nu_xm = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]), 1.0);
-                        double nu_yp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + nx]), 1.0);
-                        double nu_ym = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - nx]), 1.0);
+                        /* Face-averaged nu_eff = nu + nu_t (nu_t already bounded by
+                         * the realizability clamp; the flux clamp below caps it) */
+                        double nu_xp = nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]);
+                        double nu_xm = nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]);
+                        double nu_yp = nu + 0.5 * (nu_t[idx] + nu_t[idx + nx]);
+                        double nu_ym = nu + 0.5 * (nu_t[idx] + nu_t[idx - nx]);
                         double inv_dxi2 = 1.0 / (grid->dx[i] * grid->dx[i]);
                         double inv_dyj2 = 1.0 / (grid->dy[j] * grid->dy[j]);
 

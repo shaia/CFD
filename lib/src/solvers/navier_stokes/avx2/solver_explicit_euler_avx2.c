@@ -510,10 +510,12 @@ static void process_scalar_row_turb(explicit_euler_simd_context* ctx, flow_field
             const double* nu_t = field->nu_t;
             double dx2 = grid->dx[i] * grid->dx[i];
             double dy2 = grid->dy[j] * grid->dy[j];
-            double nu_xp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]),     1.0);
-            double nu_xm = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]),     1.0);
-            double nu_yp = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx + ctx->nx]), 1.0);
-            double nu_ym = fmin(nu + 0.5 * (nu_t[idx] + nu_t[idx - ctx->nx]), 1.0);
+            /* Face-averaged nu_eff = nu + nu_t (nu_t is bounded by the
+             * realizability clamp) */
+            double nu_xp = nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]);
+            double nu_xm = nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]);
+            double nu_yp = nu + 0.5 * (nu_t[idx] + nu_t[idx + ctx->nx]);
+            double nu_ym = nu + 0.5 * (nu_t[idx] + nu_t[idx - ctx->nx]);
             visc_u = (nu_xp * (field->u[idx + 1]      - u_c) -
                       nu_xm * (u_c - field->u[idx - 1])) / dx2 +
                      (nu_yp * (field->u[idx + ctx->nx] - u_c) -
