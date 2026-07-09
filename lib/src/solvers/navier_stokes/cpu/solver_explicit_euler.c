@@ -8,8 +8,10 @@
 
 #include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/turbulence_solver.h"
 
 #include "../../energy/energy_solver_internal.h"
+#include "../../turbulence/turbulence_solver_internal.h"
 #include "../boundary_copy_utils.h"
 
 #include <math.h>
@@ -73,7 +75,9 @@ ns_solver_params_t ns_solver_params_default(void) {
                             .gravity = {0.0, 0.0, 0.0},
                             .heat_source_func = NULL,
                             .heat_source_context = NULL,
-                            .thermal_bc = {0}};
+                            .thermal_bc = {0},
+                            .turb_model = TURB_MODEL_NONE,
+                            .turb_bc = {0}};
     return params;
 }
 flow_field* flow_field_create(size_t nx, size_t ny, size_t nz) {
@@ -100,8 +104,13 @@ flow_field* flow_field_create(size_t nx, size_t ny, size_t nz) {
     field->p = (double*)cfd_aligned_calloc(total, sizeof(double));
     field->rho = (double*)cfd_aligned_calloc(total, sizeof(double));
     field->T = (double*)cfd_aligned_calloc(total, sizeof(double));
+    field->turb_k = (double*)cfd_aligned_calloc(total, sizeof(double));
+    field->turb_eps = (double*)cfd_aligned_calloc(total, sizeof(double));
+    field->turb_nu_tilde = (double*)cfd_aligned_calloc(total, sizeof(double));
+    field->nu_t = (double*)cfd_aligned_calloc(total, sizeof(double));
 
-    if (!field->u || !field->v || !field->w || !field->p || !field->rho || !field->T) {
+    if (!field->u || !field->v || !field->w || !field->p || !field->rho || !field->T ||
+        !field->turb_k || !field->turb_eps || !field->turb_nu_tilde || !field->nu_t) {
         flow_field_destroy(field);
         return NULL;
     }
@@ -117,6 +126,10 @@ void flow_field_destroy(flow_field* field) {
         cfd_aligned_free(field->p);
         cfd_aligned_free(field->rho);
         cfd_aligned_free(field->T);
+        cfd_aligned_free(field->turb_k);
+        cfd_aligned_free(field->turb_eps);
+        cfd_aligned_free(field->turb_nu_tilde);
+        cfd_aligned_free(field->nu_t);
         cfd_free(field);
     }
 }
@@ -220,6 +233,30 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
     }
 
     double dt_stable = min_double(dt_cfl, dt_thermal);
+
+    // Viscous diffusion stability constraint with turbulent eddy viscosity:
+    // dt < dx^2 / (2 * nu_eff * ndim). Only relevant when a turbulence model
+    // is active (nu_t can exceed the laminar viscosity by orders of magnitude).
+    if (params->turb_model != TURB_MODEL_NONE && field->nu_t) {
+        size_t total = field->nx * field->ny * field->nz;
+        double nu_t_max = 0.0;
+        double rho_min = field->rho[0];
+        for (size_t n = 0; n < total; n++) {
+            nu_t_max = max_double(nu_t_max, field->nu_t[n]);
+            rho_min = min_double(rho_min, field->rho[n]);
+        }
+        /* Minimum density gives the largest (most restrictive) local nu;
+         * floor it like the kernels do (local_nu) rather than substituting
+         * 1.0, which would overestimate the stable dt at low densities. */
+        double rho_ref = max_double(rho_min, 1e-10);
+        double nu_eff_max = params->mu / rho_ref + nu_t_max;
+        if (nu_eff_max > 0.0) {
+            int ndim = (grid->nz > 1) ? 3 : 2;
+            double dt_visc = (dmin * dmin) / (2.0 * nu_eff_max * ndim);
+            dt_visc *= params->cfl;  // Apply safety factor
+            dt_stable = min_double(dt_stable, dt_visc);
+        }
+    }
 
     // Limit time step to reasonable bounds
     double dt_max = DT_MAX_LIMIT;  // Maximum allowed time step
@@ -372,11 +409,15 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     int needs_T_ws = (params->alpha > 0.0 || params->beta != 0.0);
     double* T_energy_ws = needs_T_ws
         ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
+    const int turb_on = (params->turb_model != TURB_MODEL_NONE);
+    double* turb_ws = turb_on
+        ? (double*)cfd_calloc(TURB_WORKSPACE_SIZE(total), sizeof(double)) : NULL;
 
     if (!u_new || !v_new || !w_new || !p_new || !rho_new ||
-        (needs_T_ws && !T_energy_ws)) {
+        (needs_T_ws && !T_energy_ws) || (turb_on && !turb_ws)) {
         cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
         cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
+        cfd_free(turb_ws);
         return CFD_ERROR_NOMEM;
     }
 
@@ -483,25 +524,71 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
                     energy_compute_buoyancy(field->T[idx], params,
                                             &source_u, &source_v, &source_w);
 
+                    /* Viscous terms: laminar constant-nu Laplacian, or conservative
+                     * face-averaged effective viscosity div((nu + nu_t) grad u)
+                     * when a turbulence model is active. The z-term keeps the
+                     * laminar nu (turbulence is 2D-only; vanishes when nz == 1). */
+                    double visc_u, visc_v, visc_w;
+                    if (!turb_on) {
+                        visc_u = nu * (d2u_dx2 + d2u_dy2 + d2u_dz2);
+                        visc_v = nu * (d2v_dx2 + d2v_dy2 + d2v_dz2);
+                        visc_w = nu * (d2w_dx2 + d2w_dy2 + d2w_dz2);
+                    } else {
+                        const double* nu_t = field->nu_t;
+                        /* Face-averaged nu_eff = nu + nu_t (nu_t already bounded by
+                         * the realizability clamp; the flux clamp below caps it) */
+                        double nu_xp = nu + 0.5 * (nu_t[idx] + nu_t[idx + 1]);
+                        double nu_xm = nu + 0.5 * (nu_t[idx] + nu_t[idx - 1]);
+                        double nu_yp = nu + 0.5 * (nu_t[idx] + nu_t[idx + nx]);
+                        double nu_ym = nu + 0.5 * (nu_t[idx] + nu_t[idx - nx]);
+                        double inv_dxi2 = 1.0 / (grid->dx[i] * grid->dx[i]);
+                        double inv_dyj2 = 1.0 / (grid->dy[j] * grid->dy[j]);
+
+                        double t_u_x = (nu_xp * (field->u[idx + 1] - u_c) -
+                                        nu_xm * (u_c - field->u[idx - 1])) * inv_dxi2;
+                        double t_u_y = (nu_yp * (field->u[idx + nx] - u_c) -
+                                        nu_ym * (u_c - field->u[idx - nx])) * inv_dyj2;
+                        double t_v_x = (nu_xp * (field->v[idx + 1] - v_c) -
+                                        nu_xm * (v_c - field->v[idx - 1])) * inv_dxi2;
+                        double t_v_y = (nu_yp * (field->v[idx + nx] - v_c) -
+                                        nu_ym * (v_c - field->v[idx - nx])) * inv_dyj2;
+                        double t_w_x = (nu_xp * (field->w[idx + 1] - w_c) -
+                                        nu_xm * (w_c - field->w[idx - 1])) * inv_dxi2;
+                        double t_w_y = (nu_yp * (field->w[idx + nx] - w_c) -
+                                        nu_ym * (w_c - field->w[idx - nx])) * inv_dyj2;
+
+                        /* Same safety clamp as the laminar second derivatives */
+                        t_u_x = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_u_x));
+                        t_u_y = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_u_y));
+                        t_v_x = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_v_x));
+                        t_v_y = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_v_y));
+                        t_w_x = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_w_x));
+                        t_w_y = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_w_y));
+
+                        visc_u = t_u_x + t_u_y + nu * d2u_dz2;
+                        visc_v = t_v_x + t_v_y + nu * d2v_dz2;
+                        visc_w = t_w_x + t_w_y + nu * d2w_dz2;
+                    }
+
                     /* u-momentum */
                     double du = conservative_dt *
                         (-u_c * du_dx - v_c * du_dy - w_c * du_dz
                          - dp_dx / field->rho[idx]
-                         + nu * (d2u_dx2 + d2u_dy2 + d2u_dz2)
+                         + visc_u
                          + source_u);
 
                     /* v-momentum */
                     double dv = conservative_dt *
                         (-u_c * dv_dx - v_c * dv_dy - w_c * dv_dz
                          - dp_dy / field->rho[idx]
-                         + nu * (d2v_dx2 + d2v_dy2 + d2v_dz2)
+                         + visc_v
                          + source_v);
 
                     /* w-momentum */
                     double dw = conservative_dt *
                         (-u_c * dw_dx - v_c * dw_dy - w_c * dw_dz
                          - dp_dz / field->rho[idx]
-                         + nu * (d2w_dx2 + d2w_dy2 + d2w_dz2)
+                         + visc_w
                          + source_w);
 
                     du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));
@@ -539,6 +626,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
             if (energy_status != CFD_SUCCESS) {
                 cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
                 cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
+                cfd_free(turb_ws);
                 return energy_status;
             }
         }
@@ -554,7 +642,25 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         if (bc_status != CFD_SUCCESS) {
             cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
             cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
+            cfd_free(turb_ws);
             return bc_status;
+        }
+
+        /* Turbulence transport: advance k-eps/SA with the updated velocity,
+         * then apply turbulence BCs (including wall functions) */
+        {
+            cfd_status_t turb_status = turbulence_step_explicit_with_workspace(
+                field, grid, params, conservative_dt, iter * conservative_dt,
+                turb_ws, turb_on ? TURB_WORKSPACE_SIZE(total) : 0);
+            if (turb_status == CFD_SUCCESS) {
+                turb_status = turbulence_apply_bcs(field, grid, params);
+            }
+            if (turb_status != CFD_SUCCESS) {
+                cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
+                cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
+                cfd_free(turb_ws);
+                return turb_status;
+            }
         }
 
         /* NaN/Inf check */
@@ -569,6 +675,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
         if (has_nan) {
             cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
             cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
+            cfd_free(turb_ws);
             cfd_set_error(CFD_ERROR_DIVERGED,
                           "NaN/Inf detected in explicit_euler step");
             return CFD_ERROR_DIVERGED;
@@ -577,6 +684,7 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
 
     cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
     cfd_free(p_new); cfd_free(rho_new); cfd_free(T_energy_ws);
+    cfd_free(turb_ws);
 
     return CFD_SUCCESS;
 }

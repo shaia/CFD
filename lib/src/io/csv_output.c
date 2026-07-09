@@ -187,7 +187,7 @@ void write_csv_centerline(const char* filename, const flow_field* field,
         // Horizontal centerline: along x at y = ny/2
         size_t j_mid = ny / 2;
 
-        fprintf(fp, "x,u,v,w,p,rho,T");
+        fprintf(fp, "x,u,v,w,p,rho,T,turb_k,turb_eps,nu_t");
         if (has_vel_mag) {
             fprintf(fp, ",vel_mag");
         }
@@ -198,6 +198,10 @@ void write_csv_centerline(const char* filename, const flow_field* field,
             double w_val = field->w ? field->w[idx] : 0.0;
             fprintf(fp, "%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", x_coords[i], field->u[idx],
                     field->v[idx], w_val, field->p[idx], field->rho[idx], field->T[idx]);
+            fprintf(fp, ",%.6e,%.6e,%.6e",
+                    field->turb_k ? field->turb_k[idx] : 0.0,
+                    field->turb_eps ? field->turb_eps[idx] : 0.0,
+                    field->nu_t ? field->nu_t[idx] : 0.0);
             if (has_vel_mag) {
                 fprintf(fp, ",%.6e", derived->velocity_magnitude[idx]);
             }
@@ -207,7 +211,7 @@ void write_csv_centerline(const char* filename, const flow_field* field,
         // Vertical centerline: along y at x = nx/2
         size_t i_mid = nx / 2;
 
-        fprintf(fp, "y,u,v,w,p,rho,T");
+        fprintf(fp, "y,u,v,w,p,rho,T,turb_k,turb_eps,nu_t");
         if (has_vel_mag) {
             fprintf(fp, ",vel_mag");
         }
@@ -218,6 +222,10 @@ void write_csv_centerline(const char* filename, const flow_field* field,
             double w_val = field->w ? field->w[idx] : 0.0;
             fprintf(fp, "%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", y_coords[j], field->u[idx],
                     field->v[idx], w_val, field->p[idx], field->rho[idx], field->T[idx]);
+            fprintf(fp, ",%.6e,%.6e,%.6e",
+                    field->turb_k ? field->turb_k[idx] : 0.0,
+                    field->turb_eps ? field->turb_eps[idx] : 0.0,
+                    field->nu_t ? field->nu_t[idx] : 0.0);
             if (has_vel_mag) {
                 fprintf(fp, ",%.6e", derived->velocity_magnitude[idx]);
             }

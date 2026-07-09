@@ -33,7 +33,9 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/energy_solver.h"
+#include "cfd/solvers/turbulence_solver.h"
 #include "../../energy/energy_solver_internal.h"
+#include "../../turbulence/turbulence_solver_internal.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -68,6 +70,7 @@ typedef struct {
     double* k2_u; double* k2_v; double* k2_w; double* k2_p;
     double* u0;   double* v0;   double* w0;   double* p0;
     double* T_ws;    /* Reusable scratch for the energy step (avoids per-step alloc) */
+    double* turb_ws; /* Reusable scratch for the turbulence step; always allocated */
     double* dx_inv;  /* 1/(2*dx[i]) for i = 0..nx-1 */
     double* dy_inv;  /* 1/(2*dy[j]) for j = 0..ny-1 */
     size_t nx, ny, nz;
@@ -126,6 +129,7 @@ static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
         memset(ctx->k1_w, 0, bytes);
         memset(ctx->k1_p, 0, bytes);
         compute_rhs_avx2(field->u, field->v, field->w, field->p, field->rho, field->T,
+                         field->nu_t,
                          ctx->k1_u, ctx->k1_v, ctx->k1_w, ctx->k1_p,
                          ctx, g, params, iter, dt);
 
@@ -160,6 +164,7 @@ static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
         memset(ctx->k2_w, 0, bytes);
         memset(ctx->k2_p, 0, bytes);
         compute_rhs_avx2(field->u, field->v, field->w, field->p, field->rho, field->T,
+                         field->nu_t,
                          ctx->k2_u, ctx->k2_v, ctx->k2_w, ctx->k2_p,
                          ctx, g, params, iter, dt);
 
@@ -199,6 +204,23 @@ static cfd_status_t rk2_avx2_impl(flow_field* field, rk2_avx2_context_t* ctx,
         status = energy_apply_thermal_bcs(field, params);
         if (status != CFD_SUCCESS) {
             goto cleanup;
+        }
+
+        /* Turbulence transport: advance k-eps/SA with the updated velocity,
+         * then apply turbulence BCs. nu_t is frozen across RK stages and
+         * updated once per full step. */
+        {
+            const int turb_on = (params->turb_model != TURB_MODEL_NONE);
+            cfd_status_t turb_status = turbulence_step_explicit_avx2_with_workspace(
+                field, g, params, dt, iter * dt, ctx->turb_ws,
+                turb_on ? TURB_WORKSPACE_SIZE(n) : 0);
+            if (turb_status == CFD_SUCCESS) {
+                turb_status = turbulence_apply_bcs(field, g, params);
+            }
+            if (turb_status != CFD_SUCCESS) {
+                status = turb_status;
+                goto cleanup;
+            }
         }
 
         /* NaN / Inf check (parallelized) */
@@ -278,6 +300,7 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
     ctx->inv_2dz   = (g->nz > 1 && g->dz) ? 1.0 / (2.0 * g->dz[0]) : 0.0;
     ctx->inv_dz2   = (g->nz > 1 && g->dz) ? 1.0 / (g->dz[0] * g->dz[0]) : 0.0;
 
+    size_t n_total = ctx->nx * ctx->ny * ctx->nz;
     ctx->k1_u   = (double*)cfd_aligned_malloc(bytes);
     ctx->k1_v   = (double*)cfd_aligned_malloc(bytes);
     ctx->k1_w   = (double*)cfd_aligned_malloc(bytes);
@@ -291,13 +314,14 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
     ctx->w0     = (double*)cfd_aligned_malloc(bytes);
     ctx->p0     = (double*)cfd_aligned_malloc(bytes);
     ctx->T_ws   = (double*)cfd_aligned_malloc(bytes);
+    ctx->turb_ws = (double*)cfd_calloc(TURB_WORKSPACE_SIZE(n_total), sizeof(double));
     ctx->dx_inv = (double*)cfd_aligned_malloc(ctx->nx * sizeof(double));
     ctx->dy_inv = (double*)cfd_aligned_malloc(ctx->ny * sizeof(double));
 
     if (!ctx->k1_u || !ctx->k1_v || !ctx->k1_w || !ctx->k1_p ||
         !ctx->k2_u || !ctx->k2_v || !ctx->k2_w || !ctx->k2_p ||
         !ctx->u0   || !ctx->v0   || !ctx->w0   || !ctx->p0   ||
-        !ctx->T_ws || !ctx->dx_inv || !ctx->dy_inv) {
+        !ctx->T_ws || !ctx->turb_ws || !ctx->dx_inv || !ctx->dy_inv) {
         cfd_aligned_free(ctx->k1_u); cfd_aligned_free(ctx->k1_v);
         cfd_aligned_free(ctx->k1_w); cfd_aligned_free(ctx->k1_p);
         cfd_aligned_free(ctx->k2_u); cfd_aligned_free(ctx->k2_v);
@@ -305,6 +329,7 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
         cfd_aligned_free(ctx->u0);   cfd_aligned_free(ctx->v0);
         cfd_aligned_free(ctx->w0);   cfd_aligned_free(ctx->p0);
         cfd_aligned_free(ctx->T_ws);
+        cfd_free(ctx->turb_ws);
         cfd_aligned_free(ctx->dx_inv);
         cfd_aligned_free(ctx->dy_inv);
         cfd_free(ctx);
@@ -345,6 +370,7 @@ void rk2_avx2_destroy(ns_solver_t* solver)
         cfd_aligned_free(ctx->u0);   cfd_aligned_free(ctx->v0);
         cfd_aligned_free(ctx->w0);   cfd_aligned_free(ctx->p0);
         cfd_aligned_free(ctx->T_ws);
+        cfd_free(ctx->turb_ws);
         cfd_aligned_free(ctx->dx_inv);
         cfd_aligned_free(ctx->dy_inv);
     }
@@ -381,9 +407,10 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
         double max_vel = 0.0, max_p = 0.0;
         ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny * field->nz);
         double max_t = (field->T && n_s > 0) ? field->T[0] : 0.0;
+        double max_nt = 0.0;
         ptrdiff_t ks;
 #if defined(_OPENMP) && (_OPENMP >= 201107)
-        #pragma omp parallel for reduction(max: max_vel, max_p, max_t) schedule(static)
+        #pragma omp parallel for reduction(max: max_vel, max_p, max_t, max_nt) schedule(static)
 #endif
         for (ks = 0; ks < n_s; ks++) {
             double vel = sqrt(field->u[ks] * field->u[ks] +
@@ -393,10 +420,12 @@ cfd_status_t rk2_avx2_step(ns_solver_t* solver, flow_field* field, const grid* g
             double ap = fabs(field->p[ks]);
             if (ap > max_p) max_p = ap;
             if (field->T && field->T[ks] > max_t) max_t = field->T[ks];
+            if (field->nu_t && field->nu_t[ks] > max_nt) max_nt = field->nu_t[ks];
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = max_t;
+        stats->max_nu_t = max_nt;
     }
 
     return status;
@@ -431,9 +460,10 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
         double max_vel = 0.0, max_p = 0.0;
         ptrdiff_t n_s = (ptrdiff_t)(field->nx * field->ny * field->nz);
         double max_t = (field->T && n_s > 0) ? field->T[0] : 0.0;
+        double max_nt = 0.0;
         ptrdiff_t ks;
 #if defined(_OPENMP) && (_OPENMP >= 201107)
-        #pragma omp parallel for reduction(max: max_vel, max_p, max_t) schedule(static)
+        #pragma omp parallel for reduction(max: max_vel, max_p, max_t, max_nt) schedule(static)
 #endif
         for (ks = 0; ks < n_s; ks++) {
             double vel = sqrt(field->u[ks] * field->u[ks] +
@@ -443,10 +473,12 @@ cfd_status_t rk2_avx2_solve(ns_solver_t* solver, flow_field* field, const grid* 
             double ap = fabs(field->p[ks]);
             if (ap > max_p) max_p = ap;
             if (field->T && field->T[ks] > max_t) max_t = field->T[ks];
+            if (field->nu_t && field->nu_t[ks] > max_nt) max_nt = field->nu_t[ks];
         }
         stats->max_velocity = max_vel;
         stats->max_pressure = max_p;
         stats->max_temperature = max_t;
+        stats->max_nu_t = max_nt;
     }
     return status;
 #endif

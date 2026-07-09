@@ -52,6 +52,7 @@
 static void ns_rhs_point(
     const double* u, const double* v, const double* w,
     const double* p, const double* rho, const double* T,
+    const double* nu_t,
     double* rhs_u, double* rhs_v, double* rhs_w, double* rhs_p,
     const grid* g, const ns_solver_params_t* params,
     size_t idx, size_t il, size_t ir, size_t jd, size_t ju,
@@ -97,6 +98,8 @@ static void ns_rhs_point(
     double nu = params->mu / fmax(rho[idx], 1e-10);
     nu = fmin(nu, 1.0);
 
+    const int turb_on_pt = (params->turb_model != TURB_MODEL_NONE) && (nu_t != NULL);
+
     du_dx = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dx));
     du_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dy));
     du_dz = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, du_dz));
@@ -129,19 +132,58 @@ static void ns_rhs_point(
         energy_compute_buoyancy(T[idx], params, &source_u, &source_v, &source_w);
     }
 
+    /* Viscous terms: laminar constant-nu Laplacian, or conservative
+     * face-averaged effective viscosity div((nu + nu_t) grad u) when
+     * a turbulence model is active. The z-term keeps the laminar nu
+     * (turbulence is 2D-only; it vanishes when nz == 1). */
+    double visc_u, visc_v, visc_w;
+    if (!turb_on_pt) {
+        visc_u = nu * (d2u_dx2 + d2u_dy2 + d2u_dz2);
+        visc_v = nu * (d2v_dx2 + d2v_dy2 + d2v_dz2);
+        visc_w = nu * (d2w_dx2 + d2w_dy2 + d2w_dz2);
+    } else {
+        /* Face-averaged nu_eff = nu + nu_t (nu_t already bounded by the
+         * realizability clamp; the flux clamp below caps it) */
+        double nu_xp = nu + 0.5 * (nu_t[idx] + nu_t[ir]);
+        double nu_xm = nu + 0.5 * (nu_t[idx] + nu_t[il]);
+        double nu_yp = nu + 0.5 * (nu_t[idx] + nu_t[ju]);
+        double nu_ym = nu + 0.5 * (nu_t[idx] + nu_t[jd]);
+        double inv_dxi2 = 1.0 / dx2;
+        double inv_dyj2 = 1.0 / dy2;
+
+        double t_u_x = (nu_xp * (u[ir] - u[idx]) - nu_xm * (u[idx] - u[il])) * inv_dxi2;
+        double t_u_y = (nu_yp * (u[ju] - u[idx]) - nu_ym * (u[idx] - u[jd])) * inv_dyj2;
+        double t_v_x = (nu_xp * (v[ir] - v[idx]) - nu_xm * (v[idx] - v[il])) * inv_dxi2;
+        double t_v_y = (nu_yp * (v[ju] - v[idx]) - nu_ym * (v[idx] - v[jd])) * inv_dyj2;
+        double t_w_x = (nu_xp * (w[ir] - w[idx]) - nu_xm * (w[idx] - w[il])) * inv_dxi2;
+        double t_w_y = (nu_yp * (w[ju] - w[idx]) - nu_ym * (w[idx] - w[jd])) * inv_dyj2;
+
+        /* Same safety clamp as the laminar second derivatives */
+        t_u_x = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_u_x));
+        t_u_y = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_u_y));
+        t_v_x = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_v_x));
+        t_v_y = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_v_y));
+        t_w_x = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_w_x));
+        t_w_y = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, t_w_y));
+
+        visc_u = t_u_x + t_u_y + nu * d2u_dz2;
+        visc_v = t_v_x + t_v_y + nu * d2v_dz2;
+        visc_w = t_w_x + t_w_y + nu * d2w_dz2;
+    }
+
     rhs_u[idx] = -(u[idx] * du_dx) - (v[idx] * du_dy) - (w[idx] * du_dz)
                  - dp_dx / rho[idx]
-                 + (nu * (d2u_dx2 + d2u_dy2 + d2u_dz2))
+                 + visc_u
                  + source_u;
 
     rhs_v[idx] = -(u[idx] * dv_dx) - (v[idx] * dv_dy) - (w[idx] * dv_dz)
                  - dp_dy / rho[idx]
-                 + (nu * (d2v_dx2 + d2v_dy2 + d2v_dz2))
+                 + visc_v
                  + source_v;
 
     rhs_w[idx] = -(u[idx] * dw_dx) - (v[idx] * dw_dy) - (w[idx] * dw_dz)
                  - dp_dz / rho[idx]
-                 + (nu * (d2w_dx2 + d2w_dy2 + d2w_dz2))
+                 + visc_w
                  + source_w;
 
     double divergence = du_dx + dv_dy + dw_dz;
@@ -168,10 +210,12 @@ static inline __m256d avx2_clamp(__m256d x, __m256d lo, __m256d hi) {
 static void compute_rhs_row(
     const double* u, const double* v, const double* w,
     const double* p, const double* rho, const double* T,
+    const double* nu_t,
     double* rhs_u, double* rhs_v, double* rhs_w, double* rhs_p,
     const RHS_CTX_T* ctx, const grid* g,
     const ns_solver_params_t* params, size_t j, size_t k, int iter, double dt)
 {
+    const int turb_on = (params->turb_model != TURB_MODEL_NONE) && (nu_t != NULL);
     size_t nx       = ctx->nx;
     size_t ny       = ctx->ny;
     size_t nz       = ctx->nz;
@@ -204,9 +248,28 @@ static void compute_rhs_row(
         size_t ir  = idx + 1;
         size_t kd  = kd_off + j * nx + si;
         size_t ku  = ku_off + j * nx + si;
-        ns_rhs_point(u, v, w, p, rho, T, rhs_u, rhs_v, rhs_w, rhs_p, g, params,
+        ns_rhs_point(u, v, w, p, rho, T, nu_t, rhs_u, rhs_v, rhs_w, rhs_p, g, params,
                        idx, il, ir, jd_row + si, ju_row + si, kd, ku,
                        inv_2dz, inv_dz2, si, j, k, nz, iter, dt);
+    }
+
+    /* --- AVX2: i = 2 while i+3 <= nx-3 (interior, no wrapping needed) ---
+     * When turbulence is active, route all interior points through the scalar
+     * per-point helper to guarantee identical numerics with the scalar/OMP
+     * backends (cross-backend Linf agreement < 1e-12). */
+    if (turb_on) {
+        for (ptrdiff_t i = 2; i <= (ptrdiff_t)(nx - 2); i++) {
+            size_t si  = (size_t)i;
+            size_t idx = j_off + si;
+            size_t il  = (si == 1)      ? j_off + (nx - 2) : idx - 1;
+            size_t ir  = (si == nx - 2) ? j_off + 1        : idx + 1;
+            size_t kd  = kd_off + j * nx + si;
+            size_t ku  = ku_off + j * nx + si;
+            ns_rhs_point(u, v, w, p, rho, T, nu_t, rhs_u, rhs_v, rhs_w, rhs_p, g, params,
+                           idx, il, ir, jd_row + si, ju_row + si, kd, ku,
+                           inv_2dz, inv_dz2, si, j, k, nz, iter, dt);
+        }
+        return;  /* scalar tail already handled above */
     }
 
     /* --- AVX2: i = 2 while i+3 <= nx-3 (interior, no wrapping needed) --- */
@@ -459,7 +522,7 @@ static void compute_rhs_row(
             size_t ir  = (si == nx - 2) ? j_off + 1 : idx + 1;  /* periodic at last point */
             size_t kd  = kd_off + j * nx + si;
             size_t ku  = ku_off + j * nx + si;
-            ns_rhs_point(u, v, w, p, rho, T, rhs_u, rhs_v, rhs_w, rhs_p, g, params,
+            ns_rhs_point(u, v, w, p, rho, T, nu_t, rhs_u, rhs_v, rhs_w, rhs_p, g, params,
                            idx, il, ir, jd_row + si, ju_row + si, kd, ku,
                            inv_2dz, inv_dz2, si, j, k, nz, iter, dt);
         }
@@ -473,6 +536,7 @@ static void compute_rhs_row(
 static void compute_rhs_avx2(
     const double* u, const double* v, const double* w,
     const double* p, const double* rho, const double* T,
+    const double* nu_t,
     double* rhs_u, double* rhs_v, double* rhs_w, double* rhs_p,
     const RHS_CTX_T* ctx, const grid* g,
     const ns_solver_params_t* params, int iter, double dt)
@@ -484,7 +548,7 @@ static void compute_rhs_avx2(
         #pragma omp parallel for schedule(static)
 #endif
         for (j = 1; j < ny_int - 1; j++) {
-            compute_rhs_row(u, v, w, p, rho, T, rhs_u, rhs_v, rhs_w, rhs_p,
+            compute_rhs_row(u, v, w, p, rho, T, nu_t, rhs_u, rhs_v, rhs_w, rhs_p,
                             ctx, g, params, (size_t)j, k, iter, dt);
         }
     }

@@ -520,6 +520,157 @@ w(x,y,z,t) = 0
 - Velocity decays as exp(-3νt), kinetic energy as exp(-6νt)
 - Validated on 16×16×16 grid with ν=0.01
 
+## Turbulence Models (RANS)
+
+Two Reynolds-Averaged Navier-Stokes (RANS) turbulence models are implemented for 2D simulations
+on uniform grids.  Set `params.turb_model` before calling `solver_init`; the default
+(`TURB_MODEL_NONE = 0`) reproduces the laminar path bit-exactly with zero overhead.
+
+### Turbulence Model Overview
+
+| Model | Type | Transported variables | Extra cost |
+|-------|----|----|----|
+| `TURB_MODEL_K_EPSILON` | 2-equation | k, ε | ~2× laminar step |
+| `TURB_MODEL_SPALART_ALLMARAS` | 1-equation | ν̃ | ~1.5× laminar step |
+
+The turbulent viscosity ν_t is computed each step and stored in `flow_field->nu_t`.  All NS
+solvers (scalar, OMP, AVX2) apply the effective viscosity
+
+```
+div((ν + ν_t) grad u)
+```
+
+in the momentum equation; ν_t = 0 when `TURB_MODEL_NONE`.
+
+**Not modelled (standard practice):** Boussinesq-stress transpose term and the -(2/3)k δ_ij
+isotropic stress (absorbed into modified pressure).  No turbulent Prandtl heat-flux model; the
+energy equation is independent of turbulence in this release.
+
+### Standard k-ε Model
+
+**Transport equations:**
+
+```
+∂k/∂t + (u·∇)k = div((ν + ν_t/σ_k) grad k) + P_k - ε
+∂ε/∂t + (u·∇)ε = div((ν + ν_t/σ_ε) grad ε) + C1 (ε/k) P_k - C2 ε²/k
+```
+
+**Turbulent viscosity:**
+
+```
+ν_t = C_μ k² / ε        (clipped at 1e5 ν)
+```
+
+**Constants (Launder & Spalding):**
+
+| C_μ  | C1   | C2   | σ_k | σ_ε |
+|------|------|------|-----|-----|
+| 0.09 | 1.44 | 1.92 | 1.0 | 1.3 |
+
+### Spalart-Allmaras Model
+
+**Transport equation:**
+
+```
+∂ν̃/∂t + (u·∇)ν̃ = cb1 S̃ ν̃ + (1/σ) div((ν + ν̃) grad ν̃) + cb2/σ |grad ν̃|² - cw1 fw (ν̃/d)²
+```
+
+**Turbulent viscosity:**
+
+```
+ν_t = ν̃ fv1,    fv1 = χ³ / (χ³ + cv1³),    χ = ν̃/ν
+```
+
+**Constants (no-ft2 fully turbulent variant):**
+
+| cb1    | cb2   | σ   | κ    | cw2 | cw3 | cv1 |
+|--------|-------|-----|------|-----|-----|-----|
+| 0.1355 | 0.622 | 2/3 | 0.41 | 0.3 | 2   | 7.1 |
+
+Wall distance d is computed on the fly from faces marked `BC_TYPE_NOSLIP` in `turb_bc`.
+
+### Discretization
+
+- **Advection:** first-order upwind (guarantees positivity of k, ε, ν̃)
+- **Diffusion:** conservative face-averaged effective viscosity
+- **Source terms:** semi-implicit Patankar treatment — the destruction term is linearized so k,
+  ε, and ν̃ can never be driven negative
+- **Production limiter:** P_k ≤ 10 ε
+- **Positivity floors:** k, ε, ν̃ ≥ 1e-10 enforced after each step
+- **Time step:** the adaptive `compute_time_step` includes the viscous limit
+  `dt < dx² / (2 ν_eff n_dim)` using max(ν_t) when turbulence is active
+
+### Wall Functions
+
+Log-law wall treatment is applied at every face marked `BC_TYPE_NOSLIP` in `turb_bc`.
+
+**Log law:**
+
+```
+u+ = (1/κ) ln(y+) + B,    κ = 0.41,  B = 5.2
+```
+
+Below y+ = 11.63 the linear viscous-sublayer law is used.  The friction velocity u_τ is
+recovered by Newton iteration on the log-law residual (`turbulence_wall_u_tau()`).
+
+**Equilibrium values at the first interior node (distance y_p from the wall):**
+
+```
+k  = u_τ² / sqrt(C_μ)
+ε  = u_τ³ / (κ y_p)          [k-ε]
+ν̃  = κ u_τ y_p               [SA]
+```
+
+The wall-face effective viscosity is set to `max(2*(u_τ² y_p / u_p - ν), 0)` so that the
+discrete wall shear equals u_τ² exactly and reduces to pure laminar shear in the viscous
+sublayer.
+
+**y+ guideline:** place the first interior node at 30 ≤ y+ ≤ 100.
+
+### Backend Coverage
+
+| Backend | k-ε | SA | Notes |
+|---------|-----|----|-------|
+| Scalar  | done | done | reference implementation |
+| AVX2    | done | done | k-ε: i-vectorized 4-wide with blendv upwind + scalar tail; SA: OMP-parallel scalar rows (pow-heavy closures do not vectorize profitably; numerics identical) |
+| NEON    | — | — | not yet implemented |
+| OMP     | done | done | j-loop parallel, identical numerics to scalar |
+| GPU     | — | — | returns `CFD_ERROR_UNSUPPORTED` when a turbulence model is enabled |
+
+Cross-backend consistency is verified by a unit test asserting kernel-level L∞ agreement
+between all available backends.
+
+### Limitations
+
+- **2D only** — 3D grids return `CFD_ERROR_UNSUPPORTED`
+- **Uniform grid only** — non-uniform spacing returns `CFD_ERROR_UNSUPPORTED`
+- **No GPU turbulence** — GPU NS solvers return `CFD_ERROR_UNSUPPORTED` when
+  `turb_model != TURB_MODEL_NONE`
+- **No turbulent Prandtl model** — the energy equation is not coupled to turbulence
+
+### Turbulent Channel-Flow Validation
+
+**Setup:** Re_τ = 395, δ = 1, 16×21 uniform grid, body-force-driven
+(f_x = u_τ²/δ = 1 so exact steady u_τ = 1), first-node y+ ≈ 40.
+
+**k-ε results:**
+
+| Quantity | Value | Error |
+|----------|-------|-------|
+| u_τ (recovered) | 0.971 | 2.9% |
+| u+ at y+ = 39.5 | — | 0.5% vs log law |
+| u+ at y+ = 79   | — | 2.4% vs log law |
+
+**SA results:**
+
+| Quantity | Value | Error |
+|----------|-------|-------|
+| u_τ (recovered) | 0.969 | 3.1% |
+| u+ at y+ ≈ 39.5 | — | 0.5% vs log law |
+| u+ at y+ ≈ 79   | — | 3.7% vs log law |
+
+Source: `tests/validation/test_turbulent_channel.c` (ctest label `validation`).
+
 ## References
 
 ### Numerical Methods
@@ -531,11 +682,18 @@ w(x,y,z,t) = 0
 ### Validation
 
 - **Ghia, U., Ghia, K.N., Shin, C.T.** (1982). "High-Re Solutions for Incompressible Flow Using the Navier-Stokes Equations and a Multigrid Method". Journal of Computational Physics.
+- **Kim, J., Moin, P., Moser, R.** (1987). "Turbulence statistics in fully developed channel flow at low Reynolds number". Journal of Fluid Mechanics.
 
 ### Linear Solvers
 
 - **Saad, Y.** - "Iterative Methods for Sparse Linear Systems"
 - **Barrett et al.** - "Templates for the Solution of Linear Systems"
+
+### Turbulence Modeling
+
+- **Launder, B.E. & Spalding, D.B.** (1974). "The numerical computation of turbulent flows". Computer Methods in Applied Mechanics and Engineering.
+- **Spalart, P.R. & Allmaras, S.R.** (1992). "A one-equation turbulence model for aerodynamic flows". AIAA Paper 92-0439.
+- **Wilcox, D.C.** - "Turbulence Modeling for CFD"
 
 ## Next Steps
 

@@ -270,6 +270,31 @@ void write_vtk_flow_field(const char* filename, const flow_field* field, size_t 
         }
     }
 
+    // Turbulence scalar fields (zero when no turbulence model is active;
+    // NULL-guarded for manually constructed flow_field structs)
+    const struct {
+        const char* name;
+        const double* data;
+    } turb_fields[] = {
+        {"turbulent_kinetic_energy", field->turb_k},
+        {"dissipation_rate", field->turb_eps},
+        {"nu_tilde", field->turb_nu_tilde},
+        {"turbulent_viscosity", field->nu_t},
+    };
+    for (size_t f = 0; f < sizeof(turb_fields) / sizeof(turb_fields[0]); f++) {
+        fprintf(fp, "\nSCALARS %s float 1\n", turb_fields[f].name);
+        fprintf(fp, "LOOKUP_TABLE default\n");
+        for (size_t k = 0; k < nz; k++) {
+            for (size_t j = 0; j < ny; j++) {
+                for (size_t i = 0; i < nx; i++) {
+                    size_t idx = (k * nx * ny) + IDX_2D(i, j, nx);
+                    double val = turb_fields[f].data ? turb_fields[f].data[idx] : 0.0;
+                    fprintf(fp, "%g\n", val);
+                }
+            }
+        }
+    }
+
     fclose(fp);
 }
 
