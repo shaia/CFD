@@ -1,0 +1,125 @@
+/**
+ * @file multigrid_internal.h
+ * @brief Internal data structures and grid-transfer operators for geometric multigrid
+ *
+ * Not part of the public API. The transfer operators live in
+ * cpu/multigrid_transfer.c with internal (non-exported) linkage so the
+ * operator unit test can compile that translation unit directly.
+ */
+
+#ifndef CFD_MULTIGRID_INTERNAL_H
+#define CFD_MULTIGRID_INTERNAL_H
+
+#include "cfd/solvers/poisson_solver.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Defaults resolved at init when the corresponding param is 0 */
+#define MG_DEFAULT_PRE_SMOOTH        2
+#define MG_DEFAULT_POST_SMOOTH       2
+#define MG_DEFAULT_COARSE_MAX_ITER   50
+
+/* Coarsest-grid size floor per BC mode: a 3x3 Neumann grid's single interior
+ * point has an identically zero mirror-BC operator (all stencil neighbors
+ * mirror the center), so Neumann coarsening stops at 5. A 3x3 Dirichlet grid
+ * is solved exactly by one Gauss-Seidel sweep. */
+#define MG_MIN_COARSE_DIM_DIRICHLET  3
+#define MG_MIN_COARSE_DIM_NEUMANN    5
+
+/**
+ * Per-level grid data for the multigrid hierarchy.
+ *
+ * Level 0 (finest) borrows the caller's x/rhs arrays, so its x and rhs
+ * pointers stay NULL; coarser levels own their buffers.
+ */
+typedef struct {
+    size_t nx, ny, nz;      /* Grid dimensions at this level (nz==1 for 2D) */
+    size_t total;           /* nx * ny * nz */
+    size_t stride_z;        /* nx*ny for 3D, 0 for 2D (branch-free stencils) */
+    size_t k_start, k_end;  /* z loop bounds ([1,nz-1) for 3D, [0,1) for 2D) */
+    double dx2, dy2;        /* Squared grid spacings at this level */
+    double inv_dz2;         /* 1/dz^2 at this level (0.0 for 2D) */
+    double inv_factor;      /* 1/(2/dx2 + 2/dy2 + 2*inv_dz2): smoother diagonal inverse */
+    double* x;              /* Correction vector (levels >= 1; NULL at level 0) */
+    double* x_temp;         /* Jacobi smoother buffer (NULL unless Jacobi smoother) */
+    double* rhs;            /* Restricted residual / restricted b (levels >= 1; NULL at level 0) */
+    double* residual;       /* Residual buffer (all levels except coarsest) */
+} mg_level_t;
+
+/**
+ * Multigrid solver context (stored in poisson_solver_t.context)
+ */
+typedef struct {
+    int num_levels;         /* >= 1; [0] = finest, [num_levels-1] = coarsest */
+    mg_level_t* levels;
+
+    /* Resolved parameters (defaults already applied) */
+    mg_cycle_type_t cycle_type;
+    mg_smoother_type_t smoother_type;
+    mg_bc_type_t bc_mode;
+    int nu1, nu2;           /* Pre/post smoothing sweeps */
+    int coarse_max_iter;    /* Smoother sweeps on the coarsest grid */
+
+    int fmg_pending;        /* 1: next iterate() performs the FMG nested iteration */
+    int initialized;
+} mg_context_t;
+
+/** n is of the form 2^k+1 (k>=1): n-1 is a power of two */
+static inline bool mg_is_pow2_plus1(size_t n) {
+    return (n >= 3) && (((n - 1) & (n - 2)) == 0);
+}
+
+/* ============================================================================
+ * GRID-TRANSFER OPERATORS (cpu/multigrid_transfer.c)
+ *
+ * Internal linkage across the library; intentionally NOT CFD_LIBRARY_EXPORT.
+ * All write coarse/fine INTERIOR points only. Restriction never reads fine
+ * boundary values (coarse-interior stencils stay within the fine interior);
+ * prolongation reads coarse boundary values, which the caller must have set
+ * consistently with the BC mode (zero for Dirichlet corrections, mirrored
+ * for Neumann).
+ *
+ * fold_neumann: with zero-gradient BCs the boundary vertex is slaved to its
+ * interior neighbor (mirror plane at the half-cell), so prolongation reads
+ * mirrored ghosts. The adjoint of that folded prolongation doubles the
+ * toward-boundary weight at boundary-adjacent coarse points. Pass 1 in
+ * Neumann mode to keep restriction the exact adjoint (up to the standard
+ * 1/4 (2D) or 1/8 (3D) factor); pass 0 for Dirichlet.
+ * ============================================================================ */
+
+/** Full-weighting restriction, 2D (4-2-1)/16 stencil; coarse interior only */
+void mg_restrict_2d(const double* fine, double* coarse,
+                    size_t nxf, size_t nyf, size_t nxc, size_t nyc,
+                    int fold_neumann);
+
+/** Full-weighting restriction, 3D 27-point (8-4-2-1)/64 stencil */
+void mg_restrict_3d(const double* fine, double* coarse,
+                    size_t nxf, size_t nyf, size_t nzf,
+                    size_t nxc, size_t nyc, size_t nzc,
+                    int fold_neumann);
+
+/** Bilinear prolongation, adds into fine interior points only */
+void mg_prolongate_add_2d(const double* coarse, double* fine,
+                          size_t nxc, size_t nyc, size_t nxf, size_t nyf);
+
+/** Trilinear prolongation, adds into fine interior points only */
+void mg_prolongate_add_3d(const double* coarse, double* fine,
+                          size_t nxc, size_t nyc, size_t nzc,
+                          size_t nxf, size_t nyf, size_t nzf);
+
+/** Mean of f over interior points */
+double mg_interior_mean(const double* f, size_t nx, size_t ny, size_t nz);
+
+/** Subtract the interior mean from interior points (boundary untouched) */
+void mg_subtract_interior_mean(double* f, size_t nx, size_t ny, size_t nz);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* CFD_MULTIGRID_INTERNAL_H */

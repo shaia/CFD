@@ -54,6 +54,7 @@ The single source of truth for backend gaps. Each algorithm targets scalar (CPU)
 |                     | CG / PCG       | done | done     | done     | done     | done |
 |                     | BiCGSTAB       | done | done     | done     | —        | done |
 |                     | GMRES(m)       | done | done     | done     | done     | —    |
+|                     | Multigrid (GMG)| done | —        | —        | —        | —    |
 | **Boundary Conds**  | All types      | done | done     | done     | done     | done |
 
 ### Known Limitations
@@ -73,6 +74,9 @@ Genuine constraints to be aware of (not backlog items):
 - **Modular library circular dependencies** — `cfd_scalar`/`cfd_simd` call `poisson_solve()`
   (in `cfd_api`) while `cfd_api` links against them. Resolved on Linux via linker groups;
   Windows/macOS handle automatically. Future option: weak symbols or a plugin architecture.
+- **Multigrid grid-dimension constraint** — the geometric multigrid solver requires
+  2^k+1 points per active dimension (e.g. 33, 65, 129) for exact coarsening; other sizes
+  return `CFD_ERROR_INVALID`. Use CG for arbitrary grid sizes.
 
 > The SOR optimal-ω and Jacobi spectral-radius formulas (ρ = cos(πh),
 > ω = 2/(1 + sin(πh))) assume Dirichlet BCs; with Neumann BCs optimal ω is typically lower
@@ -84,7 +88,7 @@ Genuine constraints to be aware of (not backlog items):
 
 | Phase | Theme | Priority | Status — what remains |
 | ----- | ----- | -------- | --------------------- |
-| 1 | Core Solver Improvements | P0–P3 | GMRES, multigrid, implicit integrators, SIMPLE/PISO, nonlinear & eigenvalue solvers |
+| 1 | Core Solver Improvements | P0–P3 | GMRES ✅, geometric multigrid ✅; AMG, implicit integrators, SIMPLE/PISO, nonlinear & eigenvalue solvers |
 | 2 | Physics Extensions | P1–P3 | RANS k-ε/SA ✅; realizable k-ε, k-ω SST remain; compressible, species, multiphase; energy-eq. extensions |
 | 3 | Geometry & Mesh | P1–P2 | Unstructured meshes, mesh I/O, adaptive refinement (3D ✅) |
 | 4 | Scalability & Performance | P1–P2 | MPI, GPU improvements, profiling tools (modular libs ✅) |
@@ -106,9 +110,9 @@ No-slip, Inlet, Outlet, Symmetry, Moving wall, Time-varying). See CHANGELOG.
 ### 1.2 Linear Solvers (P0)
 
 Implemented: Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB, GMRES(m) (all with SIMD backends;
-CG is the default Poisson solver for projection methods). GPU standalone Jacobi, CG, Red-Black
-SOR, plain SOR, and BiCGSTAB are done and validated vs CPU; `solve_projection_method_gpu` uses
-on-device CG.
+CG is the default Poisson solver for projection methods), and geometric multigrid (scalar).
+GPU standalone Jacobi, CG, Red-Black SOR, plain SOR, and BiCGSTAB are done and validated vs
+CPU; `solve_projection_method_gpu` uses on-device CG.
 
 GMRES(m) with restart is implemented across scalar, AVX2, NEON, and OMP backends (right-
 preconditioned Jacobi seam; validated vs CG on the SPD Poisson problem, with restart-no-stall
@@ -123,7 +127,11 @@ non-symmetric operators arrive, e.g. implicit advection-diffusion in §1.5).
 - [ ] GMRES GPU backend (deferred from the initial GMRES landing)
 - [ ] SSOR (Symmetric SOR) preconditioner
 - [ ] ILU preconditioner
-- [ ] Geometric multigrid
+- [x] Geometric multigrid — scalar backend; V/W/F(FMG) cycles, Red-Black GS or weighted
+      Jacobi smoothers, full-weighting restriction (Neumann-folded at boundaries) +
+      bilinear/trilinear prolongation, Neumann (default) and Dirichlet BC modes, 2D/3D.
+      Grid dims must be 2^k+1. SIMD/OMP/GPU variants and MG-preconditioned CG deferred
+      (see `.claude/specs/multigrid-projection-integration.md` for projection wiring).
 - [ ] Algebraic multigrid (AMG) — solver and preconditioner (for CG/GMRES/BiCGSTAB)
 - [x] GPU plain SOR (Block SOR: per-thread tile sweep, red-black tile coloring, in-place; closes the matrix)
 

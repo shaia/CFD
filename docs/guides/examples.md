@@ -684,7 +684,7 @@ CFD Platform Diagnostics
 1. Method comparison (Jacobi, SOR, Red-Black SOR, CG, CG+Jacobi PC, BiCGSTAB) on scalar backend
 2. Backend comparison (CG on Scalar, SIMD, OMP)
 3. Convenience API demo (`poisson_solve()`)
-4. Error handling (requesting unavailable multigrid solver)
+4. Error handling (requesting multigrid on an unavailable backend — GPU)
 
 **Problem:** Solves ∇²p = -2π²sin(πx)sin(πy) on a 64×64 grid using the library's default homogeneous Neumann boundary conditions. The reported L2 error compares methods/backends against a common reference field — not against the Dirichlet analytical solution sin(πx)sin(πy), since BCs differ.
 

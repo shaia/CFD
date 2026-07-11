@@ -70,6 +70,9 @@ poisson_solver_t* create_gmres_simd_solver(void);
 poisson_solver_t* create_gmres_omp_solver(void);
 #endif
 
+/* Geometric multigrid solver (scalar backend only; V/W/F cycles) */
+poisson_solver_t* create_multigrid_scalar_solver(void);
+
 /* ============================================================================
  * CG ALGORITHM CONSTANTS
  * ============================================================================ */
