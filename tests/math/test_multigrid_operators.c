@@ -2,8 +2,10 @@
  * @file test_multigrid_operators.c
  * @brief Unit tests for multigrid grid-transfer operators
  *
- * Compiles lib/src/solvers/linear/cpu/multigrid_transfer.c directly (the
- * operators have internal linkage and are not exported from the library).
+ * Exercises lib/src/solvers/linear/cpu/multigrid_transfer.c. The operators
+ * have external linkage but are not exported from the shared library, so
+ * static builds link them from CFD::Library while shared builds compile the
+ * translation unit into this test (see CMakeLists.txt).
  * Deliberately uses no poisson_solver_* API and no cfd runtime — pure math
  * verification of the operators before they are used in the solver.
  *

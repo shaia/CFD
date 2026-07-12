@@ -3,8 +3,10 @@
  * @brief Internal data structures and grid-transfer operators for geometric multigrid
  *
  * Not part of the public API. The transfer operators live in
- * cpu/multigrid_transfer.c with internal (non-exported) linkage so the
- * operator unit test can compile that translation unit directly.
+ * cpu/multigrid_transfer.c with external linkage but are not exported from
+ * the shared library (no CFD_LIBRARY_EXPORT, hidden visibility): the operator
+ * unit test links them from the static library, or compiles the translation
+ * unit directly in shared builds.
  */
 
 #ifndef CFD_MULTIGRID_INTERNAL_H
@@ -77,7 +79,8 @@ static inline bool mg_is_pow2_plus1(size_t n) {
 /* ============================================================================
  * GRID-TRANSFER OPERATORS (cpu/multigrid_transfer.c)
  *
- * Internal linkage across the library; intentionally NOT CFD_LIBRARY_EXPORT.
+ * External linkage, intentionally NOT CFD_LIBRARY_EXPORT (hidden outside a
+ * shared library build).
  * All write coarse/fine INTERIOR points only. Restriction never reads fine
  * boundary values (coarse-interior stencils stay within the fine interior);
  * prolongation reads coarse boundary values, which the caller must have set
