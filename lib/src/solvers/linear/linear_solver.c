@@ -155,6 +155,15 @@ static poisson_solver_backend_t select_best_backend(void) {
     return POISSON_BACKEND_SCALAR;
 }
 
+/* Factories must set a specific last-status on NULL (see cfd_solver_create),
+ * so callers can distinguish an unavailable backend from allocation failure. */
+static poisson_solver_t* backend_unavailable(const char* method_name) {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "Requested backend not available for %s", method_name);
+    cfd_set_error(CFD_ERROR_UNSUPPORTED, msg);
+    return NULL;
+}
+
 poisson_solver_t* poisson_solver_create(
     poisson_solver_method_t method,
     poisson_solver_backend_t backend)
@@ -179,7 +188,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_jacobi_scalar_solver();
                 default:
-                    return NULL;  /* Requested backend not available for Jacobi */
+                    return backend_unavailable("Jacobi");
             }
 
         case POISSON_METHOD_SOR:
@@ -194,7 +203,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_sor_scalar_solver();
                 default:
-                    return NULL;  /* SOR not available for OMP */
+                    return backend_unavailable("SOR");
             }
 
         case POISSON_METHOD_REDBLACK_SOR:
@@ -212,7 +221,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_redblack_scalar_solver();
                 default:
-                    return NULL;  /* Requested backend not available for Red-Black */
+                    return backend_unavailable("Red-Black SOR");
             }
 
         case POISSON_METHOD_CG:
@@ -230,7 +239,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_cg_scalar_solver();
                 default:
-                    return NULL;  /* Requested backend not available for CG */
+                    return backend_unavailable("CG");
             }
 
         case POISSON_METHOD_BICGSTAB:
@@ -244,7 +253,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_bicgstab_scalar_solver();
                 default:
-                    return NULL;  /* Requested backend not available for BiCGSTAB */
+                    return backend_unavailable("BiCGSTAB");
             }
 
         case POISSON_METHOD_GMRES:
@@ -258,7 +267,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_gmres_scalar_solver();
                 default:
-                    return NULL;  /* Requested backend not available for GMRES */
+                    return backend_unavailable("GMRES");
             }
 
         case POISSON_METHOD_MULTIGRID:
@@ -269,9 +278,10 @@ poisson_solver_t* poisson_solver_create(
                 backend == POISSON_BACKEND_SCALAR) {
                 return create_multigrid_scalar_solver();
             }
-            return NULL;
+            return backend_unavailable("multigrid");
 
         default:
+            cfd_set_error(CFD_ERROR_INVALID, "Unknown Poisson solver method");
             return NULL;
     }
 }
