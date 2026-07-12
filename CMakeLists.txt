@@ -351,9 +351,13 @@ if(BUILD_TESTS)
     add_executable(test_residual_computation tests/math/test_residual_computation.c)
     add_executable(test_cg_scaling tests/math/test_cg_scaling.c)
     add_executable(test_nonuniform_grid tests/math/test_nonuniform_grid.c)
+    # mg_* transfer operators are not exported from the shared library, so the
+    # test must compile the translation unit directly there; in static builds
+    # they link from CFD::Library and compiling them again would duplicate the
+    # definitions.
     add_executable(test_multigrid_operators
         tests/math/test_multigrid_operators.c
-        lib/src/solvers/linear/cpu/multigrid_transfer.c)
+        $<$<BOOL:${BUILD_SHARED_LIBS}>:${CMAKE_CURRENT_SOURCE_DIR}/lib/src/solvers/linear/cpu/multigrid_transfer.c>)
     add_executable(test_multigrid_convergence tests/math/test_multigrid_convergence.c)
 
     # Cross-architecture consistency tests
