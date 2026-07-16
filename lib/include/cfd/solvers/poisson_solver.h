@@ -58,7 +58,7 @@ typedef enum {
     POISSON_METHOD_CG,            /**< Conjugate Gradient (for SPD systems) */
     POISSON_METHOD_BICGSTAB,      /**< BiCGSTAB (for non-symmetric systems) */
     POISSON_METHOD_GMRES,         /**< Restarted GMRES(m) (for non-symmetric systems) */
-    POISSON_METHOD_MULTIGRID      /**< Multigrid (future) */
+    POISSON_METHOD_MULTIGRID      /**< Geometric multigrid (V/W/F cycles, scalar backend) */
 } poisson_solver_method_t;
 
 /**
@@ -91,6 +91,38 @@ typedef enum {
     POISSON_PRECOND_JACOBI = 1  /**< Diagonal (Jacobi) preconditioning */
 } poisson_precond_type_t;
 
+/**
+ * Multigrid cycle type (POISSON_METHOD_MULTIGRID only)
+ */
+typedef enum {
+    MG_CYCLE_V = 0,   /**< V-cycle (default) */
+    MG_CYCLE_W = 1,   /**< W-cycle (two coarse-grid visits per level, more robust) */
+    MG_CYCLE_F = 2    /**< F-cycle / full multigrid (FMG first pass, then V-cycles) */
+} mg_cycle_type_t;
+
+/**
+ * Multigrid smoother type (POISSON_METHOD_MULTIGRID only)
+ */
+typedef enum {
+    MG_SMOOTHER_REDBLACK_GS = 0,  /**< Red-Black Gauss-Seidel, omega=1 (default) */
+    MG_SMOOTHER_JACOBI = 1        /**< Weighted Jacobi, omega=2/3 */
+} mg_smoother_type_t;
+
+/**
+ * Multigrid boundary-condition mode (POISSON_METHOD_MULTIGRID only)
+ *
+ * MG_BC_NEUMANN matches the default zero-gradient behavior of all other
+ * Poisson solvers (solution defined up to an additive constant; the RHS
+ * should have zero interior mean for full convergence).
+ * MG_BC_DIRICHLET holds the caller-supplied boundary values of x fixed on
+ * the finest grid and uses homogeneous zero boundaries for coarse-level
+ * corrections (supports inhomogeneous Dirichlet data).
+ */
+typedef enum {
+    MG_BC_NEUMANN = 0,   /**< Zero-gradient BCs (default; matches other solvers) */
+    MG_BC_DIRICHLET = 1  /**< Fixed boundary values on finest level */
+} mg_bc_type_t;
+
 /* ============================================================================
  * PARAMETERS AND STATISTICS
  * ============================================================================ */
@@ -107,6 +139,15 @@ typedef struct {
     bool verbose;              /**< Print iteration progress (default: false) */
     poisson_precond_type_t preconditioner; /**< Preconditioner type (default: NONE) */
     int restart;               /**< GMRES restart length m (default: 0 = auto/30); ignored by other methods */
+
+    /* Multigrid parameters (POISSON_METHOD_MULTIGRID only; 0 = backward-compatible default) */
+    mg_cycle_type_t mg_cycle;       /**< Cycle type (default: MG_CYCLE_V) */
+    mg_smoother_type_t mg_smoother; /**< Smoother (default: MG_SMOOTHER_REDBLACK_GS) */
+    mg_bc_type_t mg_bc;             /**< Boundary-condition mode (default: MG_BC_NEUMANN) */
+    int mg_pre_smooth;              /**< Pre-smoothing sweeps per level (0 = default 2) */
+    int mg_post_smooth;             /**< Post-smoothing sweeps per level (0 = default 2) */
+    int mg_coarse_max_iter;         /**< Smoother sweeps on coarsest grid (0 = default 50) */
+    int mg_max_levels;              /**< Max grid levels (0 = auto: coarsen as far as possible) */
 } poisson_solver_params_t;
 
 /**
@@ -130,6 +171,8 @@ typedef struct {
  * - omega: 0.0 (auto-compute optimal for grid dimensions)
  * - check_interval: 1
  * - verbose: false
+ * - mg_cycle: MG_CYCLE_V, mg_smoother: MG_SMOOTHER_REDBLACK_GS, mg_bc: MG_BC_NEUMANN
+ * - mg_pre_smooth/mg_post_smooth: 0 (= 2), mg_coarse_max_iter: 0 (= 50), mg_max_levels: 0 (= auto)
  */
 CFD_LIBRARY_EXPORT poisson_solver_params_t poisson_solver_params_default(void);
 
@@ -396,6 +439,7 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
 #define POISSON_SOLVER_TYPE_GMRES_SCALAR      "gmres_scalar"
 #define POISSON_SOLVER_TYPE_GMRES_OMP         "gmres_omp"
 #define POISSON_SOLVER_TYPE_GMRES_SIMD        "gmres_simd"
+#define POISSON_SOLVER_TYPE_MG_SCALAR         "multigrid_scalar"
 
 /* ============================================================================
  * CONVENIENCE API
@@ -416,7 +460,8 @@ typedef enum {
     POISSON_SOLVER_CG_SCALAR = 5,      /**< Conjugate Gradient with scalar backend (always available) */
     POISSON_SOLVER_CG_SIMD = 6,        /**< Conjugate Gradient with SIMD backend (runtime detection) */
     POISSON_SOLVER_CG_OMP = 7,         /**< Conjugate Gradient with OpenMP backend */
-    POISSON_SOLVER_SOR_SIMD = 8        /**< SOR with SIMD backend (Block SOR, runtime detection) */
+    POISSON_SOLVER_SOR_SIMD = 8,       /**< SOR with SIMD backend (Block SOR, runtime detection) */
+    POISSON_SOLVER_MG_SCALAR = 9       /**< Geometric multigrid with scalar backend (grid dims must be 2^k+1) */
 } poisson_solver_type;
 
 /** Default Poisson solver - uses runtime SIMD detection */

@@ -255,6 +255,47 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_GMRES,
 poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &params);
 ```
 
+#### 8. Geometric Multigrid
+
+**Algorithm:** V-cycle (default), W-cycle, or F-cycle (full multigrid) on a
+hierarchy of coarsened grids. Each cycle pre-smooths, restricts the residual
+with full weighting, recursively solves the coarse correction equation,
+prolongates with bilinear (2D) / trilinear (3D) interpolation, and post-smooths.
+Smoothers: Red-Black Gauss-Seidel (default) or weighted Jacobi (ω=2/3).
+
+**Characteristics:**
+- **Grid-size-independent convergence**: ~0.05–0.1 residual reduction per
+  V(2,2) cycle regardless of resolution — O(N) total work, the optimal
+  complexity for structured-grid Poisson problems
+- **Grid constraint**: every active dimension must have 2^k+1 points
+  (5, 9, 17, 33, 65, 129, ...); other sizes return `CFD_ERROR_INVALID`
+- Two BC modes via `params.mg_bc`:
+  - `MG_BC_NEUMANN` (default) — zero-gradient BCs matching the other Poisson
+    solvers. The system is singular (solution defined up to a constant; RHS
+    should have zero interior mean). Restriction uses Neumann-folded boundary
+    weights and coarse RHS/corrections are mean-projected internally.
+  - `MG_BC_DIRICHLET` — caller-supplied boundary values of `x` are held fixed
+    (supports inhomogeneous data); coarse corrections use zero boundaries.
+- `MG_CYCLE_F` runs one full-multigrid pass (coarsest-first nested iteration)
+  on the first cycle — reaching discretization accuracy immediately — then
+  continues with V-cycles
+- Parameters: `mg_cycle`, `mg_smoother`, `mg_bc`, `mg_pre_smooth`/`mg_post_smooth`
+  (default 2/2), `mg_coarse_max_iter` (default 50), `mg_max_levels` (0 = auto)
+
+**Backends:** scalar only. SIMD/OMP/GPU variants and use as a CG preconditioner
+are planned follow-ups.
+
+**Usage:**
+```c
+poisson_solver_params_t params = poisson_solver_params_default();
+params.mg_cycle = MG_CYCLE_V;        // or MG_CYCLE_W / MG_CYCLE_F
+params.mg_bc = MG_BC_NEUMANN;        // default; matches other solvers
+
+poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_MULTIGRID,
+                                                 POISSON_BACKEND_SCALAR);
+poisson_solver_init(solver, 65, 65, 1, dx, dy, 0.0, &params);  // dims 2^k+1
+```
+
 ### Linear Solver Performance Comparison
 
 **Problem:** 65×65 grid, tolerance = 1e-6
@@ -267,6 +308,7 @@ poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &params);
 | CG | ~80 | 5 | Best for large grids |
 | PCG (Jacobi) | ~80 | 5.5 | No benefit on uniform grid |
 | BiCGSTAB | ~40 | 4 | Fastest convergence |
+| Multigrid V(2,2) | ~8 cycles | — | O(N), grid-size-independent; needs 2^k+1 dims |
 
 **Note:** Jacobi preconditioning provides no benefit on uniform grids with constant coefficients (diagonal is constant 4/h²).
 

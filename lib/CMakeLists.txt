@@ -133,6 +133,8 @@ set(CFD_SCALAR_SOURCES
     src/solvers/linear/cpu/linear_solver_cg.c
     src/solvers/linear/cpu/linear_solver_bicgstab.c
     src/solvers/linear/cpu/linear_solver_gmres.c
+    src/solvers/linear/cpu/linear_solver_multigrid.c
+    src/solvers/linear/cpu/multigrid_transfer.c
 )
 
 # SIMD sources (AVX2/NEON optimized)

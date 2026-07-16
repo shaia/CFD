@@ -44,6 +44,13 @@ poisson_solver_params_t poisson_solver_params_default(void) {
     params.verbose = false;
     params.preconditioner = POISSON_PRECOND_NONE;
     params.restart = 0;  /* 0 = auto (GMRES_DEFAULT_RESTART); ignored by non-GMRES methods */
+    params.mg_cycle = MG_CYCLE_V;
+    params.mg_smoother = MG_SMOOTHER_REDBLACK_GS;
+    params.mg_bc = MG_BC_NEUMANN;
+    params.mg_pre_smooth = 0;      /* 0 = default (2) */
+    params.mg_post_smooth = 0;     /* 0 = default (2) */
+    params.mg_coarse_max_iter = 0; /* 0 = default (50) */
+    params.mg_max_levels = 0;      /* 0 = auto */
     return params;
 }
 
@@ -148,11 +155,22 @@ static poisson_solver_backend_t select_best_backend(void) {
     return POISSON_BACKEND_SCALAR;
 }
 
+/* Factories must set a specific last-status on NULL (see cfd_solver_create),
+ * so callers can distinguish an unavailable backend from allocation failure. */
+static poisson_solver_t* backend_unavailable(const char* method_name) {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "Requested backend not available for %s", method_name);
+    cfd_set_error(CFD_ERROR_UNSUPPORTED, msg);
+    return NULL;
+}
+
 poisson_solver_t* poisson_solver_create(
     poisson_solver_method_t method,
     poisson_solver_backend_t backend)
 {
-    /* Auto-select backend if requested */
+    /* Auto-select backend if requested (keep the original request: methods
+     * without a SIMD backend resolve AUTO differently) */
+    poisson_solver_backend_t requested = backend;
     if (backend == POISSON_BACKEND_AUTO) {
         backend = select_best_backend();
     }
@@ -170,7 +188,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_jacobi_scalar_solver();
                 default:
-                    return NULL;  /* Requested backend not available for Jacobi */
+                    return backend_unavailable("Jacobi");
             }
 
         case POISSON_METHOD_SOR:
@@ -185,7 +203,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_sor_scalar_solver();
                 default:
-                    return NULL;  /* SOR not available for OMP */
+                    return backend_unavailable("SOR");
             }
 
         case POISSON_METHOD_REDBLACK_SOR:
@@ -203,7 +221,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_redblack_scalar_solver();
                 default:
-                    return NULL;  /* Requested backend not available for Red-Black */
+                    return backend_unavailable("Red-Black SOR");
             }
 
         case POISSON_METHOD_CG:
@@ -221,7 +239,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_cg_scalar_solver();
                 default:
-                    return NULL;  /* Requested backend not available for CG */
+                    return backend_unavailable("CG");
             }
 
         case POISSON_METHOD_BICGSTAB:
@@ -235,7 +253,7 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_bicgstab_scalar_solver();
                 default:
-                    return NULL;  /* Requested backend not available for BiCGSTAB */
+                    return backend_unavailable("BiCGSTAB");
             }
 
         case POISSON_METHOD_GMRES:
@@ -249,14 +267,21 @@ poisson_solver_t* poisson_solver_create(
                 case POISSON_BACKEND_SCALAR:
                     return create_gmres_scalar_solver();
                 default:
-                    return NULL;  /* Requested backend not available for GMRES */
+                    return backend_unavailable("GMRES");
             }
 
         case POISSON_METHOD_MULTIGRID:
-            /* Not yet implemented */
-            return NULL;
+            /* Only the scalar backend exists. AUTO means "best available",
+             * which for multigrid IS scalar; explicit SIMD/OMP/GPU requests
+             * return NULL (no silent fallbacks). */
+            if (requested == POISSON_BACKEND_AUTO ||
+                backend == POISSON_BACKEND_SCALAR) {
+                return create_multigrid_scalar_solver();
+            }
+            return backend_unavailable("multigrid");
 
         default:
+            cfd_set_error(CFD_ERROR_INVALID, "Unknown Poisson solver method");
             return NULL;
     }
 }
@@ -562,6 +587,7 @@ static poisson_solver_t* g_cached_redblack_scalar = NULL;
 static poisson_solver_t* g_cached_cg_scalar = NULL;
 static poisson_solver_t* g_cached_cg_omp = NULL;
 static poisson_solver_t* g_cached_cg_simd = NULL;
+static poisson_solver_t* g_cached_mg_scalar = NULL;
 
 /**
  * Cleanup cached solvers (called at program exit)
@@ -602,6 +628,10 @@ static void cleanup_cached_solvers(void) {
     if (g_cached_cg_simd) {
         poisson_solver_destroy(g_cached_cg_simd);
         g_cached_cg_simd = NULL;
+    }
+    if (g_cached_mg_scalar) {
+        poisson_solver_destroy(g_cached_mg_scalar);
+        g_cached_mg_scalar = NULL;
     }
 }
 
@@ -670,6 +700,12 @@ int poisson_solve_3d(
             backend = POISSON_BACKEND_SIMD;
             break;
 
+        case POISSON_SOLVER_MG_SCALAR:
+            solver_ptr = &g_cached_mg_scalar;
+            method = POISSON_METHOD_MULTIGRID;
+            backend = POISSON_BACKEND_SCALAR;
+            break;
+
         default:
             CFD_LOG_ERROR("poisson", "poisson_solve_3d: Unknown solver type %d", solver_type);
             return -1;
@@ -696,11 +732,17 @@ int poisson_solve_3d(
             *solver_ptr = NULL;
         }
 
-        /* Create new solver */
+        /* Create new solver. A failed init (e.g. multigrid on non-2^k+1
+         * dims) must not leave a broken solver in the cache. */
         *solver_ptr = poisson_solver_create(method, backend);
 
         if (*solver_ptr) {
-            poisson_solver_init(*solver_ptr, nx, ny, nz, dx, dy, dz, NULL);
+            cfd_status_t init_status =
+                poisson_solver_init(*solver_ptr, nx, ny, nz, dx, dy, dz, NULL);
+            if (init_status != CFD_SUCCESS) {
+                poisson_solver_destroy(*solver_ptr);
+                *solver_ptr = NULL;
+            }
         }
     }
 

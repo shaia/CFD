@@ -443,7 +443,7 @@ typedef enum {
     POISSON_METHOD_CG,            // Conjugate Gradient (SPD systems)
     POISSON_METHOD_BICGSTAB,      // BiCGSTAB (non-symmetric systems)
     POISSON_METHOD_GMRES,         // Restarted GMRES(m) (scalar/SIMD/OMP)
-    POISSON_METHOD_MULTIGRID      // Multigrid (future)
+    POISSON_METHOD_MULTIGRID      // Geometric multigrid V/W/F cycles (scalar; dims 2^k+1)
 } poisson_solver_method_t;
 ```
 
@@ -474,10 +474,23 @@ typedef struct {
     bool verbose;               // Print convergence info (default: false)
     poisson_precond_type_t preconditioner;  // Preconditioner (default: POISSON_PRECOND_NONE)
     int restart;                // GMRES(m) restart length (default: 0 = auto/30)
+
+    // Multigrid only (all 0-defaults are backward compatible)
+    mg_cycle_type_t mg_cycle;       // MG_CYCLE_V (default) / MG_CYCLE_W / MG_CYCLE_F
+    mg_smoother_type_t mg_smoother; // MG_SMOOTHER_REDBLACK_GS (default) / MG_SMOOTHER_JACOBI
+    mg_bc_type_t mg_bc;             // MG_BC_NEUMANN (default) / MG_BC_DIRICHLET
+    int mg_pre_smooth;              // Pre-smoothing sweeps (0 = default 2)
+    int mg_post_smooth;             // Post-smoothing sweeps (0 = default 2)
+    int mg_coarse_max_iter;         // Coarsest-grid smoother sweeps (0 = default 50)
+    int mg_max_levels;              // Max levels (0 = auto)
 } poisson_solver_params_t;
 
 poisson_solver_params_t poisson_solver_params_default(void);
 ```
+
+> Multigrid requires 2^k+1 grid points per active dimension (e.g. 33, 65, 129);
+> `poisson_solver_init` returns `CFD_ERROR_INVALID` otherwise. In the default
+> `MG_BC_NEUMANN` mode the solution is defined up to an additive constant.
 
 ### Poisson Statistics
 

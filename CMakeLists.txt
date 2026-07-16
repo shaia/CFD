@@ -351,6 +351,14 @@ if(BUILD_TESTS)
     add_executable(test_residual_computation tests/math/test_residual_computation.c)
     add_executable(test_cg_scaling tests/math/test_cg_scaling.c)
     add_executable(test_nonuniform_grid tests/math/test_nonuniform_grid.c)
+    # mg_* transfer operators are not exported from the shared library, so the
+    # test must compile the translation unit directly there; in static builds
+    # they link from CFD::Library and compiling them again would duplicate the
+    # definitions.
+    add_executable(test_multigrid_operators
+        tests/math/test_multigrid_operators.c
+        $<$<BOOL:${BUILD_SHARED_LIBS}>:${CMAKE_CURRENT_SOURCE_DIR}/lib/src/solvers/linear/cpu/multigrid_transfer.c>)
+    add_executable(test_multigrid_convergence tests/math/test_multigrid_convergence.c)
 
     # Cross-architecture consistency tests
     add_executable(test_solver_architecture tests/validation/test_solver_architecture.c)
@@ -473,6 +481,8 @@ if(BUILD_TESTS)
     target_link_libraries(test_residual_computation PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_cg_scaling PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_nonuniform_grid PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
+    target_link_libraries(test_multigrid_operators PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
+    target_link_libraries(test_multigrid_convergence PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_solver_architecture PRIVATE CFD::Library unity)
 
     # Enable CTest support. include(CTest) generates DartConfiguration.tcl
@@ -635,6 +645,8 @@ if(BUILD_TESTS)
     add_test(NAME ResidualComputationTest COMMAND test_residual_computation)
     add_test(NAME CgScalingTest COMMAND test_cg_scaling)
     add_test(NAME NonuniformGridTest COMMAND test_nonuniform_grid)
+    add_test(NAME MultigridOperatorsTest COMMAND test_multigrid_operators)
+    add_test(NAME MultigridConvergenceTest COMMAND test_multigrid_convergence)
 
     # Label long-running validation tests to exclude from sanitizer job
     # These tests validate physics accuracy, not memory safety

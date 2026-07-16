@@ -9,11 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Geometric multigrid Poisson solver** (scalar backend) — V/W/F(FMG) cycles with
+  Red-Black Gauss-Seidel or weighted-Jacobi smoothers, full-weighting restriction and
+  bilinear/trilinear prolongation, 2D/3D. Two BC modes: Neumann zero-gradient (default,
+  matching the other Poisson solvers; nullspace handled via Neumann-folded restriction
+  weights and coarse-level mean projection) and Dirichlet (inhomogeneous boundary data
+  supported). Grid dims must be 2^k+1 per active dimension. Grid-size-independent
+  convergence (< 0.15 residual reduction per V(2,2) cycle, 9²–129² validated); new
+  `POISSON_SOLVER_MG_SCALAR` convenience preset
+  (`lib/src/solvers/linear/cpu/linear_solver_multigrid.c`,
+  `lib/src/solvers/linear/cpu/multigrid_transfer.c`,
+  `tests/math/test_multigrid_operators.c`, `tests/math/test_multigrid_convergence.c`).
 - **Restart / checkpoint support** — portable, versioned, CRC-protected binary checkpoint
   format (`.cfdchk`) that saves and restores complete simulation state (grid, flow field,
   scalar params, time, solver name). Little-endian fixed-width encoding with an endianness
   marker and a format-version header that rejects unknown versions
   (`lib/src/io/checkpoint.c`, `lib/include/cfd/io/checkpoint.h`, `tests/io/test_checkpoint.c`).
+
+### Fixed
+
+- `poisson_solve_3d()` now checks `poisson_solver_init()`'s return status: a failed init
+  (e.g. multigrid on non-2^k+1 dims) no longer leaves a broken solver in the convenience
+  cache; the call returns -1 and later valid calls re-create the solver.
 
 ## [0.3.0] - 2026-06-23
 
