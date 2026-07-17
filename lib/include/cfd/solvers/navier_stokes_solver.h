@@ -161,6 +161,25 @@ typedef struct {
 } ns_turbulence_bc_config_t;
 
 /**
+ * Pressure Poisson solver selection for projection-method solvers.
+ *
+ * NS_PRESSURE_SOLVER_DEFAULT (0) keeps each backend's existing CG pressure
+ * solve, so zero-initialization is fully backward compatible.
+ *
+ * The multigrid modes are implemented on the scalar "projection" solver only
+ * and require 2^k+1 grid points per active dimension (e.g. 33, 65, 129).
+ * projection_optimized, projection_omp, and projection_gpu reject any
+ * non-default value with CFD_ERROR_UNSUPPORTED at init (no silent
+ * cross-backend fallbacks); non-conforming grid dimensions are likewise
+ * rejected at init with CFD_ERROR_UNSUPPORTED.
+ */
+typedef enum {
+    NS_PRESSURE_SOLVER_DEFAULT = 0,   /**< Backend's default CG pressure solve */
+    NS_PRESSURE_SOLVER_MULTIGRID = 1, /**< Geometric multigrid V-cycle solver */
+    NS_PRESSURE_SOLVER_PCG_MG = 2,    /**< CG preconditioned by one MG V-cycle */
+} ns_pressure_solver_t;
+
+/**
  * Navier-Stokes solver parameters
  */
 typedef struct {
@@ -207,6 +226,10 @@ typedef struct {
      * a turbulence model is enabled. */
     turbulence_model_t turb_model;      /**< Turbulence model selection */
     ns_turbulence_bc_config_t turb_bc;  /**< Per-face turbulence BCs (zero-init = all PERIODIC) */
+
+    /* Pressure Poisson solver for projection solvers (scalar "projection"
+     * backend only; 0 = existing CG behavior, backward compatible). */
+    ns_pressure_solver_t pressure_solver;  /**< Pressure solver selection */
 } ns_solver_params_t;
 
 

@@ -78,6 +78,30 @@ Chorin's projection method - properly enforces incompressibility constraint.
 | `projection_omp` | OpenMP | Multi-threaded |
 | `projection_jacobi_gpu` | GPU | CUDA-accelerated (Jacobi iteration) |
 
+**Pressure solver selection** (`ns_solver_params_t.pressure_solver`):
+
+Each backend pairs with a CG Poisson preset by default. On the scalar
+`projection` solver the pressure solve can be switched to geometric multigrid:
+
+| `pressure_solver` value | Pressure Poisson solve |
+|-------------------------|------------------------|
+| `NS_PRESSURE_SOLVER_DEFAULT` (0) | Backend's CG preset (existing behavior) |
+| `NS_PRESSURE_SOLVER_MULTIGRID` | Multigrid V-cycles (`POISSON_SOLVER_MG_SCALAR`) |
+| `NS_PRESSURE_SOLVER_PCG_MG` | CG + MG V-cycle preconditioner (`POISSON_SOLVER_PCG_MG_SCALAR`) |
+
+The MG modes require 2^k+1 grid points per active dimension (33, 65, 129, ...);
+`solver_init` returns `CFD_ERROR_UNSUPPORTED` otherwise. `projection_optimized`,
+`projection_omp`, and `projection_gpu` reject any non-default value with
+`CFD_ERROR_UNSUPPORTED` at init — multigrid has no SIMD/OMP/GPU backend yet and
+the library never falls back across backends silently.
+
+```c
+ns_solver_params_t params = ns_solver_params_default();
+params.pressure_solver = NS_PRESSURE_SOLVER_MULTIGRID;  // 2^k+1 grids only
+ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
+cfd_status_t status = solver_init(slv, grid, &params);   // UNSUPPORTED on 128x128
+```
+
 ## Linear Solvers (Poisson Equation)
 
 The projection method requires solving the pressure Poisson equation:
@@ -196,6 +220,16 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
   - Simple, cheap per iteration
   - Variable coefficients: can reduce iterations
   - Constant coefficients (uniform grid): no benefit
+- **Multigrid** (`POISSON_PRECOND_MULTIGRID`): one geometric-multigrid V-cycle
+  per apply
+  - Grid-size-independent outer iteration count (measured 5 CG iterations at
+    33²–129², tol 1e-8, vs 50–170 for plain CG)
+  - Scalar CG backend only; other backends reject it with
+    `CFD_ERROR_UNSUPPORTED`
+  - Requires 2^k+1 grid points per active dimension (inherited from the
+    multigrid hierarchy); init fails with `CFD_ERROR_INVALID` otherwise
+  - The inner cycle is a symmetric V(2,2) with weighted-Jacobi smoothing in
+    Dirichlet mode, so the preconditioner is SPD as CG requires
 - **SSOR**: M = (D + L)D⁻¹(D + U) (future)
 - **ILU**: Incomplete LU factorization (future)
 
@@ -208,6 +242,19 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
                                                  POISSON_BACKEND_SIMD);
 poisson_solver_init(solver, nx, ny, dx, dy, &params);  // Pass params with preconditioner
 ```
+
+**Multigrid-preconditioned CG (scalar backend, 2^k+1 dims):**
+
+```c
+poisson_solver_params_t params = poisson_solver_params_default();
+params.preconditioner = POISSON_PRECOND_MULTIGRID;
+
+poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
+                                                 POISSON_BACKEND_SCALAR);
+poisson_solver_init(solver, 65, 65, 1, dx, dy, 0.0, &params);
+```
+The convenience API exposes the same configuration as the
+`POISSON_SOLVER_PCG_MG_SCALAR` preset for `poisson_solve()`/`poisson_solve_3d()`.
 
 #### 6. BiCGSTAB
 
@@ -282,8 +329,10 @@ Smoothers: Red-Black Gauss-Seidel (default) or weighted Jacobi (ω=2/3).
 - Parameters: `mg_cycle`, `mg_smoother`, `mg_bc`, `mg_pre_smooth`/`mg_post_smooth`
   (default 2/2), `mg_coarse_max_iter` (default 50), `mg_max_levels` (0 = auto)
 
-**Backends:** scalar only. SIMD/OMP/GPU variants and use as a CG preconditioner
-are planned follow-ups.
+**Backends:** scalar only. Also available as a CG preconditioner
+(`POISSON_PRECOND_MULTIGRID`, scalar CG only — see §5) and as the projection
+method's pressure solver (`ns_solver_params_t.pressure_solver`). SIMD/OMP/GPU
+variants are planned follow-ups.
 
 **Usage:**
 ```c
@@ -307,6 +356,7 @@ poisson_solver_init(solver, 65, 65, 1, dx, dy, 0.0, &params);  // dims 2^k+1
 | Red-Black SOR | ~2000 | 8 | Parallelizable |
 | CG | ~80 | 5 | Best for large grids |
 | PCG (Jacobi) | ~80 | 5.5 | No benefit on uniform grid |
+| PCG (Multigrid) | ~5 | — | Grid-size-independent; needs 2^k+1 dims |
 | BiCGSTAB | ~40 | 4 | Fastest convergence |
 | Multigrid V(2,2) | ~8 cycles | — | O(N), grid-size-independent; needs 2^k+1 dims |
 

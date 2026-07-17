@@ -76,7 +76,9 @@ Genuine constraints to be aware of (not backlog items):
   Windows/macOS handle automatically. Future option: weak symbols or a plugin architecture.
 - **Multigrid grid-dimension constraint** — the geometric multigrid solver requires
   2^k+1 points per active dimension (e.g. 33, 65, 129) for exact coarsening; other sizes
-  return `CFD_ERROR_INVALID`. Use CG for arbitrary grid sizes.
+  return `CFD_ERROR_INVALID`. Use CG for arbitrary grid sizes. On conforming grids,
+  MG-preconditioned CG (`POISSON_PRECOND_MULTIGRID`) gives grid-size-independent
+  iteration counts on uniform grids where Jacobi PCG gives no benefit.
 
 > The SOR optimal-ω and Jacobi spectral-radius formulas (ρ = cos(πh),
 > ω = 2/(1 + sin(πh))) assume Dirichlet BCs; with Neumann BCs optimal ω is typically lower
@@ -130,8 +132,10 @@ non-symmetric operators arrive, e.g. implicit advection-diffusion in §1.5).
 - [x] Geometric multigrid — scalar backend; V/W/F(FMG) cycles, Red-Black GS or weighted
       Jacobi smoothers, full-weighting restriction (Neumann-folded at boundaries) +
       bilinear/trilinear prolongation, Neumann (default) and Dirichlet BC modes, 2D/3D.
-      Grid dims must be 2^k+1. SIMD/OMP/GPU variants and MG-preconditioned CG deferred
-      (see `.claude/specs/multigrid-projection-integration.md` for projection wiring).
+      Grid dims must be 2^k+1. Wired into the projection method
+      (`ns_solver_params_t.pressure_solver`, scalar backend) and available as a CG
+      preconditioner (`POISSON_PRECOND_MULTIGRID`, scalar CG). SIMD/OMP/GPU variants
+      deferred (see `.claude/specs/multigrid-projection-integration.md`).
 - [ ] Algebraic multigrid (AMG) — solver and preconditioner (for CG/GMRES/BiCGSTAB)
 - [x] GPU plain SOR (Block SOR: per-thread tile sweep, red-black tile coloring, in-place; closes the matrix)
 
@@ -209,7 +213,10 @@ SIMD Poisson integration is done; current ~1.3–1.5× speedup is Amdahl-limited
 (parallelizable fraction ~80%). Remaining optimization work:
 
 - [ ] Increase `POISSON_MAX_ITER` or implement adaptive tolerance
-- [ ] Optional multigrid preconditioner for faster convergence (see §1.2 multigrid)
+- [x] Optional multigrid preconditioner for faster convergence (see §1.2 multigrid) —
+      done for scalar CG (`POISSON_PRECOND_MULTIGRID`, symmetric V(2,2) Jacobi cycle) and
+      selectable in the scalar projection via `pressure_solver = NS_PRESSURE_SOLVER_PCG_MG`;
+      SIMD/OMP variants follow the multigrid backend work in §1.2
 - [ ] Red-Black omega parameter tuning
 - [ ] Profile to identify remaining bottlenecks
 - [ ] OpenMP+SIMD hybrid projection (OMP across rows, SIMD within rows); benchmark vs pure OMP

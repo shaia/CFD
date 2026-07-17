@@ -12,7 +12,7 @@ A production-grade computational fluid dynamics (CFD) library in C for solving 2
 
 - 🚀 **Multiple Backends**: CPU (scalar), SIMD (AVX2/NEON), OpenMP, CUDA
 - 🔧 **Pluggable Solvers**: Explicit Euler, RK2 (Heun), Projection Method (Chorin's algorithm)
-- 📊 **Linear Solvers**: Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB
+- 📊 **Linear Solvers**: Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB, GMRES(m), geometric multigrid (V/W/F cycles, also as CG preconditioner and projection pressure solver via `params.pressure_solver`)
 - 🌡️ **Heat Transfer**: Energy equation (advection–diffusion) + Boussinesq buoyancy + thermal BCs
 - 🌀 **Turbulence (RANS)**: Standard k-ε and Spalart-Allmaras with log-law wall functions; validated vs turbulent channel flow at Re_τ = 395
 - 🎯 **Validated**: Ghia lid-driven cavity, Taylor-Green vortex, Poiseuille flow, natural convection, turbulent channel flow

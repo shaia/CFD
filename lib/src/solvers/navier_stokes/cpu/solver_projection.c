@@ -27,6 +27,7 @@
 #include "cfd/solvers/turbulence_solver.h"
 
 #include "../../energy/energy_solver_internal.h"
+#include "../../linear/multigrid_internal.h"
 #include "../../turbulence/turbulence_solver_internal.h"
 #include "../boundary_copy_utils.h"
 
@@ -77,6 +78,24 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     double dz = (nz > 1 && grid->dz) ? grid->dz[0] : 0.0;
     double dt = params->dt;
     double nu = params->mu;
+
+    /* Map the pressure-solver selection to a Poisson preset. Grid-dimension
+     * compatibility for the MG modes is validated at solver init; a failed
+     * solve here still degrades loudly via poisson_iters < 0. */
+    poisson_solver_type pressure_preset;
+    switch (params->pressure_solver) {
+        case NS_PRESSURE_SOLVER_DEFAULT:
+            pressure_preset = POISSON_SOLVER_CG_SCALAR;
+            break;
+        case NS_PRESSURE_SOLVER_MULTIGRID:
+            pressure_preset = POISSON_SOLVER_MG_SCALAR;
+            break;
+        case NS_PRESSURE_SOLVER_PCG_MG:
+            pressure_preset = POISSON_SOLVER_PCG_MG_SCALAR;
+            break;
+        default:
+            return CFD_ERROR_INVALID;
+    }
 
     /* Branch-free 3D constants */
     size_t stride_z = (nz > 1) ? plane : 0;
@@ -250,9 +269,18 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
             }
         }
 
+        /* Neumann compatibility projection: standalone multigrid solves the
+         * true singular Neumann system, so the RHS must have zero interior
+         * mean or the residual stalls at the incompatible component. The
+         * CG-based presets are insensitive to it (their interior-only Krylov
+         * updates act as a nonsingular operator) and keep today's behavior. */
+        if (pressure_preset == POISSON_SOLVER_MG_SCALAR) {
+            mg_subtract_interior_mean(rhs, nx, ny, nz);
+        }
+
         /* Solve Poisson equation using library solver */
         int poisson_iters = poisson_solve_3d(p_new, p_temp, rhs, nx, ny, nz, dx, dy, dz,
-                                             POISSON_SOLVER_CG_SCALAR);
+                                             pressure_preset);
 
         if (poisson_iters < 0) {
             cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
