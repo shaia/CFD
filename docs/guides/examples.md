@@ -681,12 +681,12 @@ CFD Platform Diagnostics
 - Error handling for unavailable solvers
 
 **Sections:**
-1. Method comparison (Jacobi, SOR, Red-Black SOR, CG, CG+Jacobi PC, BiCGSTAB) on scalar backend
+1. Method comparison (Jacobi, SOR, Red-Black SOR, CG, CG+Jacobi PC, CG+Multigrid PC, BiCGSTAB) on scalar backend
 2. Backend comparison (CG on Scalar, SIMD, OMP)
 3. Convenience API demo (`poisson_solve()`)
 4. Error handling (requesting multigrid on an unavailable backend — GPU)
 
-**Problem:** Solves ∇²p = -2π²sin(πx)sin(πy) on a 64×64 grid using the library's default homogeneous Neumann boundary conditions. The reported L2 error compares methods/backends against a common reference field — not against the Dirichlet analytical solution sin(πx)sin(πy), since BCs differ.
+**Problem:** Solves ∇²p = -2π²sin(πx)sin(πy) on a 65×65 grid (2^k+1, so the multigrid preconditioner can build its hierarchy) using the library's default homogeneous Neumann boundary conditions. The reported L2 error compares methods/backends against a common reference field — not against the Dirichlet analytical solution sin(πx)sin(πy), since BCs differ. Standalone multigrid is omitted: this RHS has a nonzero interior mean, which the true Neumann system cannot converge on (the same reason the stationary methods report max_iter).
 
 **Run:**
 ```bash
@@ -697,10 +697,11 @@ CFD Platform Diagnostics
 ```
 --- Method Comparison (Scalar Backend) ---
   Method                Iters     Residual    L2 Error      Time  Status
-  Jacobi                10001   res=8.3e+00  L2=4.8e+00  5548 ms  max_iter
-  CG                        1   res=5.1e-11  L2=1.1e-04     2 ms  converged
-  CG + Jacobi PC            1   res=5.9e-11  L2=1.1e-04     2 ms  converged
-  BiCGSTAB                  1   res=5.1e-11  L2=1.1e-04     2 ms  converged
+  Jacobi                10000   res=8.3e+00  L2=-1.0e+00   394 ms  max_iter
+  CG                        1   res=6.3e-11  L2=1.0e-04     0 ms  converged
+  CG + Jacobi PC            1   res=6.3e-11  L2=1.0e-04     0 ms  converged
+  CG + Multigrid PC         7   res=1.4e-06  L2=1.0e-04     2 ms  converged
+  BiCGSTAB                  1   res=6.3e-11  L2=1.0e-04     0 ms  converged
 ```
 
 ---

@@ -73,6 +73,21 @@ poisson_solver_t* create_gmres_omp_solver(void);
 /* Geometric multigrid solver (scalar backend only; V/W/F cycles) */
 poisson_solver_t* create_multigrid_scalar_solver(void);
 
+/**
+ * Reject POISSON_PRECOND_MULTIGRID on backends that don't implement it.
+ * Only the scalar CG solver supports the MG preconditioner; silently
+ * ignoring it would be a forbidden silent fallback.
+ */
+static inline cfd_status_t poisson_solver_reject_mg_precond(
+    const poisson_solver_params_t* params) {
+    if (params && params->preconditioner == POISSON_PRECOND_MULTIGRID) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "POISSON_PRECOND_MULTIGRID is only supported by the scalar CG solver");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return CFD_SUCCESS;
+}
+
 /* ============================================================================
  * CG ALGORITHM CONSTANTS
  * ============================================================================ */

@@ -87,8 +87,10 @@ typedef enum {
  * Preconditioner types for iterative solvers
  */
 typedef enum {
-    POISSON_PRECOND_NONE = 0,   /**< No preconditioning (default) */
-    POISSON_PRECOND_JACOBI = 1  /**< Diagonal (Jacobi) preconditioning */
+    POISSON_PRECOND_NONE = 0,      /**< No preconditioning (default) */
+    POISSON_PRECOND_JACOBI = 1,    /**< Diagonal (Jacobi) preconditioning */
+    POISSON_PRECOND_MULTIGRID = 2  /**< One geometric-multigrid V-cycle per apply
+                                        (scalar CG only; grid dims must be 2^k+1) */
 } poisson_precond_type_t;
 
 /**
@@ -461,7 +463,9 @@ typedef enum {
     POISSON_SOLVER_CG_SIMD = 6,        /**< Conjugate Gradient with SIMD backend (runtime detection) */
     POISSON_SOLVER_CG_OMP = 7,         /**< Conjugate Gradient with OpenMP backend */
     POISSON_SOLVER_SOR_SIMD = 8,       /**< SOR with SIMD backend (Block SOR, runtime detection) */
-    POISSON_SOLVER_MG_SCALAR = 9       /**< Geometric multigrid with scalar backend (grid dims must be 2^k+1) */
+    POISSON_SOLVER_MG_SCALAR = 9,      /**< Geometric multigrid with scalar backend (grid dims must be 2^k+1) */
+    POISSON_SOLVER_PCG_MG_SCALAR = 10  /**< CG with multigrid V-cycle preconditioner, scalar backend
+                                            (grid dims must be 2^k+1) */
 } poisson_solver_type;
 
 /** Default Poisson solver - uses runtime SIMD detection */
