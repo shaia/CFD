@@ -53,11 +53,13 @@ static ns_solver_params_t make_params(ns_pressure_solver_t pressure_solver) {
 
 /**
  * Run the scalar "projection" solver for NUM_STEPS on a Taylor-Green field.
- * Returns the init status; on CFD_SUCCESS the field holds the final state.
+ * Takes a fully populated params struct so callers can exercise exactly how
+ * the fields were initialized (default() vs zero-init). Returns the init
+ * status; on CFD_SUCCESS the field holds the final state.
  */
-static cfd_status_t run_projection_taylor_green(ns_pressure_solver_t pressure_solver,
+static cfd_status_t run_projection_taylor_green(const ns_solver_params_t* params_in,
                                                 flow_field* field, const grid* g) {
-    ns_solver_params_t params = make_params(pressure_solver);
+    ns_solver_params_t params = *params_in;
 
     ns_solver_registry_t* registry = cfd_registry_create();
     TEST_ASSERT_NOT_NULL_MESSAGE(registry, "Failed to create registry");
@@ -141,12 +143,15 @@ void test_projection_mg_matches_cg(void) {
     TEST_ASSERT_NOT_NULL(field_mg);
     TEST_ASSERT_NOT_NULL(field_pcg);
 
+    ns_solver_params_t params_cg = make_params(NS_PRESSURE_SOLVER_DEFAULT);
+    ns_solver_params_t params_mg = make_params(NS_PRESSURE_SOLVER_MULTIGRID);
+    ns_solver_params_t params_pcg = make_params(NS_PRESSURE_SOLVER_PCG_MG);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
-        run_projection_taylor_green(NS_PRESSURE_SOLVER_DEFAULT, field_cg, g));
+        run_projection_taylor_green(&params_cg, field_cg, g));
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
-        run_projection_taylor_green(NS_PRESSURE_SOLVER_MULTIGRID, field_mg, g));
+        run_projection_taylor_green(&params_mg, field_mg, g));
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
-        run_projection_taylor_green(NS_PRESSURE_SOLVER_PCG_MG, field_pcg, g));
+        run_projection_taylor_green(&params_pcg, field_pcg, g));
 
     size_t n = (size_t)GRID_N * GRID_N;
     double u_norm = test_compute_l2_norm(field_cg->u, n);
@@ -274,7 +279,13 @@ void test_projection_backends_reject_mg(void) {
 void test_projection_zero_init_backward_compat(void) {
     printf("\n    Testing zero-init params preserve default CG behavior...\n");
 
+    /* Backward-compat contract: a caller that predates the pressure_solver
+     * field - one that zero-initializes ns_solver_params_t and never touches
+     * pressure_solver - must still get the original CG pressure solve. That
+     * only holds because the CG path is selected by enum value 0. */
     ns_solver_params_t defaults = ns_solver_params_default();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, (int)NS_PRESSURE_SOLVER_DEFAULT,
+        "Zero-init safety requires the default CG path to map to enum value 0");
     TEST_ASSERT_EQUAL_INT_MESSAGE(NS_PRESSURE_SOLVER_DEFAULT, defaults.pressure_solver,
         "ns_solver_params_default must leave pressure_solver at the zero default");
 
@@ -282,28 +293,56 @@ void test_projection_zero_init_backward_compat(void) {
     TEST_ASSERT_NOT_NULL(g);
     grid_initialize_uniform(g);
 
-    flow_field* field_a = flow_field_create(GRID_N, GRID_N, 1);
-    flow_field* field_b = flow_field_create(GRID_N, GRID_N, 1);
-    TEST_ASSERT_NOT_NULL(field_a);
-    TEST_ASSERT_NOT_NULL(field_b);
+    flow_field* field_zero = flow_field_create(GRID_N, GRID_N, 1);
+    flow_field* field_cg = flow_field_create(GRID_N, GRID_N, 1);
+    flow_field* field_mg = flow_field_create(GRID_N, GRID_N, 1);
+    TEST_ASSERT_NOT_NULL(field_zero);
+    TEST_ASSERT_NOT_NULL(field_cg);
+    TEST_ASSERT_NOT_NULL(field_mg);
 
-    /* Same run twice: once relying on the default, once with the explicit
-     * enum value. The scalar path is deterministic, so bitwise equality. */
-    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
-        run_projection_taylor_green(NS_PRESSURE_SOLVER_DEFAULT, field_a, g));
-    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
-        run_projection_taylor_green((ns_pressure_solver_t)0, field_b, g));
+    /* Build three configs from one genuinely zero-initialized struct (the
+     * legacy caller pattern) that differ ONLY in pressure_solver. Anchoring on
+     * a common zero base keeps every other field identical, so any difference
+     * in the result is attributable solely to the pressure-solver selection -
+     * not to default()'s nonzero source amplitudes or other tuning fields. */
+    ns_solver_params_t base;
+    memset(&base, 0, sizeof(base));
+    base.dt = TEST_DT;
+    base.mu = 0.01;
+    base.max_iter = 1;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(NS_PRESSURE_SOLVER_DEFAULT, base.pressure_solver,
+        "A zero-initialized params struct must leave pressure_solver at the CG default");
 
+    ns_solver_params_t params_zero = base; /* pressure_solver left at zero-init 0 */
+    ns_solver_params_t params_cg = base;
+    params_cg.pressure_solver = NS_PRESSURE_SOLVER_DEFAULT; /* explicit CG */
+    ns_solver_params_t params_mg = base;
+    params_mg.pressure_solver = NS_PRESSURE_SOLVER_MULTIGRID; /* explicit MG */
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
+        run_projection_taylor_green(&params_zero, field_zero, g));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
+        run_projection_taylor_green(&params_cg, field_cg, g));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
+        run_projection_taylor_green(&params_mg, field_mg, g));
+
+    /* The zero-init run must take the CG path: bitwise identical to the
+     * explicit-CG run (scalar solve is deterministic), and NOT the multigrid
+     * run. The second check guards against a regression that maps the zero
+     * value to some other pressure solver. */
     size_t bytes = (size_t)GRID_N * GRID_N * sizeof(double);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(field_a->u, field_b->u, bytes),
-                                  "u fields must be bitwise identical");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(field_a->v, field_b->v, bytes),
-                                  "v fields must be bitwise identical");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(field_a->p, field_b->p, bytes),
-                                  "p fields must be bitwise identical");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(field_zero->u, field_cg->u, bytes),
+                                  "zero-init u field must match explicit CG bitwise");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(field_zero->v, field_cg->v, bytes),
+                                  "zero-init v field must match explicit CG bitwise");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(field_zero->p, field_cg->p, bytes),
+                                  "zero-init p field must match explicit CG bitwise");
+    TEST_ASSERT_TRUE_MESSAGE(memcmp(field_zero->u, field_mg->u, bytes) != 0,
+        "zero-init must select CG, not the multigrid pressure solver");
 
-    flow_field_destroy(field_a);
-    flow_field_destroy(field_b);
+    flow_field_destroy(field_zero);
+    flow_field_destroy(field_cg);
+    flow_field_destroy(field_mg);
     grid_destroy(g);
 }
 
