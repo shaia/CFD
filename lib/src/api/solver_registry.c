@@ -939,10 +939,17 @@ static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const
             grid->dx[0], grid->dy[0],
             (grid->nz > 1 && grid->dz) ? grid->dz[0] : 0.0, NULL);
         poisson_solver_destroy(probe);
-        if (probe_status != CFD_SUCCESS) {
+        if (probe_status == CFD_ERROR_INVALID) {
+            /* Only the grid-dimension rejection (non-2^k+1) is remapped to
+             * UNSUPPORTED so the caller can pick a different pressure solver. */
             cfd_set_error(CFD_ERROR_UNSUPPORTED,
                 "Multigrid pressure solver requires 2^k+1 grid points per active dimension");
             return CFD_ERROR_UNSUPPORTED;
+        }
+        if (probe_status != CFD_SUCCESS) {
+            /* Other failures (e.g. CFD_ERROR_NOMEM) propagate unchanged so the
+             * real cause and its error context are not masked. */
+            return probe_status;
         }
     }
     projection_context* ctx = (projection_context*)cfd_malloc(sizeof(projection_context));
