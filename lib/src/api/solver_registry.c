@@ -936,10 +936,17 @@ static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const
                 "Multigrid Poisson solver is unavailable in this build");
             return CFD_ERROR_UNSUPPORTED;
         }
+        /* The probe only needs the dimension checks, which multigrid init runs
+         * before it builds anything. mg_max_levels = 1 stops it from
+         * allocating the coarse-grid hierarchy that the real pressure solve
+         * would rebuild anyway, avoiding an O(N) transient spike at init. */
+        poisson_solver_params_t probe_params = poisson_solver_params_default();
+        probe_params.mg_max_levels = 1;
+
         cfd_status_t probe_status = poisson_solver_init(
             probe, grid->nx, grid->ny, grid->nz,
             grid->dx[0], grid->dy[0],
-            (grid->nz > 1 && grid->dz) ? grid->dz[0] : 0.0, NULL);
+            (grid->nz > 1 && grid->dz) ? grid->dz[0] : 0.0, &probe_params);
         poisson_solver_destroy(probe);
         if (probe_status == CFD_ERROR_INVALID) {
             /* Only the grid-dimension rejection (non-2^k+1) is remapped to
