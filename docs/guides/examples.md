@@ -704,6 +704,11 @@ CFD Platform Diagnostics
   BiCGSTAB                  1   res=6.3e-11  L2=1.0e-04     0 ms  converged
 ```
 
+> **Note:** `L2=-1.0e+00` is a "not computed" sentinel, not a real error value. The
+> example only computes the L2 error when the solve returns `CFD_SUCCESS`; on a
+> `max_iter` (non-converged) exit it prints `-1.0` instead. Jacobi does not converge
+> on this RHS within 10000 iterations, so its L2 error is reported as `-1.0`.
+
 ---
 
 ### 14. poiseuille_stretched_grid.c
