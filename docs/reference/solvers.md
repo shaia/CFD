@@ -76,7 +76,7 @@ Chorin's projection method - properly enforces incompressibility constraint.
 | `projection` | Scalar | Basic implementation |
 | `projection_optimized` | SIMD | SIMD-optimized (runtime detection: AVX2/NEON) |
 | `projection_omp` | OpenMP | Multi-threaded |
-| `projection_jacobi_gpu` | GPU | CUDA-accelerated (Jacobi iteration) |
+| `projection_gpu` | GPU | CUDA-accelerated (CG pressure solve) |
 
 **Pressure solver selection** (`ns_solver_params_t.pressure_solver`):
 
@@ -463,7 +463,7 @@ GPU-accelerated using CUDA:
 // Check if GPU should be used
 gpu_config_t config = gpu_config_default();
 if (gpu_should_use(&config, nx, ny, num_steps)) {
-    solver = cfd_solver_create(registry, "projection_jacobi_gpu");
+    solver = cfd_solver_create(registry, "projection_gpu");
 } else {
     solver = cfd_solver_create(registry, "projection_optimized");
 }
@@ -481,7 +481,7 @@ if (gpu_should_use(&config, nx, ny, num_steps)) {
 | projection | 19.0 | 1.0x | High |
 | projection_optimized | 5.3 | 3.6x | High |
 | projection_omp (8 cores) | 4.2 | 4.5x | High |
-| projection_jacobi_gpu | 8.4 | 0.45x† | High |
+| projection_gpu | 8.4 | 0.45x† | High |
 
 † GPU slower on small grids due to data transfer overhead
 
@@ -499,7 +499,7 @@ if (gpu_should_use(&config, nx, ny, num_steps)) {
 | Solver | Time (s) | Speedup |
 |--------|----------|---------|
 | projection_optimized | 824 | 1.0x |
-| projection_jacobi_gpu | 68 | 12.1x |
+| projection_gpu | 68 | 12.1x |
 
 ## Choosing a Solver
 
@@ -515,7 +515,7 @@ Need strict incompressibility enforcement?
 └─ Yes → Use Projection Method family
          ├─ Small grid (<100×100) → projection
          ├─ Medium grid (100-500) → projection_optimized or projection_omp
-         └─ Large grid (>500)     → projection_jacobi_gpu
+         └─ Large grid (>500)     → projection_gpu
 
 GPU available and grid >200×200?
 └─ Use CUDA variant for 10-50x speedup
@@ -530,7 +530,7 @@ GPU available and grid >200×200?
 
 **Production Simulations:**
 - `projection_optimized` or `projection_omp` (medium grids)
-- `projection_jacobi_gpu` (large grids)
+- `projection_gpu` (large grids)
 - Best accuracy and performance
 
 **Benchmarking:**

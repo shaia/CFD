@@ -756,7 +756,7 @@ cfd_aligned_free(data);  // Correct
 #define NS_SOLVER_TYPE_PROJECTION_OPTIMIZED     "projection_optimized"
 #define NS_SOLVER_TYPE_PROJECTION_OMP           "projection_omp"
 #define NS_SOLVER_TYPE_RK2                      "rk2"
-#define NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU    "projection_jacobi_gpu"
+#define NS_SOLVER_TYPE_PROJECTION_GPU           "projection_gpu"
 ```
 
 ## Version Information
