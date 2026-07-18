@@ -932,6 +932,8 @@ static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const
         poisson_solver_t* probe = poisson_solver_create(
             POISSON_METHOD_MULTIGRID, POISSON_BACKEND_SCALAR);
         if (!probe) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "Multigrid Poisson solver is unavailable in this build");
             return CFD_ERROR_UNSUPPORTED;
         }
         cfd_status_t probe_status = poisson_solver_init(
