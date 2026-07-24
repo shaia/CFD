@@ -80,12 +80,17 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
 
 cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
                                   const ns_solver_params_t* params) {
-    (void)params;
     if (!solver || !grid) {
         return CFD_ERROR_INVALID;
     }
     if (grid->nx < 3 || grid->ny < 3 || (grid->nz > 1 && grid->nz < 3)) {
         return CFD_ERROR_INVALID;
+    }
+
+    if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "Multigrid pressure solver is only supported by the scalar projection solver");
+        return CFD_ERROR_UNSUPPORTED;
     }
 
     /* Verify SIMD CG Poisson solver is available before allocating resources */

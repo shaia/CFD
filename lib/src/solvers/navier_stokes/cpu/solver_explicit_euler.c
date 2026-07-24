@@ -77,7 +77,8 @@ ns_solver_params_t ns_solver_params_default(void) {
                             .heat_source_context = NULL,
                             .thermal_bc = {0},
                             .turb_model = TURB_MODEL_NONE,
-                            .turb_bc = {0}};
+                            .turb_bc = {0},
+                            .pressure_solver = NS_PRESSURE_SOLVER_DEFAULT};
     return params;
 }
 flow_field* flow_field_create(size_t nx, size_t ny, size_t nz) {

@@ -314,6 +314,11 @@ static cfd_status_t gmres_scalar_init(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
+    cfd_status_t precond_status = poisson_solver_reject_mg_precond(params);
+    if (precond_status != CFD_SUCCESS) {
+        return precond_status;
+    }
+
     gmres_context_t* ctx = (gmres_context_t*)cfd_calloc(1, sizeof(gmres_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;

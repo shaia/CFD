@@ -919,8 +919,60 @@ typedef struct {
 } projection_context;
 
 static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const ns_solver_params_t* params) {
-    (void)grid;
-    (void)params;
+    if (!solver || !grid) {
+        return CFD_ERROR_INVALID;
+    }
+    if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
+        if (params->pressure_solver != NS_PRESSURE_SOLVER_MULTIGRID &&
+            params->pressure_solver != NS_PRESSURE_SOLVER_PCG_MG) {
+            return CFD_ERROR_INVALID;
+        }
+        /* Screen degenerate grids first. poisson_solver_init reports those
+         * with CFD_ERROR_INVALID as well, so rejecting them here keeps the
+         * probe's INVALID unambiguous: below, it can only mean the
+         * multigrid-specific non-2^k+1 rejection. A grid too small to hold an
+         * interior cell is a caller error, not an unsupported configuration,
+         * so it stays INVALID rather than being remapped to UNSUPPORTED. */
+        if (grid->nx < 3 || grid->ny < 3 || (grid->nz > 1 && grid->nz < 3)) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                "Multigrid pressure solver requires at least 3 points per active dimension");
+            return CFD_ERROR_INVALID;
+        }
+
+        /* Both MG modes require a multigrid hierarchy on this exact grid:
+         * probe-init and reject non-2^k+1 dimensions up front. */
+        poisson_solver_t* probe = poisson_solver_create(
+            POISSON_METHOD_MULTIGRID, POISSON_BACKEND_SCALAR);
+        if (!probe) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "Multigrid Poisson solver is unavailable in this build");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+        /* The probe only needs the dimension checks, which multigrid init runs
+         * before it builds anything. mg_max_levels = 1 stops it from
+         * allocating the coarse-grid hierarchy that the real pressure solve
+         * would rebuild anyway, avoiding an O(N) transient spike at init. */
+        poisson_solver_params_t probe_params = poisson_solver_params_default();
+        probe_params.mg_max_levels = 1;
+
+        cfd_status_t probe_status = poisson_solver_init(
+            probe, grid->nx, grid->ny, grid->nz,
+            grid->dx[0], grid->dy[0],
+            (grid->nz > 1 && grid->dz) ? grid->dz[0] : 0.0, &probe_params);
+        poisson_solver_destroy(probe);
+        if (probe_status == CFD_ERROR_INVALID) {
+            /* Only the grid-dimension rejection (non-2^k+1) is remapped to
+             * UNSUPPORTED so the caller can pick a different pressure solver. */
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "Multigrid pressure solver requires 2^k+1 grid points per active dimension");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+        if (probe_status != CFD_SUCCESS) {
+            /* Other failures (e.g. CFD_ERROR_NOMEM) propagate unchanged so the
+             * real cause and its error context are not masked. */
+            return probe_status;
+        }
+    }
     projection_context* ctx = (projection_context*)cfd_malloc(sizeof(projection_context));
     if (!ctx) {
         return CFD_ERROR;
@@ -1142,6 +1194,18 @@ static ns_solver_t* create_explicit_euler_gpu_solver(void) {
  * Built-in solver: GPU-Accelerated Projection Method
  */
 
+static cfd_status_t gpu_projection_init(ns_solver_t* solver, const grid* grid,
+                                        const ns_solver_params_t* params) {
+    (void)solver;
+    (void)grid;
+    if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "Multigrid pressure solver is only supported by the scalar projection solver");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return CFD_SUCCESS;
+}
+
 static cfd_status_t gpu_projection_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     (void)solver;
@@ -1196,7 +1260,7 @@ static ns_solver_t* create_projection_gpu_solver(void) {
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
     s->backend = NS_SOLVER_BACKEND_CUDA;
 
-    s->init = NULL;
+    s->init = gpu_projection_init;  // Rejects non-default pressure_solver
     s->destroy = NULL;
     s->step = gpu_projection_step;
     s->solve = gpu_projection_solve;
@@ -1535,9 +1599,14 @@ static ns_solver_t* create_rk4_omp_solver(void) {
 
 static cfd_status_t projection_omp_init(ns_solver_t* solver, const grid* grid,
                                         const ns_solver_params_t* params) {
-    (void)params;
     if (!solver || !grid) {
         return CFD_ERROR_INVALID;
+    }
+
+    if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "Multigrid pressure solver is only supported by the scalar projection solver");
+        return CFD_ERROR_UNSUPPORTED;
     }
 
     /* OMP projection requires OMP CG Poisson solver.

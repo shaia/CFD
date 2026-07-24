@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multigrid wired into the projection method** — new
+  `ns_solver_params_t.pressure_solver` field (`ns_pressure_solver_t`; 0 =
+  existing CG behavior) selects the pressure Poisson solve of the scalar
+  `projection` solver: `NS_PRESSURE_SOLVER_MULTIGRID` (multigrid V-cycles,
+  RHS interior mean subtracted for Neumann compatibility) or
+  `NS_PRESSURE_SOLVER_PCG_MG` (MG-preconditioned CG). Non-2^k+1 grids and
+  non-scalar projection backends reject the selection with
+  `CFD_ERROR_UNSUPPORTED` at init
+  (`lib/src/solvers/navier_stokes/cpu/solver_projection.c`,
+  `lib/src/api/solver_registry.c`,
+  `tests/solvers/navier_stokes/cpu/test_projection_pressure_solver.c`).
+- **Multigrid-preconditioned CG** — `POISSON_PRECOND_MULTIGRID` runs one
+  symmetric V(2,2) weighted-Jacobi multigrid cycle in Dirichlet mode per
+  preconditioner apply (scalar CG only; other CG/GMRES backends reject it
+  with `CFD_ERROR_UNSUPPORTED`). Grid-size-independent convergence: 5 CG
+  iterations at 33²–129² (tol 1e-8) vs 50–170 unpreconditioned. Exposed as
+  the `POISSON_SOLVER_PCG_MG_SCALAR` convenience preset
+  (`lib/src/solvers/linear/cpu/linear_solver_cg.c`,
+  `tests/math/test_mg_pcg_convergence.c`).
 - **Geometric multigrid Poisson solver** (scalar backend) — V/W/F(FMG) cycles with
   Red-Black Gauss-Seidel or weighted-Jacobi smoothers, full-weighting restriction and
   bilinear/trilinear prolongation, 2D/3D. Two BC modes: Neumann zero-gradient (default,

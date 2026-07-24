@@ -588,6 +588,7 @@ static poisson_solver_t* g_cached_cg_scalar = NULL;
 static poisson_solver_t* g_cached_cg_omp = NULL;
 static poisson_solver_t* g_cached_cg_simd = NULL;
 static poisson_solver_t* g_cached_mg_scalar = NULL;
+static poisson_solver_t* g_cached_pcg_mg_scalar = NULL;
 
 /**
  * Cleanup cached solvers (called at program exit)
@@ -632,6 +633,10 @@ static void cleanup_cached_solvers(void) {
     if (g_cached_mg_scalar) {
         poisson_solver_destroy(g_cached_mg_scalar);
         g_cached_mg_scalar = NULL;
+    }
+    if (g_cached_pcg_mg_scalar) {
+        poisson_solver_destroy(g_cached_pcg_mg_scalar);
+        g_cached_pcg_mg_scalar = NULL;
     }
 }
 
@@ -706,6 +711,12 @@ int poisson_solve_3d(
             backend = POISSON_BACKEND_SCALAR;
             break;
 
+        case POISSON_SOLVER_PCG_MG_SCALAR:
+            solver_ptr = &g_cached_pcg_mg_scalar;
+            method = POISSON_METHOD_CG;
+            backend = POISSON_BACKEND_SCALAR;
+            break;
+
         default:
             CFD_LOG_ERROR("poisson", "poisson_solve_3d: Unknown solver type %d", solver_type);
             return -1;
@@ -737,8 +748,18 @@ int poisson_solve_3d(
         *solver_ptr = poisson_solver_create(method, backend);
 
         if (*solver_ptr) {
+            /* The convenience API has no params argument, so the PCG_MG
+             * preset carries its preconditioner into the cached instance. */
+            poisson_solver_params_t pcg_mg_params;
+            const poisson_solver_params_t* init_params = NULL;
+            if (solver_type == POISSON_SOLVER_PCG_MG_SCALAR) {
+                pcg_mg_params = poisson_solver_params_default();
+                pcg_mg_params.preconditioner = POISSON_PRECOND_MULTIGRID;
+                init_params = &pcg_mg_params;
+            }
+
             cfd_status_t init_status =
-                poisson_solver_init(*solver_ptr, nx, ny, nz, dx, dy, dz, NULL);
+                poisson_solver_init(*solver_ptr, nx, ny, nz, dx, dy, dz, init_params);
             if (init_status != CFD_SUCCESS) {
                 poisson_solver_destroy(*solver_ptr);
                 *solver_ptr = NULL;

@@ -263,9 +263,24 @@ typedef struct {
     // Turbulence
     turbulence_model_t        turb_model;  // TURB_MODEL_NONE (default), K_EPSILON, SPALART_ALLMARAS
     ns_turbulence_bc_config_t turb_bc;    // Per-face turbulence BC types
+    // Pressure Poisson solver (projection solvers)
+    ns_pressure_solver_t pressure_solver;  // NS_PRESSURE_SOLVER_DEFAULT (0) = backend's CG
 } ns_solver_params_t;
 
 ns_solver_params_t ns_solver_params_default(void);
+```
+
+`ns_pressure_solver_t` selects the pressure Poisson solve of the projection
+method (scalar `projection` solver only; the multigrid modes require 2^k+1
+grid points per active dimension, and other projection backends reject
+non-default values with `CFD_ERROR_UNSUPPORTED` at init):
+
+```c
+typedef enum {
+    NS_PRESSURE_SOLVER_DEFAULT = 0,   // Backend's default CG pressure solve
+    NS_PRESSURE_SOLVER_MULTIGRID = 1, // Geometric multigrid V-cycle solver
+    NS_PRESSURE_SOLVER_PCG_MG = 2,    // CG preconditioned by one MG V-cycle
+} ns_pressure_solver_t;
 ```
 
 `turbulence_model_t` is defined in `cfd/solvers/navier_stokes_solver.h`:
@@ -491,6 +506,13 @@ poisson_solver_params_t poisson_solver_params_default(void);
 > Multigrid requires 2^k+1 grid points per active dimension (e.g. 33, 65, 129);
 > `poisson_solver_init` returns `CFD_ERROR_INVALID` otherwise. In the default
 > `MG_BC_NEUMANN` mode the solution is defined up to an additive constant.
+
+`poisson_precond_type_t` values: `POISSON_PRECOND_NONE` (0, default),
+`POISSON_PRECOND_JACOBI` (1), `POISSON_PRECOND_MULTIGRID` (2 — one MG V-cycle
+per apply; scalar CG only, 2^k+1 dims; other backends return
+`CFD_ERROR_UNSUPPORTED`). The convenience API exposes the MG-preconditioned CG
+as the `POISSON_SOLVER_PCG_MG_SCALAR` preset for
+`poisson_solve()`/`poisson_solve_3d()`.
 
 ### Poisson Statistics
 
@@ -734,7 +756,7 @@ cfd_aligned_free(data);  // Correct
 #define NS_SOLVER_TYPE_PROJECTION_OPTIMIZED     "projection_optimized"
 #define NS_SOLVER_TYPE_PROJECTION_OMP           "projection_omp"
 #define NS_SOLVER_TYPE_RK2                      "rk2"
-#define NS_SOLVER_TYPE_PROJECTION_JACOBI_GPU    "projection_jacobi_gpu"
+#define NS_SOLVER_TYPE_PROJECTION_GPU           "projection_gpu"
 ```
 
 ## Version Information

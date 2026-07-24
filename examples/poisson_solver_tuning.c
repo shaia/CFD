@@ -124,7 +124,8 @@ int main(void) {
     printf("Poisson Solver Tuning Example\n");
     printf("=============================\n");
 
-    size_t nx = 64, ny = 64;
+    /* 65 = 2^6+1 so the multigrid rows below can build their hierarchy */
+    size_t nx = 65, ny = 65;
     double dx = 1.0 / (double)(nx - 1);
     double dy = 1.0 / (double)(ny - 1);
 
@@ -163,8 +164,14 @@ int main(void) {
                      POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
     benchmark_method("CG + Jacobi PC", POISSON_METHOD_CG, POISSON_BACKEND_SCALAR,
                      POISSON_PRECOND_JACOBI, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
+    benchmark_method("CG + Multigrid PC", POISSON_METHOD_CG, POISSON_BACKEND_SCALAR,
+                     POISSON_PRECOND_MULTIGRID, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
     benchmark_method("BiCGSTAB", POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR,
                      POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
+    /* Standalone POISSON_METHOD_MULTIGRID is omitted here: this example's RHS
+     * has a nonzero interior mean, which the true Neumann system cannot
+     * converge on (same reason the stationary methods above report max_iter).
+     * See tests/math/test_multigrid_convergence.c for a compatible setup. */
 
     /* Section 2: Backend comparison (CG method) */
     printf("\n--- Backend Comparison (CG Method) ---\n");

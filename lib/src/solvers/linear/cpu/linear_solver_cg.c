@@ -53,6 +53,9 @@ typedef struct {
     double* p;         /* Search direction */
     double* Ap;        /* A * p (Laplacian applied to p) */
 
+    poisson_solver_t* mg_precond;        /* Inner MG V-cycle solver (NULL unless
+                                            POISSON_PRECOND_MULTIGRID) */
+    poisson_precond_type_t precond_type; /* Which preconditioner use_precond refers to */
     int use_precond;   /* Flag: is preconditioner enabled? */
     int initialized;
 } cg_context_t;
@@ -192,6 +195,38 @@ static void apply_jacobi_precond(const double* r, double* z,
     }
 }
 
+/**
+ * Apply multigrid preconditioner: z = M^{-1} * r for A = -nabla^2.
+ *
+ * The inner solver runs one V-cycle on nabla^2 z' = r from a zero guess;
+ * by linearity of the fixed cycle, z = -z' approximates (-nabla^2)^{-1} r.
+ * r can be passed directly as the MG rhs: its boundary stays zero and the
+ * MG smoothers/residual never read rhs boundary values. The cycle uses
+ * Dirichlet mode with symmetric Jacobi smoothing (set at init), matching
+ * the zero halo that CG's interior-only updates impose on Krylov vectors
+ * and keeping M symmetric positive definite.
+ */
+static cfd_status_t apply_mg_precond(poisson_solver_t* mg, const double* r, double* z,
+                                     size_t n_total, size_t nx, size_t ny,
+                                     size_t k_start, size_t k_end, size_t stride_z) {
+    memset(z, 0, n_total * sizeof(double));
+
+    cfd_status_t status = poisson_solver_iterate(mg, z, NULL, r, NULL);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = (k * stride_z) + (IDX_2D(i, j, nx));
+                z[idx] = -z[idx];
+            }
+        }
+    }
+    return CFD_SUCCESS;
+}
+
 /* ============================================================================
  * CG SCALAR IMPLEMENTATION
  * ============================================================================ */
@@ -216,7 +251,9 @@ static cfd_status_t cg_scalar_init(
     ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
 
     /* Check if preconditioner is enabled */
-    ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
+    ctx->precond_type = params ? params->preconditioner : POISSON_PRECOND_NONE;
+    ctx->use_precond = (ctx->precond_type == POISSON_PRECOND_JACOBI ||
+                        ctx->precond_type == POISSON_PRECOND_MULTIGRID);
 
     /* Allocate working vectors */
     size_t n = nx * ny * nz;
@@ -245,6 +282,39 @@ static cfd_status_t cg_scalar_init(
         }
     }
 
+    if (ctx->precond_type == POISSON_PRECOND_MULTIGRID) {
+        ctx->mg_precond = create_multigrid_scalar_solver();
+        if (!ctx->mg_precond) {
+            cfd_free(ctx->r);
+            cfd_free(ctx->z);
+            cfd_free(ctx->p);
+            cfd_free(ctx->Ap);
+            cfd_free(ctx);
+            return CFD_ERROR_NOMEM;
+        }
+
+        /* One V-cycle per apply. Dirichlet mode matches CG's interior
+         * operator (Krylov vectors carry a permanent zero halo) and keeps M
+         * nonsingular; Jacobi smoothing with equal pre/post sweeps keeps M
+         * symmetric, as CG requires. */
+        poisson_solver_params_t mg_params = poisson_solver_params_default();
+        mg_params.mg_cycle = MG_CYCLE_V;
+        mg_params.mg_smoother = MG_SMOOTHER_JACOBI;
+        mg_params.mg_bc = MG_BC_DIRICHLET;
+
+        cfd_status_t mg_status = poisson_solver_init(
+            ctx->mg_precond, nx, ny, nz, dx, dy, dz, &mg_params);
+        if (mg_status != CFD_SUCCESS) {
+            poisson_solver_destroy(ctx->mg_precond);
+            cfd_free(ctx->r);
+            cfd_free(ctx->z);
+            cfd_free(ctx->p);
+            cfd_free(ctx->Ap);
+            cfd_free(ctx);
+            return mg_status;  /* CFD_ERROR_INVALID for non-2^k+1 dims */
+        }
+    }
+
     ctx->initialized = 1;
     solver->context = ctx;
     return CFD_SUCCESS;
@@ -253,6 +323,7 @@ static cfd_status_t cg_scalar_init(
 static void cg_scalar_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
         cg_context_t* ctx = (cg_context_t*)solver->context;
+        poisson_solver_destroy(ctx->mg_precond);
         cfd_free(ctx->r);
         cfd_free(ctx->z);
         cfd_free(ctx->p);
@@ -322,11 +393,28 @@ static cfd_status_t cg_scalar_solve(
     /* Compute initial residual: r_0 = b - A*x_0 */
     compute_residual(x, rhs, r, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
+    size_t n_total = nx * ny * solver->nz;
+    double initial_res = sqrt(dot_product(r, r, nx, ny, k_start, k_end, stride_z));
+
     /* Initialize search direction and rho */
     double rho;
     if (use_precond) {
         /* z_0 = M^{-1} r_0 */
-        apply_jacobi_precond(r, z, nx, ny, diag_inv, k_start, k_end, stride_z);
+        if (ctx->precond_type == POISSON_PRECOND_MULTIGRID) {
+            cfd_status_t precond_status = apply_mg_precond(
+                ctx->mg_precond, r, z, n_total, nx, ny, k_start, k_end, stride_z);
+            if (precond_status != CFD_SUCCESS) {
+                if (stats) {
+                    stats->status = POISSON_ERROR;
+                    stats->iterations = 0;
+                    stats->final_residual = initial_res;
+                    stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
+                }
+                return precond_status;
+            }
+        } else {
+            apply_jacobi_precond(r, z, nx, ny, diag_inv, k_start, k_end, stride_z);
+        }
         /* p_0 = z_0 */
         copy_vector(z, p, nx, ny, k_start, k_end, stride_z);
         /* rho_0 = (r_0, z_0) */
@@ -337,8 +425,6 @@ static cfd_status_t cg_scalar_solve(
         /* rho_0 = (r_0, r_0) */
         rho = dot_product(r, r, nx, ny, k_start, k_end, stride_z);
     }
-
-    double initial_res = sqrt(dot_product(r, r, nx, ny, k_start, k_end, stride_z));
 
     if (stats) {
         stats->initial_residual = initial_res;
@@ -386,7 +472,21 @@ static cfd_status_t cg_scalar_solve(
         double rho_new;
         if (use_precond) {
             /* z_{k+1} = M^{-1} r_{k+1} */
-            apply_jacobi_precond(r, z, nx, ny, diag_inv, k_start, k_end, stride_z);
+            if (ctx->precond_type == POISSON_PRECOND_MULTIGRID) {
+                cfd_status_t precond_status = apply_mg_precond(
+                    ctx->mg_precond, r, z, n_total, nx, ny, k_start, k_end, stride_z);
+                if (precond_status != CFD_SUCCESS) {
+                    if (stats) {
+                        stats->status = POISSON_ERROR;
+                        stats->iterations = iter + 1;
+                        stats->final_residual = res_norm;
+                        stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
+                    }
+                    return precond_status;
+                }
+            } else {
+                apply_jacobi_precond(r, z, nx, ny, diag_inv, k_start, k_end, stride_z);
+            }
             /* rho_new = (r_{k+1}, z_{k+1}) */
             rho_new = dot_product(r, z, nx, ny, k_start, k_end, stride_z);
         } else {
