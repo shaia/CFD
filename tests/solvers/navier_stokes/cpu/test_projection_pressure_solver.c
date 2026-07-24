@@ -7,6 +7,8 @@
  * - The MG modes agree with the default CG pressure solve within solver
  *   tolerance
  * - Non-2^k+1 grids are rejected at init with CFD_ERROR_UNSUPPORTED
+ * - Degenerate grids are rejected with CFD_ERROR_INVALID instead, since no
+ *   pressure solver choice can rescue them
  * - projection_optimized / projection_omp / projection_gpu reject any
  *   non-default selection with CFD_ERROR_UNSUPPORTED (no silent fallbacks)
  * - Zero-initialized params keep the existing CG behavior bit-for-bit
@@ -37,8 +39,9 @@ void tearDown(void) {
     cfd_finalize();
 }
 
-#define GRID_N 33       /* 2^5+1: multigrid-conforming */
-#define GRID_N_BAD 30   /* not 2^k+1 */
+#define GRID_N 33          /* 2^5+1: multigrid-conforming */
+#define GRID_N_BAD 30      /* not 2^k+1, but large enough to be a valid grid */
+#define GRID_N_DEGENERATE 2 /* too small to hold an interior cell */
 #define NUM_STEPS 5
 #define TEST_DT 1e-3
 
@@ -182,6 +185,51 @@ void test_projection_mg_matches_cg(void) {
     flow_field_destroy(field_cg);
     flow_field_destroy(field_mg);
     flow_field_destroy(field_pcg);
+    grid_destroy(g);
+}
+
+//=============================================================================
+// TEST: DEGENERATE GRID IS REJECTED AS INVALID, NOT UNSUPPORTED
+//=============================================================================
+
+/**
+ * A grid too small to hold an interior cell is a caller error (INVALID), not
+ * a configuration this solver merely lacks support for (UNSUPPORTED). The two
+ * statuses drive different recovery: UNSUPPORTED tells the caller to pick a
+ * different pressure solver, which would be useless advice here since no
+ * pressure solver can work on a 2x2 grid.
+ */
+void test_projection_mg_rejects_degenerate_grid_as_invalid(void) {
+    printf("\n    Testing MG pressure solver rejects degenerate grids as INVALID...\n");
+
+    grid* g = grid_create(GRID_N_DEGENERATE, GRID_N_DEGENERATE, 1,
+                          0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    ns_pressure_solver_t modes[] = {
+        NS_PRESSURE_SOLVER_MULTIGRID,
+        NS_PRESSURE_SOLVER_PCG_MG,
+    };
+    for (size_t m = 0; m < sizeof(modes) / sizeof(modes[0]); m++) {
+        ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
+        TEST_ASSERT_NOT_NULL_MESSAGE(slv, "projection solver not available");
+
+        ns_solver_params_t params = make_params(modes[m]);
+        cfd_status_t init_status = solver_init(slv, g, &params);
+        printf("      mode %d on %dx%d: init status %d\n",
+               (int)modes[m], GRID_N_DEGENERATE, GRID_N_DEGENERATE, (int)init_status);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_ERROR_INVALID, init_status,
+            "MG pressure solver on a degenerate grid must fail init with INVALID");
+
+        solver_destroy(slv);
+    }
+
+    cfd_registry_destroy(registry);
     grid_destroy(g);
 }
 
@@ -360,6 +408,7 @@ int main(void) {
     RUN_TEST(test_projection_mg_divergence_free);
     RUN_TEST(test_projection_pcg_mg_divergence_free);
     RUN_TEST(test_projection_mg_matches_cg);
+    RUN_TEST(test_projection_mg_rejects_degenerate_grid_as_invalid);
     RUN_TEST(test_projection_mg_rejects_non_pow2_grid);
     RUN_TEST(test_projection_backends_reject_mg);
     RUN_TEST(test_projection_zero_init_backward_compat);

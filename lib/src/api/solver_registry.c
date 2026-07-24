@@ -927,6 +927,18 @@ static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const
             params->pressure_solver != NS_PRESSURE_SOLVER_PCG_MG) {
             return CFD_ERROR_INVALID;
         }
+        /* Screen degenerate grids first. poisson_solver_init reports those
+         * with CFD_ERROR_INVALID as well, so rejecting them here keeps the
+         * probe's INVALID unambiguous: below, it can only mean the
+         * multigrid-specific non-2^k+1 rejection. A grid too small to hold an
+         * interior cell is a caller error, not an unsupported configuration,
+         * so it stays INVALID rather than being remapped to UNSUPPORTED. */
+        if (grid->nx < 3 || grid->ny < 3 || (grid->nz > 1 && grid->nz < 3)) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                "Multigrid pressure solver requires at least 3 points per active dimension");
+            return CFD_ERROR_INVALID;
+        }
+
         /* Both MG modes require a multigrid hierarchy on this exact grid:
          * probe-init and reject non-2^k+1 dimensions up front. */
         poisson_solver_t* probe = poisson_solver_create(
