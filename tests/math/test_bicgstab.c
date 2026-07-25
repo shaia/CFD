@@ -539,18 +539,25 @@ void test_bicgstab_dirichlet(void) {
  * ============================================================================ */
 
 /**
- * Test that unsupported backends return NULL
+ * Test backend availability contract: create() returns a solver exactly when
+ * the requested backend was compiled in, and NULL otherwise (no silent
+ * fallbacks). CFD_ENABLE_OPENMP / CFD_HAS_CUDA are library-compile macros not
+ * visible in this test TU, so query the backend at runtime via
+ * backend_available(), which tracks the same compile-time support.
  */
-void test_bicgstab_unsupported_backend(void) {
-    /* OMP backend not yet implemented for BiCGSTAB */
+void test_bicgstab_backend_availability(void) {
+    /* OMP backend: available whenever the library was built with OpenMP. */
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_OMP);
-    TEST_ASSERT_NULL(solver);
+    if (poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
+        TEST_ASSERT_NOT_NULL(solver);
+        poisson_solver_destroy(solver);
+    } else {
+        TEST_ASSERT_NULL(solver);
+    }
 
     /* GPU backend: create() returns the factory solver whenever the library was
-     * built with CUDA (the device check happens in init, not create). CFD_HAS_CUDA
-     * is a library-compile macro not visible in this test TU, so query the backend
-     * at runtime — backend_available() tracks the same compile-time CUDA support. */
+     * built with CUDA (the device check happens in init, not create). */
     solver = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_GPU);
     if (poisson_solver_backend_available(POISSON_BACKEND_GPU)) {
@@ -588,7 +595,7 @@ int main(void) {
     RUN_TEST(test_bicgstab_dirichlet);
 
     /* Error handling tests */
-    RUN_TEST(test_bicgstab_unsupported_backend);
+    RUN_TEST(test_bicgstab_backend_availability);
     RUN_TEST(test_bicgstab_destroy_null);
 
     return UNITY_END();

@@ -48,14 +48,19 @@ The single source of truth for backend gaps. Each algorithm targets scalar (CPU)
 |                     | RK4 (classical)| done | done     | —        | done     | done |
 | **Energy Eq.**      | Advec-diff + Boussinesq + thermal BCs | done | done | — | done | done |
 | **Turbulence**      | k-ε / SA + wall functions             | done | done | — | done | —    |
-| **Linear Solvers**  | Jacobi         | done | done     | done     | —        | done |
-|                     | SOR            | done | done     | done     | —        | done |
+| **Linear Solvers**  | Jacobi         | done | done     | done     | done     | done |
+|                     | SOR            | done | done     | done     | —¹       | done |
 |                     | Red-Black SOR  | done | done     | done     | done     | done |
 |                     | CG / PCG       | done | done     | done     | done     | done |
-|                     | BiCGSTAB       | done | done     | done     | —        | done |
+|                     | BiCGSTAB       | done | done     | done     | done     | done |
 |                     | GMRES(m)       | done | done     | done     | done     | —    |
 |                     | Multigrid (GMG)| done | —        | —        | —        | —    |
 | **Boundary Conds**  | All types      | done | done     | done     | done     | done |
+
+¹ Plain (lexicographic) SOR is inherently sequential — each update reads
+already-updated neighbors. Its parallel form is **Red-Black SOR**, which has an
+OMP backend; a "plain SOR OMP" would either change the numerics silently or need
+low-value wavefront machinery, so it is intentionally omitted.
 
 ### Known Limitations
 
@@ -127,6 +132,9 @@ non-symmetric operators arrive, e.g. implicit advection-diffusion in §1.5).
 - [x] GMRES (Generalized Minimal Residual) for non-symmetric systems — scalar, AVX2, NEON, OMP
       (done). GPU variant deferred.
 - [ ] GMRES GPU backend (deferred from the initial GMRES landing)
+- [x] Jacobi and BiCGSTAB OpenMP backends — completes the OMP linear tier
+      (Jacobi, Red-Black SOR, CG/PCG, BiCGSTAB, GMRES). Plain lexicographic SOR
+      stays scalar/SIMD-only; its parallel form is Red-Black SOR OMP.
 - [ ] SSOR (Symmetric SOR) preconditioner
 - [ ] ILU preconditioner
 - [x] Geometric multigrid — scalar backend; V/W/F(FMG) cycles, Red-Black GS or weighted
