@@ -137,7 +137,7 @@ int main() {
         // Single solver step (you'd implement this in the actual solver)
         // For this example, we'll just output at intervals
         if (iter % 200 == 0) {
-            char filename[512];
+            char filename[640];  // 512 for run_dir + 1 for "/" + 127 for basename
             char basename[128];
             snprintf(basename, sizeof(basename), "cylinder_flow_%d.vtk", iter);
 

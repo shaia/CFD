@@ -36,8 +36,8 @@ int file_exists(const char* filename) {
 void test_output_directory_creation(void) {
     // Create cross-platform test paths
     char base_path[256];
-    char test_dir[256];
-    char nested_test_dir[256];
+    char test_dir[272];         // 256 + 9 for "/test_dir" + 1 for null
+    char nested_test_dir[280];  // 256 + 16 for "/test_dir/nested" + 1 for null
     char output_dir[256];
 
     make_artifacts_path(base_path, sizeof(base_path), "");

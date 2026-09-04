@@ -195,7 +195,7 @@ void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size, cons
 #endif
 
     // Ensure base output directory exists
-    char output_base[512];
+    char output_base[520];  // 512 for base_path + 7 for "/output" + 1 for null
 #ifdef _WIN32
     snprintf(output_base, sizeof(output_base), "%s\\output", base_path);
 #else
@@ -235,7 +235,7 @@ void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* s
 #endif
 
     // Ensure base output directory exists
-    char output_base[512];
+    char output_base[520];  // 512 for base_path + 7 for "/output" + 1 for null
 #ifdef _WIN32
     snprintf(output_base, sizeof(output_base), "%s\\output", base_path);
 #else
