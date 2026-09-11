@@ -430,6 +430,8 @@ void test_mg_precond_unsupported_on_other_backends(void) {
                                       "GMRES scalar");
     assert_backend_rejects_mg_precond(POISSON_METHOD_GMRES, POISSON_BACKEND_SIMD,
                                       "GMRES SIMD");
+    assert_backend_rejects_mg_precond(POISSON_METHOD_GMRES, POISSON_BACKEND_OMP,
+                                      "GMRES OMP");
 }
 
 /* ============================================================================
