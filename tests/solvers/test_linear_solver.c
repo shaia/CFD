@@ -1112,19 +1112,25 @@ void test_poisson_init_rejects_oversized_grid(void) {
         { 3, 3, SIZE_MAX / 9 + 1 },
     };
 
+    int checked = 0;
     for (size_t s = 0; s < sizeof(solvers) / sizeof(solvers[0]); s++) {
+        if (!poisson_solver_backend_available(solvers[s].backend)) {
+            continue;  /* backend not built or not supported by this CPU */
+        }
+        checked++;
         for (size_t d = 0; d < sizeof(dims) / sizeof(dims[0]); d++) {
             poisson_solver_t* solver = poisson_solver_create(solvers[s].method,
                                                              solvers[s].backend);
-            if (!solver) {
-                continue;  /* backend not built or not supported by this CPU */
-            }
+            TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Backend available but solver creation failed");
             cfd_status_t st = poisson_solver_init(solver, dims[d][0], dims[d][1], dims[d][2],
                                                   0.1, 0.1, 0.1, NULL);
             const char* name = solver->name;
             poisson_solver_destroy(solver);
             TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_ERROR_LIMIT_EXCEEDED, st, name);
         }
+    }
+    if (checked == 0) {
+        TEST_IGNORE_MESSAGE("Neither OMP nor SIMD backend available");
     }
 }
 
