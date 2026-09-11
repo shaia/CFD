@@ -15,13 +15,16 @@
  *   - Hessenberg estimate vs independently recomputed true residual
  *   - Restart-no-stall: small m and default m reach the same solution
  *   - Jacobi preconditioner path converges (no iteration-count assertion)
- *   - Error handling (unsupported backends, NULL destroy)
+ *   - Max-iteration exhaustion: GMRES(1) stops at the cap with POISSON_MAX_ITER
+ *   - Error handling (unsupported backends, oversized restart rejected at init,
+ *     solve before init, NULL destroy)
  */
 
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
 #include "cfd/core/indexing.h"
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -592,6 +595,48 @@ void test_gmres_jacobi_precond(void) {
     cfd_free(rhs);
 }
 
+/**
+ * GMRES(1) cannot reach the tolerance in a handful of iterations: the solve must
+ * stop exactly at max_iterations and report POISSON_MAX_ITER, and because GMRES
+ * minimizes the residual at every step, the residual must not grow.
+ */
+void test_gmres_max_iter_exhaustion(void) {
+    size_t nx = NX_MEDIUM, ny = NY_MEDIUM;
+    double dx = (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);
+    double dy = (DOMAIN_YMAX - DOMAIN_YMIN) / (ny - 1);
+
+    double* p = create_field(nx, ny);
+    double* rhs = create_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(p);
+    TEST_ASSERT_NOT_NULL(rhs);
+
+    init_sinusoidal_rhs(rhs, nx, ny, dx, dy);
+
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_GMRES, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance = TOLERANCE;
+    params.max_iterations = 10;
+    params.restart = 1;
+
+    cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    status = poisson_solver_solve(solver, p, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL(CFD_ERROR_MAX_ITER, status);
+    TEST_ASSERT_EQUAL(POISSON_MAX_ITER, stats.status);
+    TEST_ASSERT_EQUAL_INT(10, (int)stats.iterations);
+    TEST_ASSERT_TRUE(stats.final_residual <= stats.initial_residual);
+
+    poisson_solver_destroy(solver);
+    cfd_free(p);
+    cfd_free(rhs);
+}
+
 /* ============================================================================
  * ERROR HANDLING TESTS
  * ============================================================================ */
@@ -603,6 +648,45 @@ void test_gmres_unsupported_backend(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_GMRES, POISSON_BACKEND_GPU);
     TEST_ASSERT_NULL(solver);
+}
+
+/**
+ * Restart lengths whose (m+1)*m Hessenberg index would overflow int are rejected
+ * at init with CFD_ERROR_LIMIT_EXCEEDED, before anything is allocated. 46341 is
+ * the smallest such m.
+ */
+void test_gmres_rejects_oversized_restart(void) {
+    const int restarts[] = { 46341, INT_MAX };
+    double h = (DOMAIN_XMAX - DOMAIN_XMIN) / (NX_SMALL - 1);
+
+    for (size_t r = 0; r < sizeof(restarts) / sizeof(restarts[0]); r++) {
+        poisson_solver_t* solver = poisson_solver_create(
+            POISSON_METHOD_GMRES, POISSON_BACKEND_SCALAR);
+        TEST_ASSERT_NOT_NULL(solver);
+
+        poisson_solver_params_t params = poisson_solver_params_default();
+        params.restart = restarts[r];
+
+        cfd_status_t status = poisson_solver_init(solver, NX_SMALL, NY_SMALL, 1,
+                                                  h, h, 0.0, &params);
+        poisson_solver_destroy(solver);
+        TEST_ASSERT_EQUAL(CFD_ERROR_LIMIT_EXCEEDED, status);
+    }
+}
+
+/** solve() before a successful init must return an error, not dereference a NULL context */
+void test_gmres_solve_before_init(void) {
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_GMRES, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    double x[NX_SMALL] = {0.0};
+    double rhs[NX_SMALL] = {0.0};
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+    poisson_solver_destroy(solver);
+
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
 }
 
 void test_gmres_destroy_null(void) {
@@ -627,8 +711,11 @@ int main(void) {
     RUN_TEST(test_gmres_dirichlet);
     RUN_TEST(test_gmres_restart_no_stall);
     RUN_TEST(test_gmres_jacobi_precond);
+    RUN_TEST(test_gmres_max_iter_exhaustion);
 
     RUN_TEST(test_gmres_unsupported_backend);
+    RUN_TEST(test_gmres_rejects_oversized_restart);
+    RUN_TEST(test_gmres_solve_before_init);
     RUN_TEST(test_gmres_destroy_null);
 
     return UNITY_END();

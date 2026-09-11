@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`lib/src/solvers/linear/cpu/linear_solver_multigrid.c`,
   `lib/src/solvers/linear/cpu/multigrid_transfer.c`,
   `tests/math/test_multigrid_operators.c`, `tests/math/test_multigrid_convergence.c`).
+- **Restarted GMRES(m) Poisson solver** (`POISSON_METHOD_GMRES`) — Arnoldi with modified
+  Gram-Schmidt and incremental Givens rotations for non-symmetric systems, 2D/3D, restart
+  length via `poisson_solver_params_t.restart` (0 = default 30) and optional right Jacobi
+  preconditioning. Scalar, AVX2, NEON and OpenMP backends (`gmres_scalar`, `gmres_simd`,
+  `gmres_omp`) share one algorithm template and differ only in their O(n) vector
+  primitives. `poisson_solver_init` rejects restart lengths whose Hessenberg matrix cannot
+  be indexed with `int` (m ≥ 46341) with `CFD_ERROR_LIMIT_EXCEEDED`
+  (`lib/src/solvers/linear/gmres_template/linear_solver_gmres_template.h`,
+  `tests/math/test_gmres.c`, `tests/math/test_omp_consistency.c`).
 - **Restart / checkpoint support** — portable, versioned, CRC-protected binary checkpoint
   format (`.cfdchk`) that saves and restores complete simulation state (grid, flow field,
   scalar params, time, solver name). Little-endian fixed-width encoding with an endianness

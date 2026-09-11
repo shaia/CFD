@@ -151,14 +151,19 @@ static inline cfd_status_t poisson_solver_reject_mg_precond(
  */
 #define GMRES_BREAKDOWN_THRESHOLD 1e-12
 
+/* ============================================================================
+ * OPENMP LOOP BOUNDS
+ * ============================================================================ */
+
 /**
  * Convert size_t to int for OpenMP loop bounds.
- * OpenMP requires int loop variables, but grid dimensions are size_t.
+ * OpenMP (MSVC 2.0) requires int loop variables, but grid dimensions are size_t.
+ * Shared by the OMP primitives and the SIMD solver templates.
  *
  * @param val The size_t value to convert
- * @return int value, or 0 on overflow (error set)
+ * @return int value, or 0 on overflow (CFD_ERROR_LIMIT_EXCEEDED set)
  */
-static inline int bicgstab_size_to_int(size_t val) {
+static inline int poisson_solver_size_to_int(size_t val) {
     if (val > (size_t)INT_MAX) {
         cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Grid size exceeds INT_MAX for OpenMP loop");
         return 0;

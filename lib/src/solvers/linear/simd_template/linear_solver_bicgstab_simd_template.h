@@ -97,7 +97,7 @@ static inline double SIMD_FUNC(dot_product)(const double* a, const double* b,
                                               size_t k_start, size_t k_end,
                                               size_t stride_z) {
     double sum = 0.0;
-    int ny_int = bicgstab_size_to_int(ny);
+    int ny_int = poisson_solver_size_to_int(ny);
     if (ny_int == 0) return 0.0;
 
     for (size_t k = k_start; k < k_end; k++) {
@@ -143,7 +143,7 @@ static inline void SIMD_FUNC(axpy)(double alpha, const double* x, double* y,
                                     size_t k_start, size_t k_end,
                                     size_t stride_z) {
     SIMD_VEC alpha_vec = SIMD_SET1(alpha);
-    int ny_int = bicgstab_size_to_int(ny);
+    int ny_int = poisson_solver_size_to_int(ny);
     if (ny_int == 0) return;
 
     for (size_t k = k_start; k < k_end; k++) {
@@ -183,7 +183,7 @@ static inline void SIMD_FUNC(apply_laplacian)(const double* p, double* Ap,
     SIMD_VEC dz2_inv = ctx->dz2_inv_vec;
     SIMD_VEC two_vec = ctx->two_vec;
     size_t stride_z = ctx->stride_z;
-    int ny_int = bicgstab_size_to_int(ny);
+    int ny_int = poisson_solver_size_to_int(ny);
     if (ny_int == 0) return;
 
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
@@ -246,7 +246,7 @@ static inline void SIMD_FUNC(compute_residual)(const double* x, const double* rh
     SIMD_VEC dz2_inv = ctx->dz2_inv_vec;
     SIMD_VEC two_vec = ctx->two_vec;
     size_t stride_z = ctx->stride_z;
-    int ny_int = bicgstab_size_to_int(ny);
+    int ny_int = poisson_solver_size_to_int(ny);
     if (ny_int == 0) return;
 
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
@@ -310,7 +310,7 @@ static inline void SIMD_FUNC(copy_vector)(const double* src, double* dst,
                                            size_t nx, size_t ny,
                                            size_t k_start, size_t k_end,
                                            size_t stride_z) {
-    int ny_int = bicgstab_size_to_int(ny);
+    int ny_int = poisson_solver_size_to_int(ny);
     if (ny_int == 0) return;
 
     for (size_t k = k_start; k < k_end; k++) {
@@ -341,7 +341,7 @@ static inline void SIMD_FUNC(zero_vector)(double* vec, size_t nx, size_t ny,
                                            size_t k_start, size_t k_end,
                                            size_t stride_z) {
     SIMD_VEC zero = SIMD_SETZERO();
-    int ny_int = bicgstab_size_to_int(ny);
+    int ny_int = poisson_solver_size_to_int(ny);
     if (ny_int == 0) return;
 
     for (size_t k = k_start; k < k_end; k++) {
@@ -541,7 +541,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         /* First: p = p - omega*v */
         SIMD_FUNC(axpy)(-omega, v, p, nx, ny, k_start, k_end, stride_z);
         /* Then: p = r + beta*p (reuse p as storage) */
-        int ny_int = bicgstab_size_to_int(ny);
+        int ny_int = poisson_solver_size_to_int(ny);
         for (size_t kk = k_start; kk < k_end; kk++) {
             int jj;
             #pragma omp parallel for schedule(static)
