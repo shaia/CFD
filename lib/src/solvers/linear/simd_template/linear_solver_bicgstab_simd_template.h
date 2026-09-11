@@ -375,13 +375,19 @@ static cfd_status_t SIMD_FUNC(bicgstab_init)(
     const poisson_solver_params_t* params) {
     (void)params;  /* Params stored in solver->params by caller */
 
+    /* The primitives loop over int bounds, which collapse to empty loops for
+     * oversized dimensions; reject those grids before allocating. */
+    size_t n = 0;
+    cfd_status_t size_status = poisson_solver_validate_grid_size(nx, ny, nz, 1, &n);
+    if (size_status != CFD_SUCCESS) {
+        return size_status;
+    }
+
     bicgstab_simd_context_t* ctx = (bicgstab_simd_context_t*)cfd_aligned_calloc(
         1, sizeof(bicgstab_simd_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
-
-    size_t n = nx * ny * nz;
 
     /* Allocate 6 working vectors with aligned memory for SIMD */
     ctx->r = (double*)cfd_aligned_calloc(n, sizeof(double));

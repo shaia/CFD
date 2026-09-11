@@ -84,6 +84,14 @@ static cfd_status_t cg_omp_init(
         return precond_status;
     }
 
+    /* The shared primitives loop over int bounds, which collapse to empty loops
+     * for oversized dimensions; reject those grids before allocating. */
+    size_t n = 0;
+    cfd_status_t size_status = poisson_solver_validate_grid_size(nx, ny, nz, 1, &n);
+    if (size_status != CFD_SUCCESS) {
+        return size_status;
+    }
+
     cg_omp_context_t* ctx = (cg_omp_context_t*)cfd_calloc(1, sizeof(cg_omp_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
@@ -96,7 +104,6 @@ static cfd_status_t cg_omp_init(
     ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
     ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
 
-    size_t n = nx * ny * nz;
     ctx->r = (double*)cfd_calloc(n, sizeof(double));
     ctx->p = (double*)cfd_calloc(n, sizeof(double));
     ctx->Ap = (double*)cfd_calloc(n, sizeof(double));

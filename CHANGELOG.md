@@ -61,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `poisson_solve_3d()` now checks `poisson_solver_init()`'s return status: a failed init
   (e.g. multigrid on non-2^k+1 dims) no longer leaves a broken solver in the convenience
   cache; the call returns -1 and later valid calls re-create the solver.
+- `cg_omp` and `bicgstab_simd` now reject grids whose `nx` or `ny` exceeds `INT_MAX`, or
+  whose `nx*ny*nz` overflows `size_t`, with `CFD_ERROR_LIMIT_EXCEEDED` at init. Their
+  primitives loop over `int` bounds, which such grids silently truncated (`cg_omp`) or
+  emptied (`bicgstab_simd`, where a solve then reported convergence from a zero residual).
 
 ## [0.3.0] - 2026-06-23
 
