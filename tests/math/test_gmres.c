@@ -16,8 +16,8 @@
  *   - Restart-no-stall: small m and default m reach the same solution
  *   - Jacobi preconditioner path converges (no iteration-count assertion)
  *   - Max-iteration exhaustion: GMRES(1) stops at the cap with POISSON_MAX_ITER
- *   - Error handling (unsupported backends, oversized restart rejected at init,
- *     solve before init, NULL destroy)
+ *   - Error handling (unsupported backends, oversized restart and grid rejected
+ *     at init, solve before init, NULL destroy)
  */
 
 #include "unity.h"
@@ -26,6 +26,7 @@
 #include "cfd/core/indexing.h"
 #include <limits.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -674,6 +675,43 @@ void test_gmres_rejects_oversized_restart(void) {
     }
 }
 
+/**
+ * Grids whose field size nx*ny*nz, or whose (m+1)-vector Krylov block in bytes,
+ * would overflow size_t are rejected at init with CFD_ERROR_LIMIT_EXCEEDED before
+ * anything is allocated, on every available backend. The first nz wraps nx*ny*nz
+ * itself; the second keeps (m+1)*n representable as a count of doubles but not as
+ * a byte size, which cfd_aligned_calloc (SIMD) does not check.
+ */
+void test_gmres_rejects_oversized_grid(void) {
+    /* nx = ny = 3 (n = 9*nz) and restart m = 30 (an m+1 = 31 vector basis) */
+    const size_t nz_values[] = {
+        SIZE_MAX / 9 + 1,
+        SIZE_MAX / (9 * 31 * sizeof(double)) + 1,
+    };
+    const poisson_solver_backend_t backends[] = {
+        POISSON_BACKEND_SCALAR, POISSON_BACKEND_OMP, POISSON_BACKEND_SIMD,
+    };
+    double h = (DOMAIN_XMAX - DOMAIN_XMIN) / (NX_SMALL - 1);
+
+    for (size_t b = 0; b < sizeof(backends) / sizeof(backends[0]); b++) {
+        for (size_t z = 0; z < sizeof(nz_values) / sizeof(nz_values[0]); z++) {
+            poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_GMRES, backends[b]);
+            if (!solver) {
+                continue;  /* backend not built or not supported by this CPU */
+            }
+
+            poisson_solver_params_t params = poisson_solver_params_default();
+            params.restart = 30;
+
+            cfd_status_t status = poisson_solver_init(solver, 3, 3, nz_values[z],
+                                                      h, h, h, &params);
+            const char* name = solver->name;
+            poisson_solver_destroy(solver);
+            TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_LIMIT_EXCEEDED, status, name);
+        }
+    }
+}
+
 /** solve() before a successful init must return an error, not dereference a NULL context */
 void test_gmres_solve_before_init(void) {
     poisson_solver_t* solver = poisson_solver_create(
@@ -715,6 +753,7 @@ int main(void) {
 
     RUN_TEST(test_gmres_unsupported_backend);
     RUN_TEST(test_gmres_rejects_oversized_restart);
+    RUN_TEST(test_gmres_rejects_oversized_grid);
     RUN_TEST(test_gmres_solve_before_init);
     RUN_TEST(test_gmres_destroy_null);
 

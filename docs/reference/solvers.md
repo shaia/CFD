@@ -307,7 +307,9 @@ bit-for-bit, and their last bits can differ with the thread count and between ru
 variant is not yet implemented.
 
 `poisson_solver_init` rejects restart lengths whose `(m+1)·m` Hessenberg matrix
-cannot be indexed with `int` (m ≥ 46341) with `CFD_ERROR_LIMIT_EXCEEDED`.
+cannot be indexed with `int` (m ≥ 46341), and grids too large to index (`nx` or
+`ny` above `INT_MAX`, or an `(m+1)`-vector Krylov basis overflowing `size_t`
+bytes), with `CFD_ERROR_LIMIT_EXCEEDED`.
 
 **Usage:**
 ```c

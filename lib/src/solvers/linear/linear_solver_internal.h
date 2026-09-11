@@ -11,6 +11,7 @@
 #include "cfd/solvers/poisson_solver.h"
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <limits.h>
 
 #ifndef M_PI
@@ -169,6 +170,38 @@ static inline int poisson_solver_size_to_int(size_t val) {
         return 0;
     }
     return (int)val;
+}
+
+/* ============================================================================
+ * GRID SIZE LIMITS
+ * ============================================================================ */
+
+/**
+ * Validate grid dimensions at init and compute the field size n = nx*ny*nz.
+ *
+ * Rejects nx or ny above INT_MAX, where poisson_solver_size_to_int returns 0 and
+ * every int-bounded primitive loop becomes a no-op (a zero residual would then
+ * read as convergence), and grids where `vectors` grid-sized double arrays would
+ * not fit in size_t bytes. Each multiplication is checked before it is taken, so
+ * n cannot wrap and work arrays cannot be allocated undersized.
+ * Assumes nx, ny >= 3 (validated by poisson_solver_init).
+ *
+ * @param vectors number of grid-sized double arrays in the largest single
+ *                allocation (>= 1)
+ * @param n_out   receives nx*ny*nz on success
+ * @return CFD_SUCCESS, or CFD_ERROR_LIMIT_EXCEEDED (error set)
+ */
+static inline cfd_status_t poisson_solver_validate_grid_size(
+    size_t nx, size_t ny, size_t nz, size_t vectors, size_t* n_out)
+{
+    size_t max_n = SIZE_MAX / sizeof(double) / vectors;
+    if (nx > (size_t)INT_MAX || ny > (size_t)INT_MAX ||
+        ny > max_n / nx || nz > max_n / (nx * ny)) {
+        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Grid size exceeds indexable limits");
+        return CFD_ERROR_LIMIT_EXCEEDED;
+    }
+    *n_out = nx * ny * nz;
+    return CFD_SUCCESS;
 }
 
 /* ============================================================================

@@ -74,7 +74,6 @@
 
 #include <limits.h>
 #include <math.h>
-#include <stdint.h>
 #include <string.h>
 
 #if !defined(GMRES_SUFFIX) || !defined(GMRES_SOLVER_NAME) || !defined(GMRES_DESCRIPTION) || \
@@ -236,16 +235,20 @@ static cfd_status_t GMRES_FUNC(gmres_init)(
 
     /* Resolve restart length m (0 = auto) */
     int m = (params && params->restart > 0) ? params->restart : GMRES_DEFAULT_RESTART;
-    size_t n = nx * ny * nz;
 
-    /* H is indexed in int as i + j*(m+1), so (m+1)*m must fit in int; the
-     * parallel backends use int row/column loop bounds; and the (m+1)-vector
-     * Krylov block size must not wrap size_t. */
-    if (m >= INT_MAX / m || nx > (size_t)INT_MAX || ny > (size_t)INT_MAX ||
-        n > SIZE_MAX / ((size_t)m + 1)) {
-        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED,
-                      "GMRES restart length or grid size exceeds indexable limits");
+    /* H is indexed in int as i + j*(m+1), so (m+1)*m must fit in int. */
+    if (m >= INT_MAX / m) {
+        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "GMRES restart length exceeds indexable limits");
         return CFD_ERROR_LIMIT_EXCEEDED;
+    }
+
+    /* The (m+1) Krylov basis vectors are one allocation, so the whole block must
+     * fit in size_t bytes; the parallel backends also need int loop bounds. */
+    size_t n = 0;
+    cfd_status_t size_status =
+        poisson_solver_validate_grid_size(nx, ny, nz, (size_t)m + 1, &n);
+    if (size_status != CFD_SUCCESS) {
+        return size_status;
     }
 
     gmres_ctx_t* ctx = (gmres_ctx_t*)cfd_calloc(1, sizeof(gmres_ctx_t));

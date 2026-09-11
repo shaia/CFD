@@ -45,7 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preconditioning. Scalar, AVX2, NEON and OpenMP backends (`gmres_scalar`, `gmres_simd`,
   `gmres_omp`) share one algorithm template and differ only in their O(n) vector
   primitives. `poisson_solver_init` rejects restart lengths whose Hessenberg matrix cannot
-  be indexed with `int` (m ≥ 46341) with `CFD_ERROR_LIMIT_EXCEEDED`
+  be indexed with `int` (m ≥ 46341), and grids too large to index (`nx` or `ny` above
+  `INT_MAX`, or an `(m+1)`-vector Krylov basis overflowing `size_t` bytes), with
+  `CFD_ERROR_LIMIT_EXCEEDED`
   (`lib/src/solvers/linear/gmres_template/linear_solver_gmres_template.h`,
   `tests/math/test_gmres.c`, `tests/math/test_omp_consistency.c`).
 - **Restart / checkpoint support** — portable, versioned, CRC-protected binary checkpoint
