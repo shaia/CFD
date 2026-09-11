@@ -42,7 +42,7 @@ void test_output_directory_creation(void) {
     // Sized from base_path so the longest composed path always fits
     char test_dir[sizeof(base_path) + sizeof("/test_dir")];
     char nested_test_dir[sizeof(base_path) + sizeof("/test_dir/nested")];
-    char output_dir[256];
+    char output_dir[sizeof(base_path) + sizeof("/output")];
 
     make_artifacts_path(base_path, sizeof(base_path), "");
     make_artifacts_path(output_dir, sizeof(output_dir), "output");
