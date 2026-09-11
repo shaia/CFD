@@ -73,6 +73,7 @@ CMakeUserPresets.json
 build/**/*
 build-ninja/
 build-cuda/
+build-avx2/
 .cache/
 build_release/
 build_noomp/
