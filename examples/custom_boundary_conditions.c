@@ -127,6 +127,12 @@ int main() {
     cfd_set_output_base_dir("../../artifacts");
     char run_dir[512];
     cfd_create_run_directory_ex(run_dir, sizeof(run_dir), "cylinder_flow", nx, ny);
+    if (run_dir[0] == '\0') {
+        fprintf(stderr, "Failed to create run directory\n");
+        flow_field_destroy(field);
+        grid_destroy(grid);
+        return 1;
+    }
     printf("\nOutput directory: %s\n", run_dir);
 
     printf("\nRunning simulation...\n");

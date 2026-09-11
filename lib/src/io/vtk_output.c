@@ -299,7 +299,7 @@ void write_vtk_flow_field(const char* filename, const flow_field* field, size_t 
 }
 
 // New run-based output functions
-static void get_run_filepath(char* buffer, size_t buffer_size, const char* filename) {
+static cfd_status_t get_run_filepath(char* buffer, size_t buffer_size, const char* filename) {
     char run_dir[512];
     cfd_get_run_directory(run_dir, sizeof(run_dir));
 
@@ -308,19 +308,28 @@ static void get_run_filepath(char* buffer, size_t buffer_size, const char* filen
         cfd_create_run_directory(run_dir, sizeof(run_dir));
     }
 
+    // Creation rejects an over-long path and reports it; composing anyway would write
+    // "/filename" at the filesystem root
+    if (run_dir[0] == '\0') {
+        return CFD_ERROR_LIMIT_EXCEEDED;
+    }
+
     // Build full path
 #ifdef _WIN32
     snprintf(buffer, buffer_size, "%s\\%s", run_dir, filename);
 #else
     snprintf(buffer, buffer_size, "%s/%s", run_dir, filename);
 #endif
+    return CFD_SUCCESS;
 }
 
 void write_vtk_output_run(const char* filename, const char* field_name, const double* data,
                           size_t nx, size_t ny, size_t nz, double xmin, double xmax, double ymin,
                           double ymax, double zmin, double zmax) {
     char filepath[1024];
-    get_run_filepath(filepath, sizeof(filepath), filename);
+    if (get_run_filepath(filepath, sizeof(filepath), filename) != CFD_SUCCESS) {
+        return;
+    }
     write_vtk_output(filepath, field_name, data, nx, ny, nz, xmin, xmax, ymin, ymax, zmin, zmax);
 }
 
@@ -329,7 +338,9 @@ void write_vtk_vector_output_run(const char* filename, const char* field_name, c
                                  size_t nz, double xmin, double xmax, double ymin, double ymax,
                                  double zmin, double zmax) {
     char filepath[1024];
-    get_run_filepath(filepath, sizeof(filepath), filename);
+    if (get_run_filepath(filepath, sizeof(filepath), filename) != CFD_SUCCESS) {
+        return;
+    }
     write_vtk_vector_output(filepath, field_name, u_data, v_data, w_data, nx, ny, nz, xmin, xmax,
                             ymin, ymax, zmin, zmax);
 }
@@ -338,6 +349,8 @@ void write_vtk_flow_field_run(const char* filename, const flow_field* field, siz
                               size_t nz, double xmin, double xmax, double ymin, double ymax,
                               double zmin, double zmax) {
     char filepath[1024];
-    get_run_filepath(filepath, sizeof(filepath), filename);
+    if (get_run_filepath(filepath, sizeof(filepath), filename) != CFD_SUCCESS) {
+        return;
+    }
     write_vtk_flow_field(filepath, field, nx, ny, nz, xmin, xmax, ymin, ymax, zmin, zmax);
 }
