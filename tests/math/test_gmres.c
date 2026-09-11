@@ -694,11 +694,13 @@ void test_gmres_rejects_oversized_grid(void) {
     double h = (DOMAIN_XMAX - DOMAIN_XMIN) / (NX_SMALL - 1);
 
     for (size_t b = 0; b < sizeof(backends) / sizeof(backends[0]); b++) {
+        if (!poisson_solver_backend_available(backends[b])) {
+            continue;  /* backend not built or not supported by this CPU */
+        }
         for (size_t z = 0; z < sizeof(nz_values) / sizeof(nz_values[0]); z++) {
             poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_GMRES, backends[b]);
-            if (!solver) {
-                continue;  /* backend not built or not supported by this CPU */
-            }
+            TEST_ASSERT_NOT_NULL_MESSAGE(solver,
+                                         "Backend available but GMRES solver creation failed");
 
             poisson_solver_params_t params = poisson_solver_params_default();
             params.restart = 30;
