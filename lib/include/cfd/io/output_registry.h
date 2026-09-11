@@ -37,7 +37,8 @@ CFD_LIBRARY_EXPORT void output_registry_clear(output_registry* reg);
 // Get count of registered outputs
 CFD_LIBRARY_EXPORT int output_registry_count(const output_registry* reg);
 
-// Get run directory (creates it if needed)
+// Get run directory (creates it if needed). Returns NULL if reg is NULL or the run directory
+// path is too long; the failed creation is retried on the next call.
 CFD_LIBRARY_EXPORT const char* output_registry_get_run_dir(output_registry* reg,
                                                            const char* base_dir,
                                                            const char* run_prefix, size_t nx,
