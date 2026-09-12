@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Geometric multigrid OpenMP backend** — `poisson_solver_create(POISSON_METHOD_MULTIGRID,
+  POISSON_BACKEND_OMP)` (`multigrid_omp`) and the `POISSON_SOLVER_MG_OMP`
+  convenience preset. The algorithm now lives in one template shared with the
+  scalar solver; the OpenMP backend supplies row-parallel smoother, residual,
+  restriction/prolongation and boundary primitives with no parallel reductions
+  (the Neumann interior mean and the convergence residual stay serial), so its
+  solutions are bit-identical to `multigrid_scalar` at any thread count (verified
+  over a V/W/F x smoother x BC-mode matrix at 1, 2 and 4 threads).
+  `POISSON_BACKEND_AUTO` still resolves multigrid to scalar; request OMP
+  explicitly. Both multigrid backends now reject grids whose `nx` or `ny`
+  exceeds `INT_MAX` with `CFD_ERROR_LIMIT_EXCEEDED` at init. The multigrid
+  pressure solve in `projection_omp` and MG preconditioning for OMP CG remain
+  follow-ups (`lib/src/solvers/linear/multigrid_template/linear_solver_multigrid_template.h`,
+  `lib/src/solvers/linear/omp/linear_solver_multigrid_omp.c`,
+  `lib/src/solvers/linear/cpu/linear_solver_multigrid.c`,
+  `tests/math/test_omp_consistency.c`, `tests/math/test_multigrid_convergence.c`,
+  `tests/solvers/test_linear_solver.c`).
 - **Jacobi and BiCGSTAB OpenMP backends** — completes the OpenMP linear-solver
   tier (previously CG, GMRES, and Red-Black SOR). Both are selectable via
   `poisson_solver_create(method, POISSON_BACKEND_OMP)`; per-element updates are

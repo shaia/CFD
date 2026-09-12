@@ -85,6 +85,11 @@ static inline bool mg_is_pow2_plus1(size_t n) {
 /* ============================================================================
  * GRID-TRANSFER OPERATORS (cpu/multigrid_transfer.c)
  *
+ * Scalar reference operators. The OpenMP backend keeps row-parallel static
+ * counterparts with the same arithmetic in omp/linear_solver_multigrid_omp.c;
+ * both use mg_weights_1d and mg_interior_mean below, so the two backends
+ * cannot diverge in the fold rule or the mean.
+ *
  * External linkage, intentionally NOT CFD_LIBRARY_EXPORT (hidden outside a
  * shared library build).
  * All write coarse/fine INTERIOR points only. Restriction never reads fine

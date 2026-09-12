@@ -1136,6 +1136,37 @@ void test_poisson_init_rejects_oversized_grid(void) {
     }
 }
 
+void test_multigrid_init_rejects_oversized_grid(void) {
+    /* Multigrid checks the 2^k+1 shape first, so the shared oversized dims above
+     * (SIZE_MAX/9+1 is not 2^k+1) would return CFD_ERROR_INVALID instead. 2^31+1
+     * passes the shape check and must then hit the grid-size limit before any
+     * level is allocated, on every multigrid backend. */
+    const poisson_solver_backend_t backends[] = {
+        POISSON_BACKEND_SCALAR,
+        POISSON_BACKEND_OMP,
+    };
+    const size_t dims[][3] = {
+        { (size_t)INT_MAX + 2, 3, 1 },
+        { 3, (size_t)INT_MAX + 2, 1 },
+    };
+
+    for (size_t b = 0; b < sizeof(backends) / sizeof(backends[0]); b++) {
+        if (!poisson_solver_backend_available(backends[b])) {
+            continue;  /* OMP not built */
+        }
+        for (size_t d = 0; d < sizeof(dims) / sizeof(dims[0]); d++) {
+            poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_MULTIGRID,
+                                                             backends[b]);
+            TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Backend available but multigrid creation failed");
+            cfd_status_t st = poisson_solver_init(solver, dims[d][0], dims[d][1], dims[d][2],
+                                                  0.1, 0.1, 0.0, NULL);
+            const char* name = solver->name;
+            poisson_solver_destroy(solver);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_ERROR_LIMIT_EXCEEDED, st, name);
+        }
+    }
+}
+
 void test_poisson_compute_residual_null_solver(void) {
     /* linear_solver.c:289 — guard: if (!solver || !x || !rhs) return -1.0 */
     double dummy[4] = {0.0, 0.0, 0.0, 0.0};
@@ -1238,6 +1269,7 @@ int main(void) {
     RUN_TEST(test_poisson_init_ny_too_small);
     RUN_TEST(test_poisson_init_nz_degenerate);
     RUN_TEST(test_poisson_init_rejects_oversized_grid);
+    RUN_TEST(test_multigrid_init_rejects_oversized_grid);
     RUN_TEST(test_poisson_compute_residual_null_solver);
     RUN_TEST(test_poisson_compute_residual_null_arrays);
     RUN_TEST(test_poisson_apply_bc_null);

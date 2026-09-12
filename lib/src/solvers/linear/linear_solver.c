@@ -279,14 +279,24 @@ poisson_solver_t* poisson_solver_create(
             }
 
         case POISSON_METHOD_MULTIGRID:
-            /* Only the scalar backend exists. AUTO means "best available",
-             * which for multigrid IS scalar; explicit SIMD/OMP/GPU requests
+            /* No SIMD/GPU multigrid. AUTO means "best available", which
+             * select_best_backend() resolves to SIMD — a backend multigrid
+             * lacks — so AUTO keeps resolving to the scalar reference. OMP is
+             * opt-in, as for every other method; explicit SIMD/GPU requests
              * return NULL (no silent fallbacks). */
-            if (requested == POISSON_BACKEND_AUTO ||
-                backend == POISSON_BACKEND_SCALAR) {
+            if (requested == POISSON_BACKEND_AUTO) {
                 return create_multigrid_scalar_solver();
             }
-            return backend_unavailable("multigrid");
+            switch (backend) {
+#ifdef CFD_ENABLE_OPENMP
+                case POISSON_BACKEND_OMP:
+                    return create_multigrid_omp_solver();
+#endif
+                case POISSON_BACKEND_SCALAR:
+                    return create_multigrid_scalar_solver();
+                default:
+                    return backend_unavailable("multigrid");
+            }
 
         default:
             cfd_set_error(CFD_ERROR_INVALID, "Unknown Poisson solver method");
@@ -596,6 +606,7 @@ static poisson_solver_t* g_cached_cg_scalar = NULL;
 static poisson_solver_t* g_cached_cg_omp = NULL;
 static poisson_solver_t* g_cached_cg_simd = NULL;
 static poisson_solver_t* g_cached_mg_scalar = NULL;
+static poisson_solver_t* g_cached_mg_omp = NULL;
 static poisson_solver_t* g_cached_pcg_mg_scalar = NULL;
 
 /**
@@ -641,6 +652,10 @@ static void cleanup_cached_solvers(void) {
     if (g_cached_mg_scalar) {
         poisson_solver_destroy(g_cached_mg_scalar);
         g_cached_mg_scalar = NULL;
+    }
+    if (g_cached_mg_omp) {
+        poisson_solver_destroy(g_cached_mg_omp);
+        g_cached_mg_omp = NULL;
     }
     if (g_cached_pcg_mg_scalar) {
         poisson_solver_destroy(g_cached_pcg_mg_scalar);
@@ -717,6 +732,12 @@ int poisson_solve_3d(
             solver_ptr = &g_cached_mg_scalar;
             method = POISSON_METHOD_MULTIGRID;
             backend = POISSON_BACKEND_SCALAR;
+            break;
+
+        case POISSON_SOLVER_MG_OMP:
+            solver_ptr = &g_cached_mg_omp;
+            method = POISSON_METHOD_MULTIGRID;
+            backend = POISSON_BACKEND_OMP;
             break;
 
         case POISSON_SOLVER_PCG_MG_SCALAR:

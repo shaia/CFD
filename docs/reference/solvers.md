@@ -92,8 +92,9 @@ Each backend pairs with a CG Poisson preset by default. On the scalar
 The MG modes require 2^k+1 grid points per active dimension (33, 65, 129, ...);
 `solver_init` returns `CFD_ERROR_UNSUPPORTED` otherwise. `projection_optimized`,
 `projection_omp`, and `projection_gpu` reject any non-default value with
-`CFD_ERROR_UNSUPPORTED` at init — multigrid has no SIMD/OMP/GPU backend yet and
-the library never falls back across backends silently.
+`CFD_ERROR_UNSUPPORTED` at init — those projection backends do not yet wire a
+multigrid pressure solve (an OpenMP multigrid exists as a Poisson backend, see
+§8) and the library never falls back across backends silently.
 
 ```c
 ns_solver_params_t params = ns_solver_params_default();
@@ -348,10 +349,20 @@ Smoothers: Red-Black Gauss-Seidel (default) or weighted Jacobi (ω=2/3).
 - Parameters: `mg_cycle`, `mg_smoother`, `mg_bc`, `mg_pre_smooth`/`mg_post_smooth`
   (default 2/2), `mg_coarse_max_iter` (default 50), `mg_max_levels` (0 = auto)
 
-**Backends:** scalar only. Also available as a CG preconditioner
-(`POISSON_PRECOND_MULTIGRID`, scalar CG only — see §5) and as the projection
-method's pressure solver (`ns_solver_params_t.pressure_solver`). SIMD/OMP/GPU
-variants are planned follow-ups.
+**Backends:** scalar (`multigrid_scalar`, preset `POISSON_SOLVER_MG_SCALAR`) and
+OpenMP (`POISSON_BACKEND_OMP`, `multigrid_omp`, preset `POISSON_SOLVER_MG_OMP`).
+Both share one algorithm template
+(`lib/src/solvers/linear/multigrid_template/linear_solver_multigrid_template.h`);
+the OpenMP backend parallelizes the smoother, residual, grid-transfer and
+boundary kernels over rows with no parallel reductions (the Neumann interior mean
+and the convergence residual stay serial), so its results are bit-identical to
+the scalar backend at any thread count. `POISSON_BACKEND_AUTO` resolves to scalar;
+request `POISSON_BACKEND_OMP` explicitly. Grids whose `nx` or `ny` exceeds
+`INT_MAX` return `CFD_ERROR_LIMIT_EXCEEDED` at init. Also available as a CG
+preconditioner (`POISSON_PRECOND_MULTIGRID`, scalar CG only — see §5) and as the
+scalar projection method's pressure solver (`ns_solver_params_t.pressure_solver`).
+SIMD/GPU variants, OMP MG preconditioning and an OMP projection pressure solve
+are planned follow-ups.
 
 **Usage:**
 ```c
@@ -360,7 +371,7 @@ params.mg_cycle = MG_CYCLE_V;        // or MG_CYCLE_W / MG_CYCLE_F
 params.mg_bc = MG_BC_NEUMANN;        // default; matches other solvers
 
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_MULTIGRID,
-                                                 POISSON_BACKEND_SCALAR);
+                                                 POISSON_BACKEND_SCALAR);  // or POISSON_BACKEND_OMP
 poisson_solver_init(solver, 65, 65, 1, dx, dy, 0.0, &params);  // dims 2^k+1
 ```
 

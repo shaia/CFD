@@ -196,7 +196,7 @@ int main(void) {
     }
 
     /* Section 4: Error handling for unavailable solver.
-     * Multigrid only has a scalar backend, so requesting it on GPU always
+     * Multigrid has no GPU backend, so requesting it on GPU always
      * returns NULL (no silent fallbacks). */
     printf("\n--- Error Handling ---\n");
     poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_MULTIGRID, POISSON_BACKEND_GPU);

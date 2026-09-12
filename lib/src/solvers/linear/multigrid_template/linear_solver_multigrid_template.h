@@ -23,7 +23,10 @@
  * solve, apply_bc and the factory. Each backend includes it once, after
  * defining its grid primitives, so backends differ only in those primitives:
  *   cpu/linear_solver_multigrid.c       scalar
- * Control flow, level bookkeeping and whole-buffer memsets are serial here.
+ *   omp/linear_solver_multigrid_omp.c   OpenMP
+ * Control flow, level bookkeeping, whole-buffer memsets, the Neumann interior
+ * mean (mg_interior_mean) and the convergence residual are serial in every
+ * backend, so element-wise primitives reproduce the scalar result exactly.
  *
  * REQUIRED MACROS (every MGT_* macro is #undef'd at the end of this header):
  *   MGT_SUFFIX         symbol suffix (scalar, ...); the factory is
@@ -330,6 +333,16 @@ static cfd_status_t MGT_FUNC(mg_init)(
         params->mg_pre_smooth < 0 || params->mg_post_smooth < 0 ||
         params->mg_coarse_max_iter < 0 || params->mg_max_levels < 0) {
         return CFD_ERROR_INVALID;
+    }
+
+    /* Parallel backends loop over int row/column bounds, which
+     * poisson_solver_size_to_int empties above INT_MAX (a zero residual would
+     * then read as convergence), and level buffers must not wrap size_t:
+     * reject oversized grids before allocating. */
+    size_t n = 0;
+    cfd_status_t size_status = poisson_solver_validate_grid_size(nx, ny, nz, 1, &n);
+    if (size_status != CFD_SUCCESS) {
+        return size_status;
     }
 
     /* Re-init support: drop any previous hierarchy */

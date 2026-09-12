@@ -73,8 +73,12 @@ poisson_solver_t* create_gmres_simd_solver(void);
 poisson_solver_t* create_gmres_omp_solver(void);
 #endif
 
-/* Geometric multigrid solver (scalar backend only; V/W/F cycles) */
+/* Geometric multigrid solvers (V/W/F cycles; scalar and OpenMP backends) */
 poisson_solver_t* create_multigrid_scalar_solver(void);
+
+#ifdef CFD_ENABLE_OPENMP
+poisson_solver_t* create_multigrid_omp_solver(void);
+#endif
 
 /**
  * Reject POISSON_PRECOND_MULTIGRID on backends that don't implement it.

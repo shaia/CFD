@@ -190,6 +190,7 @@ set(CFD_OMP_SOURCES
     src/solvers/linear/omp/linear_solver_cg_omp.c
     src/solvers/linear/omp/linear_solver_bicgstab_omp.c
     src/solvers/linear/omp/linear_solver_gmres_omp.c
+    src/solvers/linear/omp/linear_solver_multigrid_omp.c
 )
 
 # Note: API sources (solver_registry, simulation_api, output_registry) are in

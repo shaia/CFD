@@ -4,6 +4,8 @@
  *
  * Pure array math with no library runtime dependencies, so the operator unit
  * test can compile this translation unit directly (see multigrid_internal.h).
+ * The OpenMP multigrid backend has row-parallel counterparts with the same
+ * arithmetic in omp/linear_solver_multigrid_omp.c.
  *
  * Grid relationship: nxf = 2*nxc - 1 (fine dims are 2^k+1, coarse (2^(k-1))+1).
  * Coarse interior point (I,J,K) sits at fine point (2I,2J,2K); its
