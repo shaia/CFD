@@ -61,7 +61,7 @@ static void mg_rbgs_sweep_omp(const mg_level_t* L, double* x,
     size_t stride_z = L->stride_z;
     int ny_int = poisson_solver_size_to_int(L->ny);
 
-    /* Red pass: (i+j+k) % 2 == 0, then black pass: (i+j+k) % 2 == 1 */
+    /* Red pass: (i+j+k) % 2 == 1, then black pass: (i+j+k) % 2 == 0 */
     for (int color = 0; color < 2; color++) {
         for (size_t k = L->k_start; k < L->k_end; k++) {
             int j;

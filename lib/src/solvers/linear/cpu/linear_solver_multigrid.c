@@ -42,7 +42,7 @@ static void mg_rbgs_sweep_scalar(const mg_level_t* L, double* x,
     double inv_factor = L->inv_factor;
     size_t stride_z = L->stride_z;
 
-    /* Red pass: (i+j+k) % 2 == 0, then black pass: (i+j+k) % 2 == 1 */
+    /* Red pass: (i+j+k) % 2 == 1, then black pass: (i+j+k) % 2 == 0 */
     for (int color = 0; color < 2; color++) {
         for (size_t k = L->k_start; k < L->k_end; k++) {
             for (size_t j = 1; j < ny - 1; j++) {
