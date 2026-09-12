@@ -36,6 +36,16 @@ Diagnostics:
 
 ---
 
+# The multigrid algorithm template is included by the backend multigrid files
+# after they define its MGT_* primitive and configuration macros, so it cannot
+# be parsed standalone either.
+If:
+  PathMatch: .*/multigrid_template/.*
+Diagnostics:
+  Suppress: ['*']
+
+---
+
 # Shared NS momentum RHS kernels are #include-only: they rely on the includer
 # having defined RHS_CTX_T / USE_AVX2 and included grid/energy headers first,
 # so they cannot be parsed standalone. Suppress all diagnostics for them.

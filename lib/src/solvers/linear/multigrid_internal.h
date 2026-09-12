@@ -2,16 +2,19 @@
  * @file multigrid_internal.h
  * @brief Internal data structures and grid-transfer operators for geometric multigrid
  *
- * Not part of the public API. The transfer operators live in
- * cpu/multigrid_transfer.c with external linkage but are not exported from
- * the shared library (no CFD_LIBRARY_EXPORT, hidden visibility): the operator
- * unit test links them from the static library, or compiles the translation
- * unit directly in shared builds.
+ * Not part of the public API. The algorithm itself lives in
+ * multigrid_template/linear_solver_multigrid_template.h. The scalar transfer
+ * operators live in cpu/multigrid_transfer.c with external linkage but are not
+ * exported from the shared library (no CFD_LIBRARY_EXPORT, hidden visibility):
+ * the operator unit test links them from the static library, or compiles the
+ * translation unit directly in shared builds. The restriction weight rule and
+ * the interior mean are static inline here so every backend shares one copy.
  */
 
 #ifndef CFD_MULTIGRID_INTERNAL_H
 #define CFD_MULTIGRID_INTERNAL_H
 
+#include "cfd/core/indexing.h"
 #include "cfd/solvers/poisson_solver.h"
 
 #include <stdbool.h>
@@ -32,6 +35,9 @@ extern "C" {
  * is solved exactly by one Gauss-Seidel sweep. */
 #define MG_MIN_COARSE_DIM_DIRICHLET  3
 #define MG_MIN_COARSE_DIM_NEUMANN    5
+
+/* Weighted Jacobi smoother relaxation: optimal high-frequency damping */
+#define MG_JACOBI_OMEGA              (2.0 / 3.0)
 
 /**
  * Per-level grid data for the multigrid hierarchy.
@@ -95,6 +101,19 @@ static inline bool mg_is_pow2_plus1(size_t n) {
  * 1/4 (2D) or 1/8 (3D) factor); pass 0 for Dirichlet.
  * ============================================================================ */
 
+/**
+ * Per-dimension 1D restriction weights at a coarse index: (1,2,1) in the
+ * interior. With fold_neumann, the toward-boundary weight doubles at
+ * boundary-adjacent coarse points (I==1 and/or I==n_coarse-2) — the exact
+ * adjoint of prolongation through mirrored (zero-gradient) ghost values.
+ */
+static inline void mg_weights_1d(size_t idx, size_t n_coarse, int fold_neumann,
+                                 double w[3]) {
+    w[0] = (fold_neumann && idx == 1) ? 2.0 : 1.0;
+    w[1] = 2.0;
+    w[2] = (fold_neumann && idx == n_coarse - 2) ? 2.0 : 1.0;
+}
+
 /** Full-weighting restriction, 2D (4-2-1)/16 stencil; coarse interior only */
 void mg_restrict_2d(const double* fine, double* coarse,
                     size_t nxf, size_t nyf, size_t nxc, size_t nyc,
@@ -115,8 +134,29 @@ void mg_prolongate_add_3d(const double* coarse, double* fine,
                           size_t nxc, size_t nyc, size_t nzc,
                           size_t nxf, size_t nyf, size_t nzf);
 
-/** Mean of f over interior points */
-double mg_interior_mean(const double* f, size_t nx, size_t ny, size_t nz);
+/**
+ * Mean of f over interior points. Serial by design: every backend must
+ * produce the identical mean, so it is never computed with a parallel
+ * reduction.
+ */
+static inline double mg_interior_mean(const double* f, size_t nx, size_t ny,
+                                      size_t nz) {
+    size_t stride_z = (nz > 1) ? nx * ny : 0;
+    size_t k_start = (nz > 1) ? 1 : 0;
+    size_t k_end = (nz > 1) ? nz - 1 : 1;
+
+    double sum = 0.0;
+    size_t count = 0;
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                sum += f[k * stride_z + IDX_2D(i, j, nx)];
+                count++;
+            }
+        }
+    }
+    return (count > 0) ? sum / (double)count : 0.0;
+}
 
 /** Subtract the interior mean from interior points (boundary untouched) */
 void mg_subtract_interior_mean(double* f, size_t nx, size_t ny, size_t nz);
