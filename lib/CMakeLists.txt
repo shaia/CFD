@@ -185,8 +185,10 @@ set(CFD_OMP_SOURCES
     # Turbulence models (RANS) - OMP
     src/solvers/turbulence/omp/turbulence_solver_omp.c
     # Linear solvers - OMP
+    src/solvers/linear/omp/linear_solver_jacobi_omp.c
     src/solvers/linear/omp/linear_solver_redblack_omp.c
     src/solvers/linear/omp/linear_solver_cg_omp.c
+    src/solvers/linear/omp/linear_solver_bicgstab_omp.c
     src/solvers/linear/omp/linear_solver_gmres_omp.c
 )
 

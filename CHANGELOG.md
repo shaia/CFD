@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Jacobi and BiCGSTAB OpenMP backends** — completes the OpenMP linear-solver
+  tier (previously CG, GMRES, and Red-Black SOR). Both are selectable via
+  `poisson_solver_create(method, POISSON_BACKEND_OMP)`; per-element updates are
+  identical to the scalar reference, so results match within reduction rounding
+  (verified by scalar-vs-OMP consistency tests). Both reject grids whose `nx` or
+  `ny` exceeds `INT_MAX`, or whose `nx*ny*nz` overflows `size_t`, with
+  `CFD_ERROR_LIMIT_EXCEEDED` at init. Plain lexicographic SOR remains
+  scalar/SIMD-only — its parallel form is the existing Red-Black SOR OMP solver
+  (`lib/src/solvers/linear/omp/linear_solver_jacobi_omp.c`,
+  `lib/src/solvers/linear/omp/linear_solver_bicgstab_omp.c`,
+  `tests/math/test_omp_consistency.c`, `tests/solvers/test_linear_solver.c`).
 - **Multigrid wired into the projection method** — new
   `ns_solver_params_t.pressure_solver` field (`ns_pressure_solver_t`; 0 =
   existing CG behavior) selects the pressure Poisson solve of the scalar
