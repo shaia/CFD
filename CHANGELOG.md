@@ -93,6 +93,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose `nx*ny*nz` overflows `size_t`, with `CFD_ERROR_LIMIT_EXCEEDED` at init. Their
   primitives loop over `int` bounds, which such grids silently truncated (`cg_omp`) or
   emptied (`bicgstab_simd`, where a solve then reported convergence from a zero residual).
+- `poisson_solve()` and `poisson_solve_3d()` are safe to call from several threads. Their
+  per-preset solver cache handed the same instance to concurrent callers, and a
+  function-static flag guarded the `atexit` cleanup registration. A call now takes the
+  cached instance out of an atomic slot for its duration, so a concurrent call builds its
+  own (`lib/src/solvers/linear/linear_solver.c`, `lib/src/core/cfd_threading_internal.h`,
+  `tests/solvers/test_linear_solver.c`).
 - Solvers on the shared solve loop (Jacobi, SOR, Red-Black SOR and multigrid on every CPU
   backend) reported one more iteration than they ran when they exhausted
   `max_iterations`; `stats.iterations` now counts the iterations performed, as CG,

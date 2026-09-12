@@ -768,6 +768,73 @@ static void fill_compatible_rhs(double* rhs, size_t n, double h) {
 }
 
 /* ============================================================================
+ * CONVENIENCE API THREAD SAFETY
+ * ============================================================================ */
+
+/**
+ * poisson_solve() caches one solver per preset; concurrent callers must never
+ * share it, so every caller must reproduce a lone call exactly. Callers alternate
+ * between two grid sizes, so the cached instance is also rebuilt while other
+ * calls are running.
+ */
+void test_poisson_solve_concurrent_callers(void) {
+#ifndef _OPENMP
+    TEST_IGNORE_MESSAGE("Built without OpenMP: no concurrent callers to run");
+#else
+    enum { SIZES = 2, CALLERS = 4, ROUNDS = 25 };
+    static const size_t sizes[SIZES] = { 33, 17 };
+
+    double* rhs[SIZES];
+    double* p_ref[SIZES];
+    int iters_ref[SIZES];
+    for (int s = 0; s < SIZES; s++) {
+        size_t n = sizes[s];
+        double h = 1.0 / (double)(n - 1);
+        rhs[s] = (double*)cfd_calloc(n * n, sizeof(double));
+        p_ref[s] = (double*)cfd_calloc(n * n, sizeof(double));
+        TEST_ASSERT_NOT_NULL(rhs[s]);
+        TEST_ASSERT_NOT_NULL(p_ref[s]);
+        fill_compatible_rhs(rhs[s], n, h);
+        iters_ref[s] = poisson_solve(p_ref[s], NULL, rhs[s], n, n, h, h,
+                                     POISSON_SOLVER_CG_SCALAR);
+        TEST_ASSERT_GREATER_THAN_INT(0, iters_ref[s]);
+    }
+
+    double* p[CALLERS];
+    for (int c = 0; c < CALLERS; c++) {
+        p[c] = (double*)cfd_calloc(sizes[0] * sizes[0], sizeof(double));
+        TEST_ASSERT_NOT_NULL(p[c]);
+    }
+
+    int mismatches = 0;
+    for (int round = 0; round < ROUNDS; round++) {
+        int c;
+#pragma omp parallel for num_threads(CALLERS) schedule(static, 1) reduction(+:mismatches)
+        for (c = 0; c < CALLERS; c++) {
+            int s = (c + round) % SIZES;
+            size_t n = sizes[s];
+            double h = 1.0 / (double)(n - 1);
+            memset(p[c], 0, n * n * sizeof(double));
+            int iters = poisson_solve(p[c], NULL, rhs[s], n, n, h, h,
+                                      POISSON_SOLVER_CG_SCALAR);
+            if (iters != iters_ref[s] || memcmp(p[c], p_ref[s], n * n * sizeof(double)) != 0) {
+                mismatches++;
+            }
+        }
+    }
+
+    for (int c = 0; c < CALLERS; c++) {
+        cfd_free(p[c]);
+    }
+    for (int s = 0; s < SIZES; s++) {
+        cfd_free(rhs[s]);
+        cfd_free(p_ref[s]);
+    }
+    TEST_ASSERT_EQUAL_INT(0, mismatches);
+#endif
+}
+
+/* ============================================================================
  * SOLVE LOOP STATISTICS
  * ============================================================================ */
 
@@ -1318,6 +1385,7 @@ int main(void) {
     RUN_TEST(test_legacy_poisson_solve_sor);
     RUN_TEST(test_legacy_poisson_solve_jacobi);
     RUN_TEST(test_legacy_poisson_solve_redblack);
+    RUN_TEST(test_poisson_solve_concurrent_callers);
 
     /* SIMD tests */
     RUN_TEST(test_jacobi_simd_if_available);

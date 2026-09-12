@@ -479,6 +479,11 @@ typedef enum {
  * Unified Poisson solver function
  *
  * Convenience function that internally uses the poisson_solver interface.
+ * Each preset caches one solver instance, created on first use and rebuilt
+ * when the grid dimensions or spacing change.
+ *
+ * Thread-safe: concurrent calls never share a solver instance. A call that
+ * finds the cached instance in use by another thread creates its own.
  *
  * @param p Pressure field (in/out)
  * @param p_temp Temporary buffer
@@ -498,7 +503,8 @@ CFD_LIBRARY_EXPORT int poisson_solve(
 /**
  * Convenience Poisson solver with 3D support
  *
- * Same caching behavior as poisson_solve(), but accepts nz/dz for 3D grids.
+ * Same caching and thread-safety behavior as poisson_solve(), but accepts nz/dz
+ * for 3D grids.
  * When nz=1 and dz=0.0, behavior is identical to poisson_solve().
  *
  * @param nz    Number of grid points in z (1 for 2D)
