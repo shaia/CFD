@@ -624,6 +624,34 @@ void test_jacobi_omp_init_rejects_dims_above_int_max(void) {
     poisson_solver_destroy(solver);
 }
 
+/**
+ * Test: BiCGSTAB OMP init rejects dimensions above INT_MAX
+ *
+ * The OMP primitives use int loop bounds and map an overflowing dimension to 0,
+ * which would skip every sweep and report false convergence — init must refuse.
+ */
+void test_bicgstab_omp_init_rejects_dims_above_int_max(void) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
+        TEST_IGNORE_MESSAGE("OMP backend not available on this platform");
+        return;
+    }
+
+    poisson_solver_t* solver = poisson_solver_create(
+        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_OMP);
+    if (!solver) {
+        TEST_IGNORE_MESSAGE("OMP BiCGSTAB solver creation failed; backend may be unavailable");
+        return;
+    }
+
+    size_t too_large = (size_t)INT_MAX + 1;
+    TEST_ASSERT_EQUAL(CFD_ERROR_LIMIT_EXCEEDED,
+        poisson_solver_init(solver, too_large, NY, 1, 1.0, 1.0, 0.0, NULL));
+    TEST_ASSERT_EQUAL(CFD_ERROR_LIMIT_EXCEEDED,
+        poisson_solver_init(solver, NX, too_large, 1, 1.0, 1.0, 0.0, NULL));
+
+    poisson_solver_destroy(solver);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cg_omp_vs_scalar);
@@ -632,5 +660,6 @@ int main(void) {
     RUN_TEST(test_jacobi_omp_vs_scalar);
     RUN_TEST(test_bicgstab_omp_vs_scalar);
     RUN_TEST(test_jacobi_omp_init_rejects_dims_above_int_max);
+    RUN_TEST(test_bicgstab_omp_init_rejects_dims_above_int_max);
     return UNITY_END();
 }

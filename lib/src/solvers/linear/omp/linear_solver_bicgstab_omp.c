@@ -286,6 +286,13 @@ static cfd_status_t bicgstab_omp_init(
 {
     (void)params;
 
+    /* The primitives use int OpenMP loop bounds; bicgstab_size_to_int() maps larger
+     * dims to 0, which would turn every sweep into a no-op and fake convergence */
+    if (nx > (size_t)INT_MAX || ny > (size_t)INT_MAX) {
+        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Grid size exceeds INT_MAX for OpenMP loop");
+        return CFD_ERROR_LIMIT_EXCEEDED;
+    }
+
     bicgstab_omp_context_t* ctx = (bicgstab_omp_context_t*)cfd_calloc(1, sizeof(bicgstab_omp_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
