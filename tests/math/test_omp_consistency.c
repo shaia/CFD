@@ -36,6 +36,7 @@
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
 #include "cfd/core/indexing.h"
+#include "../../lib/src/solvers/linear/multigrid_internal.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -745,9 +746,11 @@ typedef struct {
     int expect_converged;            /* 0: both runs must exhaust max_iterations */
 } mg_config_t;
 
-/* Levels follow the coarsening rule (Neumann floor 5, Dirichlet floor 3). Grids
- * stay small: every primitive opens one parallel region per plane, and the
- * executable is registered at three thread counts. */
+/* Levels follow the coarsening rule (Neumann floor 5, Dirichlet floor 3). Most
+ * grids stay small, since the executable is registered at three thread counts;
+ * their planes fall below MG_OMP_MIN_POINTS and run serially. The 257x257
+ * configurations put the finest level above it, so the thread team runs too, and
+ * exhaust a few cycles to stay cheap. */
 static const mg_config_t MG_CONFIGS[] = {
     /* nx  ny  nz  cycle       smoother                 bc               pre post crs lvl rhs                 max_it conv */
     /* Full 2D product (4 Neumann / 5 Dirichlet levels) */
@@ -788,6 +791,10 @@ static const mg_config_t MG_CONFIGS[] = {
     /* Inhomogeneous Dirichlet boundary data; zero-RHS early return */
     {  17, 17,  1, MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_DIRICHLET, 0,  0,   0,  0, RHS_DIRICHLET_DATA, 100,   1 },
     {  17, 17,  1, MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_NEUMANN,   0,  0,   0,  0, RHS_ZERO,           100,   1 },
+    /* Finest planes above MG_OMP_MIN_POINTS: parallel kernels, both smoothers, 2D and 3D */
+    { 257,257,  1, MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_NEUMANN,   0,  0,   0,  0, RHS_SINUSOIDAL,       3,   0 },
+    { 257,257,  1, MG_CYCLE_W, MG_SMOOTHER_JACOBI,      MG_BC_DIRICHLET, 0,  0,   0,  0, RHS_SINUSOIDAL,       3,   0 },
+    { 257,257,  5, MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_DIRICHLET, 0,  0,   0,  0, RHS_SINUSOIDAL,       2,   0 },
 };
 
 /** Fill the RHS and the initial guess x0 for one multigrid configuration */
@@ -891,6 +898,17 @@ void test_multigrid_omp_vs_scalar(void) {
 
     int threads = reported_threads();
     size_t num_configs = sizeof(MG_CONFIGS) / sizeof(MG_CONFIGS[0]);
+
+    /* Planes below MG_OMP_MIN_POINTS run serially: without a configuration above
+     * it, this matrix would never exercise the parallel kernels */
+    size_t parallel_configs = 0;
+    for (size_t c = 0; c < num_configs; c++) {
+        if ((MG_CONFIGS[c].nx - 2) * (MG_CONFIGS[c].ny - 2) >= MG_OMP_MIN_POINTS) {
+            parallel_configs++;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(parallel_configs > 0,
+        "No multigrid configuration reaches MG_OMP_MIN_POINTS");
 
     for (size_t c = 0; c < num_configs; c++) {
         const mg_config_t* cfg = &MG_CONFIGS[c];

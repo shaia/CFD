@@ -17,8 +17,13 @@
  * The result is bit-identical to the scalar backend at any thread count under
  * the same floating-point contraction settings.
  *
- * Boundary conditions go through bc_apply_scalar_omp, which shares the scalar
- * table's boundary core (same face order, copies only).
+ * A region uses the thread team only when its plane holds at least
+ * MG_OMP_MIN_POINTS points (mg_omp_parallel); coarse levels and small grids run
+ * the same loops on the calling thread.
+ *
+ * Boundary conditions run the boundary core that bc_apply_scalar_omp and
+ * bc_apply_scalar_cpu share (same face order, copies only), entered through
+ * the OpenMP function only above the same threshold.
  */
 
 #include "../linear_solver_internal.h"
@@ -30,16 +35,32 @@
 #ifdef CFD_ENABLE_OPENMP
 
 #include <omp.h>
+#include <string.h>
 
-#include "linear_solver_primitives_omp.h"
+/* ============================================================================
+ * PARALLEL THRESHOLD
+ * ============================================================================ */
+
+/**
+ * Nonzero when a region covering `points` points should use the thread team
+ * (see MG_OMP_MIN_POINTS). Smaller regions run serially through the OpenMP `if`
+ * clause, so the loop body, and the result, are unchanged.
+ */
+static inline int mg_omp_parallel(size_t points) {
+    return points >= MG_OMP_MIN_POINTS;
+}
 
 /* ============================================================================
  * BOUNDARY CONDITIONS
  * ============================================================================ */
 
-/** Zero-gradient BCs on one nx x ny plane (OpenMP boundary backend) */
+/** Zero-gradient BCs on one nx x ny plane; the pass copies 2(nx+ny) points */
 static void mg_bc_neumann_plane_omp(double* plane, size_t nx, size_t ny) {
-    bc_apply_scalar_omp(plane, nx, ny, BC_TYPE_NEUMANN);
+    if (mg_omp_parallel(2 * (nx + ny))) {
+        bc_apply_scalar_omp(plane, nx, ny, BC_TYPE_NEUMANN);
+    } else {
+        bc_apply_scalar_cpu(plane, nx, ny, BC_TYPE_NEUMANN);
+    }
 }
 
 /* ============================================================================
@@ -60,12 +81,13 @@ static void mg_rbgs_sweep_omp(const mg_level_t* L, double* x,
     double inv_factor = L->inv_factor;
     size_t stride_z = L->stride_z;
     int ny_int = poisson_solver_size_to_int(L->ny);
+    int par = mg_omp_parallel((nx - 2) * (L->ny - 2));
 
     /* Red pass: (i+j+k) % 2 == 1, then black pass: (i+j+k) % 2 == 0 */
     for (int color = 0; color < 2; color++) {
         for (size_t k = L->k_start; k < L->k_end; k++) {
             int j;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if(par)
             for (j = 1; j < ny_int - 1; j++) {
                 size_t i_start =
                     (((size_t)j + k) % 2 == (size_t)color) ? 1 : 2;
@@ -97,10 +119,11 @@ static void mg_jacobi_sweep_omp(const mg_level_t* L, double* x,
     size_t stride_z = L->stride_z;
     int ny_int = poisson_solver_size_to_int(L->ny);
     int nx_int = poisson_solver_size_to_int(nx);
+    int par = mg_omp_parallel((nx - 2) * (L->ny - 2));
 
     for (size_t k = L->k_start; k < L->k_end; k++) {
         int j;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if(par)
         for (j = 1; j < ny_int - 1; j++) {
             for (int i = 1; i < nx_int - 1; i++) {
                 size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
@@ -116,7 +139,14 @@ static void mg_jacobi_sweep_omp(const mg_level_t* L, double* x,
         }
     }
 
-    copy_vector_omp(x_temp, x, nx, L->ny, L->k_start, L->k_end, stride_z);
+    for (size_t k = L->k_start; k < L->k_end; k++) {
+        int j;
+#pragma omp parallel for schedule(static) if(par)
+        for (j = 1; j < ny_int - 1; j++) {
+            size_t row_start = k * stride_z + (size_t)j * nx;
+            memcpy(&x[row_start + 1], &x_temp[row_start + 1], (nx - 2) * sizeof(double));
+        }
+    }
 }
 
 /* ============================================================================
@@ -138,10 +168,11 @@ static void mg_residual_omp(const mg_level_t* L, const double* x,
     size_t stride_z = L->stride_z;
     int ny_int = poisson_solver_size_to_int(L->ny);
     int nx_int = poisson_solver_size_to_int(nx);
+    int par = mg_omp_parallel((nx - 2) * (L->ny - 2));
 
     for (size_t k = L->k_start; k < L->k_end; k++) {
         int j;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if(par)
         for (j = 1; j < ny_int - 1; j++) {
             for (int i = 1; i < nx_int - 1; i++) {
                 size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
@@ -168,9 +199,10 @@ static void mg_restrict_2d_omp(const double* fine, double* coarse,
                                int fold_neumann) {
     (void)nyf;
     int nyc_int = poisson_solver_size_to_int(nyc);
+    int par = mg_omp_parallel((nxc - 2) * (nyc - 2));
 
     int J;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if(par)
     for (J = 1; J < nyc_int - 1; J++) {
         double wy[3];
         mg_weights_1d((size_t)J, nyc, fold_neumann, wy);
@@ -199,13 +231,14 @@ static void mg_restrict_3d_omp(const double* fine, double* coarse,
                                int fold_neumann) {
     (void)nzf;
     int nyc_int = poisson_solver_size_to_int(nyc);
+    int par = mg_omp_parallel((nxc - 2) * (nyc - 2));
 
     for (size_t K = 1; K < nzc - 1; K++) {
         double wz[3];
         mg_weights_1d(K, nzc, fold_neumann, wz);
 
         int J;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if(par)
         for (J = 1; J < nyc_int - 1; J++) {
             double wy[3];
             mg_weights_1d((size_t)J, nyc, fold_neumann, wy);
@@ -242,9 +275,10 @@ static void mg_prolongate_add_2d_omp(const double* coarse, double* fine,
                                      size_t nxf, size_t nyf) {
     (void)nyc;
     int nyf_int = poisson_solver_size_to_int(nyf);
+    int par = mg_omp_parallel((nxf - 2) * (nyf - 2));
 
     int j;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if(par)
     for (j = 1; j < nyf_int - 1; j++) {
         size_t J = (size_t)j >> 1;
         int jodd = (int)((size_t)j & 1);
@@ -277,6 +311,7 @@ static void mg_prolongate_add_3d_omp(const double* coarse, double* fine,
                                      size_t nxf, size_t nyf, size_t nzf) {
     (void)nzc;
     int nyf_int = poisson_solver_size_to_int(nyf);
+    int par = mg_omp_parallel((nxf - 2) * (nyf - 2));
 
     for (size_t k = 1; k < nzf - 1; k++) {
         size_t K = k >> 1;
@@ -284,7 +319,7 @@ static void mg_prolongate_add_3d_omp(const double* coarse, double* fine,
         double wk = (k & 1) ? 0.5 : 1.0;
 
         int j;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if(par)
         for (j = 1; j < nyf_int - 1; j++) {
             size_t J = (size_t)j >> 1;
             size_t nj = ((size_t)j & 1) ? 2 : 1;
@@ -322,10 +357,11 @@ static void mg_subtract_interior_mean_omp(double* f, size_t nx, size_t ny,
     poisson_solver_compute_3d_bounds(nz, nx, ny, &stride_z, &k_start, &k_end);
     int ny_int = poisson_solver_size_to_int(ny);
     int nx_int = poisson_solver_size_to_int(nx);
+    int par = mg_omp_parallel((nx - 2) * (ny - 2));
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if(par)
         for (j = 1; j < ny_int - 1; j++) {
             for (int i = 1; i < nx_int - 1; i++) {
                 f[k * stride_z + IDX_2D((size_t)i, (size_t)j, nx)] -= mean;
@@ -340,10 +376,11 @@ static void mg_zero_interior_omp(const mg_level_t* L, double* x) {
     size_t stride_z = L->stride_z;
     int ny_int = poisson_solver_size_to_int(L->ny);
     int nx_int = poisson_solver_size_to_int(nx);
+    int par = mg_omp_parallel((nx - 2) * (L->ny - 2));
 
     for (size_t k = L->k_start; k < L->k_end; k++) {
         int j;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if(par)
         for (j = 1; j < ny_int - 1; j++) {
             for (int i = 1; i < nx_int - 1; i++) {
                 x[k * stride_z + IDX_2D((size_t)i, (size_t)j, nx)] = 0.0;

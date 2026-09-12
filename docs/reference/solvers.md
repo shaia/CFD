@@ -356,9 +356,12 @@ Both share one algorithm template
 the OpenMP backend parallelizes the smoother, residual, grid-transfer and
 boundary kernels over rows with no parallel reductions (the Neumann interior mean
 and the convergence residual stay serial), so its results are bit-identical to
-the scalar backend at any thread count. `POISSON_BACKEND_AUTO` resolves to scalar;
-request `POISSON_BACKEND_OMP` explicitly. Grids whose `nx` or `ny` exceeds
-`INT_MAX` return `CFD_ERROR_LIMIT_EXCEEDED` at init. Also available as a CG
+the scalar backend at any thread count. Kernels on planes smaller than 32,768
+points (every coarse level, and small grids such as any plane below 257x257) run
+on the calling thread, where starting a thread team would cost more than the work.
+`POISSON_BACKEND_AUTO` resolves to scalar; request `POISSON_BACKEND_OMP` explicitly.
+Grids whose `nx` or `ny` exceeds `INT_MAX` return `CFD_ERROR_LIMIT_EXCEEDED` at init.
+Also available as a CG
 preconditioner (`POISSON_PRECOND_MULTIGRID`, scalar CG only — see §5) and as the
 scalar projection method's pressure solver (`ns_solver_params_t.pressure_solver`).
 SIMD/GPU variants, OMP MG preconditioning and an OMP projection pressure solve

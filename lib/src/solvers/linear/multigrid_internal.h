@@ -39,6 +39,13 @@ extern "C" {
 /* Weighted Jacobi smoother relaxation: optimal high-frequency damping */
 #define MG_JACOBI_OMEGA              (2.0 / 3.0)
 
+/* Minimum points one OpenMP multigrid region must cover to use the thread team.
+ * Each OMP primitive opens a region per plane, and starting and joining a team
+ * costs as much as sweeping tens of thousands of points, so smaller planes (every
+ * coarse level, and small grids) run serially (omp/linear_solver_multigrid_omp.c).
+ * test_omp_consistency keeps a configuration above it. */
+#define MG_OMP_MIN_POINTS            32768
+
 /**
  * Per-level grid data for the multigrid hierarchy.
  *

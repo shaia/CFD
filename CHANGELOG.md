@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restriction/prolongation and boundary primitives with no parallel reductions
   (the Neumann interior mean and the convergence residual stay serial), so its
   solutions are bit-identical to `multigrid_scalar` at any thread count (verified
-  over a V/W/F x smoother x BC-mode matrix at 1, 2 and 4 threads).
+  over a V/W/F x smoother x BC-mode matrix at 1, 2 and 4 threads). Kernels on planes
+  smaller than 32,768 points (coarse levels, small grids) run on the calling thread,
+  where a thread team would cost more than the work.
   `POISSON_BACKEND_AUTO` still resolves multigrid to scalar; request OMP
   explicitly. Both multigrid backends now reject grids whose `nx` or `ny`
   exceeds `INT_MAX` with `CFD_ERROR_LIMIT_EXCEEDED` at init. The multigrid
