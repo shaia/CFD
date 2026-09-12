@@ -12,6 +12,9 @@
  *   over a configuration matrix (2D/3D, non-square, restart default/5/1, Jacobi
  *   preconditioner, zero-RHS early return, max-iteration exhaustion), printed as
  *   one line per configuration with the measured margins
+ * - Jacobi OMP vs Scalar: L2 difference <= 1e-9 (element-wise update, no reduction)
+ * - BiCGSTAB OMP vs Scalar: L2 difference <= 1e-6 (reduction order feeds the
+ *   alpha/beta/omega coefficients)
  *
  * The thread count comes from OMP_NUM_THREADS: CMake registers this executable at
  * 1, 2 and 4 threads. It is not set in-process because on MSVC this test binds
@@ -517,7 +520,7 @@ void test_jacobi_omp_vs_scalar(void) {
     TEST_ASSERT_NOT_NULL(x_temp);
     TEST_ASSERT_NOT_NULL(rhs);
 
-    init_sinusoidal_rhs(rhs, NX, NY, dx, dy);
+    init_sinusoidal_rhs(rhs, NX, NY, 1, dx, dy, 0.0);
 
     poisson_solver_t* solver_scalar = poisson_solver_create(
         POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
@@ -546,18 +549,11 @@ void test_jacobi_omp_vs_scalar(void) {
         return;
     }
 
+    /* The backend is available, so a NULL solver is a regression, not a skip */
     poisson_solver_t* solver_omp = poisson_solver_create(
         POISSON_METHOD_JACOBI, POISSON_BACKEND_OMP);
-
-    if (!solver_omp) {
-        cfd_free(x_scalar);
-        cfd_free(x_omp);
-        cfd_free(x_temp);
-        cfd_free(rhs);
-        poisson_solver_destroy(solver_scalar);
-        TEST_IGNORE_MESSAGE("OMP Jacobi solver creation failed; backend may be unavailable");
-        return;
-    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(solver_omp,
+        "OMP backend available but OMP Jacobi solver creation returned NULL");
 
     status = poisson_solver_init(solver_omp, NX, NY, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
@@ -567,17 +563,7 @@ void test_jacobi_omp_vs_scalar(void) {
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats_omp.status);
 
-    double l2_diff = 0.0;
-    size_t count = 0;
-    for (size_t j = 1; j < NY - 1; j++) {
-        for (size_t i = 1; i < NX - 1; i++) {
-            size_t idx = IDX_2D(i, j, NX);
-            double diff = x_scalar[idx] - x_omp[idx];
-            l2_diff += diff * diff;
-            count++;
-        }
-    }
-    l2_diff = sqrt(l2_diff / count);
+    double l2_diff = interior_rms_diff(x_scalar, x_omp, NX, NY, 1);
 
     /* Jacobi's element-wise update carries no reduction, so OMP and scalar are
      * effectively bit-identical. */
@@ -616,7 +602,7 @@ void test_bicgstab_omp_vs_scalar(void) {
     TEST_ASSERT_NOT_NULL(x_omp);
     TEST_ASSERT_NOT_NULL(rhs);
 
-    init_sinusoidal_rhs(rhs, NX, NY, dx, dy);
+    init_sinusoidal_rhs(rhs, NX, NY, 1, dx, dy, 0.0);
 
     poisson_solver_t* solver_scalar = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR);
@@ -644,17 +630,11 @@ void test_bicgstab_omp_vs_scalar(void) {
         return;
     }
 
+    /* The backend is available, so a NULL solver is a regression, not a skip */
     poisson_solver_t* solver_omp = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_OMP);
-
-    if (!solver_omp) {
-        cfd_free(x_scalar);
-        cfd_free(x_omp);
-        cfd_free(rhs);
-        poisson_solver_destroy(solver_scalar);
-        TEST_IGNORE_MESSAGE("OMP BiCGSTAB solver creation failed; backend may be unavailable");
-        return;
-    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(solver_omp,
+        "OMP backend available but OMP BiCGSTAB solver creation returned NULL");
 
     status = poisson_solver_init(solver_omp, NX, NY, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
@@ -664,17 +644,7 @@ void test_bicgstab_omp_vs_scalar(void) {
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats_omp.status);
 
-    double l2_diff = 0.0;
-    size_t count = 0;
-    for (size_t j = 1; j < NY - 1; j++) {
-        for (size_t i = 1; i < NX - 1; i++) {
-            size_t idx = IDX_2D(i, j, NX);
-            double diff = x_scalar[idx] - x_omp[idx];
-            l2_diff += diff * diff;
-            count++;
-        }
-    }
-    l2_diff = sqrt(l2_diff / count);
+    double l2_diff = interior_rms_diff(x_scalar, x_omp, NX, NY, 1);
 
     /* Both backends converge to the same solution within solver tolerance;
      * reduction-order differences in alpha/beta/omega make BiCGSTAB more
