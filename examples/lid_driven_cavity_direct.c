@@ -120,6 +120,14 @@ int main(int argc, char* argv[]) {
     cfd_set_output_base_dir("output");
     char run_dir[512];
     cfd_create_run_directory_ex(run_dir, sizeof(run_dir), "lid_cavity_direct", nx, ny);
+    if (run_dir[0] == '\0') {
+        fprintf(stderr, "Failed to create run directory\n");
+        solver_destroy(solver);
+        flow_field_destroy(field);
+        grid_destroy(g);
+        cfd_registry_destroy(registry);
+        return 1;
+    }
     printf("Output directory: %s\n\n", run_dir);
 
     /* Apply initial BCs */

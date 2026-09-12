@@ -1,3 +1,4 @@
+#include "cfd/core/cfd_status.h"
 #include "cfd/core/filesystem.h"
 #include "cfd/core/grid.h"
 #include "cfd/solvers/navier_stokes_solver.h"
@@ -24,7 +25,9 @@ void setUp(void) {
 }
 
 void tearDown(void) {
-    // Clean up test files if needed
+    // Restore global path state a test may have changed
+    cfd_reset_artifacts_path();
+    cfd_reset_run_directory();
 }
 
 // Helper function to check if file exists
@@ -36,9 +39,10 @@ int file_exists(const char* filename) {
 void test_output_directory_creation(void) {
     // Create cross-platform test paths
     char base_path[256];
-    char test_dir[256];
-    char nested_test_dir[256];
-    char output_dir[256];
+    // Sized from base_path so the longest composed path always fits
+    char test_dir[sizeof(base_path) + sizeof("/test_dir")];
+    char nested_test_dir[sizeof(base_path) + sizeof("/test_dir/nested")];
+    char output_dir[sizeof(base_path) + sizeof("/output")];
 
     make_artifacts_path(base_path, sizeof(base_path), "");
     make_artifacts_path(output_dir, sizeof(output_dir), "output");
@@ -284,11 +288,61 @@ void test_no_scattered_output(void) {
     grid_destroy(grid);
 }
 
+// A run directory path that does not fit its buffer is rejected, never truncated
+void test_run_directory_rejects_truncation(void) {
+    char base_path[256];
+    make_artifacts_path(base_path, sizeof(base_path), "");
+
+    // "{base}/output/output_paths_test_YYYYMMDD_HHMMSS" cannot fit in 16 bytes
+    char small[16] = "unchanged";
+    cfd_clear_error();
+    cfd_create_run_directory_with_base(small, sizeof(small), base_path, "output_paths_test");
+    TEST_ASSERT_EQUAL_STRING("", small);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_LIMIT_EXCEEDED, cfd_get_last_status());
+
+    // The same call succeeds with room for the path
+    char run_dir[512];
+    cfd_create_run_directory_with_base(run_dir, sizeof(run_dir), base_path, "output_paths_test");
+    TEST_ASSERT_TRUE(strlen(run_dir) > 0);
+    TEST_ASSERT_TRUE(file_exists(run_dir));
+    rmdir(run_dir);
+}
+
+// The cached variants reject a path that overflows the 512-byte cache, even when the caller's
+// buffer could hold it, so cfd_get_run_directory() never returns a truncated path
+void test_run_directory_rejects_cache_overflow(void) {
+    char long_base[512];
+    memset(long_base, 'a', sizeof(long_base) - 1);
+    long_base[sizeof(long_base) - 1] = '\0';
+    cfd_set_output_base_dir(long_base);
+    cfd_clear_error();
+
+    char run_dir[2048] = "unchanged";
+    cfd_create_run_directory(run_dir, sizeof(run_dir));
+    TEST_ASSERT_EQUAL_STRING("", run_dir);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_LIMIT_EXCEEDED, cfd_get_last_status());
+
+    char cached[2048] = "unchanged";
+    cfd_get_run_directory(cached, sizeof(cached));
+    TEST_ASSERT_EQUAL_STRING("", cached);
+
+    // With the default base the path fits, is created, and is cached
+    cfd_reset_artifacts_path();
+    cfd_create_run_directory_with_prefix(run_dir, sizeof(run_dir), "output_paths_test");
+    TEST_ASSERT_TRUE(strlen(run_dir) > 0);
+    TEST_ASSERT_TRUE(file_exists(run_dir));
+    cfd_get_run_directory(cached, sizeof(cached));
+    TEST_ASSERT_EQUAL_STRING(run_dir, cached);
+    rmdir(run_dir);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_output_directory_creation);
     RUN_TEST(test_vtk_output_paths);
     RUN_TEST(test_solver_output_paths);
     RUN_TEST(test_no_scattered_output);
+    RUN_TEST(test_run_directory_rejects_truncation);
+    RUN_TEST(test_run_directory_rejects_cache_overflow);
     return UNITY_END();
 }

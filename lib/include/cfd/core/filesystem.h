@@ -61,6 +61,11 @@ CFD_LIBRARY_EXPORT void make_artifacts_path(char* buffer, size_t buffer_size, co
 //=============================================================================
 // RUN DIRECTORY MANAGEMENT
 //=============================================================================
+//
+// A run directory path that does not fit is rejected, never truncated: `buffer` is left empty,
+// no directory is created, and CFD_ERROR_LIMIT_EXCEEDED is set (see cfd_get_last_error()). The
+// variants without a base directory also cache the path for cfd_get_run_directory(), so their
+// path must fit in 512 bytes even when `buffer` is larger.
 
 // Create timestamped run directory with default prefix
 // Example: "output/run_20250127_153045"

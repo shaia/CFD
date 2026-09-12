@@ -1,4 +1,5 @@
 #include "cfd/core/filesystem.h"
+#include "cfd/core/cfd_status.h"
 #include "cfd/core/logging.h"
 
 #include <stdio.h>
@@ -144,30 +145,59 @@ void make_artifacts_path(char* buffer, size_t buffer_size, const char* subdir) {
 
 static char current_run_directory[512] = {0};  // Keep state, but no direct access
 
-static void create_run_directory_internal(char* buffer, size_t buffer_size, const char* base_dir,
-                                          const char* timestamp_name) {
+// Compose "{base_dir}/output/{timestamp_name}" into buffer and create it. A path that does not
+// fit is rejected rather than truncated: buffer is left empty and nothing is created.
+static cfd_status_t create_run_directory_internal(char* buffer, size_t buffer_size,
+                                                  const char* base_dir,
+                                                  const char* timestamp_name) {
+    if (!buffer || buffer_size == 0) {
+        cfd_set_error(CFD_ERROR_INVALID, "Invalid run directory buffer");
+        return CFD_ERROR_INVALID;
+    }
+
     // Use provided base directory
     const char* root_path = (base_dir && strlen(base_dir) > 0) ? base_dir : ".";
 
+    char output_base[1024];
 #ifdef _WIN32
-    snprintf(buffer, buffer_size, "%s\\output\\%s", root_path, timestamp_name);
+    int base_len = snprintf(output_base, sizeof(output_base), "%s\\output", root_path);
+    int path_len = snprintf(buffer, buffer_size, "%s\\output\\%s", root_path, timestamp_name);
 #else
-    snprintf(buffer, buffer_size, "%s/output/%s", root_path, timestamp_name);
+    int base_len = snprintf(output_base, sizeof(output_base), "%s/output", root_path);
+    int path_len = snprintf(buffer, buffer_size, "%s/output/%s", root_path, timestamp_name);
 #endif
+    if (base_len < 0 || (size_t)base_len >= sizeof(output_base) || path_len < 0 ||
+        (size_t)path_len >= buffer_size) {
+        buffer[0] = '\0';
+        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Run directory path too long");
+        CFD_LOG_ERROR("filesystem", "Run directory path too long under base '%s'", root_path);
+        return CFD_ERROR_LIMIT_EXCEEDED;
+    }
 
     // Ensure base output directory exists
-    char output_base[512];
-#ifdef _WIN32
-    snprintf(output_base, sizeof(output_base), "%s\\output", root_path);
-#else
-    snprintf(output_base, sizeof(output_base), "%s/output", root_path);
-#endif
     ensure_directory_exists(output_base);
 
     // Create run-specific directory
     if (!ensure_directory_exists(buffer)) {
         cfd_warning("Failed to create run directory, using base output directory");
         snprintf(buffer, buffer_size, "%s", output_base);
+    }
+    return CFD_SUCCESS;
+}
+
+// Resolve the base from the artifacts path and cache the result. The path must also fit the
+// cache, so cfd_get_run_directory() never returns a truncated path.
+static void create_cached_run_directory(char* buffer, size_t buffer_size,
+                                        const char* timestamp_name) {
+    char base_path[512];
+    cfd_get_artifacts_path(base_path, sizeof(base_path));
+
+    size_t capacity =
+        buffer_size < sizeof(current_run_directory) ? buffer_size : sizeof(current_run_directory);
+    cfd_status_t status =
+        create_run_directory_internal(buffer, capacity, base_path, timestamp_name);
+    if (status == CFD_SUCCESS) {
+        snprintf(current_run_directory, sizeof(current_run_directory), "%s", buffer);
     }
 }
 
@@ -184,33 +214,7 @@ void cfd_create_run_directory_with_prefix(char* buffer, size_t buffer_size, cons
     snprintf(timestamp, sizeof(timestamp), "%s_%04d%02d%02d_%02d%02d%02d", prefix,
              t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
 
-    // Create full path
-    char base_path[512];
-    cfd_get_artifacts_path(base_path, sizeof(base_path));
-
-#ifdef _WIN32
-    snprintf(buffer, buffer_size, "%s\\output\\%s", base_path, timestamp);
-#else
-    snprintf(buffer, buffer_size, "%s/output/%s", base_path, timestamp);
-#endif
-
-    // Ensure base output directory exists
-    char output_base[512];
-#ifdef _WIN32
-    snprintf(output_base, sizeof(output_base), "%s\\output", base_path);
-#else
-    snprintf(output_base, sizeof(output_base), "%s/output", base_path);
-#endif
-    ensure_directory_exists(output_base);
-
-    // Create run-specific directory
-    if (!ensure_directory_exists(buffer)) {
-        cfd_warning("Failed to create run directory, using base output directory");
-        snprintf(buffer, buffer_size, "%s", output_base);
-    }
-
-    // Store in global state
-    snprintf(current_run_directory, sizeof(current_run_directory), "%s", buffer);
+    create_cached_run_directory(buffer, buffer_size, timestamp);
 }
 
 void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* solver_name,
@@ -224,33 +228,7 @@ void cfd_create_run_directory_ex(char* buffer, size_t buffer_size, const char* s
              solver_name ? solver_name : "sim", nx, ny, t->tm_year + 1900, t->tm_mon + 1,
              t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
 
-    // Create full path
-    char base_path[512];
-    cfd_get_artifacts_path(base_path, sizeof(base_path));
-
-#ifdef _WIN32
-    snprintf(buffer, buffer_size, "%s\\output\\%s", base_path, timestamp);
-#else
-    snprintf(buffer, buffer_size, "%s/output/%s", base_path, timestamp);
-#endif
-
-    // Ensure base output directory exists
-    char output_base[512];
-#ifdef _WIN32
-    snprintf(output_base, sizeof(output_base), "%s\\output", base_path);
-#else
-    snprintf(output_base, sizeof(output_base), "%s/output", base_path);
-#endif
-    ensure_directory_exists(output_base);
-
-    // Create run-specific directory
-    if (!ensure_directory_exists(buffer)) {
-        cfd_warning("Failed to create run directory, using base output directory");
-        snprintf(buffer, buffer_size, "%s", output_base);
-    }
-
-    // Store in global state
-    snprintf(current_run_directory, sizeof(current_run_directory), "%s", buffer);
+    create_cached_run_directory(buffer, buffer_size, timestamp);
 }
 
 void cfd_create_run_directory_with_base(char* buffer, size_t buffer_size, const char* base_dir,

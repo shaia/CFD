@@ -13,11 +13,12 @@
 #include "cfd/core/memory.h"
 
 #include <math.h>
-#include <string.h>
 
 #ifdef CFD_ENABLE_OPENMP
 
 #include <omp.h>
+
+#include "linear_solver_primitives_omp.h"
 
 /* ============================================================================
  * CG CONTEXT
@@ -44,142 +45,17 @@ typedef struct {
 
 /* ============================================================================
  * OMP-PARALLELIZED PRIMITIVES
+ *
+ * dot_product_omp, axpy_omp, apply_laplacian_omp, compute_residual_omp,
+ * copy_vector_omp and apply_jacobi_precond_omp come from
+ * linear_solver_primitives_omp.h (shared with GMRES OMP).
  * ============================================================================ */
-
-static inline int size_to_int(size_t val) {
-    if (val > (size_t)INT_MAX) {
-        return INT_MAX;
-    }
-    return (int)val;
-}
-
-static double dot_product_omp(const double* a, const double* b,
-                              size_t nx, size_t ny,
-                              size_t k_start, size_t k_end, size_t stride_z) {
-    double sum = 0.0;
-    int ny_int = size_to_int(ny);
-    int nx_int = size_to_int(nx);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static) reduction(+:sum)
-        for (j = 1; j < ny_int - 1; j++) {
-            for (int i = 1; i < nx_int - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
-                sum += a[idx] * b[idx];
-            }
-        }
-    }
-    return sum;
-}
-
-static void axpy_omp(double alpha, const double* x, double* y,
-                     size_t nx, size_t ny,
-                     size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = size_to_int(ny);
-    int nx_int = size_to_int(nx);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static)
-        for (j = 1; j < ny_int - 1; j++) {
-            for (int i = 1; i < nx_int - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
-                y[idx] += alpha * x[idx];
-            }
-        }
-    }
-}
-
-static void apply_laplacian_omp(const double* p, double* Ap,
-                                size_t nx, size_t ny,
-                                double dx2, double dy2, double inv_dz2,
-                                size_t k_start, size_t k_end, size_t stride_z) {
-    double dx2_inv = 1.0 / dx2;
-    double dy2_inv = 1.0 / dy2;
-    int ny_int = size_to_int(ny);
-    int nx_int = size_to_int(nx);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static)
-        for (j = 1; j < ny_int - 1; j++) {
-            for (int i = 1; i < nx_int - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
-                double laplacian =
-                    (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv
-                  + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv
-                  + (p[idx + stride_z] + p[idx - stride_z] - 2.0 * p[idx]) * inv_dz2;
-                Ap[idx] = -laplacian;
-            }
-        }
-    }
-}
-
-static void compute_residual_omp(const double* x, const double* rhs, double* r,
-                                 size_t nx, size_t ny,
-                                 double dx2, double dy2, double inv_dz2,
-                                 size_t k_start, size_t k_end, size_t stride_z) {
-    double dx2_inv = 1.0 / dx2;
-    double dy2_inv = 1.0 / dy2;
-    int ny_int = size_to_int(ny);
-    int nx_int = size_to_int(nx);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static)
-        for (j = 1; j < ny_int - 1; j++) {
-            for (int i = 1; i < nx_int - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
-                double laplacian =
-                    (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv
-                  + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv
-                  + (x[idx + stride_z] + x[idx - stride_z] - 2.0 * x[idx]) * inv_dz2;
-                r[idx] = -rhs[idx] + laplacian;
-            }
-        }
-    }
-}
-
-static void copy_vector_omp(const double* src, double* dst,
-                            size_t nx, size_t ny,
-                            size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = size_to_int(ny);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static)
-        for (j = 1; j < ny_int - 1; j++) {
-            size_t row_start = k * stride_z + (size_t)j * nx;
-            memcpy(&dst[row_start + 1], &src[row_start + 1], (nx - 2) * sizeof(double));
-        }
-    }
-}
-
-static void apply_jacobi_precond_omp(const double* r, double* z,
-                                     size_t nx, size_t ny,
-                                     double diag_inv,
-                                     size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = size_to_int(ny);
-    int nx_int = size_to_int(nx);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static)
-        for (j = 1; j < ny_int - 1; j++) {
-            for (int i = 1; i < nx_int - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
-                z[idx] = diag_inv * r[idx];
-            }
-        }
-    }
-}
 
 static void update_search_direction_omp(const double* src, double* p,
                                         double beta, size_t nx, size_t ny,
                                         size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = size_to_int(ny);
-    int nx_int = size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -208,6 +84,14 @@ static cfd_status_t cg_omp_init(
         return precond_status;
     }
 
+    /* The shared primitives loop over int bounds, which collapse to empty loops
+     * for oversized dimensions; reject those grids before allocating. */
+    size_t n = 0;
+    cfd_status_t size_status = poisson_solver_validate_grid_size(nx, ny, nz, 1, &n);
+    if (size_status != CFD_SUCCESS) {
+        return size_status;
+    }
+
     cg_omp_context_t* ctx = (cg_omp_context_t*)cfd_calloc(1, sizeof(cg_omp_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
@@ -220,7 +104,6 @@ static cfd_status_t cg_omp_init(
     ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
     ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
 
-    size_t n = nx * ny * nz;
     ctx->r = (double*)cfd_calloc(n, sizeof(double));
     ctx->p = (double*)cfd_calloc(n, sizeof(double));
     ctx->Ap = (double*)cfd_calloc(n, sizeof(double));

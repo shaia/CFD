@@ -11,6 +11,7 @@
 #include "cfd/solvers/poisson_solver.h"
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <limits.h>
 
 #ifndef M_PI
@@ -41,8 +42,10 @@ poisson_solver_t* create_redblack_scalar_solver(void);
 poisson_solver_t* create_redblack_simd_solver(void);
 
 #ifdef CFD_ENABLE_OPENMP
+poisson_solver_t* create_jacobi_omp_solver(void);
 poisson_solver_t* create_redblack_omp_solver(void);
 poisson_solver_t* create_cg_omp_solver(void);
+poisson_solver_t* create_bicgstab_omp_solver(void);
 #endif
 
 /* Conjugate Gradient solvers */
@@ -151,19 +154,56 @@ static inline cfd_status_t poisson_solver_reject_mg_precond(
  */
 #define GMRES_BREAKDOWN_THRESHOLD 1e-12
 
+/* ============================================================================
+ * OPENMP LOOP BOUNDS
+ * ============================================================================ */
+
 /**
  * Convert size_t to int for OpenMP loop bounds.
- * OpenMP requires int loop variables, but grid dimensions are size_t.
+ * OpenMP (MSVC 2.0) requires int loop variables, but grid dimensions are size_t.
+ * Shared by the OMP primitives and the SIMD solver templates.
  *
  * @param val The size_t value to convert
- * @return int value, or 0 on overflow (error set)
+ * @return int value, or 0 on overflow (CFD_ERROR_LIMIT_EXCEEDED set)
  */
-static inline int bicgstab_size_to_int(size_t val) {
+static inline int poisson_solver_size_to_int(size_t val) {
     if (val > (size_t)INT_MAX) {
         cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Grid size exceeds INT_MAX for OpenMP loop");
         return 0;
     }
     return (int)val;
+}
+
+/* ============================================================================
+ * GRID SIZE LIMITS
+ * ============================================================================ */
+
+/**
+ * Validate grid dimensions at init and compute the field size n = nx*ny*nz.
+ *
+ * Rejects nx or ny above INT_MAX, where poisson_solver_size_to_int returns 0 and
+ * every int-bounded primitive loop becomes a no-op (a zero residual would then
+ * read as convergence), and grids where `vectors` grid-sized double arrays would
+ * not fit in size_t bytes. Each multiplication is checked before it is taken, so
+ * n cannot wrap and work arrays cannot be allocated undersized.
+ * Assumes nx, ny >= 3 (validated by poisson_solver_init).
+ *
+ * @param vectors number of grid-sized double arrays in the largest single
+ *                allocation (>= 1)
+ * @param n_out   receives nx*ny*nz on success
+ * @return CFD_SUCCESS, or CFD_ERROR_LIMIT_EXCEEDED (error set)
+ */
+static inline cfd_status_t poisson_solver_validate_grid_size(
+    size_t nx, size_t ny, size_t nz, size_t vectors, size_t* n_out)
+{
+    size_t max_n = SIZE_MAX / sizeof(double) / vectors;
+    if (nx > (size_t)INT_MAX || ny > (size_t)INT_MAX ||
+        ny > max_n / nx || nz > max_n / (nx * ny)) {
+        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Grid size exceeds indexable limits");
+        return CFD_ERROR_LIMIT_EXCEEDED;
+    }
+    *n_out = nx * ny * nz;
+    return CFD_SUCCESS;
 }
 
 /* ============================================================================

@@ -494,11 +494,210 @@ void test_gmres_omp_vs_scalar(void) {
     }
 }
 
+/**
+ * Test: Jacobi OMP vs Scalar Consistency
+ *
+ * Jacobi's interior update is a pure element-wise map (reads the previous
+ * iterate, writes the next) with no reduction, and both backends drive
+ * convergence with the same shared scalar residual check — so the OMP and
+ * scalar solutions are effectively bit-identical. Jacobi converges slowly, so a
+ * larger iteration budget is needed at 33x33 (~2900 iterations).
+ */
+void test_jacobi_omp_vs_scalar(void) {
+    double dx = (XMAX - XMIN) / (NX - 1);
+    double dy = (YMAX - YMIN) / (NY - 1);
+    size_t n = NX * NY;
+
+    double* x_scalar = (double*)cfd_calloc(n, sizeof(double));
+    double* x_omp    = (double*)cfd_calloc(n, sizeof(double));
+    double* x_temp   = (double*)cfd_calloc(n, sizeof(double));
+    double* rhs      = (double*)cfd_calloc(n, sizeof(double));
+    TEST_ASSERT_NOT_NULL(x_scalar);
+    TEST_ASSERT_NOT_NULL(x_omp);
+    TEST_ASSERT_NOT_NULL(x_temp);
+    TEST_ASSERT_NOT_NULL(rhs);
+
+    init_sinusoidal_rhs(rhs, NX, NY, dx, dy);
+
+    poisson_solver_t* solver_scalar = poisson_solver_create(
+        POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver_scalar);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance       = TOLERANCE;
+    params.max_iterations  = 5000;  /* Jacobi needs ~2900 iters at 33x33 */
+
+    cfd_status_t status = poisson_solver_init(solver_scalar, NX, NY, 1, dx, dy, 0.0, &params);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    poisson_solver_stats_t stats_scalar = poisson_solver_stats_default();
+    status = poisson_solver_solve(solver_scalar, x_scalar, x_temp, rhs, &stats_scalar);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats_scalar.status);
+
+    /* OMP backend requires OpenMP - skip at runtime if unavailable */
+    if (!poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
+        cfd_free(x_scalar);
+        cfd_free(x_omp);
+        cfd_free(x_temp);
+        cfd_free(rhs);
+        poisson_solver_destroy(solver_scalar);
+        TEST_IGNORE_MESSAGE("OMP backend not available on this platform");
+        return;
+    }
+
+    poisson_solver_t* solver_omp = poisson_solver_create(
+        POISSON_METHOD_JACOBI, POISSON_BACKEND_OMP);
+
+    if (!solver_omp) {
+        cfd_free(x_scalar);
+        cfd_free(x_omp);
+        cfd_free(x_temp);
+        cfd_free(rhs);
+        poisson_solver_destroy(solver_scalar);
+        TEST_IGNORE_MESSAGE("OMP Jacobi solver creation failed; backend may be unavailable");
+        return;
+    }
+
+    status = poisson_solver_init(solver_omp, NX, NY, 1, dx, dy, 0.0, &params);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    poisson_solver_stats_t stats_omp = poisson_solver_stats_default();
+    status = poisson_solver_solve(solver_omp, x_omp, x_temp, rhs, &stats_omp);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats_omp.status);
+
+    double l2_diff = 0.0;
+    size_t count = 0;
+    for (size_t j = 1; j < NY - 1; j++) {
+        for (size_t i = 1; i < NX - 1; i++) {
+            size_t idx = IDX_2D(i, j, NX);
+            double diff = x_scalar[idx] - x_omp[idx];
+            l2_diff += diff * diff;
+            count++;
+        }
+    }
+    l2_diff = sqrt(l2_diff / count);
+
+    /* Jacobi's element-wise update carries no reduction, so OMP and scalar are
+     * effectively bit-identical. */
+    TEST_ASSERT_DOUBLE_WITHIN(1.0e-9, 0.0, l2_diff);
+
+    int iter_diff = abs((int)stats_scalar.iterations - (int)stats_omp.iterations);
+    TEST_ASSERT_LESS_OR_EQUAL(2, iter_diff);
+
+    poisson_solver_destroy(solver_scalar);
+    poisson_solver_destroy(solver_omp);
+    cfd_free(x_scalar);
+    cfd_free(x_omp);
+    cfd_free(x_temp);
+    cfd_free(rhs);
+}
+
+/**
+ * Test: BiCGSTAB OMP vs Scalar Consistency
+ *
+ * The BiCGSTAB solve loop and every per-element vector update are identical
+ * across backends; only the dot-product reductions accumulate in a different
+ * order across threads. Those reductions feed the scalar coefficients
+ * (alpha/beta/omega), so BiCGSTAB is more path-sensitive than CG — a relaxed
+ * tolerance (matching the Red-Black SOR consistency test) is used, verifying
+ * both backends converge to the same solution within solver tolerance.
+ */
+void test_bicgstab_omp_vs_scalar(void) {
+    double dx = (XMAX - XMIN) / (NX - 1);
+    double dy = (YMAX - YMIN) / (NY - 1);
+    size_t n = NX * NY;
+
+    double* x_scalar = (double*)cfd_calloc(n, sizeof(double));
+    double* x_omp    = (double*)cfd_calloc(n, sizeof(double));
+    double* rhs      = (double*)cfd_calloc(n, sizeof(double));
+    TEST_ASSERT_NOT_NULL(x_scalar);
+    TEST_ASSERT_NOT_NULL(x_omp);
+    TEST_ASSERT_NOT_NULL(rhs);
+
+    init_sinusoidal_rhs(rhs, NX, NY, dx, dy);
+
+    poisson_solver_t* solver_scalar = poisson_solver_create(
+        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver_scalar);
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance       = TOLERANCE;
+    params.max_iterations  = 1000;
+
+    cfd_status_t status = poisson_solver_init(solver_scalar, NX, NY, 1, dx, dy, 0.0, &params);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    poisson_solver_stats_t stats_scalar = poisson_solver_stats_default();
+    status = poisson_solver_solve(solver_scalar, x_scalar, NULL, rhs, &stats_scalar);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats_scalar.status);
+
+    /* OMP backend requires OpenMP - skip at runtime if unavailable */
+    if (!poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
+        cfd_free(x_scalar);
+        cfd_free(x_omp);
+        cfd_free(rhs);
+        poisson_solver_destroy(solver_scalar);
+        TEST_IGNORE_MESSAGE("OMP backend not available on this platform");
+        return;
+    }
+
+    poisson_solver_t* solver_omp = poisson_solver_create(
+        POISSON_METHOD_BICGSTAB, POISSON_BACKEND_OMP);
+
+    if (!solver_omp) {
+        cfd_free(x_scalar);
+        cfd_free(x_omp);
+        cfd_free(rhs);
+        poisson_solver_destroy(solver_scalar);
+        TEST_IGNORE_MESSAGE("OMP BiCGSTAB solver creation failed; backend may be unavailable");
+        return;
+    }
+
+    status = poisson_solver_init(solver_omp, NX, NY, 1, dx, dy, 0.0, &params);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    poisson_solver_stats_t stats_omp = poisson_solver_stats_default();
+    status = poisson_solver_solve(solver_omp, x_omp, NULL, rhs, &stats_omp);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats_omp.status);
+
+    double l2_diff = 0.0;
+    size_t count = 0;
+    for (size_t j = 1; j < NY - 1; j++) {
+        for (size_t i = 1; i < NX - 1; i++) {
+            size_t idx = IDX_2D(i, j, NX);
+            double diff = x_scalar[idx] - x_omp[idx];
+            l2_diff += diff * diff;
+            count++;
+        }
+    }
+    l2_diff = sqrt(l2_diff / count);
+
+    /* Both backends converge to the same solution within solver tolerance;
+     * reduction-order differences in alpha/beta/omega make BiCGSTAB more
+     * path-sensitive than CG, so the tolerance is relaxed (as for RB-SOR). */
+    TEST_ASSERT_DOUBLE_WITHIN(1.0e-6, 0.0, l2_diff);
+
+    int iter_diff = abs((int)stats_scalar.iterations - (int)stats_omp.iterations);
+    TEST_ASSERT_LESS_OR_EQUAL(5, iter_diff);
+
+    poisson_solver_destroy(solver_scalar);
+    poisson_solver_destroy(solver_omp);
+    cfd_free(x_scalar);
+    cfd_free(x_omp);
+    cfd_free(rhs);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cg_omp_vs_scalar);
     RUN_TEST(test_redblack_omp_vs_scalar);
     RUN_TEST(test_gmres_omp_factory_metadata);
     RUN_TEST(test_gmres_omp_vs_scalar);
+    RUN_TEST(test_jacobi_omp_vs_scalar);
+    RUN_TEST(test_bicgstab_omp_vs_scalar);
     return UNITY_END();
 }

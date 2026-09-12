@@ -289,8 +289,27 @@ restarting every `m` inner iterations to bound memory.
 - On the symmetric Poisson operator it converges to the same solution as CG (a
   useful independent cross-check); its real value is future non-symmetric systems
 
-**Backends:** scalar, SIMD (AVX2/NEON), and OpenMP. A CUDA GPU variant is not yet
-implemented.
+**Available Backends:**
+| Solver | Backend | Description |
+|--------|---------|-------------|
+| `gmres_scalar` | Scalar | Reference implementation |
+| `gmres_simd` | SIMD | AVX2/NEON vector primitives + OpenMP (auto-detects AVX2/NEON) |
+| `gmres_omp` | OpenMP | OpenMP-parallelized vector primitives |
+
+All three backends include one implementation of the algorithm
+(`lib/src/solvers/linear/gmres_template/linear_solver_gmres_template.h`) and differ
+only in their O(n) vector primitives; the dense Hessenberg/Givens work is serial
+everywhere. Parallel dot products split their sums into per-thread partial sums,
+and OpenMP leaves the order in which those are combined unspecified, so
+`gmres_simd` and `gmres_omp` agree with `gmres_scalar` to rounding rather than
+bit-for-bit, and their last bits can differ with the thread count and between runs
+(a single-threaded 2D `gmres_omp` solve matches `gmres_scalar` exactly). A CUDA GPU
+variant is not yet implemented.
+
+`poisson_solver_init` rejects restart lengths whose `(m+1)·m` Hessenberg matrix
+cannot be indexed with `int` (m ≥ 46341), and grids too large to index (`nx` or
+`ny` above `INT_MAX`, or an `(m+1)`-vector Krylov basis overflowing `size_t`
+bytes), with `CFD_ERROR_LIMIT_EXCEEDED`.
 
 **Usage:**
 ```c

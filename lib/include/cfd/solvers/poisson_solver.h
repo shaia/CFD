@@ -426,6 +426,7 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
  * ============================================================================ */
 
 #define POISSON_SOLVER_TYPE_JACOBI_SCALAR     "jacobi_scalar"
+#define POISSON_SOLVER_TYPE_JACOBI_OMP        "jacobi_omp"
 #define POISSON_SOLVER_TYPE_JACOBI_SIMD       "jacobi_simd"
 #define POISSON_SOLVER_TYPE_SOR_SCALAR        "sor_scalar"
 #define POISSON_SOLVER_TYPE_SOR_SIMD          "sor_simd"
@@ -436,6 +437,7 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
 #define POISSON_SOLVER_TYPE_CG_OMP            "cg_omp"
 #define POISSON_SOLVER_TYPE_CG_SIMD           "cg_simd"
 #define POISSON_SOLVER_TYPE_BICGSTAB_SCALAR   "bicgstab_scalar"
+#define POISSON_SOLVER_TYPE_BICGSTAB_OMP      "bicgstab_omp"
 #define POISSON_SOLVER_TYPE_BICGSTAB_SIMD     "bicgstab_simd"
 #define POISSON_SOLVER_TYPE_BICGSTAB_GPU      "bicgstab_gpu"
 #define POISSON_SOLVER_TYPE_GMRES_SCALAR      "gmres_scalar"
