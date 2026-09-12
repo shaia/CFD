@@ -963,10 +963,12 @@ void test_multigrid_omp_vs_scalar(void) {
 /**
  * Test: Multigrid OMP apply_bc matches scalar
  *
- * Explicit coverage of the boundary primitive (bc_apply_scalar_omp per plane plus
+ * Explicit coverage of the boundary primitive (per-plane zero-gradient copies plus
  * the shared z-face copies): a field with distinct values everywhere is passed
  * through poisson_solver_apply_bc on both backends and compared entry by entry.
- * Dirichlet mode must leave the field untouched.
+ * Dirichlet mode must leave the field untouched. A plane enters
+ * bc_apply_scalar_omp only when its 2(nx+ny) boundary copies reach
+ * MG_OMP_MIN_POINTS, which only the elongated 16385x3 grid does.
  */
 void test_multigrid_omp_apply_bc_matches_scalar(void) {
     if (!poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
@@ -974,9 +976,18 @@ void test_multigrid_omp_apply_bc_matches_scalar(void) {
         return;
     }
 
-    static const size_t dims[][3] = { { 17, 17, 1 }, { 9, 9, 9 } };
+    static const size_t dims[][3] = { { 17, 17, 1 }, { 9, 9, 9 }, { 16385, 3, 1 } };
     static const mg_bc_type_t modes[] = { MG_BC_NEUMANN, MG_BC_DIRICHLET };
     int threads = reported_threads();
+
+    size_t omp_bc_dims = 0;
+    for (size_t d = 0; d < sizeof(dims) / sizeof(dims[0]); d++) {
+        if (2 * (dims[d][0] + dims[d][1]) >= MG_OMP_MIN_POINTS) {
+            omp_bc_dims++;
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(omp_bc_dims > 0,
+        "No apply_bc grid reaches MG_OMP_MIN_POINTS: the OpenMP boundary path is untested");
 
     for (size_t d = 0; d < sizeof(dims) / sizeof(dims[0]); d++) {
         for (size_t m = 0; m < sizeof(modes) / sizeof(modes[0]); m++) {
