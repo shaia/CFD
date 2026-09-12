@@ -1104,6 +1104,8 @@ void test_poisson_init_rejects_oversized_grid(void) {
         poisson_solver_backend_t backend;
     } solvers[] = {
         { POISSON_METHOD_CG, POISSON_BACKEND_OMP },
+        { POISSON_METHOD_JACOBI, POISSON_BACKEND_OMP },
+        { POISSON_METHOD_BICGSTAB, POISSON_BACKEND_OMP },
         { POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SIMD },
     };
     const size_t dims[][3] = {

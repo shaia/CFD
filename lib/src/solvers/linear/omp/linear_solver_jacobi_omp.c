@@ -31,7 +31,7 @@ typedef struct {
     size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
     size_t k_start;    /* first interior k index */
     size_t k_end;      /* one-past-last interior k index */
-    size_t nz;
+    size_t n;          /* nx*ny*nz, validated at init */
     int initialized;
 } jacobi_omp_context_t;
 
@@ -47,10 +47,12 @@ static cfd_status_t jacobi_omp_init(
 {
     (void)params;
 
-    /* The interior sweep uses int OpenMP loop bounds; larger dims would overflow the cast */
-    if (nx > (size_t)INT_MAX || ny > (size_t)INT_MAX) {
-        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Grid size exceeds INT_MAX for OpenMP loop");
-        return CFD_ERROR_LIMIT_EXCEEDED;
+    /* The sweep loops over int bounds and copies nx*ny*nz doubles; oversized
+     * grids would empty the loops or wrap the copy size, so reject them. */
+    size_t n = 0;
+    cfd_status_t size_status = poisson_solver_validate_grid_size(nx, ny, nz, 1, &n);
+    if (size_status != CFD_SUCCESS) {
+        return size_status;
     }
 
     jacobi_omp_context_t* ctx = (jacobi_omp_context_t*)cfd_calloc(1, sizeof(jacobi_omp_context_t));
@@ -61,7 +63,7 @@ static cfd_status_t jacobi_omp_init(
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
-    ctx->nz = nz;
+    ctx->n = n;
     poisson_solver_compute_3d_bounds(nz, nx, ny,
         &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
@@ -123,7 +125,7 @@ static cfd_status_t jacobi_omp_iterate(
     }
 
     /* Copy result back to x */
-    memcpy(x, x_temp, nx * ny * ctx->nz * sizeof(double));
+    memcpy(x, x_temp, ctx->n * sizeof(double));
 
     /* Apply boundary conditions */
     poisson_solver_apply_bc(solver, x);

@@ -175,11 +175,12 @@ static cfd_status_t bicgstab_omp_init(
 {
     (void)params;
 
-    /* The primitives use int OpenMP loop bounds; poisson_solver_size_to_int() maps larger
-     * dims to 0, which would turn every sweep into a no-op and fake convergence */
-    if (nx > (size_t)INT_MAX || ny > (size_t)INT_MAX) {
-        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Grid size exceeds INT_MAX for OpenMP loop");
-        return CFD_ERROR_LIMIT_EXCEEDED;
+    /* The shared primitives loop over int bounds, which collapse to empty loops
+     * for oversized dimensions; reject those grids before allocating. */
+    size_t n = 0;
+    cfd_status_t size_status = poisson_solver_validate_grid_size(nx, ny, nz, 1, &n);
+    if (size_status != CFD_SUCCESS) {
+        return size_status;
     }
 
     bicgstab_omp_context_t* ctx = (bicgstab_omp_context_t*)cfd_calloc(1, sizeof(bicgstab_omp_context_t));
@@ -193,7 +194,6 @@ static cfd_status_t bicgstab_omp_init(
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
     /* Allocate working vectors */
-    size_t n = nx * ny * nz;
     ctx->r = (double*)cfd_calloc(n, sizeof(double));
     ctx->r_hat = (double*)cfd_calloc(n, sizeof(double));
     ctx->p = (double*)cfd_calloc(n, sizeof(double));
