@@ -39,6 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`lib/src/solvers/linear/cpu/linear_solver_multigrid.c`,
   `lib/src/solvers/linear/cpu/multigrid_transfer.c`,
   `tests/math/test_multigrid_operators.c`, `tests/math/test_multigrid_convergence.c`).
+- **Restarted GMRES(m) Poisson solver** (`POISSON_METHOD_GMRES`) — Arnoldi with modified
+  Gram-Schmidt and incremental Givens rotations for non-symmetric systems, 2D/3D, restart
+  length via `poisson_solver_params_t.restart` (0 = default 30) and optional right Jacobi
+  preconditioning. Scalar, AVX2, NEON and OpenMP backends (`gmres_scalar`, `gmres_simd`,
+  `gmres_omp`) share one algorithm template and differ only in their O(n) vector
+  primitives. `poisson_solver_init` rejects restart lengths whose Hessenberg matrix cannot
+  be indexed with `int` (m ≥ 46341), and grids too large to index (`nx` or `ny` above
+  `INT_MAX`, or an `(m+1)`-vector Krylov basis overflowing `size_t` bytes), with
+  `CFD_ERROR_LIMIT_EXCEEDED`
+  (`lib/src/solvers/linear/gmres_template/linear_solver_gmres_template.h`,
+  `tests/math/test_gmres.c`, `tests/math/test_omp_consistency.c`).
 - **Restart / checkpoint support** — portable, versioned, CRC-protected binary checkpoint
   format (`.cfdchk`) that saves and restores complete simulation state (grid, flow field,
   scalar params, time, solver name). Little-endian fixed-width encoding with an endianness
@@ -50,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `poisson_solve_3d()` now checks `poisson_solver_init()`'s return status: a failed init
   (e.g. multigrid on non-2^k+1 dims) no longer leaves a broken solver in the convenience
   cache; the call returns -1 and later valid calls re-create the solver.
+- `cg_omp` and `bicgstab_simd` now reject grids whose `nx` or `ny` exceeds `INT_MAX`, or
+  whose `nx*ny*nz` overflows `size_t`, with `CFD_ERROR_LIMIT_EXCEEDED` at init. Their
+  primitives loop over `int` bounds, which such grids silently truncated (`cg_omp`) or
+  emptied (`bicgstab_simd`, where a solve then reported convergence from a zero residual).
 
 ## [0.3.0] - 2026-06-23
 

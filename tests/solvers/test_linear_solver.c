@@ -18,7 +18,9 @@
 #include "cfd/core/memory.h"
 #include "unity.h"
 
+#include <limits.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1092,6 +1094,46 @@ void test_poisson_init_nz_degenerate(void) {
     poisson_solver_destroy(solver);
 }
 
+void test_poisson_init_rejects_oversized_grid(void) {
+    /* Solvers whose primitives loop over int bounds must reject nx/ny above
+     * INT_MAX (poisson_solver_size_to_int returns 0, emptying every loop so a
+     * zero residual reads as convergence) and grids whose nx*ny*nz wraps size_t,
+     * with CFD_ERROR_LIMIT_EXCEEDED at init before allocating. */
+    const struct {
+        poisson_solver_method_t method;
+        poisson_solver_backend_t backend;
+    } solvers[] = {
+        { POISSON_METHOD_CG, POISSON_BACKEND_OMP },
+        { POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SIMD },
+    };
+    const size_t dims[][3] = {
+        { (size_t)INT_MAX + 1, 3, 1 },
+        { 3, (size_t)INT_MAX + 1, 1 },
+        { 3, 3, SIZE_MAX / 9 + 1 },
+    };
+
+    int checked = 0;
+    for (size_t s = 0; s < sizeof(solvers) / sizeof(solvers[0]); s++) {
+        if (!poisson_solver_backend_available(solvers[s].backend)) {
+            continue;  /* backend not built or not supported by this CPU */
+        }
+        checked++;
+        for (size_t d = 0; d < sizeof(dims) / sizeof(dims[0]); d++) {
+            poisson_solver_t* solver = poisson_solver_create(solvers[s].method,
+                                                             solvers[s].backend);
+            TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Backend available but solver creation failed");
+            cfd_status_t st = poisson_solver_init(solver, dims[d][0], dims[d][1], dims[d][2],
+                                                  0.1, 0.1, 0.1, NULL);
+            const char* name = solver->name;
+            poisson_solver_destroy(solver);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_ERROR_LIMIT_EXCEEDED, st, name);
+        }
+    }
+    if (checked == 0) {
+        TEST_IGNORE_MESSAGE("Neither OMP nor SIMD backend available");
+    }
+}
+
 void test_poisson_compute_residual_null_solver(void) {
     /* linear_solver.c:289 — guard: if (!solver || !x || !rhs) return -1.0 */
     double dummy[4] = {0.0, 0.0, 0.0, 0.0};
@@ -1193,6 +1235,7 @@ int main(void) {
     RUN_TEST(test_poisson_init_nx_too_small);
     RUN_TEST(test_poisson_init_ny_too_small);
     RUN_TEST(test_poisson_init_nz_degenerate);
+    RUN_TEST(test_poisson_init_rejects_oversized_grid);
     RUN_TEST(test_poisson_compute_residual_null_solver);
     RUN_TEST(test_poisson_compute_residual_null_arrays);
     RUN_TEST(test_poisson_apply_bc_null);
