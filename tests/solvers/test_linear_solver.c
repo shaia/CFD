@@ -1272,10 +1272,10 @@ void test_poisson_init_rejects_oversized_grid(void) {
 }
 
 void test_multigrid_init_rejects_oversized_grid(void) {
-    /* Multigrid checks the 2^k+1 shape first, so the shared oversized dims above
-     * (SIZE_MAX/9+1 is not 2^k+1) would return CFD_ERROR_INVALID instead. 2^31+1
-     * passes the shape check and must then hit the grid-size limit before any
-     * level is allocated, on every multigrid backend. */
+    /* Every multigrid backend must reject nx or ny above INT_MAX with
+     * CFD_ERROR_LIMIT_EXCEEDED before allocating any level, whether or not the
+     * dims are 2^k+1: the size check runs before the shape check, which would
+     * report CFD_ERROR_INVALID for nx = 2^31 or for ny = 10. */
     const poisson_solver_backend_t backends[] = {
         POISSON_BACKEND_SCALAR,
         POISSON_BACKEND_OMP,
@@ -1283,6 +1283,8 @@ void test_multigrid_init_rejects_oversized_grid(void) {
     const size_t dims[][3] = {
         { (size_t)INT_MAX + 2, 3, 1 },
         { 3, (size_t)INT_MAX + 2, 1 },
+        { (size_t)INT_MAX + 1, 3, 1 },
+        { (size_t)INT_MAX + 2, 10, 1 },
     };
 
     for (size_t b = 0; b < sizeof(backends) / sizeof(backends[0]); b++) {

@@ -318,6 +318,17 @@ static cfd_status_t MGT_FUNC(mg_init)(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
+    /* Parallel backends loop over int row/column bounds, which
+     * poisson_solver_size_to_int empties above INT_MAX (a zero residual would
+     * then read as convergence), and level buffers must not wrap size_t:
+     * reject oversized grids before allocating. This runs before the shape
+     * check so every oversized grid reports CFD_ERROR_LIMIT_EXCEEDED. */
+    size_t n = 0;
+    cfd_status_t size_status = poisson_solver_validate_grid_size(nx, ny, nz, 1, &n);
+    if (size_status != CFD_SUCCESS) {
+        return size_status;
+    }
+
     /* Geometric coarsening requires 2^k+1 points per active dimension */
     if (!mg_is_pow2_plus1(nx) || !mg_is_pow2_plus1(ny) ||
         (nz > 1 && !mg_is_pow2_plus1(nz))) {
@@ -333,16 +344,6 @@ static cfd_status_t MGT_FUNC(mg_init)(
         params->mg_pre_smooth < 0 || params->mg_post_smooth < 0 ||
         params->mg_coarse_max_iter < 0 || params->mg_max_levels < 0) {
         return CFD_ERROR_INVALID;
-    }
-
-    /* Parallel backends loop over int row/column bounds, which
-     * poisson_solver_size_to_int empties above INT_MAX (a zero residual would
-     * then read as convergence), and level buffers must not wrap size_t:
-     * reject oversized grids before allocating. */
-    size_t n = 0;
-    cfd_status_t size_status = poisson_solver_validate_grid_size(nx, ny, nz, 1, &n);
-    if (size_status != CFD_SUCCESS) {
-        return size_status;
     }
 
     /* Re-init support: drop any previous hierarchy */
