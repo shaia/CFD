@@ -25,6 +25,8 @@
 
 #include <omp.h>
 
+#include "linear_solver_primitives_omp.h"
+
 /* ============================================================================
  * BICGSTAB CONTEXT
  * ============================================================================ */
@@ -51,124 +53,11 @@ typedef struct {
 
 /* ============================================================================
  * OMP-PARALLELIZED PRIMITIVES
+ *
+ * dot_product_omp, axpy_omp, apply_laplacian_omp, compute_residual_omp and
+ * copy_vector_omp come from linear_solver_primitives_omp.h (shared with CG and
+ * GMRES OMP).
  * ============================================================================ */
-
-static double dot_product_omp(const double* a, const double* b,
-                              size_t nx, size_t ny,
-                              size_t k_start, size_t k_end, size_t stride_z) {
-    double sum = 0.0;
-    int ny_int = poisson_solver_size_to_int(ny);
-    int nx_int = poisson_solver_size_to_int(nx);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static) reduction(+:sum)
-        for (j = 1; j < ny_int - 1; j++) {
-            for (int i = 1; i < nx_int - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
-                sum += a[idx] * b[idx];
-            }
-        }
-    }
-    return sum;
-}
-
-/* y = y + alpha * x (interior points only) */
-static void axpy_omp(double alpha, const double* x, double* y,
-                     size_t nx, size_t ny,
-                     size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = poisson_solver_size_to_int(ny);
-    int nx_int = poisson_solver_size_to_int(nx);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static)
-        for (j = 1; j < ny_int - 1; j++) {
-            for (int i = 1; i < nx_int - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
-                y[idx] += alpha * x[idx];
-            }
-        }
-    }
-}
-
-/*
- * Apply negative Laplacian operator: Ap = -nabla^2(p)
- * For Poisson equation nabla^2(x) = rhs we solve -nabla^2(x) = -rhs, which is
- * SPD with positive eigenvalues.
- */
-static void apply_laplacian_omp(const double* p, double* Ap,
-                                size_t nx, size_t ny,
-                                double dx2, double dy2, double inv_dz2,
-                                size_t k_start, size_t k_end, size_t stride_z) {
-    double dx2_inv = 1.0 / dx2;
-    double dy2_inv = 1.0 / dy2;
-    int ny_int = poisson_solver_size_to_int(ny);
-    int nx_int = poisson_solver_size_to_int(nx);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static)
-        for (j = 1; j < ny_int - 1; j++) {
-            for (int i = 1; i < nx_int - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
-                double laplacian =
-                    (p[idx + 1] - 2.0 * p[idx] + p[idx - 1]) * dx2_inv
-                  + (p[idx + nx] - 2.0 * p[idx] + p[idx - nx]) * dy2_inv
-                  + (p[idx + stride_z] + p[idx - stride_z] - 2.0 * p[idx]) * inv_dz2;
-                Ap[idx] = -laplacian;
-            }
-        }
-    }
-}
-
-/*
- * Compute initial residual: r = b - A*x
- * For our formulation: r = -rhs - (-nabla^2 x) = -rhs + nabla^2 x
- */
-static void compute_residual_omp(const double* x, const double* rhs, double* r,
-                                 size_t nx, size_t ny,
-                                 double dx2, double dy2, double inv_dz2,
-                                 size_t k_start, size_t k_end, size_t stride_z) {
-    double dx2_inv = 1.0 / dx2;
-    double dy2_inv = 1.0 / dy2;
-    int ny_int = poisson_solver_size_to_int(ny);
-    int nx_int = poisson_solver_size_to_int(nx);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static)
-        for (j = 1; j < ny_int - 1; j++) {
-            for (int i = 1; i < nx_int - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
-                double laplacian =
-                    (x[idx + 1] - 2.0 * x[idx] + x[idx - 1]) * dx2_inv
-                  + (x[idx + nx] - 2.0 * x[idx] + x[idx - nx]) * dy2_inv
-                  + (x[idx + stride_z] + x[idx - stride_z] - 2.0 * x[idx]) * inv_dz2;
-                r[idx] = -rhs[idx] + laplacian;
-            }
-        }
-    }
-}
-
-/* dst = src (interior points only) */
-static void copy_vector_omp(const double* src, double* dst,
-                            size_t nx, size_t ny,
-                            size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = poisson_solver_size_to_int(ny);
-    int nx_int = poisson_solver_size_to_int(nx);
-
-    for (size_t k = k_start; k < k_end; k++) {
-        int j;
-#pragma omp parallel for schedule(static)
-        for (j = 1; j < ny_int - 1; j++) {
-            for (int i = 1; i < nx_int - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D((size_t)i, (size_t)j, nx);
-                dst[idx] = src[idx];
-            }
-        }
-    }
-}
 
 /* v = 0 (interior points only) */
 static void zero_vector_omp(double* v, size_t nx, size_t ny,
@@ -191,7 +80,7 @@ static void zero_vector_omp(double* v, size_t nx, size_t ny,
 /*
  * Fused per-iteration vector updates. Each preserves the scalar reference's
  * exact per-element floating-point operation order (only the dot-product
- * reductions above differ across threads), so OMP and scalar agree tightly.
+ * reductions differ across threads), so OMP and scalar agree tightly.
  */
 
 /* p = r + beta * (p - omega * v) */
