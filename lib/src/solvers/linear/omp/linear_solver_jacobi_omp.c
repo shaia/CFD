@@ -47,6 +47,12 @@ static cfd_status_t jacobi_omp_init(
 {
     (void)params;
 
+    /* The interior sweep uses int OpenMP loop bounds; larger dims would overflow the cast */
+    if (nx > (size_t)INT_MAX || ny > (size_t)INT_MAX) {
+        cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Grid size exceeds INT_MAX for OpenMP loop");
+        return CFD_ERROR_LIMIT_EXCEEDED;
+    }
+
     jacobi_omp_context_t* ctx = (jacobi_omp_context_t*)cfd_calloc(1, sizeof(jacobi_omp_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
