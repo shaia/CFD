@@ -863,9 +863,9 @@ static poisson_solver_stats_t solve_mg(poisson_solver_backend_t backend,
     } else {
         TEST_ASSERT_EQUAL(CFD_ERROR_MAX_ITER, solve_status);
         TEST_ASSERT_EQUAL(POISSON_MAX_ITER, stats.status);
-        /* Multigrid iterates through poisson_solver_solve_common, which runs
-         * max_iterations cycles and then reports its loop index + 1 */
-        TEST_ASSERT_EQUAL_INT(cfg->max_iterations + 1, (int)stats.iterations);
+        /* Multigrid iterates through poisson_solver_solve_common, which
+         * reports the max_iterations cycles it ran */
+        TEST_ASSERT_EQUAL_INT(cfg->max_iterations, (int)stats.iterations);
     }
     if (cfg->rhs == RHS_ZERO) {
         TEST_ASSERT_EQUAL_INT(0, (int)stats.iterations);

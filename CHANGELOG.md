@@ -93,6 +93,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose `nx*ny*nz` overflows `size_t`, with `CFD_ERROR_LIMIT_EXCEEDED` at init. Their
   primitives loop over `int` bounds, which such grids silently truncated (`cg_omp`) or
   emptied (`bicgstab_simd`, where a solve then reported convergence from a zero residual).
+- Solvers on the shared solve loop (Jacobi, SOR, Red-Black SOR and multigrid on every CPU
+  backend) reported one more iteration than they ran when they exhausted
+  `max_iterations`; `stats.iterations` now counts the iterations performed, as CG,
+  BiCGSTAB and GMRES already did (`lib/src/solvers/linear/linear_solver.c`,
+  `tests/solvers/test_linear_solver.c`, `tests/math/test_omp_consistency.c`).
 
 ## [0.3.0] - 2026-06-23
 

@@ -537,7 +537,9 @@ cfd_status_t poisson_solver_solve_common(
     double end_time = poisson_solver_get_time_ms();
 
     if (stats) {
-        stats->iterations = iter + 1;
+        /* A converged break leaves iter at the index of the last iteration run;
+         * an exhausted loop leaves it at max_iterations, the count run */
+        stats->iterations = converged ? iter + 1 : iter;
         stats->final_residual = res;
         stats->elapsed_time_ms = end_time - start_time;
         stats->status = converged ? POISSON_CONVERGED : POISSON_MAX_ITER;

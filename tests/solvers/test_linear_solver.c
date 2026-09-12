@@ -744,6 +744,74 @@ void test_legacy_poisson_solve_redblack(void) {
     cfd_free(rhs);
 }
 
+/**
+ * Neumann-compatible RHS on an n x n grid with spacing h: cos(2*pi*x)cos(2*pi*y)
+ * minus its interior mean, zero on the boundary.
+ */
+static void fill_compatible_rhs(double* rhs, size_t n, double h) {
+    const double two_pi = 6.283185307179586;
+    double sum = 0.0;
+    for (size_t j = 1; j < n - 1; j++) {
+        for (size_t i = 1; i < n - 1; i++) {
+            sum += cos(two_pi * (double)i * h) * cos(two_pi * (double)j * h);
+        }
+    }
+    double mean = sum / (double)((n - 2) * (n - 2));
+
+    for (size_t j = 0; j < n; j++) {
+        for (size_t i = 0; i < n; i++) {
+            int boundary = (i == 0 || j == 0 || i == n - 1 || j == n - 1);
+            rhs[j * n + i] = boundary
+                ? 0.0 : cos(two_pi * (double)i * h) * cos(two_pi * (double)j * h) - mean;
+        }
+    }
+}
+
+/* ============================================================================
+ * SOLVE LOOP STATISTICS
+ * ============================================================================ */
+
+/**
+ * A solve that exhausts max_iterations reports exactly the iterations it ran.
+ * Jacobi has no custom solve, so this runs poisson_solver_solve_common.
+ */
+void test_solve_common_max_iter_reports_iterations_run(void) {
+    const size_t n = 17;
+    const int max_iterations = 3;
+    double h = 1.0 / (double)(n - 1);
+    double* x = (double*)cfd_calloc(n * n, sizeof(double));
+    double* x_temp = (double*)cfd_calloc(n * n, sizeof(double));
+    double* rhs = (double*)cfd_calloc(n * n, sizeof(double));
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(x_temp);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
+
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_JACOBI,
+                                                     POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+    TEST_ASSERT_NULL_MESSAGE(solver->solve, "Jacobi must use the common solve loop");
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = max_iterations;
+    cfd_status_t init_status = poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = CFD_ERROR;
+    if (init_status == CFD_SUCCESS) {
+        status = poisson_solver_solve(solver, x, x_temp, rhs, &stats);
+    }
+    poisson_solver_destroy(solver);
+    cfd_free(x);
+    cfd_free(x_temp);
+    cfd_free(rhs);
+
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, init_status);
+    TEST_ASSERT_EQUAL(CFD_ERROR_MAX_ITER, status);
+    TEST_ASSERT_EQUAL(POISSON_MAX_ITER, stats.status);
+    TEST_ASSERT_EQUAL_INT(max_iterations, stats.iterations);
+}
+
 /* ============================================================================
  * SIMD BACKEND TESTS (if available)
  * ============================================================================ */
@@ -1261,6 +1329,7 @@ int main(void) {
 
     /* Statistics tests */
     RUN_TEST(test_stats_timing);
+    RUN_TEST(test_solve_common_max_iter_reports_iterations_run);
 
     /* NULL guard / edge case tests */
     RUN_TEST(test_poisson_create_invalid_method);
