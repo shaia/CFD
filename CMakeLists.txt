@@ -640,6 +640,15 @@ if(BUILD_TESTS)
     set_tests_properties(BiCGSTAB_NEON_Consistency PROPERTIES LABELS "cross-arch")
     set_tests_properties(GMRES_NEON_Consistency PROPERTIES LABELS "cross-arch")
     add_test(NAME OMPConsistencyTest COMMAND test_omp_consistency)
+    # Thread sweep for the OMP vs scalar margins. OMP_NUM_THREADS is set per test
+    # rather than in-process: on MSVC the test's omp_set_num_threads() binds to vcomp
+    # while the library's parallel regions run on the /openmp:llvm runtime.
+    add_test(NAME OMPConsistencyTest_1Thread COMMAND test_omp_consistency)
+    add_test(NAME OMPConsistencyTest_4Threads COMMAND test_omp_consistency)
+    set_tests_properties(OMPConsistencyTest PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=2")
+    set_tests_properties(OMPConsistencyTest_1Thread PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=1")
+    set_tests_properties(OMPConsistencyTest_4Threads PROPERTIES
+        ENVIRONMENT "OMP_NUM_THREADS=4" PROCESSORS 4)
     add_test(NAME OptimalOmegaTest COMMAND test_optimal_omega)
     add_test(NAME SolverBreakdownTest COMMAND test_solver_breakdown)
     add_test(NAME SolverRobustnessTest COMMAND test_solver_robustness)

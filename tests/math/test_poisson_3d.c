@@ -2,9 +2,10 @@
  * @file test_poisson_3d.c
  * @brief 3D Poisson solver tests with manufactured solutions
  *
- * Tests verify that all five scalar CPU linear solvers (Jacobi, SOR,
- * Red-Black SOR, CG, BiCGSTAB) correctly solve the 3D Poisson equation
- * on a [0,1]^3 domain with Dirichlet BCs.
+ * Tests verify that all six scalar CPU linear solvers (Jacobi, SOR,
+ * Red-Black SOR, CG, BiCGSTAB, GMRES) correctly solve the 3D Poisson equation
+ * on a [0,1]^3 domain with Dirichlet BCs, plus the SIMD and OMP variants
+ * (CG, GMRES and others) and OMP-vs-scalar agreement for CG and GMRES.
  *
  * Manufactured solution: p = sin(pi*x) * sin(pi*y) * sin(pi*z)
  *   => nabla^2 p = -3*pi^2 * sin(pi*x) * sin(pi*y) * sin(pi*z)
@@ -40,6 +41,7 @@
 #define L2_ERROR_TOL       1e-2   /* L2 error tolerance for sinusoidal */
 #define COMPAT_TOL         1e-10  /* nz=1 backward compatibility */
 #define SOLVER_COMPARE_TOL 1e-4   /* Cross-solver agreement */
+#define BACKEND_COMPARE_TOL 1e-9  /* Same solver, other backend: solution RMS diff */
 #define CONVERGENCE_RATE_TOL 0.3  /* Allowance for convergence order check */
 
 /* Solver parameters */
@@ -229,7 +231,8 @@ static solve_result_t solve_3d_sinusoidal_backend(
     poisson_solver_method_t method,
     poisson_solver_backend_t backend,
     size_t nx, size_t ny, size_t nz,
-    int max_iter, double omega)
+    int max_iter, double omega,
+    double* solution_out)  /* optional: receives the nx*ny*nz solution */
 {
     solve_result_t result = {0};
 
@@ -303,6 +306,9 @@ static solve_result_t solve_3d_sinusoidal_backend(
     result.l2_error   = compute_l2_error_3d(p, analytical, nx, ny, nz);
     result.iterations = stats.iterations;
     result.converged  = (status == CFD_SUCCESS);
+    if (solution_out) {
+        memcpy(solution_out, p, total * sizeof(double));
+    }
 
     poisson_solver_destroy(solver);
     cfd_free(p);
@@ -319,7 +325,7 @@ static solve_result_t solve_3d_sinusoidal(
     int max_iter, double omega)
 {
     return solve_3d_sinusoidal_backend(method, POISSON_BACKEND_SCALAR,
-                                       nx, ny, nz, max_iter, omega);
+                                       nx, ny, nz, max_iter, omega, NULL);
 }
 
 /* ============================================================================
@@ -379,6 +385,17 @@ void test_3d_bicgstab_sinusoidal(void) {
     TEST_ASSERT_TRUE_MESSAGE(r.l2_error >= 0.0, "Solver setup failed");
     TEST_ASSERT_TRUE_MESSAGE(r.l2_error < L2_ERROR_TOL,
         "BiCGSTAB 3D L2 error exceeds tolerance");
+}
+
+void test_3d_gmres_sinusoidal(void) {
+    printf("\n    GMRES on 3D sinusoidal (%dx%dx%d)...\n", N3D, N3D, N3D);
+    solve_result_t r = solve_3d_sinusoidal(
+        POISSON_METHOD_GMRES, N3D, N3D, N3D, MAX_ITER_CG, 0.0);
+    printf("      L2 error: %.6e, iters: %d, converged: %d\n",
+           r.l2_error, r.iterations, r.converged);
+    TEST_ASSERT_TRUE_MESSAGE(r.l2_error >= 0.0, "Solver setup failed");
+    TEST_ASSERT_TRUE_MESSAGE(r.l2_error < L2_ERROR_TOL,
+        "GMRES 3D L2 error exceeds tolerance");
 }
 
 /* ============================================================================
@@ -627,11 +644,11 @@ void test_3d_grid_convergence_cg(void) {
 }
 
 /* ============================================================================
- * SOLVER COMPARISON — all 5 solvers on same 3D problem
+ * SOLVER COMPARISON — all 6 solvers on same 3D problem
  * ============================================================================ */
 
 void test_3d_solver_comparison(void) {
-    printf("\n    Comparing all 5 solvers on 3D problem...\n");
+    printf("\n    Comparing all 6 solvers on 3D problem...\n");
 
     struct {
         poisson_solver_method_t method;
@@ -641,6 +658,7 @@ void test_3d_solver_comparison(void) {
     } solvers[] = {
         { POISSON_METHOD_CG,            "CG",          MAX_ITER_CG,     0.0 },
         { POISSON_METHOD_BICGSTAB,      "BiCGSTAB",    MAX_ITER_CG,     0.0 },
+        { POISSON_METHOD_GMRES,         "GMRES",       MAX_ITER_CG,     0.0 },
         { POISSON_METHOD_JACOBI,        "Jacobi",      MAX_ITER_JACOBI, 0.0 },
         { POISSON_METHOD_SOR,           "SOR",         MAX_ITER_SOR,    1.5 },
         { POISSON_METHOD_REDBLACK_SOR,  "Red-Black",   MAX_ITER_SOR,    1.5 }
@@ -685,7 +703,7 @@ static void run_simd_3d_test(poisson_solver_method_t method, const char* name,
                               int max_iter, double omega) {
     printf("\n    %s SIMD on 3D sinusoidal (%dx%dx%d)...\n", name, N3D, N3D, N3D);
     solve_result_t r = solve_3d_sinusoidal_backend(
-        method, POISSON_BACKEND_SIMD, N3D, N3D, N3D, max_iter, omega);
+        method, POISSON_BACKEND_SIMD, N3D, N3D, N3D, max_iter, omega, NULL);
     if (r.solver_unavailable) {
         printf("      SIMD backend unavailable — skipping\n");
         TEST_PASS();
@@ -714,28 +732,56 @@ void test_3d_bicgstab_simd_sinusoidal(void) {
     run_simd_3d_test(POISSON_METHOD_BICGSTAB, "BiCGSTAB", MAX_ITER_CG, 0.0);
 }
 
-/* Cross-backend comparison: SIMD results should match scalar */
-void test_3d_simd_vs_scalar_cg(void) {
-    printf("\n    SIMD vs Scalar CG on 3D (%dx%dx%d)...\n", N3D, N3D, N3D);
+void test_3d_gmres_simd_sinusoidal(void) {
+    run_simd_3d_test(POISSON_METHOD_GMRES, "GMRES", MAX_ITER_CG, 0.0);
+}
+
+/*
+ * Cross-backend comparison: an optimized backend must reproduce the scalar
+ * solution point by point. Comparing each run's L2 error against the analytical
+ * field would not prove that — different fields can share an error norm.
+ */
+static void run_backend_vs_scalar_3d(poisson_solver_method_t method,
+                                     poisson_solver_backend_t backend,
+                                     const char* backend_name, const char* name,
+                                     int max_iter) {
+    printf("\n    %s vs Scalar %s on 3D (%dx%dx%d)...\n",
+           backend_name, name, N3D, N3D, N3D);
+
+    size_t total = (size_t)N3D * N3D * N3D;
+    double* x_scalar  = alloc_field(total);
+    double* x_backend = alloc_field(total);
+    if (!x_scalar || !x_backend) {
+        cfd_free(x_scalar);
+        cfd_free(x_backend);
+        TEST_FAIL_MESSAGE("Solution buffer allocation failed");
+    }
 
     solve_result_t scalar = solve_3d_sinusoidal_backend(
-        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, N3D, N3D, N3D, MAX_ITER_CG, 0.0);
-    TEST_ASSERT_TRUE_MESSAGE(scalar.l2_error >= 0.0, "Scalar solve failed");
+        method, POISSON_BACKEND_SCALAR, N3D, N3D, N3D, max_iter, 0.0, x_scalar);
+    solve_result_t other = solve_3d_sinusoidal_backend(
+        method, backend, N3D, N3D, N3D, max_iter, 0.0, x_backend);
+    /* RMS difference between the two solution fields over interior points */
+    double diff = compute_l2_error_3d(x_backend, x_scalar, N3D, N3D, N3D);
+    cfd_free(x_scalar);
+    cfd_free(x_backend);
 
-    solve_result_t simd = solve_3d_sinusoidal_backend(
-        POISSON_METHOD_CG, POISSON_BACKEND_SIMD, N3D, N3D, N3D, MAX_ITER_CG, 0.0);
-    if (simd.solver_unavailable) {
-        printf("      SIMD backend unavailable — skipping\n");
+    TEST_ASSERT_TRUE_MESSAGE(scalar.l2_error >= 0.0, "Scalar solve failed");
+    if (other.solver_unavailable) {
+        printf("      %s backend unavailable — skipping\n", backend_name);
         TEST_PASS();
         return;
     }
-    TEST_ASSERT_TRUE_MESSAGE(simd.l2_error >= 0.0, "SIMD solve failed");
+    TEST_ASSERT_TRUE_MESSAGE(other.l2_error >= 0.0, "Backend solve failed");
 
-    double diff = fabs(scalar.l2_error - simd.l2_error);
-    printf("      Scalar L2: %.6e, SIMD L2: %.6e, diff: %.6e\n",
-           scalar.l2_error, simd.l2_error, diff);
-    TEST_ASSERT_TRUE_MESSAGE(diff < SOLVER_COMPARE_TOL,
-        "SIMD and Scalar CG solutions differ too much");
+    printf("      Scalar L2: %.6e, %s L2: %.6e, solution RMS diff: %.6e\n",
+           scalar.l2_error, backend_name, other.l2_error, diff);
+    TEST_ASSERT_TRUE_MESSAGE(diff < BACKEND_COMPARE_TOL,
+        "Backend and scalar solutions differ too much");
+}
+
+void test_3d_simd_vs_scalar_cg(void) {
+    run_backend_vs_scalar_3d(POISSON_METHOD_CG, POISSON_BACKEND_SIMD, "SIMD", "CG", MAX_ITER_CG);
 }
 
 /* ============================================================================
@@ -749,7 +795,7 @@ static void run_omp_3d_test(poisson_solver_method_t method, const char* name,
                              int max_iter, double omega) {
     printf("\n    %s OMP on 3D sinusoidal (%dx%dx%d)...\n", name, N3D, N3D, N3D);
     solve_result_t r = solve_3d_sinusoidal_backend(
-        method, POISSON_BACKEND_OMP, N3D, N3D, N3D, max_iter, omega);
+        method, POISSON_BACKEND_OMP, N3D, N3D, N3D, max_iter, omega, NULL);
     if (r.solver_unavailable) {
         printf("      OMP backend unavailable — skipping\n");
         TEST_PASS();
@@ -770,28 +816,16 @@ void test_3d_redblack_omp_sinusoidal(void) {
     run_omp_3d_test(POISSON_METHOD_REDBLACK_SOR, "Red-Black", MAX_ITER_SOR, 1.5);
 }
 
-/* Cross-backend comparison: OMP results should match scalar */
+void test_3d_gmres_omp_sinusoidal(void) {
+    run_omp_3d_test(POISSON_METHOD_GMRES, "GMRES", MAX_ITER_CG, 0.0);
+}
+
 void test_3d_omp_vs_scalar_cg(void) {
-    printf("\n    OMP vs Scalar CG on 3D (%dx%dx%d)...\n", N3D, N3D, N3D);
+    run_backend_vs_scalar_3d(POISSON_METHOD_CG, POISSON_BACKEND_OMP, "OMP", "CG", MAX_ITER_CG);
+}
 
-    solve_result_t scalar = solve_3d_sinusoidal_backend(
-        POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, N3D, N3D, N3D, MAX_ITER_CG, 0.0);
-    TEST_ASSERT_TRUE_MESSAGE(scalar.l2_error >= 0.0, "Scalar solve failed");
-
-    solve_result_t omp = solve_3d_sinusoidal_backend(
-        POISSON_METHOD_CG, POISSON_BACKEND_OMP, N3D, N3D, N3D, MAX_ITER_CG, 0.0);
-    if (omp.solver_unavailable) {
-        printf("      OMP backend unavailable — skipping\n");
-        TEST_PASS();
-        return;
-    }
-    TEST_ASSERT_TRUE_MESSAGE(omp.l2_error >= 0.0, "OMP solve failed");
-
-    double diff = fabs(scalar.l2_error - omp.l2_error);
-    printf("      Scalar L2: %.6e, OMP L2: %.6e, diff: %.6e\n",
-           scalar.l2_error, omp.l2_error, diff);
-    TEST_ASSERT_TRUE_MESSAGE(diff < SOLVER_COMPARE_TOL,
-        "OMP and Scalar CG solutions differ too much");
+void test_3d_omp_vs_scalar_gmres(void) {
+    run_backend_vs_scalar_3d(POISSON_METHOD_GMRES, POISSON_BACKEND_OMP, "OMP", "GMRES", MAX_ITER_CG);
 }
 
 /* ============================================================================
@@ -812,6 +846,7 @@ int main(void) {
     RUN_TEST(test_3d_sor_sinusoidal);
     RUN_TEST(test_3d_redblack_sinusoidal);
     RUN_TEST(test_3d_bicgstab_sinusoidal);
+    RUN_TEST(test_3d_gmres_sinusoidal);
 
     /* Backward compatibility */
     printf("\n--- Backward Compatibility (nz=1) ---\n");
@@ -832,13 +867,16 @@ int main(void) {
     RUN_TEST(test_3d_jacobi_simd_sinusoidal);
     RUN_TEST(test_3d_redblack_simd_sinusoidal);
     RUN_TEST(test_3d_bicgstab_simd_sinusoidal);
+    RUN_TEST(test_3d_gmres_simd_sinusoidal);
     RUN_TEST(test_3d_simd_vs_scalar_cg);
 
     /* OMP backend tests */
     printf("\n--- 3D OMP Backend Tests ---\n");
     RUN_TEST(test_3d_cg_omp_sinusoidal);
     RUN_TEST(test_3d_redblack_omp_sinusoidal);
+    RUN_TEST(test_3d_gmres_omp_sinusoidal);
     RUN_TEST(test_3d_omp_vs_scalar_cg);
+    RUN_TEST(test_3d_omp_vs_scalar_gmres);
 
     return UNITY_END();
 }
