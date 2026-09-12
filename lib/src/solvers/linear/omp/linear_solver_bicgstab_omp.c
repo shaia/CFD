@@ -57,8 +57,8 @@ static double dot_product_omp(const double* a, const double* b,
                               size_t nx, size_t ny,
                               size_t k_start, size_t k_end, size_t stride_z) {
     double sum = 0.0;
-    int ny_int = bicgstab_size_to_int(ny);
-    int nx_int = bicgstab_size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -77,8 +77,8 @@ static double dot_product_omp(const double* a, const double* b,
 static void axpy_omp(double alpha, const double* x, double* y,
                      size_t nx, size_t ny,
                      size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = bicgstab_size_to_int(ny);
-    int nx_int = bicgstab_size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -103,8 +103,8 @@ static void apply_laplacian_omp(const double* p, double* Ap,
                                 size_t k_start, size_t k_end, size_t stride_z) {
     double dx2_inv = 1.0 / dx2;
     double dy2_inv = 1.0 / dy2;
-    int ny_int = bicgstab_size_to_int(ny);
-    int nx_int = bicgstab_size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -132,8 +132,8 @@ static void compute_residual_omp(const double* x, const double* rhs, double* r,
                                  size_t k_start, size_t k_end, size_t stride_z) {
     double dx2_inv = 1.0 / dx2;
     double dy2_inv = 1.0 / dy2;
-    int ny_int = bicgstab_size_to_int(ny);
-    int nx_int = bicgstab_size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -155,8 +155,8 @@ static void compute_residual_omp(const double* x, const double* rhs, double* r,
 static void copy_vector_omp(const double* src, double* dst,
                             size_t nx, size_t ny,
                             size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = bicgstab_size_to_int(ny);
-    int nx_int = bicgstab_size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -173,8 +173,8 @@ static void copy_vector_omp(const double* src, double* dst,
 /* v = 0 (interior points only) */
 static void zero_vector_omp(double* v, size_t nx, size_t ny,
                             size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = bicgstab_size_to_int(ny);
-    int nx_int = bicgstab_size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -199,8 +199,8 @@ static void update_p_omp(double* p, const double* r, const double* v,
                          double beta, double omega,
                          size_t nx, size_t ny,
                          size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = bicgstab_size_to_int(ny);
-    int nx_int = bicgstab_size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -219,8 +219,8 @@ static void update_s_omp(double* s, const double* r, const double* v,
                          double alpha,
                          size_t nx, size_t ny,
                          size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = bicgstab_size_to_int(ny);
-    int nx_int = bicgstab_size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -239,8 +239,8 @@ static void update_x_omp(double* x, const double* p, const double* s,
                          double alpha, double omega,
                          size_t nx, size_t ny,
                          size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = bicgstab_size_to_int(ny);
-    int nx_int = bicgstab_size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -259,8 +259,8 @@ static void update_r_omp(double* r, const double* s, const double* t,
                          double omega,
                          size_t nx, size_t ny,
                          size_t k_start, size_t k_end, size_t stride_z) {
-    int ny_int = bicgstab_size_to_int(ny);
-    int nx_int = bicgstab_size_to_int(nx);
+    int ny_int = poisson_solver_size_to_int(ny);
+    int nx_int = poisson_solver_size_to_int(nx);
 
     for (size_t k = k_start; k < k_end; k++) {
         int j;
@@ -286,7 +286,7 @@ static cfd_status_t bicgstab_omp_init(
 {
     (void)params;
 
-    /* The primitives use int OpenMP loop bounds; bicgstab_size_to_int() maps larger
+    /* The primitives use int OpenMP loop bounds; poisson_solver_size_to_int() maps larger
      * dims to 0, which would turn every sweep into a no-op and fake convergence */
     if (nx > (size_t)INT_MAX || ny > (size_t)INT_MAX) {
         cfd_set_error(CFD_ERROR_LIMIT_EXCEEDED, "Grid size exceeds INT_MAX for OpenMP loop");
