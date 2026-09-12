@@ -99,8 +99,8 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 
 ### Numerical Methods
 
-- [Solver Families](reference/solvers.md#solver-families) - Euler vs Projection
-- [Linear Solvers](reference/solvers.md#linear-solvers-poisson-equation) - Jacobi, SOR, CG, BiCGSTAB
+- [Solver Families](reference/solvers.md#solver-families) - Euler, RK2/RK4, Projection
+- [Linear Solvers](reference/solvers.md#linear-solvers-poisson-equation) - Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB, GMRES(m), geometric multigrid
 - [Boundary Conditions](reference/solvers.md#boundary-conditions) - Dirichlet, Neumann, periodic
 - [Convergence Theory](reference/solvers.md#linear-solver-performance-comparison)
 
@@ -224,13 +224,12 @@ See [Architecture Guide](architecture/architecture.md) for:
 Current documentation corresponds to:
 - **Version:** 0.3.x
 - **Status:** Pre-release (approaching v1.0)
-- **Last Updated:** 2026-06-23
+- **Last Updated:** 2026-07-25
 
 ## Getting Help
 
-- **Issues:** [GitHub Issues](https://github.com/yourusername/cfd/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/yourusername/cfd/discussions)
-- **Email:** your.email@example.com
+- **Issues:** [GitHub Issues](https://github.com/shaia/CFD/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/shaia/CFD/discussions)
 
 ## Document Index
 

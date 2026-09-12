@@ -26,6 +26,16 @@ Diagnostics:
 
 ---
 
+# The GMRES algorithm template is included by the scalar, OMP and SIMD GMRES
+# files after they define its GMRES_* primitive and configuration macros, so it
+# cannot be parsed standalone either.
+If:
+  PathMatch: .*/gmres_template/.*
+Diagnostics:
+  Suppress: ['*']
+
+---
+
 # Shared NS momentum RHS kernels are #include-only: they rely on the includer
 # having defined RHS_CTX_T / USE_AVX2 and included grid/energy headers first,
 # so they cannot be parsed standalone. Suppress all diagnostics for them.

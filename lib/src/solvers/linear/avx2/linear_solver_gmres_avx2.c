@@ -3,8 +3,9 @@
  * @brief Restarted GMRES(m) linear solver - AVX2 + OpenMP backend
  *
  * Provides AVX2-specific macro definitions and includes the parameterized SIMD
- * template. All algorithm logic lives in the template header. Only the O(n)
- * vector primitives are vectorized; dense Givens/Hessenberg work stays scalar.
+ * primitives template, which feeds the shared GMRES(m) algorithm template. Only
+ * the O(n) vector primitives are vectorized; dense Givens/Hessenberg work stays
+ * scalar.
  */
 
 #include "../linear_solver_internal.h"

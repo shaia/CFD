@@ -107,6 +107,9 @@ const char* output_registry_get_run_dir(output_registry* reg, const char* base_d
     const char* prefix = run_prefix ? run_prefix : "sim";
     cfd_create_run_directory_ex_with_base(reg->run_dir, sizeof(reg->run_dir), base_dir, prefix, nx,
                                           ny);
+    if (reg->run_dir[0] == '\0') {
+        return NULL;  // Path too long (already reported); retried on the next call
+    }
 
     reg->run_dir_created = 1;
     return reg->run_dir;

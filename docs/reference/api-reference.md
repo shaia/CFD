@@ -429,18 +429,18 @@ size_t idx3d = IDX_3D(i, j, k, field->nx, field->ny); // 3D
 #include "cfd/solvers/poisson_solver.h"
 
 // Create solver
-poisson_solver_t* poisson_solver_create(poisson_method_t method,
-                                        poisson_backend_t backend);
+poisson_solver_t* poisson_solver_create(poisson_solver_method_t method,
+                                        poisson_solver_backend_t backend);
 
-// Initialize solver
+// Initialize solver (2D: nz = 1, dz = 0.0)
 cfd_status_t poisson_solver_init(poisson_solver_t* solver,
-                                 size_t nx, size_t ny,
-                                 double dx, double dy,
-                                 poisson_solver_params_t* params);
+                                 size_t nx, size_t ny, size_t nz,
+                                 double dx, double dy, double dz,
+                                 const poisson_solver_params_t* params);
 
 // Solve Poisson equation
 cfd_status_t poisson_solver_solve(poisson_solver_t* solver,
-                                  double* x, double* x0, double* rhs,
+                                  double* x, double* x_temp, const double* rhs,
                                   poisson_solver_stats_t* stats);
 
 // Cleanup
@@ -469,13 +469,19 @@ typedef enum {
 
 ```c
 typedef enum {
-    POISSON_BACKEND_SCALAR = 0,
-    POISSON_BACKEND_SIMD = 1,
-    POISSON_BACKEND_OMP = 2,
-} poisson_backend_t;
+    POISSON_BACKEND_AUTO,     // Auto-select: SIMD when detected at runtime, else scalar
+    POISSON_BACKEND_SCALAR,   // Scalar CPU implementation
+    POISSON_BACKEND_OMP,      // OpenMP parallelized
+    POISSON_BACKEND_SIMD,     // SIMD + OpenMP with runtime detection (AVX2/NEON)
+    POISSON_BACKEND_GPU       // CUDA GPU
+} poisson_solver_backend_t;
 
-int poisson_solver_backend_available(poisson_backend_t backend);
+bool poisson_solver_backend_available(poisson_solver_backend_t backend);
 ```
+
+> Availability is reported per backend, not per method: `poisson_solver_create`
+> still returns NULL (last status `CFD_ERROR_UNSUPPORTED`) for a method that has no
+> implementation on an otherwise available backend.
 
 ### Poisson Parameters
 

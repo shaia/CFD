@@ -11,7 +11,7 @@ A production-grade computational fluid dynamics (CFD) library in C for solving 2
 ## Features
 
 - 🚀 **Multiple Backends**: CPU (scalar), SIMD (AVX2/NEON), OpenMP, CUDA
-- 🔧 **Pluggable Solvers**: Explicit Euler, RK2 (Heun), Projection Method (Chorin's algorithm)
+- 🔧 **Pluggable Solvers**: Explicit Euler, RK2 (Heun), RK4 (classical), Projection Method (Chorin's algorithm)
 - 📊 **Linear Solvers**: Jacobi, SOR, Red-Black SOR, CG/PCG, BiCGSTAB, GMRES(m), geometric multigrid (V/W/F cycles, also as CG preconditioner and projection pressure solver via `params.pressure_solver`)
 - 🌡️ **Heat Transfer**: Energy equation (advection–diffusion) + Boussinesq buoyancy + thermal BCs
 - 🌀 **Turbulence (RANS)**: Standard k-ε and Spalart-Allmaras with log-law wall functions; validated vs turbulent channel flow at Re_τ = 395
@@ -191,6 +191,8 @@ Turbulence is limited to 2D uniform grids in this release.
 - **[Solvers](docs/reference/solvers.md)** - Numerical methods and performance
 - **[Examples](docs/guides/examples.md)** - Example programs guide
 - **[Validation](docs/validation/)** - Benchmark results
+- **[Contributing](CONTRIBUTING.md)** - How to contribute
+- **[Code of Conduct](CODE_OF_CONDUCT.md)** - Community guidelines
 
 ## Examples
 
@@ -252,7 +254,7 @@ ctest --test-dir build -C Debug --output-on-failure
 ctest --test-dir build -C Debug -R "Validation" --output-on-failure
 ```
 
-60+ tests covering:
+100+ tests covering:
 
 - Unit tests for core functionality
 - Solver accuracy and convergence
