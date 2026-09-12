@@ -748,9 +748,10 @@ typedef struct {
 
 /* Levels follow the coarsening rule (Neumann floor 5, Dirichlet floor 3). Most
  * grids stay small, since the executable is registered at three thread counts;
- * their planes fall below MG_OMP_MIN_POINTS and run serially. The 257x257
- * configurations put the finest level above it, so the thread team runs too, and
- * exhaust a few cycles to stay cheap. */
+ * their planes fall below MG_OMP_MIN_POINTS and run serially. The last three
+ * configurations reach it and exhaust a few cycles to stay cheap: the 513x513
+ * cases also restrict onto a 257x257 plane above it, so the restriction kernels
+ * run in parallel too, and the 257x257 case covers the Jacobi smoother. */
 static const mg_config_t MG_CONFIGS[] = {
     /* nx  ny  nz  cycle       smoother                 bc               pre post crs lvl rhs                 max_it conv */
     /* Full 2D product (4 Neumann / 5 Dirichlet levels) */
@@ -791,10 +792,10 @@ static const mg_config_t MG_CONFIGS[] = {
     /* Inhomogeneous Dirichlet boundary data; zero-RHS early return */
     {  17, 17,  1, MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_DIRICHLET, 0,  0,   0,  0, RHS_DIRICHLET_DATA, 100,   1 },
     {  17, 17,  1, MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_NEUMANN,   0,  0,   0,  0, RHS_ZERO,           100,   1 },
-    /* Finest planes above MG_OMP_MIN_POINTS: parallel kernels, both smoothers, 2D and 3D */
-    { 257,257,  1, MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_NEUMANN,   0,  0,   0,  0, RHS_SINUSOIDAL,       3,   0 },
+    /* Planes above MG_OMP_MIN_POINTS: parallel kernels, both smoothers, 2D and 3D */
+    { 513,513,  1, MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_NEUMANN,   0,  0,   0,  0, RHS_SINUSOIDAL,       2,   0 },
     { 257,257,  1, MG_CYCLE_W, MG_SMOOTHER_JACOBI,      MG_BC_DIRICHLET, 0,  0,   0,  0, RHS_SINUSOIDAL,       3,   0 },
-    { 257,257,  5, MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_DIRICHLET, 0,  0,   0,  0, RHS_SINUSOIDAL,       2,   0 },
+    { 513,513,  5, MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_DIRICHLET, 0,  0,   0,  0, RHS_SINUSOIDAL,       1,   0 },
 };
 
 /** Fill the RHS and the initial guess x0 for one multigrid configuration */
@@ -899,16 +900,27 @@ void test_multigrid_omp_vs_scalar(void) {
     int threads = reported_threads();
     size_t num_configs = sizeof(MG_CONFIGS) / sizeof(MG_CONFIGS[0]);
 
-    /* Planes below MG_OMP_MIN_POINTS run serially: without a configuration above
-     * it, this matrix would never exercise the parallel kernels */
-    size_t parallel_configs = 0;
+    /* Planes below MG_OMP_MIN_POINTS run serially. Restriction loops over the
+     * coarse plane, so the matrix needs a configuration above the threshold on its
+     * finest plane and one on its first coarse plane, or some parallel kernels
+     * would never run */
+    size_t parallel_fine = 0;
+    size_t parallel_coarse = 0;
     for (size_t c = 0; c < num_configs; c++) {
-        if ((MG_CONFIGS[c].nx - 2) * (MG_CONFIGS[c].ny - 2) >= MG_OMP_MIN_POINTS) {
-            parallel_configs++;
+        size_t nx = MG_CONFIGS[c].nx;
+        size_t ny = MG_CONFIGS[c].ny;
+        if ((nx - 2) * (ny - 2) >= MG_OMP_MIN_POINTS) {
+            parallel_fine++;
+        }
+        if (MG_CONFIGS[c].max_levels != 1 &&
+            ((nx - 1) / 2 - 1) * ((ny - 1) / 2 - 1) >= MG_OMP_MIN_POINTS) {
+            parallel_coarse++;
         }
     }
-    TEST_ASSERT_TRUE_MESSAGE(parallel_configs > 0,
-        "No multigrid configuration reaches MG_OMP_MIN_POINTS");
+    TEST_ASSERT_TRUE_MESSAGE(parallel_fine > 0,
+        "No multigrid configuration reaches MG_OMP_MIN_POINTS on its finest plane");
+    TEST_ASSERT_TRUE_MESSAGE(parallel_coarse > 0,
+        "No multigrid configuration restricts onto a plane of MG_OMP_MIN_POINTS");
 
     for (size_t c = 0; c < num_configs; c++) {
         const mg_config_t* cfg = &MG_CONFIGS[c];
