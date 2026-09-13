@@ -619,7 +619,7 @@ static cfd_atomic_ptr g_cached_mg_scalar;
 static cfd_atomic_ptr g_cached_mg_omp;
 static cfd_atomic_ptr g_cached_pcg_mg_scalar;
 
-/* 1 once cleanup_cached_solvers is registered with atexit */
+/* Set to 1 once cleanup_cached_solvers is registered with atexit */
 static cfd_atomic_int g_cleanup_registered = 0;
 
 /** Empty a cache slot, returning the instance it held (NULL if none) */
