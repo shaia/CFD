@@ -29,6 +29,7 @@
 #include "cfd/core/indexing.h"
 #include "cfd/solvers/poisson_solver.h"
 
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -113,6 +114,19 @@ static void print_row(const char* omega_label, int sweeps, const poisson_solver_
     printf("%s,%d,%s,%.6e\n", omega_label, sweeps, status, stats->final_residual);
 }
 
+/* The --grid value, or 0 if it is not a plain decimal number whose n*n doubles fit
+ * in size_t. strtoull alone accepts a sign and would wrap "-1" to a huge grid. */
+static size_t parse_grid(const char* value) {
+    char* end;
+    errno = 0;
+    unsigned long long n = strtoull(value, &end, 10);
+    if (*value < '0' || *value > '9' || *end != '\0' || errno == ERANGE
+        || (n > 0 && n > SIZE_MAX / sizeof(double) / n)) {
+        return 0;
+    }
+    return (size_t)n;
+}
+
 static int parse_options(int argc, char** argv, sweep_options_t* opt) {
     opt->grid = 33;
     opt->method = POISSON_METHOD_REDBLACK_SOR;
@@ -130,7 +144,7 @@ static int parse_options(int argc, char** argv, sweep_options_t* opt) {
             return 0;
         }
         if (strcmp(key, "--grid") == 0) {
-            opt->grid = (size_t)strtoul(value, NULL, 10);
+            opt->grid = parse_grid(value);
         } else if (strcmp(key, "--method") == 0) {
             opt->method = (strcmp(value, "sor") == 0) ? POISSON_METHOD_SOR : POISSON_METHOD_REDBLACK_SOR;
         } else if (strcmp(key, "--backend") == 0) {
@@ -152,7 +166,9 @@ static int parse_options(int argc, char** argv, sweep_options_t* opt) {
         }
         a++;
     }
-    return opt->grid >= 3 && opt->step > 0.0 && opt->from > 0.0 && opt->to >= opt->from && opt->to < 2.0;
+    /* The last check keeps the omega count in main within an int */
+    return opt->grid >= 3 && opt->step > 0.0 && opt->from > 0.0 && opt->to >= opt->from && opt->to < 2.0
+        && (opt->to - opt->from) / opt->step <= 100000.0;
 }
 
 int main(int argc, char** argv) {
