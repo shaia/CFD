@@ -899,7 +899,7 @@ The SA variant converges similarly (u_τ ≈ 0.969, u+ within ~4% of the log law
 - Unit square, `--grid N` points per side (default 33), zero initial guess
 - Right-hand side: seeded splitmix64 noise with zero interior mean, so every error mode is present and the zero-gradient problem has a solution
 - Tolerance 1e-6 relative to the initial residual, at most 100,000 sweeps
-- `--walls dirichlet` holds the boundary at zero instead of copying the interior onto it
+- `--walls dirichlet` holds the boundary at zero instead of copying the interior onto it (the CUDA solvers reject it)
 
 **Run:**
 ```bash

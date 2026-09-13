@@ -257,6 +257,40 @@ void test_sor_gpu_matches_cpu(void) {
     cfd_free(p_cpu);
 }
 
+static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
+    (void)solver;
+    (void)x;
+}
+
+/* The GPU SOR and Red-Black SOR solvers apply the zero-gradient walls on the
+ * device and never call apply_bc, so init rejects a caller-supplied one rather
+ * than solve the zero-gradient problem with the omega for the caller's walls. */
+void test_sor_gpu_rejects_custom_apply_bc(void) {
+    printf("\n    GPU SOR and Red-Black SOR: custom apply_bc rejected at init...\n");
+    poisson_solver_method_t methods[] = { POISSON_METHOD_SOR, POISSON_METHOD_REDBLACK_SOR };
+    for (size_t m = 0; m < sizeof(methods) / sizeof(methods[0]); m++) {
+        poisson_solver_t* solver = poisson_solver_create(methods[m], POISSON_BACKEND_GPU);
+        if (!solver) {
+            printf("      SKIPPED (GPU backend unavailable)\n");
+            return;
+        }
+        cfd_status_t plain = poisson_solver_init(solver, 17, 17, 1, 1.0 / 16.0, 1.0 / 16.0, 0.0, NULL);
+        poisson_solver_destroy(solver);
+        if (plain == CFD_ERROR_UNSUPPORTED) {
+            printf("      SKIPPED (no GPU device at runtime)\n");
+            return;
+        }
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, plain);
+
+        solver = poisson_solver_create(methods[m], POISSON_BACKEND_GPU);
+        TEST_ASSERT_NOT_NULL(solver);
+        solver->apply_bc = hold_walls_at_zero;
+        cfd_status_t custom = poisson_solver_init(solver, 17, 17, 1, 1.0 / 16.0, 1.0 / 16.0, 0.0, NULL);
+        poisson_solver_destroy(solver);
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_UNSUPPORTED, custom);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     printf("\n========================================\n");
@@ -264,5 +298,6 @@ int main(void) {
     printf("========================================\n");
     RUN_TEST(test_sor_gpu_converges);
     RUN_TEST(test_sor_gpu_matches_cpu);
+    RUN_TEST(test_sor_gpu_rejects_custom_apply_bc);
     return UNITY_END();
 }

@@ -162,7 +162,8 @@ always relaxes with ω = 1, whatever `omega` says.
   ω_opt = 2 / (1 + √(1 − ρ_J²))          which is 2 / (1 + sin(πh)) on a square grid
   ```
 
-  with the z terms only in 3D.
+  with the z terms only in 3D. The CUDA SOR and Red-Black SOR solvers apply the walls on the device,
+  so their init rejects a custom `apply_bc` with `CFD_ERROR_UNSUPPORTED`.
 
 **Characteristics:**
 - Faster than Jacobi (ω > 1)

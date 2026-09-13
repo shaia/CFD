@@ -117,12 +117,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mode. The same problem now takes 117 sweeps, and 65x65 to 257x257 grids about a third of their
   former sweeps (709 to 235 at 65x65). The converged solution is unchanged. A custom `apply_bc`
   keeps the Dirichlet formula and no wall scaling; wall values other than the default copy now
-  have to be set through `apply_bc` rather than written between iterations. Applies to every SOR
-  and Red-Black SOR backend: scalar, OpenMP, AVX2, NEON and CUDA
-  (`lib/src/solvers/linear/linear_solver_internal.h`, `lib/src/solvers/linear/cpu/`,
+  have to be set through `apply_bc` rather than written between iterations. The CUDA solvers apply
+  the walls on the device and never call `apply_bc`, so their init rejects one with
+  `CFD_ERROR_UNSUPPORTED`. Applies to every SOR and Red-Black SOR backend: scalar, OpenMP, AVX2,
+  NEON and CUDA (`lib/src/solvers/linear/linear_solver_internal.h`, `lib/src/solvers/linear/cpu/`,
   `lib/src/solvers/linear/omp/`, `lib/src/solvers/linear/avx2/`, `lib/src/solvers/linear/neon/`,
   `lib/src/solvers/linear/gpu/`, `tests/math/test_optimal_omega.c`,
-  `tests/math/test_poisson_accuracy.c`).
+  `tests/math/test_poisson_accuracy.c`, `tests/math/test_poisson_sor_gpu.c`).
 - A solve on the shared loop that blew up could report convergence.
   `poisson_solver_compute_residual()` kept the largest residual with `>`, which is false for
   NaN, so a field that had overflowed read as a zero residual and passed the tolerance test.

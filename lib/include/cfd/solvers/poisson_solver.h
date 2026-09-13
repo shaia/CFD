@@ -280,7 +280,9 @@ struct poisson_solver {
                                                 from the interior, for which the SOR solvers relax the points
                                                 beside a wall and choose omega. To hold other wall values,
                                                 install a function here before poisson_solver_init() rather
-                                                than writing the walls between iterations. */
+                                                than writing the walls between iterations. The CUDA SOR and
+                                                Red-Black SOR solvers apply the walls on the device, and their
+                                                init rejects a function here with CFD_ERROR_UNSUPPORTED. */
 };
 
 /* ============================================================================

@@ -9,7 +9,7 @@
  * The right-hand side is a fixed-seed pseudo-random field with zero interior
  * mean, so every mode of the error is present and the zero-gradient problem has
  * a solution. --walls dirichlet installs an apply_bc that leaves the boundary at
- * zero instead of copying the interior onto it.
+ * zero instead of copying the interior onto it; the CUDA solvers reject it.
  *
  * This example demonstrates:
  *   - Setting params.omega explicitly, and leaving it at 0 for the automatic value
@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
         double omega = opt.from + s * opt.step;
         int sweeps = solve_once(&opt, omega, x, rhs, &stats);
         if (sweeps < 0) {
-            fprintf(stderr, "Solver not available for this method and backend\n");
+            fprintf(stderr, "Solver not available for this method, backend and walls\n");
             free(x);
             free(rhs);
             return 1;

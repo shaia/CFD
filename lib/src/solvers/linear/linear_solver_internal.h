@@ -95,6 +95,20 @@ static inline cfd_status_t poisson_solver_reject_mg_precond(
     return CFD_SUCCESS;
 }
 
+/**
+ * Reject a caller-supplied apply_bc on solvers that apply the zero-gradient walls
+ * on the GPU. They never call the host hook, so accepting one would silently solve
+ * the zero-gradient problem instead of the caller's.
+ */
+static inline cfd_status_t poisson_solver_reject_custom_bc(const poisson_solver_t* solver) {
+    if (solver->apply_bc) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "A custom apply_bc is not supported by solvers that apply the walls on the GPU");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return CFD_SUCCESS;
+}
+
 /* ============================================================================
  * CG ALGORITHM CONSTANTS
  * ============================================================================ */
