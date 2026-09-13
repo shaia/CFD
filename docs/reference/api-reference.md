@@ -452,7 +452,7 @@ void poisson_solver_destroy(poisson_solver_t* solver);
 ```c
 typedef enum {
     POISSON_METHOD_JACOBI,        // Jacobi iteration (fully parallelizable)
-    POISSON_METHOD_GAUSS_SEIDEL,  // Gauss-Seidel iteration
+    POISSON_METHOD_GAUSS_SEIDEL,  // Gauss-Seidel: SOR at omega = 1 (params.omega is ignored)
     POISSON_METHOD_SOR,           // Successive Over-Relaxation
     POISSON_METHOD_REDBLACK_SOR,  // Red-Black SOR (parallelizable)
     POISSON_METHOD_CG,            // Conjugate Gradient (SPD systems)
@@ -490,7 +490,7 @@ typedef struct {
     double tolerance;           // Relative tolerance (default: 1e-6)
     double absolute_tolerance;  // Absolute tolerance (default: 1e-10)
     int max_iterations;         // Max iterations (default: 5000)
-    double omega;               // SOR relaxation (default: 0 = auto-optimal)
+    double omega;               // SOR relaxation (default: 0 = optimum for the grid and walls)
     int check_interval;         // Convergence check interval (default: 1)
     bool verbose;               // Print convergence info (default: false)
     poisson_precond_type_t preconditioner;  // Preconditioner (default: POISSON_PRECOND_NONE)

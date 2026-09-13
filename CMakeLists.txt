@@ -192,6 +192,10 @@ if(BUILD_EXAMPLES)
     add_executable(poisson_solver_tuning examples/poisson_solver_tuning.c)
     target_link_libraries(poisson_solver_tuning PRIVATE CFD::Library)
 
+    # SOR relaxation-factor sweep: sweeps to converge against omega on one grid
+    add_executable(sor_omega_sweep examples/sor_omega_sweep.c)
+    target_link_libraries(sor_omega_sweep PRIVATE CFD::Library)
+
     # Platform diagnostics, derived fields, and error handling
     add_executable(platform_diagnostics examples/platform_diagnostics.c)
     target_link_libraries(platform_diagnostics PRIVATE CFD::Library)

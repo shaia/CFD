@@ -1,4 +1,4 @@
-# Block SOR: SIMD Vectorization of Successive Over-Relaxation
+# SIMD SOR: Vectorizing Successive Over-Relaxation
 
 ## Problem Statement
 
@@ -22,113 +22,96 @@ This creates a read-after-write dependency chain along the i-axis:
 x[1] → x[2] → x[3] → x[4] → ...
 ```
 
-AVX2 processes 4 doubles simultaneously, but value at index 2 needs the result from index 1, value at index 3 needs the result from index 2, etc. This **read-after-write hazard** prevents naive SIMD vectorization.
+AVX2 processes 4 doubles simultaneously, but the value at index 2 needs the result from index 1, the value at index 3 needs the result from index 2, and so on. This **read-after-write hazard** prevents naive SIMD vectorization of the whole update.
 
-## Block SOR Technique
+## Two Passes Per Row
 
-Instead of processing cells one at a time, process SIMD_WIDTH consecutive cells as a single block:
+Only one term of the stencil depends on the sweep in progress: the left neighbor. Every other term is fixed for the whole row:
 
-- **AVX2**: blocks of 4 cells (`__m256d`, 256-bit)
-- **NEON**: blocks of 2 cells (`float64x2_t`, 128-bit)
+| Term | Written during this row's sweep? |
+|------|----------------------------------|
+| `x[idx + 1]`, the right neighbor | No: it is updated after `x[idx]` |
+| `x[idx - nx]`, the row below | No: that row was finished before this one started |
+| `x[idx + nx]`, the row above | No: it is swept after this row |
+| `x[idx ± stride_z]`, the planes either side (3D) | No |
+| `rhs[idx]` | No |
+| `x[idx - 1]`, the left neighbor | **Yes** |
 
-### Dependency Analysis
+So each row is swept in two passes:
 
-For AVX2 with block size 4, processing cells `[4k+1, 4k+2, 4k+3, 4k+4]`:
+```c
+/* Pass 1, SIMD_WIDTH cells at a time (4 for AVX2, 2 for NEON) */
+partial[i] = x[idx + 1] * inv_dx2
+           + (x[idx + nx] + x[idx - nx]) * inv_dy2
+           + (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2
+           - rhs[idx];
 
-**Between blocks (satisfied):**
-- Cell `4k+1` reads left neighbor `x[4k]` from the previous block
-- That value IS already updated and stored back to memory
-- The inter-block Gauss-Seidel dependency is fully preserved
+/* Pass 2, in order */
+for (i = 1; i < nx - 1; i++) {
+    double p_new = (partial[i] + x[idx - 1] * inv_dx2) * inv_factor;
+    x[idx] = x[idx] + w * (p_new - x[idx]);   /* w: omega, or the wall factor at a row's ends */
+}
+```
 
-**Within a block (approximated):**
-- Cell `4k+2` reads `x[4k+1]` — NOT yet updated (same SIMD operation)
-- Cell `4k+3` reads `x[4k+2]` — NOT yet updated
-- Cell `4k+4` reads `x[4k+3]` — NOT yet updated
-- These intra-block left-neighbor reads use stale (previous-iteration) values
+Pass 1 reads exactly what the sequential sweep would read, so the result is the scalar SOR iteration. The only difference is rounding: the scalar kernel divides `(x[idx + 1] + x[idx - 1])` by `dx2`, while pass 2 adds `x[idx - 1] * inv_dx2` to a sum that already holds `x[idx + 1] * inv_dx2`. `test_sor_simd_matches_scalar_sweep_for_sweep` holds 40 sweeps of the two within 1e-10 of each other, and `test_sor_simd_converges_like_scalar` holds their sweep counts within one.
 
-**Y-direction (satisfied):**
-- Row `j` is processed only after row `j-1` is completely swept
-- The bottom neighbor `x[i,j-1]` is always the correctly updated value
-- No approximation in the y-direction
+Because the iteration is SOR, the automatic omega applies to it, including the wall factor beside zero-gradient walls (see the SOR section of `docs/reference/solvers.md`). A per-row scratch buffer of `nx` doubles holds pass 1's output; it is allocated at init.
 
-### Visualization
+## Why Not Block SOR
+
+Until September 2026 these solvers used a Block SOR: the whole update, left neighbor included, was computed SIMD_WIDTH cells at a time. Within a block, the left neighbor of every cell after the first came from the previous sweep:
 
 ```
-Row j, iteration n:
-
-Scalar SOR (fully sequential):
-  x[1]ⁿ⁺¹ ← uses x[0]ⁿ⁺¹ (BC)
-  x[2]ⁿ⁺¹ ← uses x[1]ⁿ⁺¹ (fresh!)
-  x[3]ⁿ⁺¹ ← uses x[2]ⁿ⁺¹ (fresh!)
-  x[4]ⁿ⁺¹ ← uses x[3]ⁿ⁺¹ (fresh!)
-  x[5]ⁿ⁺¹ ← uses x[4]ⁿ⁺¹ (fresh!)
-  ...
-
 Block SOR (SIMD_WIDTH=4):
   ┌─ SIMD block 0 ──────────────────────────┐
-  │ x[1]ⁿ⁺¹ ← uses x[0]ⁿ⁺¹ (BC, fresh!)   │
-  │ x[2]ⁿ⁺¹ ← uses x[1]ⁿ   (stale)        │
-  │ x[3]ⁿ⁺¹ ← uses x[2]ⁿ   (stale)        │
-  │ x[4]ⁿ⁺¹ ← uses x[3]ⁿ   (stale)        │
+  │ x[1]ⁿ⁺¹ ← uses x[0]ⁿ⁺¹ (BC, fresh)     │
+  │ x[2]ⁿ⁺¹ ← uses x[1]ⁿ   (stale)         │
+  │ x[3]ⁿ⁺¹ ← uses x[2]ⁿ   (stale)         │
+  │ x[4]ⁿ⁺¹ ← uses x[3]ⁿ   (stale)         │
   └──────────────────────────────────────────┘
   ┌─ SIMD block 1 ──────────────────────────┐
-  │ x[5]ⁿ⁺¹ ← uses x[4]ⁿ⁺¹ (fresh!)       │
-  │ x[6]ⁿ⁺¹ ← uses x[5]ⁿ   (stale)        │
-  │ x[7]ⁿ⁺¹ ← uses x[6]ⁿ   (stale)        │
-  │ x[8]ⁿ⁺¹ ← uses x[7]ⁿ   (stale)        │
+  │ x[5]ⁿ⁺¹ ← uses x[4]ⁿ⁺¹ (fresh)         │
+  │ x[6]ⁿ⁺¹ ← uses x[5]ⁿ   (stale)         │
+  │ ...                                      │
   └──────────────────────────────────────────┘
 ```
 
-## Convergence Impact
+That is a different iteration from SOR, not an approximation of it, and it does not converge for every omega between 0 and 2. Measured on the AVX2 build at b9f31e4 (MSVC Debug, `examples/sor_omega_sweep.c`, seeded-noise right-hand side with zero mean, tolerance 1e-6 relative, omega from 1.00 in steps of 0.05):
 
-Block SOR behaves as a hybrid between Jacobi (all old values) and Gauss-Seidel (all fresh values):
+| Grid | Walls | Largest omega that converged | Sweeps there | Diverged from | Scalar SOR at its automatic omega |
+|------|-------|------------------------------|--------------|---------------|-----------------------------------|
+| 17×17 | zero-gradient | 1.45 | 1,154 | 1.50 | 150 |
+| 17×17 | Dirichlet | 1.40 | 233 | 1.45 | 45 |
+| 33×33 | zero-gradient | 1.40 | 1,783 | 1.45 | 380 |
+| 33×33 | Dirichlet | 1.40 | 869 | 1.45 | 90 |
+| 65×65 | zero-gradient | 1.40 | 6,570 | 1.45 | 751 |
+| 65×65 | Dirichlet | 1.40 | 2,404 | 1.45 | 186 |
 
-| Property | Jacobi | Block SOR (AVX2) | Block SOR (NEON) | Scalar SOR |
-|----------|--------|------------------|------------------|------------|
-| Left-neighbor freshness | 0% fresh | 25% fresh (1/4) | 50% fresh (1/2) | 100% fresh |
-| Bottom-neighbor freshness | 0% fresh | 100% fresh | 100% fresh | 100% fresh |
-| Convergence per iteration | Slowest | Moderate | Moderate-Fast | Fastest |
-| Parallelizability | Full | SIMD only | SIMD only | None |
-
-**In practice:**
-- Convergence rate is slightly slower than scalar SOR but significantly faster than Jacobi
-- The effect diminishes on larger grids (more inter-block steps relative to intra-block)
-- For NEON (width=2), the approximation is milder — only 1 of 2 left-neighbor reads is stale
-- May require ~10-20% more iterations than scalar SOR to reach the same residual tolerance
+Every automatic omega on those grids lies above the point where Block SOR diverged, so at its default setting the solver always diverged. It reported convergence anyway: once the field overflowed, `poisson_solver_compute_residual()` skipped the NaN residuals and returned zero. The shared solve loop now stops with `POISSON_DIVERGED` instead.
 
 ## Why Not OpenMP on Rows
 
-Unlike Jacobi or Red-Black SOR, Block SOR rows remain **sequential**. Row `j` depends on row `j-1` being fully swept. Applying `#pragma omp parallel for` across rows would break the y-direction Gauss-Seidel dependency and degrade convergence to Jacobi-like behavior (or worse, introduce race conditions).
+SOR rows remain **sequential**. Row `j` depends on row `j-1` being fully swept. Applying `#pragma omp parallel for` across rows would break the y-direction Gauss-Seidel dependency and turn the iteration into something else again.
 
-The speedup comes purely from SIMD throughput:
-- AVX2: ~4x arithmetic operations per cycle (256-bit / 64-bit per double)
-- NEON: ~2x arithmetic operations per cycle (128-bit / 64-bit per double)
-
-For thread-level parallelism with SOR convergence, use Red-Black SOR (`POISSON_METHOD_REDBLACK_SOR`) which decomposes the grid into independent color sweeps.
+For thread-level parallelism with SOR convergence, use Red-Black SOR (`POISSON_METHOD_REDBLACK_SOR`), which decomposes the grid into independent color sweeps.
 
 ## Performance Characteristics
 
-| Metric | Expected Value |
-|--------|---------------|
-| AVX2 speedup per iteration | ~2-3x over scalar |
-| NEON speedup per iteration | ~1.5x over scalar |
-| Additional iterations needed | ~10-20% more than scalar |
-| Net wall-clock improvement | Positive for grids > ~32x32 |
-| Memory overhead | None (in-place, no temporary buffer) |
+Pass 1 vectorizes seven loads, the stencil arithmetic and a store for every block; pass 2 is a scalar recurrence of one load, three multiply-adds and a store per cell. Per-sweep throughput against the scalar solver has not been benchmarked since the change, so no speedup is claimed here. The number of sweeps is the scalar solver's.
 
 ## Implementation Notes
 
-The Block SOR SIMD implementation lives in:
+The SIMD SOR implementations live in:
 - `lib/src/solvers/linear/avx2/linear_solver_sor_avx2.c` — AVX2 (4-wide)
 - `lib/src/solvers/linear/neon/linear_solver_sor_neon.c` — NEON (2-wide)
 
 Key implementation details:
-- Context struct stores precomputed SIMD vectors (`omega_vec`, `dx2_inv_vec`, etc.)
-- SIMD loop with scalar remainder tail for non-aligned grid widths
-- SOR relaxation computed in SIMD: `result = x_center + omega * (p_new - x_center)`
-- Boundary conditions applied after each full sweep via `poisson_solver_apply_bc()`
+- The context holds the SIMD constants (`dx2_inv_vec`, `dy2_inv_vec`, `dz2_inv_vec`) and the `partial` row buffer
+- Pass 1 has a scalar remainder for rows whose interior width is not a multiple of SIMD_WIDTH
+- In 2D, `stride_z` is 0 and `inv_dz2` is 0, so the z terms vanish
+- Boundary conditions are applied after each full sweep via `poisson_solver_apply_bc()`
 
 ## References
 
-- Y. Saad, "Iterative Methods for Sparse Linear Systems", 2nd edition, SIAM, 2003 — Chapter 4 covers block relaxation methods and their convergence properties
-- The block/chunked Gauss-Seidel technique is standard in vectorized PDE solvers where sequential dependencies prevent element-wise SIMD parallelism
+- Y. Saad, "Iterative Methods for Sparse Linear Systems", 2nd edition, SIAM, 2003 — Chapter 4 covers relaxation methods and their convergence properties
+- D. M. Young, "Iterative Solution of Large Linear Systems", Academic Press, 1971 — consistent orderings and the optimal SOR omega

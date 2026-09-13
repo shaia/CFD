@@ -140,17 +140,38 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_JACOBI,
 p_ij^(k+1) = (1-ω)p_ij^k + (ω/4)(p_i-1,j + p_i+1,j + p_i,j-1 + p_i,j+1 - h²f_ij)
 ```
 
-**Optimal Relaxation (Dirichlet BCs):**
-```
-ω_opt = 2 / (1 + sin(πh))
-```
+**Relaxation factor:** `params.omega = 0` (the default) selects the optimum for the grid and the
+walls; any `omega > 0` is used as given. `POISSON_METHOD_GAUSS_SEIDEL` creates the same solvers and
+always relaxes with ω = 1, whatever `omega` says.
+
+- **Default zero-gradient walls.** The walls are copied from the interior after each sweep, so
+  during a sweep a point next to a wall reads its own previous value through the copy. Every SOR
+  and Red-Black SOR backend therefore relaxes such a point by ω·F/(F − W), where
+  F = 2(1/dx² + 1/dy² + 1/dz²) and W is the summed weight of its wall neighbours (1/dx² for a wall
+  in x). On a square 2D grid that is 4/3·ω beside an edge and 2·ω in a corner. It makes the
+  iteration SOR on the Neumann matrix itself, so
+  Young's ω_opt = 2/(1 + √(1 − ρ_J²)) applies, and the automatic ω takes ρ_J from a Rayleigh
+  quotient of the slowest mode against that matrix (`poisson_solver_compute_neumann_omega` in
+  `lib/src/solvers/linear/linear_solver_internal.h`). It never exceeds the optimum. A grid with
+  only two interior points has no slow mode, just the alternating one that ω = 1 removes in a
+  sweep, so there the automatic ω is 1. The converged solution is the same as without the scaling.
+- **Walls set by the caller's `apply_bc`**, installed before `poisson_solver_init()`, which
+  chooses ω. There is no wall scaling, and the automatic ω is the Dirichlet optimum:
+
+  ```
+  ρ_J = [cos(π/(nx−1))/dx² + cos(π/(ny−1))/dy² + cos(π/(nz−1))/dz²] / [1/dx² + 1/dy² + 1/dz²]
+  ω_opt = 2 / (1 + √(1 − ρ_J²))          which is 2 / (1 + sin(πh)) on a square grid
+  ```
+
+  with the z terms only in 3D. The CUDA SOR and Red-Black SOR solvers apply the walls on the device,
+  so their init rejects a custom `apply_bc` with `CFD_ERROR_UNSUPPORTED`.
 
 **Characteristics:**
 - Faster than Jacobi (ω > 1)
 - Sequential row updates (row j depends on j-1)
-- Optimal ω depends on problem
-- SIMD variant uses Block SOR: processes SIMD_WIDTH consecutive cells per block, with intra-block left-neighbor approximation (see [Block SOR technical note](../technical-notes/block-sor-simd.md))
-- GPU variant also uses Block SOR: each thread sweeps an 8×8 tile sequentially (Gauss-Seidel inside the tile), with red-black *tile* coloring (red pass then black pass, two launches per iteration) so a tile's halo is never written by another tile in the same pass — the update is in-place, race-free, and provably convergent for 0<ω<2
+- Optimal ω depends on the grid and the walls (see above)
+- SIMD variant sweeps each row in two passes: the stencil terms that do not depend on the sweep, SIMD_WIDTH cells at a time, then the relaxation in order against the updated left neighbor. It is the scalar iteration, sweep for sweep (see [SIMD SOR technical note](../technical-notes/block-sor-simd.md))
+- GPU variant uses Block SOR: each thread sweeps an 8×8 tile sequentially (Gauss-Seidel inside the tile), with red-black *tile* coloring (red pass then black pass, two launches per iteration) so a tile's halo is never written by another tile in the same pass — the update is in-place, race-free, and provably convergent for 0<ω<2
 
 **Convergence Rate:** ρ ≈ 1 - 2πh (with optimal ω)
 
@@ -158,19 +179,19 @@ p_ij^(k+1) = (1-ω)p_ij^k + (ω/4)(p_i-1,j + p_i+1,j + p_i,j-1 + p_i,j+1 - h²f_
 | Solver | Backend | Description |
 |--------|---------|-------------|
 | `sor_scalar` | Scalar | Sequential Gauss-Seidel + SOR relaxation |
-| `sor_simd` | SIMD | Block SOR (auto-detects AVX2/NEON) |
+| `sor_simd` | SIMD | SOR with SIMD stencil terms (auto-detects AVX2/NEON) |
 | `sor_gpu` | GPU | Block SOR (CUDA; per-thread tile sweep, red-black tile coloring, in-place) |
 
 **Usage:**
 ```c
 poisson_solver_params_t params = poisson_solver_params_default();
-params.omega = 1.5;  // Relaxation parameter
+params.omega = 0.0;  // 0 = optimum for the grid and walls; > 0 overrides
 
 // Scalar (fully sequential, best convergence per iteration)
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR,
                                                  POISSON_BACKEND_SCALAR);
 
-// SIMD (Block SOR, higher throughput, slightly more iterations)
+// SIMD (the scalar iteration, with the stencil terms vectorized)
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR,
                                                  POISSON_BACKEND_SIMD);
 ```
@@ -387,8 +408,8 @@ poisson_solver_init(solver, 65, 65, 1, dx, dy, 0.0, &params);  // dims 2^k+1
 | Method | Iterations | Time (ms) | Notes |
 |--------|-----------|-----------|-------|
 | Jacobi | ~8000 | 45 | Simple, slow |
-| SOR (ω=1.5) | ~2000 | 15 | Good serial performance |
-| Red-Black SOR | ~2000 | 8 | Parallelizable |
+| SOR (automatic ω) | 268 | — | Good serial performance; seeded-noise RHS, default walls |
+| Red-Black SOR (automatic ω) | 235 | — | Parallelizable; seeded-noise RHS, default walls |
 | CG | ~80 | 5 | Best for large grids |
 | PCG (Jacobi) | ~80 | 5.5 | No benefit on uniform grid |
 | PCG (Multigrid) | ~5 | — | Grid-size-independent; needs 2^k+1 dims |

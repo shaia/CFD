@@ -107,6 +107,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_iterations`; `stats.iterations` now counts the iterations performed, as CG,
   BiCGSTAB and GMRES already did (`lib/src/solvers/linear/linear_solver.c`,
   `tests/solvers/test_linear_solver.c`, `tests/math/test_omp_consistency.c`).
+- SOR and Red-Black SOR ran far from their best omega with the default zero-gradient walls.
+  The walls are copied from the interior after each sweep, so a point beside a wall read its own
+  previous value through the copy, and the automatic omega came from the Dirichlet formula, well
+  below the best one: Red-Black SOR on a 33x33 seeded-noise problem took 361 sweeps at the
+  automatic omega and 193 at the best. Wall-adjacent points now relax by
+  omega * factor / (factor - wall weight), which makes the iteration SOR on the Neumann matrix
+  itself, and the automatic omega is that matrix's optimum, from a Rayleigh quotient of its slowest
+  mode. The same problem now takes 117 sweeps, and 65x65 to 257x257 grids about a third of their
+  former sweeps (709 to 235 at 65x65). The converged solution is unchanged. A custom `apply_bc`
+  keeps the Dirichlet formula and no wall scaling; wall values other than the default copy now
+  have to be set through `apply_bc` rather than written between iterations. The CUDA solvers apply
+  the walls on the device and never call `apply_bc`, so their init rejects one with
+  `CFD_ERROR_UNSUPPORTED`. Applies to every SOR and Red-Black SOR backend: scalar, OpenMP, AVX2,
+  NEON and CUDA (`lib/src/solvers/linear/linear_solver_internal.h`, `lib/src/solvers/linear/cpu/`,
+  `lib/src/solvers/linear/omp/`, `lib/src/solvers/linear/avx2/`, `lib/src/solvers/linear/neon/`,
+  `lib/src/solvers/linear/gpu/`, `tests/math/test_optimal_omega.c`,
+  `tests/math/test_poisson_accuracy.c`, `tests/math/test_poisson_sor_gpu.c`).
+- A solve on the shared loop that blew up could report convergence.
+  `poisson_solver_compute_residual()` kept the largest residual with `>`, which is false for
+  NaN, so a field that had overflowed read as a zero residual and passed the tolerance test.
+  The residual of such a field is now NaN, and the solve stops with `POISSON_DIVERGED` and
+  `CFD_ERROR_DIVERGED` as soon as the residual is no longer finite
+  (`lib/src/solvers/linear/linear_solver.c`, `lib/include/cfd/solvers/poisson_solver.h`,
+  `tests/solvers/test_linear_solver.c`).
+- The SIMD SOR solvers (AVX2 and NEON) ran a Block SOR that read the left neighbour inside each
+  SIMD block from the previous sweep. That is not the SOR iteration, and on the AVX2 build it
+  diverged for omega between 1.40 and 1.50 on every grid measured, below the automatic omega: a
+  33x33 solve at the automatic omega reported convergence after 1,764 sweeps with a residual of
+  exactly zero. Each row is now swept in two passes, the stencil terms the sweep does not write
+  with SIMD and then the relaxation in order, which is scalar SOR sweep for sweep
+  (`lib/src/solvers/linear/avx2/linear_solver_sor_avx2.c`,
+  `lib/src/solvers/linear/neon/linear_solver_sor_neon.c`, `tests/solvers/test_linear_solver.c`,
+  `docs/technical-notes/block-sor-simd.md`).
+- `examples/poisson_solver_tuning.c` benchmarked SOR and Red-Black SOR at a hard-coded omega of
+  1.5 rather than the automatic value, and capped the iterations it printed for an off-by-one that
+  is fixed. The `poisson_solver.h` usage example called `poisson_solver_init()` without `nz` and
+  `dz`, and `max_iterations` was documented as defaulting to 1000 where the default is 5000.
+- `POISSON_METHOD_GAUSS_SEIDEL` created the SOR solvers and ran at SOR's automatic omega, not at
+  1: at 9aa06d1 a 33x33 zero-gradient solve took 380 sweeps where omega = 1 takes 2,376. It now
+  always relaxes with omega = 1, whatever `params.omega` says
+  (`lib/src/solvers/linear/linear_solver.c`, `lib/src/solvers/linear/linear_solver_internal.h`,
+  `tests/solvers/test_linear_solver.c`).
 
 ## [0.3.0] - 2026-06-23
 

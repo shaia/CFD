@@ -768,6 +768,121 @@ static void fill_compatible_rhs(double* rhs, size_t n, double h) {
 }
 
 /* ============================================================================
+ * DIVERGENCE
+ * ============================================================================ */
+
+/**
+ * The residual of a field holding a NaN is NaN. A maximum taken with `>` alone
+ * skips every NaN, and the field reads as solved.
+ */
+void test_residual_of_nan_field_is_nan(void) {
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    const size_t n = 9;
+    const double h = 1.0 / 8.0;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(solver, n, n, 1, h, h, 0.0, NULL));
+
+    double* x = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(rhs);
+    x[4 * n + 4] = nan("");
+
+    TEST_ASSERT_TRUE(isnan(poisson_solver_compute_residual(solver, x, rhs)));
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+/**
+ * A solve that blows up stops and says so. Omega 2.5 is outside SOR's convergent
+ * range, so the field grows until it overflows.
+ */
+void test_diverging_solve_reports_divergence(void) {
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.omega = 2.5;
+    params.max_iterations = 20000;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
+
+    double* x = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_DIVERGED, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_DIVERGED, stats.status);
+    TEST_ASSERT_GREATER_THAN_INT(0, stats.iterations);
+    TEST_ASSERT_LESS_THAN_INT(params.max_iterations, stats.iterations);
+    TEST_ASSERT_FALSE(isfinite(stats.final_residual));
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+/* ============================================================================
+ * GAUSS-SEIDEL
+ * ============================================================================ */
+
+/**
+ * Gauss-Seidel is SOR at omega = 1, whatever params.omega says: given 1.8 it takes
+ * the same sweeps to the same field as SOR given 1.
+ */
+void test_gauss_seidel_is_sor_at_omega_one(void) {
+    poisson_solver_t* gs = poisson_solver_create(POISSON_METHOD_GAUSS_SEIDEL, POISSON_BACKEND_SCALAR);
+    poisson_solver_t* sor = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(gs);
+    TEST_ASSERT_NOT_NULL(sor);
+    TEST_ASSERT_EQUAL_INT(POISSON_METHOD_GAUSS_SEIDEL, gs->method);
+
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
+
+    poisson_solver_params_t gs_params = poisson_solver_params_default();
+    gs_params.tolerance = 1e-8;
+    gs_params.omega = 1.8;
+    poisson_solver_params_t sor_params = gs_params;
+    sor_params.omega = 1.0;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(gs, n, n, 1, h, h, 0.0, &gs_params));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(sor, n, n, 1, h, h, 0.0, &sor_params));
+
+    double* x_gs = create_test_field(n, n, 0.0);
+    double* x_sor = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x_gs);
+    TEST_ASSERT_NOT_NULL(x_sor);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
+
+    poisson_solver_stats_t stats_gs = poisson_solver_stats_default();
+    poisson_solver_stats_t stats_sor = poisson_solver_stats_default();
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_solve(gs, x_gs, NULL, rhs, &stats_gs));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_solve(sor, x_sor, NULL, rhs, &stats_sor));
+
+    TEST_ASSERT_GREATER_THAN_INT(0, stats_sor.iterations);
+    TEST_ASSERT_EQUAL_INT(stats_sor.iterations, stats_gs.iterations);
+    TEST_ASSERT_EQUAL_MEMORY(x_sor, x_gs, n * n * sizeof(double));
+
+    cfd_free(x_gs);
+    cfd_free(x_sor);
+    cfd_free(rhs);
+    poisson_solver_destroy(gs);
+    poisson_solver_destroy(sor);
+}
+
+/* ============================================================================
  * CONVENIENCE API THREAD SAFETY
  * ============================================================================ */
 
@@ -943,7 +1058,7 @@ void test_redblack_simd_if_available(void) {
     poisson_solver_destroy(solver);
 }
 
-void test_redblack_simd_converges_uniform_rhs(void) {
+void test_redblack_simd_converges_compatible_rhs(void) {
     if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
@@ -953,28 +1068,30 @@ void test_redblack_simd_converges_uniform_rhs(void) {
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(solver);
 
-    /* Basic correctness test: verify SIMD Red-Black SOR can solve trivial problem.
-     * Uses zero RHS (compatible with Neumann BCs) on small grid. This validates
-     * SIMD implementation correctness, not algorithmic performance. */
-    const size_t nx = 9, ny = 9;
-    const double dx = 0.1, dy = 0.1;
+    /* A cosine right-hand side with zero interior mean: solvable with the default
+     * zero-gradient walls, and far enough from zero that the solve has to sweep.
+     * A zero right-hand side from a zero guess converges before the first sweep. */
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.max_iterations = 100;
-    params.tolerance = 1e-10;
-    poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
+    params.max_iterations = 2000;
+    params.tolerance = 1e-8;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
 
-    double* x = create_test_field(nx, ny, 0.0);
-    /* Use zero RHS for Neumann BCs (uniform RHS violates compatibility condition) */
-    double* rhs = create_test_field(nx, ny, 0.0);
+    double* x = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
     cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
 
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
-    /* Zero RHS with zero initial guess should converge in 1 iteration */
-    TEST_ASSERT_LESS_THAN(10, stats.iterations);
+    TEST_ASSERT_GREATER_THAN_INT(0, stats.iterations);
+    TEST_ASSERT_LESS_THAN_INT(params.max_iterations, stats.iterations);
 
     cfd_free(x);
     cfd_free(rhs);
@@ -987,31 +1104,31 @@ void test_redblack_simd_scalar_consistency(void) {
         return;
     }
 
-    /* Create scalar solver */
     poisson_solver_t* scalar_solver = poisson_solver_create(
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(scalar_solver);
-
-    /* Create SIMD solver */
     poisson_solver_t* simd_solver = poisson_solver_create(
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(simd_solver);
 
-    /* Verify SIMD matches scalar on trivial problem (zero RHS with Neumann BCs) */
-    const size_t nx = 9, ny = 9;
-    const double dx = 0.1, dy = 0.1;
+    /* The same compatible problem on both backends, so the solve sweeps and the
+     * SIMD gather/scatter has to land where the scalar reference does */
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.max_iterations = 100;
-    params.tolerance = 1e-10;
+    params.max_iterations = 2000;
+    params.tolerance = 1e-8;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(scalar_solver, n, n, 1, h, h, 0.0, &params));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(simd_solver, n, n, 1, h, h, 0.0, &params));
 
-    poisson_solver_init(scalar_solver, nx, ny, 1, dx, dy, 0.0, &params);
-    poisson_solver_init(simd_solver, nx, ny, 1, dx, dy, 0.0, &params);
-
-    double* x_scalar = create_test_field(nx, ny, 0.0);
-    double* x_simd = create_test_field(nx, ny, 0.0);
-    /* Use zero RHS for Neumann BCs (uniform RHS violates compatibility condition) */
-    double* rhs = create_test_field(nx, ny, 0.0);
+    double* x_scalar = create_test_field(n, n, 0.0);
+    double* x_simd = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x_scalar);
+    TEST_ASSERT_NOT_NULL(x_simd);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
 
     poisson_solver_stats_t stats_scalar = poisson_solver_stats_default();
     poisson_solver_stats_t stats_simd = poisson_solver_stats_default();
@@ -1021,20 +1138,118 @@ void test_redblack_simd_scalar_consistency(void) {
 
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status_scalar);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status_simd);
+    TEST_ASSERT_GREATER_THAN_INT(0, stats_scalar.iterations);
+    /* The SIMD kernel scales by 1/h^2 where the scalar one divides by h^2, so the
+     * two can round apart by a sweep */
+    TEST_ASSERT_INT_WITHIN(1, stats_scalar.iterations, stats_simd.iterations);
 
-    /* Both should converge quickly with zero RHS */
-    TEST_ASSERT_LESS_THAN(10, stats_scalar.iterations);
-    TEST_ASSERT_LESS_THAN(10, stats_simd.iterations);
-
-    /* Verify SIMD and scalar produce same results */
     double max_diff = 0.0;
-    for (size_t i = 0; i < nx * ny; i++) {
+    for (size_t i = 0; i < n * n; i++) {
         double diff = fabs(x_simd[i] - x_scalar[i]);
         if (diff > max_diff) max_diff = diff;
     }
+    TEST_ASSERT_DOUBLE_WITHIN(1e-9, 0.0, max_diff);
 
-    /* For zero RHS, both should produce identical zeros (max_diff should be exactly 0) */
-    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 0.0, max_diff);
+    cfd_free(x_scalar);
+    cfd_free(x_simd);
+    cfd_free(rhs);
+    poisson_solver_destroy(scalar_solver);
+    poisson_solver_destroy(simd_solver);
+}
+
+/**
+ * SIMD SOR is the scalar SOR sweep: the same cells read the same neighbours in the
+ * same order, so forty sweeps from the same start reach the same field up to rounding.
+ * A block scheme that reads a stale left neighbour inside each block is a different
+ * iteration and leaves this within a sweep or two. 19 points a side puts full blocks
+ * and a remainder in every row.
+ */
+void test_sor_simd_matches_scalar_sweep_for_sweep(void) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
+        return;
+    }
+
+    poisson_solver_t* scalar_solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+    poisson_solver_t* simd_solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SIMD);
+    TEST_ASSERT_NOT_NULL(scalar_solver);
+    TEST_ASSERT_NOT_NULL(simd_solver);
+
+    const size_t n = 19;
+    const double h = 1.0 / 18.0;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(scalar_solver, n, n, 1, h, h, 0.0, NULL));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(simd_solver, n, n, 1, h, h, 0.0, NULL));
+
+    double* x_scalar = create_test_field(n, n, 0.0);
+    double* x_simd = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x_scalar);
+    TEST_ASSERT_NOT_NULL(x_simd);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
+
+    for (int sweep = 0; sweep < 40; sweep++) {
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_iterate(scalar_solver, x_scalar, NULL, rhs, NULL));
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_iterate(simd_solver, x_simd, NULL, rhs, NULL));
+    }
+
+    double max_diff = 0.0;
+    double max_abs = 0.0;
+    for (size_t i = 0; i < n * n; i++) {
+        double diff = fabs(x_simd[i] - x_scalar[i]);
+        if (diff > max_diff || isnan(diff)) max_diff = diff;
+        if (fabs(x_scalar[i]) > max_abs) max_abs = fabs(x_scalar[i]);
+    }
+    TEST_ASSERT_TRUE_MESSAGE(max_abs > 1e-6, "forty sweeps did not move the field");
+    TEST_ASSERT_TRUE_MESSAGE(max_diff <= 1e-10 * max_abs, "SIMD SOR is not sweeping like scalar SOR");
+
+    cfd_free(x_scalar);
+    cfd_free(x_simd);
+    cfd_free(rhs);
+    poisson_solver_destroy(scalar_solver);
+    poisson_solver_destroy(simd_solver);
+}
+
+/**
+ * At its automatic omega SIMD SOR converges, and in the scalar solver's number of
+ * sweeps. 33 points a side: 31 interior cells, seven blocks of four and three over.
+ */
+void test_sor_simd_converges_like_scalar(void) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
+        return;
+    }
+
+    poisson_solver_t* scalar_solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+    poisson_solver_t* simd_solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SIMD);
+    TEST_ASSERT_NOT_NULL(scalar_solver);
+    TEST_ASSERT_NOT_NULL(simd_solver);
+
+    const size_t n = 33;
+    const double h = 1.0 / 32.0;
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = 5000;
+    params.tolerance = 1e-8;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(scalar_solver, n, n, 1, h, h, 0.0, &params));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(simd_solver, n, n, 1, h, h, 0.0, &params));
+
+    double* x_scalar = create_test_field(n, n, 0.0);
+    double* x_simd = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x_scalar);
+    TEST_ASSERT_NOT_NULL(x_simd);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
+
+    poisson_solver_stats_t stats_scalar = poisson_solver_stats_default();
+    poisson_solver_stats_t stats_simd = poisson_solver_stats_default();
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_solve(scalar_solver, x_scalar, NULL, rhs, &stats_scalar));
+    cfd_status_t status_simd = poisson_solver_solve(simd_solver, x_simd, NULL, rhs, &stats_simd);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status_simd);
+    TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats_simd.status);
+    TEST_ASSERT_INT_WITHIN(1, stats_scalar.iterations, stats_simd.iterations);
 
     cfd_free(x_scalar);
     cfd_free(x_simd);
@@ -1369,6 +1584,7 @@ int main(void) {
     RUN_TEST(test_redblack_converges_zero_rhs);
     RUN_TEST(test_cg_converges_zero_rhs);
     RUN_TEST(test_cg_converges_uniform_rhs);
+    RUN_TEST(test_gauss_seidel_is_sor_at_omega_one);
 
     /* CG advanced tests */
     RUN_TEST(test_cg_scalar_simd_consistency);
@@ -1382,6 +1598,7 @@ int main(void) {
 
     /* Residual tests */
     RUN_TEST(test_compute_residual_zero_rhs);
+    RUN_TEST(test_residual_of_nan_field_is_nan);
 
     /* Legacy API tests */
     RUN_TEST(test_legacy_poisson_solve_sor);
@@ -1392,14 +1609,17 @@ int main(void) {
     /* SIMD tests */
     RUN_TEST(test_jacobi_simd_if_available);
     RUN_TEST(test_redblack_simd_if_available);
-    RUN_TEST(test_redblack_simd_converges_uniform_rhs);
+    RUN_TEST(test_redblack_simd_converges_compatible_rhs);
     RUN_TEST(test_redblack_simd_scalar_consistency);
+    RUN_TEST(test_sor_simd_matches_scalar_sweep_for_sweep);
+    RUN_TEST(test_sor_simd_converges_like_scalar);
     RUN_TEST(test_cg_simd_if_available);
     RUN_TEST(test_cg_simd_converges_uniform_rhs);
 
     /* Statistics tests */
     RUN_TEST(test_stats_timing);
     RUN_TEST(test_solve_common_max_iter_reports_iterations_run);
+    RUN_TEST(test_diverging_solve_reports_divergence);
 
     /* NULL guard / edge case tests */
     RUN_TEST(test_poisson_create_invalid_method);

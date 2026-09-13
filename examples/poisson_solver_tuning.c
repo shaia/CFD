@@ -83,9 +83,7 @@ static void benchmark_method(const char* label,
     params.tolerance = 1e-8;
     params.max_iterations = 10000;
     params.preconditioner = precond;
-    if (method == POISSON_METHOD_SOR || method == POISSON_METHOD_REDBLACK_SOR) {
-        params.omega = 1.5;
-    }
+    /* omega stays 0: SOR and Red-Black SOR pick the optimum for the grid and walls */
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     if (status != CFD_SUCCESS) {
@@ -105,16 +103,8 @@ static void benchmark_method(const char* label,
                              (stats.status == POISSON_MAX_ITER)  ? "max_iter" :
                              (stats.status == POISSON_DIVERGED)  ? "DIVERGED" : "error";
 
-    /* Cap displayed iterations to max_iterations: the solver increments the
-     * counter after the last check, so on max_iter exit it may report
-     * max_iterations+1. */
-    int display_iters = stats.iterations;
-    if (display_iters > params.max_iterations) {
-        display_iters = params.max_iterations;
-    }
-
     printf("  %-20s  %5d iters  res=%.2e  L2=%.2e  %6.1f ms  %s\n",
-           label, display_iters, stats.final_residual,
+           label, stats.iterations, stats.final_residual,
            l2_err, stats.elapsed_time_ms, status_str);
 
     poisson_solver_destroy(solver);
@@ -156,7 +146,7 @@ int main(void) {
 
     benchmark_method("Jacobi", POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR,
                      POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
-    benchmark_method("SOR (w=1.5)", POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR,
+    benchmark_method("SOR", POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR,
                      POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
     benchmark_method("Red-Black SOR", POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR,
                      POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);

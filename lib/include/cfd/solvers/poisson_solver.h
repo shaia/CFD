@@ -21,7 +21,7 @@
  * poisson_solver_params_t params = poisson_solver_params_default();
  * params.tolerance = 1e-8;
  *
- * poisson_solver_init(solver, nx, ny, dx, dy, &params);
+ * poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);  // nz = 1, dz = 0 in 2D
  *
  * poisson_solver_stats_t stats = poisson_solver_stats_default();
  * poisson_solver_solve(solver, p, p_temp, rhs, &stats);
@@ -52,7 +52,7 @@ extern "C" {
  */
 typedef enum {
     POISSON_METHOD_JACOBI,        /**< Jacobi iteration (fully parallelizable) */
-    POISSON_METHOD_GAUSS_SEIDEL,  /**< Gauss-Seidel iteration */
+    POISSON_METHOD_GAUSS_SEIDEL,  /**< Gauss-Seidel: SOR at omega = 1 (params.omega is ignored) */
     POISSON_METHOD_SOR,           /**< Successive Over-Relaxation */
     POISSON_METHOD_REDBLACK_SOR,  /**< Red-Black SOR (parallelizable) */
     POISSON_METHOD_CG,            /**< Conjugate Gradient (for SPD systems) */
@@ -78,7 +78,7 @@ typedef enum {
 typedef enum {
     POISSON_CONVERGED = 0,   /**< Converged within tolerance */
     POISSON_MAX_ITER = 1,    /**< Reached max iterations without converging */
-    POISSON_DIVERGED = 2,    /**< Solution diverged (residual increased) */
+    POISSON_DIVERGED = 2,    /**< Solution diverged (the residual is no longer finite) */
     POISSON_STAGNATED = 3,   /**< Residual stagnated (no progress) */
     POISSON_ERROR = -1       /**< Error occurred */
 } poisson_solver_status_t;
@@ -135,8 +135,8 @@ typedef enum {
 typedef struct {
     double tolerance;          /**< Relative convergence tolerance (default: 1e-6) */
     double absolute_tolerance; /**< Absolute tolerance (default: 1e-10) */
-    int max_iterations;        /**< Maximum iterations (default: 1000) */
-    double omega;              /**< SOR relaxation parameter (default: 0 = auto-optimal; set > 0 to override) */
+    int max_iterations;        /**< Maximum iterations (default: 5000) */
+    double omega;              /**< SOR relaxation (default: 0 = the optimum for the grid and the walls in use; set > 0 to override) */
     int check_interval;        /**< Check convergence every N iterations (default: 1) */
     bool verbose;              /**< Print iteration progress (default: false) */
     poisson_precond_type_t preconditioner; /**< Preconditioner type (default: NONE) */
@@ -170,7 +170,7 @@ typedef struct {
  * - tolerance: 1e-6
  * - absolute_tolerance: 1e-10
  * - max_iterations: 5000
- * - omega: 0.0 (auto-compute optimal for grid dimensions)
+ * - omega: 0.0 (the optimum for the grid and the walls in use)
  * - check_interval: 1
  * - verbose: false
  * - mg_cycle: MG_CYCLE_V, mg_smoother: MG_SMOOTHER_REDBLACK_GS, mg_bc: MG_BC_NEUMANN
@@ -276,7 +276,13 @@ struct poisson_solver {
     poisson_solver_destroy_func destroy;  /**< Destroy solver */
     poisson_solver_solve_func solve;      /**< Solve to convergence */
     poisson_solver_iterate_func iterate;  /**< Single iteration */
-    poisson_solver_apply_bc_func apply_bc; /**< Apply boundary conditions */
+    poisson_solver_apply_bc_func apply_bc; /**< Apply boundary conditions. NULL: zero-gradient walls copied
+                                                from the interior, for which the SOR solvers relax the points
+                                                beside a wall and choose omega. To hold other wall values,
+                                                install a function here before poisson_solver_init() rather
+                                                than writing the walls between iterations. The CUDA SOR and
+                                                Red-Black SOR solvers apply the walls on the device, and their
+                                                init rejects a function here with CFD_ERROR_UNSUPPORTED. */
 };
 
 /* ============================================================================
@@ -338,7 +344,8 @@ CFD_LIBRARY_EXPORT void poisson_solver_destroy(poisson_solver_t* solver);
  * @param x_temp Temporary buffer (required for Jacobi, may be NULL for SOR)
  * @param rhs Right-hand side vector
  * @param stats Output statistics (may be NULL)
- * @return CFD_SUCCESS on convergence, CFD_ERROR_MAX_ITER if not converged
+ * @return CFD_SUCCESS on convergence, CFD_ERROR_MAX_ITER if not converged,
+ *         CFD_ERROR_DIVERGED if the residual stops being finite
  */
 CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_solve(
     poisson_solver_t* solver,
@@ -350,7 +357,9 @@ CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_solve(
 /**
  * Perform a single iteration
  *
- * Useful for custom iteration control or monitoring.
+ * Useful for custom iteration control or monitoring. Wall values other than the
+ * default zero-gradient copy belong in solver->apply_bc, which every iteration
+ * applies after its sweep (see struct poisson_solver).
  *
  * @param solver Initialized Poisson solver
  * @param x Solution vector (in/out)
@@ -372,7 +381,7 @@ CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_iterate(
  * @param solver Initialized Poisson solver
  * @param x Solution vector
  * @param rhs Right-hand side vector
- * @return Maximum absolute residual
+ * @return Maximum absolute residual, or NaN if any point's residual is NaN
  */
 CFD_LIBRARY_EXPORT double poisson_solver_compute_residual(
     poisson_solver_t* solver,
@@ -465,7 +474,7 @@ typedef enum {
     POISSON_SOLVER_CG_SCALAR = 5,      /**< Conjugate Gradient with scalar backend (always available) */
     POISSON_SOLVER_CG_SIMD = 6,        /**< Conjugate Gradient with SIMD backend (runtime detection) */
     POISSON_SOLVER_CG_OMP = 7,         /**< Conjugate Gradient with OpenMP backend */
-    POISSON_SOLVER_SOR_SIMD = 8,       /**< SOR with SIMD backend (Block SOR, runtime detection) */
+    POISSON_SOLVER_SOR_SIMD = 8,       /**< SOR with SIMD backend (vectorized stencil terms, runtime detection) */
     POISSON_SOLVER_MG_SCALAR = 9,      /**< Geometric multigrid with scalar backend (grid dims must be 2^k+1) */
     POISSON_SOLVER_PCG_MG_SCALAR = 10, /**< CG with multigrid V-cycle preconditioner, scalar backend
                                             (grid dims must be 2^k+1) */

@@ -64,11 +64,17 @@ static __global__ void lin_gpu_kernel_jacobi(const double* __restrict__ x_old,
  * sweep as two separate kernel launches makes the launch boundary the color sync
  * point, reproducing the serial Gauss-Seidel ordering. The per-cell update matches
  * the CPU reference (linear_solver_redblack.c):
- *   p_new = (sum_neighbors - rhs) * inv_factor;  x += omega * (p_new - x).
+ *   p_new = (sum_neighbors - rhs) * inv_factor;  x += w * (p_new - x),
+ * where w is omega away from the walls. With zero-gradient walls (walls != 0) a
+ * cell beside a wall reads its own previous value through the copied wall and
+ * relaxes with w = omega * factor / (factor - wall weight), as
+ * poisson_solver_wall_omega() in linear_solver_internal.h describes; a cell with
+ * only walls around it keeps its value.
  */
 static __global__ void lin_gpu_kernel_redblack_sweep(double* __restrict__ x,
                                                      const double* __restrict__ rhs,
                                                      int color, double omega,
+                                                     int walls, double factor,
                                                      size_t nx, size_t ny,
                                                      size_t stride_z, int k_start, int k_end,
                                                      double inv_dx2, double inv_dy2, double inv_dz2,
@@ -84,7 +90,18 @@ static __global__ void lin_gpu_kernel_redblack_sweep(double* __restrict__ x,
                        + (x[idx + nx] + x[idx - nx]) * inv_dy2
                        + (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2;
             double p_new = (sum - rhs[idx]) * inv_factor;
-            x[idx] += omega * (p_new - x[idx]);
+            double w = omega;
+            if (walls) {
+                double wall = ((i == 1) + (i == (int)nx - 2)) * inv_dx2
+                            + ((j == 1) + (j == (int)ny - 2)) * inv_dy2;
+                if (stride_z)
+                    wall += ((k == k_start) + (k == k_end)) * inv_dz2;
+                if (wall > 0.0) {
+                    double interior = factor - wall;
+                    w = (interior > 0.0) ? omega * factor / interior : 0.0;
+                }
+            }
+            x[idx] += w * (p_new - x[idx]);
         }
     }
 }
@@ -105,11 +122,14 @@ static __global__ void lin_gpu_kernel_redblack_sweep(double* __restrict__ x,
  * start values) — exactly the lexicographic SOR ordering. Cross-tile and
  * z-neighbors belong to opposite-color tiles, stable this pass. At 1x1 tiles this
  * degenerates to the cell-level Red-Black SOR. Per-cell update matches the SOR
- * reference:  p_new = (sum_neighbors - rhs)*inv_factor;  x += omega*(p_new - x).
+ * reference:  p_new = (sum_neighbors - rhs)*inv_factor;  x += w*(p_new - x),
+ * with w the wall factor beside zero-gradient walls, as in
+ * lin_gpu_kernel_redblack_sweep.
  */
 static __global__ void lin_gpu_kernel_block_sor_tile_sweep(double* __restrict__ x,
                                                            const double* __restrict__ rhs,
                                                            int color, double omega,
+                                                           int walls, double factor,
                                                            int tile_w, int tile_h,
                                                            size_t nx, size_t ny,
                                                            size_t stride_z, int k_start, int k_end,
@@ -138,7 +158,18 @@ static __global__ void lin_gpu_kernel_block_sor_tile_sweep(double* __restrict__ 
                            + (x[idx - nx] + x[idx + nx]) * inv_dy2
                            + (x[idx - stride_z] + x[idx + stride_z]) * inv_dz2;
                 double p_new = (sum - rhs[idx]) * inv_factor;
-                x[idx] += omega * (p_new - x[idx]);
+                double w = omega;
+                if (walls) {
+                    double wall = ((i == 1) + (i == (int)nx - 2)) * inv_dx2
+                                + ((j == 1) + (j == (int)ny - 2)) * inv_dy2;
+                    if (stride_z)
+                        wall += ((k == k_start) + (k == k_end)) * inv_dz2;
+                    if (wall > 0.0) {
+                        double interior = factor - wall;
+                        w = (interior > 0.0) ? omega * factor / interior : 0.0;
+                    }
+                }
+                x[idx] += w * (p_new - x[idx]);
             }
         }
     }
