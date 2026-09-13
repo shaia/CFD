@@ -832,6 +832,44 @@ void test_diverging_solve_reports_divergence(void) {
     poisson_solver_destroy(solver);
 }
 
+/**
+ * A solve that checks its residual only every check_interval iterations still
+ * checks the last one. Here only iteration 0 is scheduled, and the field has long
+ * overflowed by the last: the solve must end diverged, not at max_iter with the
+ * residual of iteration 0.
+ */
+void test_divergence_after_last_scheduled_check_is_reported(void) {
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.omega = 2.5;
+    params.max_iterations = 5000;
+    params.check_interval = params.max_iterations + 1;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
+
+    double* x = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_DIVERGED, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_DIVERGED, stats.status);
+    TEST_ASSERT_EQUAL_INT(params.max_iterations, stats.iterations);
+    TEST_ASSERT_FALSE(isfinite(stats.final_residual));
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
 /* ============================================================================
  * GAUSS-SEIDEL
  * ============================================================================ */
@@ -1620,6 +1658,7 @@ int main(void) {
     RUN_TEST(test_stats_timing);
     RUN_TEST(test_solve_common_max_iter_reports_iterations_run);
     RUN_TEST(test_diverging_solve_reports_divergence);
+    RUN_TEST(test_divergence_after_last_scheduled_check_is_reported);
 
     /* NULL guard / edge case tests */
     RUN_TEST(test_poisson_create_invalid_method);

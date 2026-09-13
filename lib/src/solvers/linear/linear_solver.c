@@ -522,9 +522,12 @@ cfd_status_t poisson_solver_solve_common(
     for (iter = 0; iter < params->max_iterations; iter++) {
         double new_res = 0.0;
 
+        /* Check at intervals and on the last iteration, so that a solve never ends
+         * on a residual older than the field it returns */
+        int check = (iter % params->check_interval == 0) || (iter + 1 == params->max_iterations);
+
         /* Perform one iteration */
-        cfd_status_t status = solver->iterate(solver, x, x_temp, rhs,
-            (iter % params->check_interval == 0) ? &new_res : NULL);
+        cfd_status_t status = solver->iterate(solver, x, x_temp, rhs, check ? &new_res : NULL);
 
         if (status != CFD_SUCCESS) {
             if (stats) {
@@ -536,8 +539,7 @@ cfd_status_t poisson_solver_solve_common(
             return status;
         }
 
-        /* Check convergence at intervals */
-        if (iter % params->check_interval == 0) {
+        if (check) {
             res = new_res;
 
             /* A residual that is no longer finite will never meet the tolerance */

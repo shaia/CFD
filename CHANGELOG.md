@@ -128,7 +128,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `poisson_solver_compute_residual()` kept the largest residual with `>`, which is false for
   NaN, so a field that had overflowed read as a zero residual and passed the tolerance test.
   The residual of such a field is now NaN, and the solve stops with `POISSON_DIVERGED` and
-  `CFD_ERROR_DIVERGED` as soon as the residual is no longer finite
+  `CFD_ERROR_DIVERGED` at the first convergence check that finds it no longer finite. The shared
+  loop also checks the last iteration, whatever `check_interval` is, so a solve never ends on a
+  residual older than the field it returns
   (`lib/src/solvers/linear/linear_solver.c`, `lib/include/cfd/solvers/poisson_solver.h`,
   `tests/solvers/test_linear_solver.c`).
 - The SIMD SOR solvers (AVX2 and NEON) ran a Block SOR that read the left neighbour inside each
