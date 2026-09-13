@@ -446,8 +446,10 @@ void test_dirichlet_auto_omega_near_best(void) {
 }
 
 /**
- * Test: the automatic omega is exactly the documented formula for the walls in
- * use: an explicit omega at that value gives the same sweeps and residual.
+ * Test: the automatic omega is the documented formula for the walls in use: an
+ * explicit omega at that value gives the same sweeps and, to rounding, the same
+ * residual. A compiler that fuses multiply-adds (GCC with -mfma) can round the
+ * library's copy of the formula and this one apart in the last bit.
  */
 void test_auto_omega_is_the_documented_formula(void) {
     grid_case_t cases[] = {
@@ -469,7 +471,7 @@ void test_auto_omega_is_the_documented_formula(void) {
         snprintf(msg, sizeof(msg), "case %zu (%zux%zux%zu, %s walls)", c, g->nx, g->ny, g->nz,
                  g->fixed_walls ? "fixed" : "zero-gradient");
         TEST_ASSERT_EQUAL_INT_MESSAGE(sweeps_documented, sweeps_auto, msg);
-        TEST_ASSERT_EQUAL_DOUBLE_MESSAGE(res_documented, res_auto, msg);
+        TEST_ASSERT_DOUBLE_WITHIN_MESSAGE(1e-6 * res_documented, res_documented, res_auto, msg);
     }
 }
 
