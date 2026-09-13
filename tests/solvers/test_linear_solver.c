@@ -1200,14 +1200,10 @@ void test_redblack_simd_scalar_consistency(void) {
  * same order, so forty sweeps from the same start reach the same field up to rounding.
  * A block scheme that reads a stale left neighbour inside each block is a different
  * iteration and leaves this within a sweep or two. 19 points a side puts full blocks
- * and a remainder in every row.
+ * and a remainder in every row. With nz > 1 each interior plane gets the 2D
+ * right-hand side scaled by k + 1, so the planes differ.
  */
-void test_sor_simd_matches_scalar_sweep_for_sweep(void) {
-    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
-        TEST_IGNORE_MESSAGE("SIMD backend not available");
-        return;
-    }
-
+static void assert_sor_simd_sweeps_like_scalar(size_t nz, const char* failure) {
     poisson_solver_t* scalar_solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
     poisson_solver_t* simd_solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(scalar_solver);
@@ -1215,16 +1211,26 @@ void test_sor_simd_matches_scalar_sweep_for_sweep(void) {
 
     const size_t n = 19;
     const double h = 1.0 / 18.0;
-    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(scalar_solver, n, n, 1, h, h, 0.0, NULL));
-    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(simd_solver, n, n, 1, h, h, 0.0, NULL));
+    const double dz = (nz > 1) ? h : 0.0;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(scalar_solver, n, n, nz, h, h, dz, NULL));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(simd_solver, n, n, nz, h, h, dz, NULL));
 
-    double* x_scalar = create_test_field(n, n, 0.0);
-    double* x_simd = create_test_field(n, n, 0.0);
-    double* rhs = create_test_field(n, n, 0.0);
+    size_t plane = n * n;
+    size_t total = plane * nz;
+    double* x_scalar = (double*)cfd_calloc(total, sizeof(double));
+    double* x_simd = (double*)cfd_calloc(total, sizeof(double));
+    double* rhs = (double*)cfd_calloc(total, sizeof(double));
     TEST_ASSERT_NOT_NULL(x_scalar);
     TEST_ASSERT_NOT_NULL(x_simd);
     TEST_ASSERT_NOT_NULL(rhs);
-    fill_compatible_rhs(rhs, n, h);
+    size_t k_first = (nz > 1) ? 1 : 0;
+    size_t k_end = (nz > 1) ? nz - 1 : 1;
+    for (size_t k = k_first; k < k_end; k++) {
+        fill_compatible_rhs(rhs + k * plane, n, h);
+        for (size_t i = 0; i < plane; i++) {
+            rhs[k * plane + i] *= (double)(k + 1);
+        }
+    }
 
     for (int sweep = 0; sweep < 40; sweep++) {
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_iterate(scalar_solver, x_scalar, NULL, rhs, NULL));
@@ -1233,19 +1239,41 @@ void test_sor_simd_matches_scalar_sweep_for_sweep(void) {
 
     double max_diff = 0.0;
     double max_abs = 0.0;
-    for (size_t i = 0; i < n * n; i++) {
+    for (size_t i = 0; i < total; i++) {
         double diff = fabs(x_simd[i] - x_scalar[i]);
         if (diff > max_diff || isnan(diff)) max_diff = diff;
         if (fabs(x_scalar[i]) > max_abs) max_abs = fabs(x_scalar[i]);
     }
     TEST_ASSERT_TRUE_MESSAGE(max_abs > 1e-6, "forty sweeps did not move the field");
-    TEST_ASSERT_TRUE_MESSAGE(max_diff <= 1e-10 * max_abs, "SIMD SOR is not sweeping like scalar SOR");
+    TEST_ASSERT_TRUE_MESSAGE(max_diff <= 1e-10 * max_abs, failure);
 
     cfd_free(x_scalar);
     cfd_free(x_simd);
     cfd_free(rhs);
     poisson_solver_destroy(scalar_solver);
     poisson_solver_destroy(simd_solver);
+}
+
+void test_sor_simd_matches_scalar_sweep_for_sweep(void) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
+        return;
+    }
+    assert_sor_simd_sweeps_like_scalar(1, "SIMD SOR is not sweeping like scalar SOR");
+}
+
+/**
+ * The same in 3D, where the sweep also reads the z-neighbours and scales the step
+ * beside the z-walls: nz = 3 has one interior plane touching both z-walls, and
+ * nz = 5 a plane beside each wall and one between them.
+ */
+void test_sor_simd_matches_scalar_sweep_for_sweep_3d(void) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
+        TEST_IGNORE_MESSAGE("SIMD backend not available");
+        return;
+    }
+    assert_sor_simd_sweeps_like_scalar(3, "SIMD SOR is not sweeping like scalar SOR, nz = 3");
+    assert_sor_simd_sweeps_like_scalar(5, "SIMD SOR is not sweeping like scalar SOR, nz = 5");
 }
 
 /**
@@ -1650,6 +1678,7 @@ int main(void) {
     RUN_TEST(test_redblack_simd_converges_compatible_rhs);
     RUN_TEST(test_redblack_simd_scalar_consistency);
     RUN_TEST(test_sor_simd_matches_scalar_sweep_for_sweep);
+    RUN_TEST(test_sor_simd_matches_scalar_sweep_for_sweep_3d);
     RUN_TEST(test_sor_simd_converges_like_scalar);
     RUN_TEST(test_cg_simd_if_available);
     RUN_TEST(test_cg_simd_converges_uniform_rhs);
