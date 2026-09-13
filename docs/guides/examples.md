@@ -673,7 +673,7 @@ CFD Platform Diagnostics
 
 **What it demonstrates:**
 - `poisson_solver_create(method, backend)` factory API
-- `poisson_solver_params_t` with tolerance, max iterations, omega, preconditioner
+- `poisson_solver_params_t` with tolerance, max iterations and preconditioner, leaving omega at 0 (automatic)
 - `poisson_solver_init()`, `poisson_solver_solve()`, `poisson_solver_destroy()`
 - `poisson_solver_stats_t` for convergence monitoring
 - `poisson_solve()` convenience API

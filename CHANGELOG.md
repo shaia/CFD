@@ -139,6 +139,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`lib/src/solvers/linear/avx2/linear_solver_sor_avx2.c`,
   `lib/src/solvers/linear/neon/linear_solver_sor_neon.c`, `tests/solvers/test_linear_solver.c`,
   `docs/technical-notes/block-sor-simd.md`).
+- `examples/poisson_solver_tuning.c` benchmarked SOR and Red-Black SOR at a hard-coded omega of
+  1.5 rather than the automatic value, and capped the iterations it printed for an off-by-one that
+  is fixed. The `poisson_solver.h` usage example called `poisson_solver_init()` without `nz` and
+  `dz`, and `max_iterations` was documented as defaulting to 1000 where the default is 5000.
 
 ## [0.3.0] - 2026-06-23
 

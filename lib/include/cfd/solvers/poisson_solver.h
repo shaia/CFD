@@ -21,7 +21,7 @@
  * poisson_solver_params_t params = poisson_solver_params_default();
  * params.tolerance = 1e-8;
  *
- * poisson_solver_init(solver, nx, ny, dx, dy, &params);
+ * poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);  // nz = 1, dz = 0 in 2D
  *
  * poisson_solver_stats_t stats = poisson_solver_stats_default();
  * poisson_solver_solve(solver, p, p_temp, rhs, &stats);
@@ -135,7 +135,7 @@ typedef enum {
 typedef struct {
     double tolerance;          /**< Relative convergence tolerance (default: 1e-6) */
     double absolute_tolerance; /**< Absolute tolerance (default: 1e-10) */
-    int max_iterations;        /**< Maximum iterations (default: 1000) */
+    int max_iterations;        /**< Maximum iterations (default: 5000) */
     double omega;              /**< SOR relaxation (default: 0 = the optimum for the grid and the walls in use; set > 0 to override) */
     int check_interval;        /**< Check convergence every N iterations (default: 1) */
     bool verbose;              /**< Print iteration progress (default: false) */
