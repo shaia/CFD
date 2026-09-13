@@ -943,7 +943,7 @@ void test_redblack_simd_if_available(void) {
     poisson_solver_destroy(solver);
 }
 
-void test_redblack_simd_converges_uniform_rhs(void) {
+void test_redblack_simd_converges_compatible_rhs(void) {
     if (!poisson_solver_backend_available(POISSON_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend not available");
         return;
@@ -953,28 +953,30 @@ void test_redblack_simd_converges_uniform_rhs(void) {
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(solver);
 
-    /* Basic correctness test: verify SIMD Red-Black SOR can solve trivial problem.
-     * Uses zero RHS (compatible with Neumann BCs) on small grid. This validates
-     * SIMD implementation correctness, not algorithmic performance. */
-    const size_t nx = 9, ny = 9;
-    const double dx = 0.1, dy = 0.1;
+    /* A cosine right-hand side with zero interior mean: solvable with the default
+     * zero-gradient walls, and far enough from zero that the solve has to sweep.
+     * A zero right-hand side from a zero guess converges before the first sweep. */
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.max_iterations = 100;
-    params.tolerance = 1e-10;
-    poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
+    params.max_iterations = 2000;
+    params.tolerance = 1e-8;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
 
-    double* x = create_test_field(nx, ny, 0.0);
-    /* Use zero RHS for Neumann BCs (uniform RHS violates compatibility condition) */
-    double* rhs = create_test_field(nx, ny, 0.0);
+    double* x = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
     cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
 
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL_INT(POISSON_CONVERGED, stats.status);
-    /* Zero RHS with zero initial guess should converge in 1 iteration */
-    TEST_ASSERT_LESS_THAN(10, stats.iterations);
+    TEST_ASSERT_GREATER_THAN_INT(0, stats.iterations);
+    TEST_ASSERT_LESS_THAN_INT(params.max_iterations, stats.iterations);
 
     cfd_free(x);
     cfd_free(rhs);
@@ -987,31 +989,31 @@ void test_redblack_simd_scalar_consistency(void) {
         return;
     }
 
-    /* Create scalar solver */
     poisson_solver_t* scalar_solver = poisson_solver_create(
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(scalar_solver);
-
-    /* Create SIMD solver */
     poisson_solver_t* simd_solver = poisson_solver_create(
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(simd_solver);
 
-    /* Verify SIMD matches scalar on trivial problem (zero RHS with Neumann BCs) */
-    const size_t nx = 9, ny = 9;
-    const double dx = 0.1, dy = 0.1;
+    /* The same compatible problem on both backends, so the solve sweeps and the
+     * SIMD gather/scatter has to land where the scalar reference does */
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.max_iterations = 100;
-    params.tolerance = 1e-10;
+    params.max_iterations = 2000;
+    params.tolerance = 1e-8;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(scalar_solver, n, n, 1, h, h, 0.0, &params));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(simd_solver, n, n, 1, h, h, 0.0, &params));
 
-    poisson_solver_init(scalar_solver, nx, ny, 1, dx, dy, 0.0, &params);
-    poisson_solver_init(simd_solver, nx, ny, 1, dx, dy, 0.0, &params);
-
-    double* x_scalar = create_test_field(nx, ny, 0.0);
-    double* x_simd = create_test_field(nx, ny, 0.0);
-    /* Use zero RHS for Neumann BCs (uniform RHS violates compatibility condition) */
-    double* rhs = create_test_field(nx, ny, 0.0);
+    double* x_scalar = create_test_field(n, n, 0.0);
+    double* x_simd = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x_scalar);
+    TEST_ASSERT_NOT_NULL(x_simd);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
 
     poisson_solver_stats_t stats_scalar = poisson_solver_stats_default();
     poisson_solver_stats_t stats_simd = poisson_solver_stats_default();
@@ -1021,20 +1023,17 @@ void test_redblack_simd_scalar_consistency(void) {
 
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status_scalar);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status_simd);
+    TEST_ASSERT_GREATER_THAN_INT(0, stats_scalar.iterations);
+    /* The SIMD kernel scales by 1/h^2 where the scalar one divides by h^2, so the
+     * two can round apart by a sweep */
+    TEST_ASSERT_INT_WITHIN(1, stats_scalar.iterations, stats_simd.iterations);
 
-    /* Both should converge quickly with zero RHS */
-    TEST_ASSERT_LESS_THAN(10, stats_scalar.iterations);
-    TEST_ASSERT_LESS_THAN(10, stats_simd.iterations);
-
-    /* Verify SIMD and scalar produce same results */
     double max_diff = 0.0;
-    for (size_t i = 0; i < nx * ny; i++) {
+    for (size_t i = 0; i < n * n; i++) {
         double diff = fabs(x_simd[i] - x_scalar[i]);
         if (diff > max_diff) max_diff = diff;
     }
-
-    /* For zero RHS, both should produce identical zeros (max_diff should be exactly 0) */
-    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 0.0, max_diff);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-9, 0.0, max_diff);
 
     cfd_free(x_scalar);
     cfd_free(x_simd);
@@ -1392,7 +1391,7 @@ int main(void) {
     /* SIMD tests */
     RUN_TEST(test_jacobi_simd_if_available);
     RUN_TEST(test_redblack_simd_if_available);
-    RUN_TEST(test_redblack_simd_converges_uniform_rhs);
+    RUN_TEST(test_redblack_simd_converges_compatible_rhs);
     RUN_TEST(test_redblack_simd_scalar_consistency);
     RUN_TEST(test_cg_simd_if_available);
     RUN_TEST(test_cg_simd_converges_uniform_rhs);
