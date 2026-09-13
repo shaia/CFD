@@ -152,8 +152,9 @@ always relaxes with ω = 1, whatever `omega` says.
   iteration SOR on the Neumann matrix itself, so
   Young's ω_opt = 2/(1 + √(1 − ρ_J²)) applies, and the automatic ω takes ρ_J from a Rayleigh
   quotient of the slowest mode against that matrix (`poisson_solver_compute_neumann_omega` in
-  `lib/src/solvers/linear/linear_solver_internal.h`). It never exceeds the optimum. The
-  converged solution is the same as without the scaling.
+  `lib/src/solvers/linear/linear_solver_internal.h`). It never exceeds the optimum. A grid with
+  only two interior points has no slow mode, just the alternating one that ω = 1 removes in a
+  sweep, so there the automatic ω is 1. The converged solution is the same as without the scaling.
 - **Walls set by the caller's `apply_bc`**, installed before `poisson_solver_init()`, which
   chooses ω. There is no wall scaling, and the automatic ω is the Dirichlet optimum:
 

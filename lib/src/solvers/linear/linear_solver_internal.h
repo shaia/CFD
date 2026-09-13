@@ -326,8 +326,12 @@ static inline double poisson_solver_compute_optimal_omega(
  * the eigenvalue, so the omega this gives never exceeds the optimum, and it
  * approaches it as the grid grows.
  *
- * An axis with fewer than two interior points has no such mode and is skipped;
- * with no axis left there is nothing to relax, and omega is 1.
+ * An axis with fewer than two interior points has no such mode and is skipped.
+ * A grid with at most two interior points in all has no slow mode, and omega is
+ * 1: a lone point has nothing to relax against, and two points have only the
+ * alternating mode besides the constant. Its lambda is 2, so rho_J = -1 would
+ * put omega at 2, yet SOR damps it by (1 - omega)^2 per sweep and omega = 1
+ * removes it in one.
  */
 static inline double poisson_solver_compute_neumann_omega(
     size_t nx, size_t ny, size_t nz,
@@ -342,8 +346,15 @@ static inline double poisson_solver_compute_neumann_omega(
 
     /* Interior points per active axis; a 2D grid has none along z */
     double interior[3];
+    double points = 1.0;
     for (int a = 0; a < 3; a++) {
         interior[a] = (w[a] > 0.0) ? (double)(n[a] - 2) : 0.0;
+        if (interior[a] > 0.0) {
+            points *= interior[a];
+        }
+    }
+    if (points <= 2.0) {
+        return 1.0;
     }
 
     double lambda = -1.0;
@@ -362,9 +373,6 @@ static inline double poisson_solver_compute_neumann_omega(
         if (lambda < 0.0 || mode < lambda) {
             lambda = mode;
         }
-    }
-    if (lambda < 0.0) {
-        return 1.0;
     }
     double rho_j = 1.0 - lambda;
     return 2.0 / (1.0 + sqrt(1.0 - (rho_j * rho_j)));

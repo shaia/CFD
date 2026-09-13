@@ -435,6 +435,21 @@ void test_neumann_auto_omega_near_best_anisotropic_and_3d(void) {
 }
 
 /**
+ * Test: on a grid with only two interior points, the one mode besides the
+ * constant is the alternating one, which omega = 1 removes in a single sweep.
+ * The automatic omega must be that 1: Young's formula puts it at 2, where SOR
+ * damps the mode by (1 - omega)^2 per sweep and the solve never converges.
+ */
+void test_neumann_auto_omega_two_interior_points(void) {
+    grid_case_t tall = { 3, 4, 1, 1.0 / 2.0, 1.0 / 3.0, 0.0, 0 };
+    grid_case_t wide = { 4, 3, 1, 1.0 / 3.0, 1.0 / 2.0, 0.0, 0 };
+    grid_case_t deep = { 3, 3, 4, 1.0 / 2.0, 1.0 / 2.0, 1.0 / 3.0, 0 };
+    assert_auto_near_best(&tall, 1.0, 1.99, 0.01);
+    assert_auto_near_best(&wide, 1.0, 1.99, 0.01);
+    assert_auto_near_best(&deep, 1.0, 1.99, 0.01);
+}
+
+/**
  * Test: with walls the caller holds fixed, the automatic omega is still near
  * the best, through the Dirichlet formula.
  */
@@ -506,6 +521,7 @@ int main(void) {
     RUN_TEST(test_explicit_omega_override);
     RUN_TEST(test_neumann_auto_omega_near_best_square);
     RUN_TEST(test_neumann_auto_omega_near_best_anisotropic_and_3d);
+    RUN_TEST(test_neumann_auto_omega_two_interior_points);
     RUN_TEST(test_dirichlet_auto_omega_near_best);
     RUN_TEST(test_auto_omega_is_the_documented_formula);
     RUN_TEST(test_fixed_omega_1_5_falls_behind_as_grid_grows);
