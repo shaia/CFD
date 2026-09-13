@@ -136,7 +136,7 @@ typedef struct {
     double tolerance;          /**< Relative convergence tolerance (default: 1e-6) */
     double absolute_tolerance; /**< Absolute tolerance (default: 1e-10) */
     int max_iterations;        /**< Maximum iterations (default: 5000) */
-    double omega;              /**< SOR relaxation (default: 0 = the optimum for the grid and the walls in use; set > 0 to override) */
+    double omega;              /**< SOR relaxation (default: 0 = automatic, at or just below the optimum for the grid and the walls in use; set > 0 to override) */
     int check_interval;        /**< Check convergence every N iterations (default: 1) */
     bool verbose;              /**< Print iteration progress (default: false) */
     poisson_precond_type_t preconditioner; /**< Preconditioner type (default: NONE) */
@@ -170,7 +170,7 @@ typedef struct {
  * - tolerance: 1e-6
  * - absolute_tolerance: 1e-10
  * - max_iterations: 5000
- * - omega: 0.0 (the optimum for the grid and the walls in use)
+ * - omega: 0.0 (automatic, at or just below the optimum for the grid and the walls in use)
  * - check_interval: 1
  * - verbose: false
  * - mg_cycle: MG_CYCLE_V, mg_smoother: MG_SMOOTHER_REDBLACK_GS, mg_bc: MG_BC_NEUMANN

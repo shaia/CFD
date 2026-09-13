@@ -140,9 +140,10 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_JACOBI,
 p_ij^(k+1) = (1-ω)p_ij^k + (ω/4)(p_i-1,j + p_i+1,j + p_i,j-1 + p_i,j+1 - h²f_ij)
 ```
 
-**Relaxation factor:** `params.omega = 0` (the default) selects the optimum for the grid and the
-walls; any `omega > 0` is used as given. `POISSON_METHOD_GAUSS_SEIDEL` creates the same solvers and
-always relaxes with ω = 1, whatever `omega` says.
+**Relaxation factor:** `params.omega = 0` (the default) chooses ω for the grid and the walls: the
+optimum itself for walls set by `apply_bc`, and an estimate at or just below it for the default
+zero-gradient walls. Any `omega > 0` is used as given. `POISSON_METHOD_GAUSS_SEIDEL` creates the
+same solvers and always relaxes with ω = 1, whatever `omega` says.
 
 - **Default zero-gradient walls.** The walls are copied from the interior after each sweep, so
   during a sweep a point next to a wall reads its own previous value through the copy. Every SOR
@@ -185,7 +186,7 @@ always relaxes with ω = 1, whatever `omega` says.
 **Usage:**
 ```c
 poisson_solver_params_t params = poisson_solver_params_default();
-params.omega = 0.0;  // 0 = optimum for the grid and walls; > 0 overrides
+params.omega = 0.0;  // 0 = automatic, at or just below the optimum; > 0 overrides
 
 // Scalar (fully sequential, best convergence per iteration)
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR,

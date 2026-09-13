@@ -113,8 +113,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   below the best one: Red-Black SOR on a 33x33 seeded-noise problem took 361 sweeps at the
   automatic omega and 193 at the best. Wall-adjacent points now relax by
   omega * factor / (factor - wall weight), which makes the iteration SOR on the Neumann matrix
-  itself, and the automatic omega is that matrix's optimum, from a Rayleigh quotient of its slowest
-  mode. The same problem now takes 117 sweeps, and 65x65 to 257x257 grids about a third of their
+  itself, and the automatic omega estimates that matrix's optimum from just below, through a
+  Rayleigh quotient of its slowest mode. The same problem now takes 117 sweeps, and 65x65 to
+  257x257 grids about a third of their
   former sweeps (709 to 235 at 65x65). The converged solution is unchanged. A custom `apply_bc`
   keeps the Dirichlet formula and no wall scaling; wall values other than the default copy now
   have to be set through `apply_bc` rather than written between iterations. The CUDA solvers apply

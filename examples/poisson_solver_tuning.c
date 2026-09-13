@@ -83,7 +83,7 @@ static void benchmark_method(const char* label,
     params.tolerance = 1e-8;
     params.max_iterations = 10000;
     params.preconditioner = precond;
-    /* omega stays 0: SOR and Red-Black SOR pick the optimum for the grid and walls */
+    /* omega stays 0: SOR and Red-Black SOR choose it for the grid and walls */
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     if (status != CFD_SUCCESS) {
