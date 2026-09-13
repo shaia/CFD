@@ -768,6 +768,71 @@ static void fill_compatible_rhs(double* rhs, size_t n, double h) {
 }
 
 /* ============================================================================
+ * DIVERGENCE
+ * ============================================================================ */
+
+/**
+ * The residual of a field holding a NaN is NaN. A maximum taken with `>` alone
+ * skips every NaN, and the field reads as solved.
+ */
+void test_residual_of_nan_field_is_nan(void) {
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    const size_t n = 9;
+    const double h = 1.0 / 8.0;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(solver, n, n, 1, h, h, 0.0, NULL));
+
+    double* x = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(rhs);
+    x[4 * n + 4] = nan("");
+
+    TEST_ASSERT_TRUE(isnan(poisson_solver_compute_residual(solver, x, rhs)));
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+/**
+ * A solve that blows up stops and says so. Omega 2.5 is outside SOR's convergent
+ * range, so the field grows until it overflows.
+ */
+void test_diverging_solve_reports_divergence(void) {
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.omega = 2.5;
+    params.max_iterations = 20000;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
+
+    double* x = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_DIVERGED, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_DIVERGED, stats.status);
+    TEST_ASSERT_GREATER_THAN_INT(0, stats.iterations);
+    TEST_ASSERT_LESS_THAN_INT(params.max_iterations, stats.iterations);
+    TEST_ASSERT_FALSE(isfinite(stats.final_residual));
+
+    cfd_free(x);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
+/* ============================================================================
  * CONVENIENCE API THREAD SAFETY
  * ============================================================================ */
 
@@ -1381,6 +1446,7 @@ int main(void) {
 
     /* Residual tests */
     RUN_TEST(test_compute_residual_zero_rhs);
+    RUN_TEST(test_residual_of_nan_field_is_nan);
 
     /* Legacy API tests */
     RUN_TEST(test_legacy_poisson_solve_sor);
@@ -1399,6 +1465,7 @@ int main(void) {
     /* Statistics tests */
     RUN_TEST(test_stats_timing);
     RUN_TEST(test_solve_common_max_iter_reports_iterations_run);
+    RUN_TEST(test_diverging_solve_reports_divergence);
 
     /* NULL guard / edge case tests */
     RUN_TEST(test_poisson_create_invalid_method);

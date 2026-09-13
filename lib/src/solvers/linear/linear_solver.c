@@ -400,7 +400,9 @@ double poisson_solver_compute_residual(
                      - 2.0 * x[idx]) * inv_dz2;
 
                 double residual = fabs(laplacian - rhs[idx]);
-                if (residual > max_residual) {
+                /* A NaN compares false against everything, so without the
+                 * isnan() a diverged field would read as a zero residual */
+                if (residual > max_residual || isnan(residual)) {
                     max_residual = residual;
                 }
             }
@@ -502,6 +504,7 @@ cfd_status_t poisson_solver_solve_common(
     }
 
     int converged = 0;
+    int diverged = 0;
     int iter;
     double res = initial_res;
 
@@ -526,6 +529,12 @@ cfd_status_t poisson_solver_solve_common(
         if (iter % params->check_interval == 0) {
             res = new_res;
 
+            /* A residual that is no longer finite will never meet the tolerance */
+            if (!isfinite(res)) {
+                diverged = 1;
+                break;
+            }
+
             if (params->verbose) {
                 CFD_LOG_DEBUG("poisson", "Iter %d: residual = %.6e", iter, res);
             }
@@ -540,15 +549,20 @@ cfd_status_t poisson_solver_solve_common(
     double end_time = poisson_solver_get_time_ms();
 
     if (stats) {
-        /* A converged break leaves iter at the index of the last iteration run;
+        /* A break leaves iter at the index of the last iteration run;
          * an exhausted loop leaves it at max_iterations, the count run */
-        stats->iterations = converged ? iter + 1 : iter;
+        stats->iterations = (converged || diverged) ? iter + 1 : iter;
         stats->final_residual = res;
         stats->elapsed_time_ms = end_time - start_time;
-        stats->status = converged ? POISSON_CONVERGED : POISSON_MAX_ITER;
+        stats->status = converged ? POISSON_CONVERGED
+                      : diverged  ? POISSON_DIVERGED
+                                  : POISSON_MAX_ITER;
     }
 
-    return converged ? CFD_SUCCESS : CFD_ERROR_MAX_ITER;
+    if (converged) {
+        return CFD_SUCCESS;
+    }
+    return diverged ? CFD_ERROR_DIVERGED : CFD_ERROR_MAX_ITER;
 }
 
 cfd_status_t poisson_solver_solve(

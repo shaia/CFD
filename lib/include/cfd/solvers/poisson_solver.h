@@ -78,7 +78,7 @@ typedef enum {
 typedef enum {
     POISSON_CONVERGED = 0,   /**< Converged within tolerance */
     POISSON_MAX_ITER = 1,    /**< Reached max iterations without converging */
-    POISSON_DIVERGED = 2,    /**< Solution diverged (residual increased) */
+    POISSON_DIVERGED = 2,    /**< Solution diverged (the residual is no longer finite) */
     POISSON_STAGNATED = 3,   /**< Residual stagnated (no progress) */
     POISSON_ERROR = -1       /**< Error occurred */
 } poisson_solver_status_t;
@@ -342,7 +342,8 @@ CFD_LIBRARY_EXPORT void poisson_solver_destroy(poisson_solver_t* solver);
  * @param x_temp Temporary buffer (required for Jacobi, may be NULL for SOR)
  * @param rhs Right-hand side vector
  * @param stats Output statistics (may be NULL)
- * @return CFD_SUCCESS on convergence, CFD_ERROR_MAX_ITER if not converged
+ * @return CFD_SUCCESS on convergence, CFD_ERROR_MAX_ITER if not converged,
+ *         CFD_ERROR_DIVERGED if the residual stops being finite
  */
 CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_solve(
     poisson_solver_t* solver,
@@ -378,7 +379,7 @@ CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_iterate(
  * @param solver Initialized Poisson solver
  * @param x Solution vector
  * @param rhs Right-hand side vector
- * @return Maximum absolute residual
+ * @return Maximum absolute residual, or NaN if any point's residual is NaN
  */
 CFD_LIBRARY_EXPORT double poisson_solver_compute_residual(
     poisson_solver_t* solver,

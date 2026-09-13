@@ -123,6 +123,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `lib/src/solvers/linear/omp/`, `lib/src/solvers/linear/avx2/`, `lib/src/solvers/linear/neon/`,
   `lib/src/solvers/linear/gpu/`, `tests/math/test_optimal_omega.c`,
   `tests/math/test_poisson_accuracy.c`).
+- A solve on the shared loop that blew up could report convergence.
+  `poisson_solver_compute_residual()` kept the largest residual with `>`, which is false for
+  NaN, so a field that had overflowed read as a zero residual and passed the tolerance test.
+  The residual of such a field is now NaN, and the solve stops with `POISSON_DIVERGED` and
+  `CFD_ERROR_DIVERGED` as soon as the residual is no longer finite
+  (`lib/src/solvers/linear/linear_solver.c`, `lib/include/cfd/solvers/poisson_solver.h`,
+  `tests/solvers/test_linear_solver.c`).
 
 ## [0.3.0] - 2026-06-23
 
