@@ -291,6 +291,128 @@ void test_sor_gpu_rejects_custom_apply_bc(void) {
     }
 }
 
+/* ---- 3D zero-gradient walls ----------------------------------------------- */
+
+/* Run exactly `sweeps` sweeps from a zero start with the default walls and the
+ * automatic omega; a zero tolerance keeps the solve from stopping early. Returns 0
+ * if the backend is unavailable, 1 once the sweeps have run. */
+static int run_sweeps_3d(poisson_solver_method_t method, poisson_solver_backend_t backend,
+                         size_t nx, size_t ny, size_t nz, double h, int sweeps,
+                         double* x, const double* rhs) {
+    poisson_solver_t* solver = poisson_solver_create(method, backend);
+    if (!solver) {
+        return 0;
+    }
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance = 0.0;
+    params.absolute_tolerance = 0.0;
+    params.max_iterations = sweeps;
+
+    cfd_status_t st = poisson_solver_init(solver, nx, ny, nz, h, h, h, &params);
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    if (st == CFD_SUCCESS) {
+        poisson_solver_solve(solver, x, NULL, rhs, &stats);
+    }
+    poisson_solver_destroy(solver);
+    if (st == CFD_ERROR_UNSUPPORTED) {
+        return 0;
+    }
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, st);
+    TEST_ASSERT_EQUAL_INT(sweeps, stats.iterations);
+    return 1;
+}
+
+/* Index of cell (i, j, k), mirrored in x and/or z */
+static size_t mirrored_index(size_t i, size_t j, size_t k, size_t nx, size_t ny, size_t nz,
+                             int mirror_x, int mirror_z) {
+    size_t mi = mirror_x ? nx - 1 - i : i;
+    size_t mk = mirror_z ? nz - 1 - k : k;
+    return (mk * ny + j) * nx + mi;
+}
+
+/* Compare 20 GPU sweeps with 20 scalar sweeps on a 10x10xnz grid, cell for cell.
+ * A wrong wall factor at a z-face changes the field in the first sweep, so this
+ * checks the GPU z-wall relaxation against the scalar reference.
+ *
+ * Both runs must visit the cells in the same order. The 8x8 interior of a 10x10
+ * plane is a single GPU SOR tile, which it sweeps like scalar SOR, but it sweeps
+ * even k-planes before odd ones: with nz = 3 there is one plane, and with nz = 4
+ * the scalar run on the z-mirrored problem takes the planes in the GPU's order.
+ * GPU Red-Black SOR updates the even (i + j + k) cells first and the scalar solver
+ * the odd ones; mirroring x on an even nx swaps the two colours.
+ * Returns 0 if the GPU backend is unavailable. */
+static int compare_gpu_sweeps_with_scalar(poisson_solver_method_t method, size_t nz,
+                                          int mirror_x, int mirror_z) {
+    const size_t nx = 10, ny = 10;
+    const double h = 1.0 / 9.0;
+    const int sweeps = 20;
+    size_t n = nx * ny * nz;
+
+    double* rhs = create_field(n);
+    double* rhs_mirrored = create_field(n);
+    double* x_gpu = create_field(n);
+    double* x_scalar = create_field(n);
+    TEST_ASSERT_NOT_NULL(rhs);
+    TEST_ASSERT_NOT_NULL(rhs_mirrored);
+    TEST_ASSERT_NOT_NULL(x_gpu);
+    TEST_ASSERT_NOT_NULL(x_scalar);
+
+    /* Any interior field without mirror symmetry */
+    for (size_t k = 1; k < nz - 1; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                double v = sin(1.3 * (double)i + 0.7 * (double)j + 2.1 * (double)k);
+                rhs[(k * ny + j) * nx + i] = v;
+                rhs_mirrored[mirrored_index(i, j, k, nx, ny, nz, mirror_x, mirror_z)] = v;
+            }
+        }
+    }
+
+    int ran = run_sweeps_3d(method, POISSON_BACKEND_GPU, nx, ny, nz, h, sweeps, x_gpu, rhs);
+    if (ran) {
+        TEST_ASSERT_EQUAL_INT(1, run_sweeps_3d(method, POISSON_BACKEND_SCALAR, nx, ny, nz, h,
+                                               sweeps, x_scalar, rhs_mirrored));
+        double max_diff = 0.0;
+        double max_abs = 0.0;
+        for (size_t k = 1; k < nz - 1; k++) {
+            for (size_t j = 1; j < ny - 1; j++) {
+                for (size_t i = 1; i < nx - 1; i++) {
+                    double g = x_gpu[(k * ny + j) * nx + i];
+                    double d = fabs(g - x_scalar[mirrored_index(i, j, k, nx, ny, nz, mirror_x, mirror_z)]);
+                    if (d > max_diff || isnan(d)) max_diff = d;
+                    if (fabs(g) > max_abs) max_abs = fabs(g);
+                }
+            }
+        }
+        char msg[128];
+        snprintf(msg, sizeof(msg), "%s, nz = %zu: max |GPU - scalar| %.3e of max |x| %.3e",
+                 method == POISSON_METHOD_SOR ? "SOR" : "Red-Black SOR", nz, max_diff, max_abs);
+        printf("      %s\n", msg);
+        TEST_ASSERT_TRUE_MESSAGE(max_abs > 1e-6, "the sweeps did not move the field");
+        TEST_ASSERT_TRUE_MESSAGE(max_diff <= 1e-10 * max_abs, msg);
+    }
+
+    cfd_free(rhs);
+    cfd_free(rhs_mirrored);
+    cfd_free(x_gpu);
+    cfd_free(x_scalar);
+    return ran;
+}
+
+/* The GPU SOR and Red-Black SOR sweeps relax beside the z-walls as the scalar ones
+ * do, on a lone interior plane that touches both z-walls and on planes that touch
+ * one each. */
+void test_sor_gpu_3d_walls_match_scalar(void) {
+    printf("\n    GPU SOR and Red-Black SOR vs scalar, 3D zero-gradient walls...\n");
+    if (!compare_gpu_sweeps_with_scalar(POISSON_METHOD_SOR, 3, 0, 0)) {
+        printf("      SKIPPED (GPU backend unavailable)\n");
+        return;
+    }
+    compare_gpu_sweeps_with_scalar(POISSON_METHOD_SOR, 4, 0, 1);
+    compare_gpu_sweeps_with_scalar(POISSON_METHOD_REDBLACK_SOR, 3, 1, 0);
+    compare_gpu_sweeps_with_scalar(POISSON_METHOD_REDBLACK_SOR, 6, 1, 0);
+}
+
 int main(void) {
     UNITY_BEGIN();
     printf("\n========================================\n");
@@ -299,5 +421,6 @@ int main(void) {
     RUN_TEST(test_sor_gpu_converges);
     RUN_TEST(test_sor_gpu_matches_cpu);
     RUN_TEST(test_sor_gpu_rejects_custom_apply_bc);
+    RUN_TEST(test_sor_gpu_3d_walls_match_scalar);
     return UNITY_END();
 }
