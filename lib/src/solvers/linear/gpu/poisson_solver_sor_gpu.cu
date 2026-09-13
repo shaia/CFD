@@ -11,9 +11,8 @@
  *
  * Plain lexicographic SOR is sequential (each cell depends on its already-updated
  * left/down neighbors), which the GPU cannot reproduce cheaply. This backend uses
- * the same "Block SOR" idea as the AVX2/NEON plain-SOR solvers — each thread does a
- * sequential Gauss-Seidel/SOR sweep over a small tile — but parallelizes the tiles
- * with a red-black *tile* coloring: each iteration launches the red tile pass then
+ * a Block SOR instead: each thread does a sequential Gauss-Seidel/SOR sweep over a
+ * small tile, and the tiles are parallelized with a red-black *tile* coloring: each iteration launches the red tile pass then
  * the black tile pass (the launch boundary is the color sync). Because adjacency
  * flips tile parity, a tile's halo is never written by another thread in the same
  * pass, so the update is in-place, race-free, and (being a consistent ordering)
@@ -48,9 +47,7 @@ extern "C" {
 #include "../linear_solver_internal.h"
 }
 
-/* Tile dimensions swept sequentially by each thread. 8x8 keeps the stale-halo
- * fraction small enough that the auto optimal-omega remains stable (mirrors the
- * AVX2 Block SOR, whose only staleness is the intra-block left neighbor). */
+/* Tile dimensions swept sequentially by each thread */
 #define SOR_GPU_TILE_W 8
 #define SOR_GPU_TILE_H 8
 

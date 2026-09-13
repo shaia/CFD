@@ -167,8 +167,8 @@ walls; any `omega > 0` is used as given.
 - Faster than Jacobi (ω > 1)
 - Sequential row updates (row j depends on j-1)
 - Optimal ω depends on the grid and the walls (see above)
-- SIMD variant uses Block SOR: processes SIMD_WIDTH consecutive cells per block, with intra-block left-neighbor approximation (see [Block SOR technical note](../technical-notes/block-sor-simd.md))
-- GPU variant also uses Block SOR: each thread sweeps an 8×8 tile sequentially (Gauss-Seidel inside the tile), with red-black *tile* coloring (red pass then black pass, two launches per iteration) so a tile's halo is never written by another tile in the same pass — the update is in-place, race-free, and provably convergent for 0<ω<2
+- SIMD variant sweeps each row in two passes: the stencil terms that do not depend on the sweep, SIMD_WIDTH cells at a time, then the relaxation in order against the updated left neighbor. It is the scalar iteration, sweep for sweep (see [SIMD SOR technical note](../technical-notes/block-sor-simd.md))
+- GPU variant uses Block SOR: each thread sweeps an 8×8 tile sequentially (Gauss-Seidel inside the tile), with red-black *tile* coloring (red pass then black pass, two launches per iteration) so a tile's halo is never written by another tile in the same pass — the update is in-place, race-free, and provably convergent for 0<ω<2
 
 **Convergence Rate:** ρ ≈ 1 - 2πh (with optimal ω)
 
@@ -176,7 +176,7 @@ walls; any `omega > 0` is used as given.
 | Solver | Backend | Description |
 |--------|---------|-------------|
 | `sor_scalar` | Scalar | Sequential Gauss-Seidel + SOR relaxation |
-| `sor_simd` | SIMD | Block SOR (auto-detects AVX2/NEON) |
+| `sor_simd` | SIMD | SOR with SIMD stencil terms (auto-detects AVX2/NEON) |
 | `sor_gpu` | GPU | Block SOR (CUDA; per-thread tile sweep, red-black tile coloring, in-place) |
 
 **Usage:**
@@ -188,7 +188,7 @@ params.omega = 0.0;  // 0 = optimum for the grid and walls; > 0 overrides
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR,
                                                  POISSON_BACKEND_SCALAR);
 
-// SIMD (Block SOR, higher throughput, slightly more iterations)
+// SIMD (the scalar iteration, with the stencil terms vectorized)
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR,
                                                  POISSON_BACKEND_SIMD);
 ```

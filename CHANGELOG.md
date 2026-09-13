@@ -130,6 +130,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CFD_ERROR_DIVERGED` as soon as the residual is no longer finite
   (`lib/src/solvers/linear/linear_solver.c`, `lib/include/cfd/solvers/poisson_solver.h`,
   `tests/solvers/test_linear_solver.c`).
+- The SIMD SOR solvers (AVX2 and NEON) ran a Block SOR that read the left neighbour inside each
+  SIMD block from the previous sweep. That is not the SOR iteration, and on the AVX2 build it
+  diverged for omega between 1.40 and 1.50 on every grid measured, below the automatic omega: a
+  33x33 solve at the automatic omega reported convergence after 1,764 sweeps with a residual of
+  exactly zero. Each row is now swept in two passes, the stencil terms the sweep does not write
+  with SIMD and then the relaxation in order, which is scalar SOR sweep for sweep
+  (`lib/src/solvers/linear/avx2/linear_solver_sor_avx2.c`,
+  `lib/src/solvers/linear/neon/linear_solver_sor_neon.c`, `tests/solvers/test_linear_solver.c`,
+  `docs/technical-notes/block-sor-simd.md`).
 
 ## [0.3.0] - 2026-06-23
 
