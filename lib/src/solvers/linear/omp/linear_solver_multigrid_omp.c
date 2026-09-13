@@ -17,9 +17,10 @@
  * The result is bit-identical to the scalar backend at any thread count under
  * the same floating-point contraction settings.
  *
- * A region uses the thread team only when its plane holds at least
- * MG_OMP_MIN_POINTS points (mg_omp_parallel); coarse levels and small grids run
- * the same loops on the calling thread.
+ * A region uses the thread team only when its work reaches MG_OMP_MIN_POINTS
+ * (mg_omp_parallel): the interior points of the plane it writes, or 2(nx+ny) for
+ * the boundary pass. Smaller loops (the coarser levels, small grids) run on the
+ * calling thread.
  *
  * Boundary conditions run the boundary core that bc_apply_scalar_omp and
  * bc_apply_scalar_cpu share (same face order, copies only), entered through

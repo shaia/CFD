@@ -40,10 +40,12 @@ extern "C" {
 #define MG_JACOBI_OMEGA              (2.0 / 3.0)
 
 /* Minimum points one OpenMP multigrid region must cover to use the thread team.
- * Each OMP primitive opens a region per plane, and starting and joining a team
- * costs as much as sweeping tens of thousands of points, so smaller planes (every
- * coarse level, and small grids) run serially (omp/linear_solver_multigrid_omp.c).
- * test_omp_consistency keeps a configuration above it. */
+ * Each OMP primitive opens a region per plane and compares its own work with this
+ * value: the interior points of the plane it writes, or the 2(nx+ny) copies of
+ * the Neumann boundary pass. Starting and joining a team costs as much as sweeping
+ * tens of thousands of points, so smaller loops (the coarser levels, small grids)
+ * run serially (omp/linear_solver_multigrid_omp.c). test_omp_consistency keeps
+ * configurations above it. */
 #define MG_OMP_MIN_POINTS            32768
 
 /**

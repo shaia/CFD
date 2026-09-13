@@ -356,8 +356,10 @@ Both share one algorithm template
 the OpenMP backend parallelizes the smoother, residual, grid-transfer and
 boundary kernels over rows with no parallel reductions (the Neumann interior mean
 and the convergence residual stay serial), so its results are bit-identical to
-the scalar backend at any thread count. Kernels on planes smaller than 32,768
-points (every coarse level, and small grids such as any plane below 257x257) run
+the scalar backend at any thread count. Each kernel uses the thread team only when
+its loop covers at least 32,768 points of a plane: the interior points of the plane
+it writes, or the 2(nx+ny) copies of the Neumann boundary pass. Smaller loops (the
+coarser levels, small grids, and the boundary pass unless nx+ny reaches 16,384) run
 on the calling thread, where starting a thread team would cost more than the work.
 `POISSON_BACKEND_AUTO` resolves to scalar; request `POISSON_BACKEND_OMP` explicitly.
 Grids whose `nx` or `ny` exceeds `INT_MAX` return `CFD_ERROR_LIMIT_EXCEEDED` at init.
