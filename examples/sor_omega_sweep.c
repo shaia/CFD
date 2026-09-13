@@ -108,7 +108,8 @@ static int solve_once(const sweep_options_t* opt, double omega, double* x,
 
 static void print_row(const char* omega_label, int sweeps, const poisson_solver_stats_t* stats) {
     const char* status = (stats->status == POISSON_CONVERGED) ? "converged" :
-                         (stats->status == POISSON_MAX_ITER)  ? "max_iter" : "error";
+                         (stats->status == POISSON_MAX_ITER)  ? "max_iter" :
+                         (stats->status == POISSON_DIVERGED)  ? "diverged" : "error";
     printf("%s,%d,%s,%.6e\n", omega_label, sweeps, status, stats->final_residual);
 }
 
