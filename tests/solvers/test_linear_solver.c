@@ -833,6 +833,56 @@ void test_diverging_solve_reports_divergence(void) {
 }
 
 /* ============================================================================
+ * GAUSS-SEIDEL
+ * ============================================================================ */
+
+/**
+ * Gauss-Seidel is SOR at omega = 1, whatever params.omega says: given 1.8 it takes
+ * the same sweeps to the same field as SOR given 1.
+ */
+void test_gauss_seidel_is_sor_at_omega_one(void) {
+    poisson_solver_t* gs = poisson_solver_create(POISSON_METHOD_GAUSS_SEIDEL, POISSON_BACKEND_SCALAR);
+    poisson_solver_t* sor = poisson_solver_create(POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(gs);
+    TEST_ASSERT_NOT_NULL(sor);
+    TEST_ASSERT_EQUAL_INT(POISSON_METHOD_GAUSS_SEIDEL, gs->method);
+
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
+
+    poisson_solver_params_t gs_params = poisson_solver_params_default();
+    gs_params.tolerance = 1e-8;
+    gs_params.omega = 1.8;
+    poisson_solver_params_t sor_params = gs_params;
+    sor_params.omega = 1.0;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(gs, n, n, 1, h, h, 0.0, &gs_params));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(sor, n, n, 1, h, h, 0.0, &sor_params));
+
+    double* x_gs = create_test_field(n, n, 0.0);
+    double* x_sor = create_test_field(n, n, 0.0);
+    double* rhs = create_test_field(n, n, 0.0);
+    TEST_ASSERT_NOT_NULL(x_gs);
+    TEST_ASSERT_NOT_NULL(x_sor);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
+
+    poisson_solver_stats_t stats_gs = poisson_solver_stats_default();
+    poisson_solver_stats_t stats_sor = poisson_solver_stats_default();
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_solve(gs, x_gs, NULL, rhs, &stats_gs));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_solve(sor, x_sor, NULL, rhs, &stats_sor));
+
+    TEST_ASSERT_GREATER_THAN_INT(0, stats_sor.iterations);
+    TEST_ASSERT_EQUAL_INT(stats_sor.iterations, stats_gs.iterations);
+    TEST_ASSERT_EQUAL_MEMORY(x_sor, x_gs, n * n * sizeof(double));
+
+    cfd_free(x_gs);
+    cfd_free(x_sor);
+    cfd_free(rhs);
+    poisson_solver_destroy(gs);
+    poisson_solver_destroy(sor);
+}
+
+/* ============================================================================
  * CONVENIENCE API THREAD SAFETY
  * ============================================================================ */
 
@@ -1534,6 +1584,7 @@ int main(void) {
     RUN_TEST(test_redblack_converges_zero_rhs);
     RUN_TEST(test_cg_converges_zero_rhs);
     RUN_TEST(test_cg_converges_uniform_rhs);
+    RUN_TEST(test_gauss_seidel_is_sor_at_omega_one);
 
     /* CG advanced tests */
     RUN_TEST(test_cg_scalar_simd_consistency);

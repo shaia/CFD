@@ -439,7 +439,8 @@ static inline void poisson_solver_row_omegas(
 /**
  * The omega a SOR or Red-Black SOR solver relaxes with.
  *
- * An explicit omega > 0 is used as given. omega <= 0, the default, asks for the
+ * Gauss-Seidel is SOR at omega = 1, whatever params.omega says. Otherwise an
+ * explicit omega > 0 is used as given, and omega <= 0, the default, asks for the
  * optimum: the Neumann formula for the default wall copy, and the Dirichlet
  * formula above when the caller supplies its own apply_bc. poisson_solver_init()
  * fills in the grid before calling the backend init that resolves omega, so a
@@ -447,6 +448,9 @@ static inline void poisson_solver_row_omegas(
  */
 static inline double poisson_solver_resolve_omega(const poisson_solver_t* solver, double omega)
 {
+    if (solver->method == POISSON_METHOD_GAUSS_SEIDEL) {
+        return 1.0;
+    }
     if (omega > 0.0) {
         return omega;
     }

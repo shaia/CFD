@@ -143,6 +143,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   1.5 rather than the automatic value, and capped the iterations it printed for an off-by-one that
   is fixed. The `poisson_solver.h` usage example called `poisson_solver_init()` without `nz` and
   `dz`, and `max_iterations` was documented as defaulting to 1000 where the default is 5000.
+- `POISSON_METHOD_GAUSS_SEIDEL` created the SOR solvers and ran at SOR's automatic omega, not at
+  1: at 9aa06d1 a 33x33 zero-gradient solve took 380 sweeps where omega = 1 takes 2,376. It now
+  always relaxes with omega = 1, whatever `params.omega` says
+  (`lib/src/solvers/linear/linear_solver.c`, `lib/src/solvers/linear/linear_solver_internal.h`,
+  `tests/solvers/test_linear_solver.c`).
 
 ## [0.3.0] - 2026-06-23
 

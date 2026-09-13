@@ -199,19 +199,30 @@ poisson_solver_t* poisson_solver_create(
             }
 
         case POISSON_METHOD_SOR:
-        case POISSON_METHOD_GAUSS_SEIDEL:
+        case POISSON_METHOD_GAUSS_SEIDEL: {
+            /* Gauss-Seidel is SOR at omega = 1: the same solvers, marked with the
+             * requested method so that init resolves omega to 1 */
+            poisson_solver_t* sor;
             switch (backend) {
                 case POISSON_BACKEND_SIMD:
-                    return create_sor_simd_solver();
+                    sor = create_sor_simd_solver();
+                    break;
 #ifdef CFD_HAS_CUDA
                 case POISSON_BACKEND_GPU:
-                    return create_sor_gpu_solver();
+                    sor = create_sor_gpu_solver();
+                    break;
 #endif
                 case POISSON_BACKEND_SCALAR:
-                    return create_sor_scalar_solver();
+                    sor = create_sor_scalar_solver();
+                    break;
                 default:
-                    return backend_unavailable("SOR");
+                    return backend_unavailable(method == POISSON_METHOD_GAUSS_SEIDEL ? "Gauss-Seidel" : "SOR");
             }
+            if (sor) {
+                sor->method = method;
+            }
+            return sor;
+        }
 
         case POISSON_METHOD_REDBLACK_SOR:
             switch (backend) {

@@ -141,7 +141,8 @@ p_ij^(k+1) = (1-ω)p_ij^k + (ω/4)(p_i-1,j + p_i+1,j + p_i,j-1 + p_i,j+1 - h²f_
 ```
 
 **Relaxation factor:** `params.omega = 0` (the default) selects the optimum for the grid and the
-walls; any `omega > 0` is used as given.
+walls; any `omega > 0` is used as given. `POISSON_METHOD_GAUSS_SEIDEL` creates the same solvers and
+always relaxes with ω = 1, whatever `omega` says.
 
 - **Default zero-gradient walls.** The walls are copied from the interior after each sweep, so
   during a sweep a point next to a wall reads its own previous value through the copy. Every SOR
