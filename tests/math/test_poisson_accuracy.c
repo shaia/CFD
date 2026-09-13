@@ -443,7 +443,8 @@ static void hold_quadratic_walls(poisson_solver_t* solver, double* p) {
  * Custom solver loop for quadratic solution with Dirichlet BCs.
  *
  * The walls are held through solver->apply_bc, the hook the solver applies after
- * each sweep and before it measures the residual. Writing them after
+ * each sweep and before it measures the residual. Callers install it before
+ * poisson_solver_init(), which reads it to choose omega. Writing the walls after
  * poisson_solver_iterate() instead would leave apply_bc NULL, which tells the SOR
  * solvers the walls are zero-gradient copies of the interior.
  */
@@ -451,7 +452,8 @@ static int solve_quadratic_with_dirichlet_bc(poisson_solver_t* solver,
                                               double* p, double* p_temp, const double* rhs,
                                               int max_iters, double tol) {
     double residual = 0.0;
-    solver->apply_bc = hold_quadratic_walls;
+    TEST_ASSERT_TRUE_MESSAGE(solver->apply_bc == hold_quadratic_walls,
+        "install hold_quadratic_walls before poisson_solver_init()");
 
     for (int iter = 0; iter < max_iters; iter++) {
         cfd_status_t status = poisson_solver_iterate(solver, p, p_temp, rhs, &residual);
@@ -488,6 +490,7 @@ void test_uniform_rhs_jacobi(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(solver);
+    solver->apply_bc = hold_quadratic_walls;
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-10;
@@ -536,6 +539,7 @@ void test_uniform_rhs_sor(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(solver);
+    solver->apply_bc = hold_quadratic_walls;
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-10;
@@ -584,6 +588,7 @@ void test_uniform_rhs_redblack(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(solver);
+    solver->apply_bc = hold_quadratic_walls;
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-10;
@@ -629,7 +634,8 @@ static void hold_sinusoidal_walls(poisson_solver_t* solver, double* p) {
  * Custom solver loop with the walls held at the analytical solution.
  *
  * The walls are held through solver->apply_bc, the hook the solver applies after
- * each sweep and before it measures the residual. Writing them after
+ * each sweep and before it measures the residual. Callers install it before
+ * poisson_solver_init(), which reads it to choose omega. Writing the walls after
  * poisson_solver_iterate() instead would leave apply_bc NULL, which tells the SOR
  * solvers the walls are zero-gradient copies of the interior.
  */
@@ -637,7 +643,8 @@ static int solve_with_dirichlet_bc(poisson_solver_t* solver,
                                     double* p, double* p_temp, const double* rhs,
                                     int max_iter, double tolerance) {
     double residual = 0.0;
-    solver->apply_bc = hold_sinusoidal_walls;
+    TEST_ASSERT_TRUE_MESSAGE(solver->apply_bc == hold_sinusoidal_walls,
+        "install hold_sinusoidal_walls before poisson_solver_init()");
 
     for (int iter = 0; iter < max_iter; iter++) {
         /* Perform one iteration */
@@ -677,6 +684,7 @@ void test_sinusoidal_rhs_jacobi(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Failed to create Jacobi solver");
+    solver->apply_bc = hold_sinusoidal_walls;
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-8;
@@ -728,6 +736,7 @@ void test_sinusoidal_rhs_sor(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Failed to create SOR solver");
+    solver->apply_bc = hold_sinusoidal_walls;
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-8;
@@ -777,6 +786,7 @@ void test_sinusoidal_rhs_redblack(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Failed to create Red-Black SOR solver");
+    solver->apply_bc = hold_sinusoidal_walls;
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-8;
@@ -846,6 +856,8 @@ void test_grid_convergence_jacobi(void) {
 
         poisson_solver_t* solver = poisson_solver_create(
             POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
+        TEST_ASSERT_NOT_NULL(solver);
+        solver->apply_bc = hold_sinusoidal_walls;
 
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-10;
@@ -910,6 +922,8 @@ void test_grid_convergence_sor(void) {
 
         poisson_solver_t* solver = poisson_solver_create(
             POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
+        TEST_ASSERT_NOT_NULL(solver);
+        solver->apply_bc = hold_sinusoidal_walls;
 
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-10;
@@ -972,6 +986,8 @@ void test_grid_convergence_redblack(void) {
 
         poisson_solver_t* solver = poisson_solver_create(
             POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_SCALAR);
+        TEST_ASSERT_NOT_NULL(solver);
+        solver->apply_bc = hold_sinusoidal_walls;
 
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-10;
@@ -1182,6 +1198,7 @@ void test_solver_comparison(void) {
             cfd_free(p_temp);
             continue;
         }
+        solver->apply_bc = hold_sinusoidal_walls;
 
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-10;
