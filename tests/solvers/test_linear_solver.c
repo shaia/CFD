@@ -744,6 +744,141 @@ void test_legacy_poisson_solve_redblack(void) {
     cfd_free(rhs);
 }
 
+/**
+ * Neumann-compatible RHS on an n x n grid with spacing h: cos(2*pi*x)cos(2*pi*y)
+ * minus its interior mean, zero on the boundary.
+ */
+static void fill_compatible_rhs(double* rhs, size_t n, double h) {
+    const double two_pi = 6.283185307179586;
+    double sum = 0.0;
+    for (size_t j = 1; j < n - 1; j++) {
+        for (size_t i = 1; i < n - 1; i++) {
+            sum += cos(two_pi * (double)i * h) * cos(two_pi * (double)j * h);
+        }
+    }
+    double mean = sum / (double)((n - 2) * (n - 2));
+
+    for (size_t j = 0; j < n; j++) {
+        for (size_t i = 0; i < n; i++) {
+            int boundary = (i == 0 || j == 0 || i == n - 1 || j == n - 1);
+            rhs[j * n + i] = boundary
+                ? 0.0 : cos(two_pi * (double)i * h) * cos(two_pi * (double)j * h) - mean;
+        }
+    }
+}
+
+/* ============================================================================
+ * CONVENIENCE API THREAD SAFETY
+ * ============================================================================ */
+
+/**
+ * poisson_solve() caches one solver per preset; concurrent callers must never
+ * share it, so every caller must reproduce a lone call exactly. Callers alternate
+ * between two grid sizes, so the cached instance is also rebuilt while other
+ * calls are running.
+ */
+void test_poisson_solve_concurrent_callers(void) {
+#ifndef _OPENMP
+    TEST_IGNORE_MESSAGE("Built without OpenMP: no concurrent callers to run");
+#else
+    enum { SIZES = 2, CALLERS = 4, ROUNDS = 25 };
+    static const size_t sizes[SIZES] = { 33, 17 };
+
+    double* rhs[SIZES];
+    double* p_ref[SIZES];
+    int iters_ref[SIZES];
+    for (int s = 0; s < SIZES; s++) {
+        size_t n = sizes[s];
+        double h = 1.0 / (double)(n - 1);
+        rhs[s] = (double*)cfd_calloc(n * n, sizeof(double));
+        p_ref[s] = (double*)cfd_calloc(n * n, sizeof(double));
+        TEST_ASSERT_NOT_NULL(rhs[s]);
+        TEST_ASSERT_NOT_NULL(p_ref[s]);
+        fill_compatible_rhs(rhs[s], n, h);
+        iters_ref[s] = poisson_solve(p_ref[s], NULL, rhs[s], n, n, h, h,
+                                     POISSON_SOLVER_CG_SCALAR);
+        TEST_ASSERT_GREATER_THAN_INT(0, iters_ref[s]);
+    }
+
+    double* p[CALLERS];
+    for (int c = 0; c < CALLERS; c++) {
+        p[c] = (double*)cfd_calloc(sizes[0] * sizes[0], sizeof(double));
+        TEST_ASSERT_NOT_NULL(p[c]);
+    }
+
+    int mismatches = 0;
+    for (int round = 0; round < ROUNDS; round++) {
+        int c;
+#pragma omp parallel for num_threads(CALLERS) schedule(static, 1) reduction(+:mismatches)
+        for (c = 0; c < CALLERS; c++) {
+            int s = (c + round) % SIZES;
+            size_t n = sizes[s];
+            double h = 1.0 / (double)(n - 1);
+            memset(p[c], 0, n * n * sizeof(double));
+            int iters = poisson_solve(p[c], NULL, rhs[s], n, n, h, h,
+                                      POISSON_SOLVER_CG_SCALAR);
+            if (iters != iters_ref[s] || memcmp(p[c], p_ref[s], n * n * sizeof(double)) != 0) {
+                mismatches++;
+            }
+        }
+    }
+
+    for (int c = 0; c < CALLERS; c++) {
+        cfd_free(p[c]);
+    }
+    for (int s = 0; s < SIZES; s++) {
+        cfd_free(rhs[s]);
+        cfd_free(p_ref[s]);
+    }
+    TEST_ASSERT_EQUAL_INT(0, mismatches);
+#endif
+}
+
+/* ============================================================================
+ * SOLVE LOOP STATISTICS
+ * ============================================================================ */
+
+/**
+ * A solve that exhausts max_iterations reports exactly the iterations it ran.
+ * Jacobi has no custom solve, so this runs poisson_solver_solve_common.
+ */
+void test_solve_common_max_iter_reports_iterations_run(void) {
+    const size_t n = 17;
+    const int max_iterations = 3;
+    double h = 1.0 / (double)(n - 1);
+    double* x = (double*)cfd_calloc(n * n, sizeof(double));
+    double* x_temp = (double*)cfd_calloc(n * n, sizeof(double));
+    double* rhs = (double*)cfd_calloc(n * n, sizeof(double));
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(x_temp);
+    TEST_ASSERT_NOT_NULL(rhs);
+    fill_compatible_rhs(rhs, n, h);
+
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_JACOBI,
+                                                     POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+    TEST_ASSERT_NULL_MESSAGE(solver->solve, "Jacobi must use the common solve loop");
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.max_iterations = max_iterations;
+    cfd_status_t init_status = poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = CFD_ERROR;
+    if (init_status == CFD_SUCCESS) {
+        status = poisson_solver_solve(solver, x, x_temp, rhs, &stats);
+    }
+    poisson_solver_destroy(solver);
+    cfd_free(x);
+    cfd_free(x_temp);
+    cfd_free(rhs);
+
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, init_status);
+    TEST_ASSERT_EQUAL(CFD_ERROR_MAX_ITER, status);
+    TEST_ASSERT_EQUAL(POISSON_MAX_ITER, stats.status);
+    TEST_ASSERT_EQUAL_INT(max_iterations, stats.iterations);
+}
+
 /* ============================================================================
  * SIMD BACKEND TESTS (if available)
  * ============================================================================ */
@@ -1136,6 +1271,39 @@ void test_poisson_init_rejects_oversized_grid(void) {
     }
 }
 
+void test_multigrid_init_rejects_oversized_grid(void) {
+    /* Every multigrid backend must reject nx or ny above INT_MAX with
+     * CFD_ERROR_LIMIT_EXCEEDED before allocating any level, whether or not the
+     * dims are 2^k+1: the size check runs before the shape check, which would
+     * report CFD_ERROR_INVALID for nx = 2^31 or for ny = 10. */
+    const poisson_solver_backend_t backends[] = {
+        POISSON_BACKEND_SCALAR,
+        POISSON_BACKEND_OMP,
+    };
+    const size_t dims[][3] = {
+        { (size_t)INT_MAX + 2, 3, 1 },
+        { 3, (size_t)INT_MAX + 2, 1 },
+        { (size_t)INT_MAX + 1, 3, 1 },
+        { (size_t)INT_MAX + 2, 10, 1 },
+    };
+
+    for (size_t b = 0; b < sizeof(backends) / sizeof(backends[0]); b++) {
+        if (!poisson_solver_backend_available(backends[b])) {
+            continue;  /* OMP not built */
+        }
+        for (size_t d = 0; d < sizeof(dims) / sizeof(dims[0]); d++) {
+            poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_MULTIGRID,
+                                                             backends[b]);
+            TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Backend available but multigrid creation failed");
+            cfd_status_t st = poisson_solver_init(solver, dims[d][0], dims[d][1], dims[d][2],
+                                                  0.1, 0.1, 0.0, NULL);
+            const char* name = solver->name;
+            poisson_solver_destroy(solver);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_ERROR_LIMIT_EXCEEDED, st, name);
+        }
+    }
+}
+
 void test_poisson_compute_residual_null_solver(void) {
     /* linear_solver.c:289 — guard: if (!solver || !x || !rhs) return -1.0 */
     double dummy[4] = {0.0, 0.0, 0.0, 0.0};
@@ -1219,6 +1387,7 @@ int main(void) {
     RUN_TEST(test_legacy_poisson_solve_sor);
     RUN_TEST(test_legacy_poisson_solve_jacobi);
     RUN_TEST(test_legacy_poisson_solve_redblack);
+    RUN_TEST(test_poisson_solve_concurrent_callers);
 
     /* SIMD tests */
     RUN_TEST(test_jacobi_simd_if_available);
@@ -1230,6 +1399,7 @@ int main(void) {
 
     /* Statistics tests */
     RUN_TEST(test_stats_timing);
+    RUN_TEST(test_solve_common_max_iter_reports_iterations_run);
 
     /* NULL guard / edge case tests */
     RUN_TEST(test_poisson_create_invalid_method);
@@ -1238,6 +1408,7 @@ int main(void) {
     RUN_TEST(test_poisson_init_ny_too_small);
     RUN_TEST(test_poisson_init_nz_degenerate);
     RUN_TEST(test_poisson_init_rejects_oversized_grid);
+    RUN_TEST(test_multigrid_init_rejects_oversized_grid);
     RUN_TEST(test_poisson_compute_residual_null_solver);
     RUN_TEST(test_poisson_compute_residual_null_arrays);
     RUN_TEST(test_poisson_apply_bc_null);

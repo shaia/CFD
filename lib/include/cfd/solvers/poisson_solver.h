@@ -58,7 +58,7 @@ typedef enum {
     POISSON_METHOD_CG,            /**< Conjugate Gradient (for SPD systems) */
     POISSON_METHOD_BICGSTAB,      /**< BiCGSTAB (for non-symmetric systems) */
     POISSON_METHOD_GMRES,         /**< Restarted GMRES(m) (for non-symmetric systems) */
-    POISSON_METHOD_MULTIGRID      /**< Geometric multigrid (V/W/F cycles, scalar backend) */
+    POISSON_METHOD_MULTIGRID      /**< Geometric multigrid (V/W/F cycles, scalar and OpenMP backends) */
 } poisson_solver_method_t;
 
 /**
@@ -444,6 +444,7 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
 #define POISSON_SOLVER_TYPE_GMRES_OMP         "gmres_omp"
 #define POISSON_SOLVER_TYPE_GMRES_SIMD        "gmres_simd"
 #define POISSON_SOLVER_TYPE_MG_SCALAR         "multigrid_scalar"
+#define POISSON_SOLVER_TYPE_MG_OMP            "multigrid_omp"
 
 /* ============================================================================
  * CONVENIENCE API
@@ -466,8 +467,9 @@ typedef enum {
     POISSON_SOLVER_CG_OMP = 7,         /**< Conjugate Gradient with OpenMP backend */
     POISSON_SOLVER_SOR_SIMD = 8,       /**< SOR with SIMD backend (Block SOR, runtime detection) */
     POISSON_SOLVER_MG_SCALAR = 9,      /**< Geometric multigrid with scalar backend (grid dims must be 2^k+1) */
-    POISSON_SOLVER_PCG_MG_SCALAR = 10  /**< CG with multigrid V-cycle preconditioner, scalar backend
+    POISSON_SOLVER_PCG_MG_SCALAR = 10, /**< CG with multigrid V-cycle preconditioner, scalar backend
                                             (grid dims must be 2^k+1) */
+    POISSON_SOLVER_MG_OMP = 11         /**< Geometric multigrid with OpenMP backend (grid dims must be 2^k+1) */
 } poisson_solver_type;
 
 /** Default Poisson solver - uses runtime SIMD detection */
@@ -477,6 +479,11 @@ typedef enum {
  * Unified Poisson solver function
  *
  * Convenience function that internally uses the poisson_solver interface.
+ * Each preset caches one solver instance, created on first use and rebuilt
+ * when the grid dimensions or spacing change.
+ *
+ * Thread-safe: concurrent calls never share a solver instance. A call that
+ * finds the cached instance in use by another thread creates its own.
  *
  * @param p Pressure field (in/out)
  * @param p_temp Temporary buffer
@@ -496,7 +503,8 @@ CFD_LIBRARY_EXPORT int poisson_solve(
 /**
  * Convenience Poisson solver with 3D support
  *
- * Same caching behavior as poisson_solve(), but accepts nz/dz for 3D grids.
+ * Same caching and thread-safety behavior as poisson_solve(), but accepts nz/dz
+ * for 3D grids.
  * When nz=1 and dz=0.0, behavior is identical to poisson_solve().
  *
  * @param nz    Number of grid points in z (1 for 2D)

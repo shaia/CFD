@@ -645,6 +645,12 @@ cfd_set_error(CFD_ERROR_NOMEM, "Thread 2 error");
 const char* msg = cfd_get_last_error();  // Returns "Thread 2 error"
 ```
 
+### Poisson Convenience API
+
+`poisson_solve()` and `poisson_solve_3d()` cache one solver instance per preset and are
+safe to call concurrently: a call takes the cached instance for its duration, so a
+concurrent call for the same preset builds its own instead of sharing it.
+
 ### OpenMP Safety
 
 ```c

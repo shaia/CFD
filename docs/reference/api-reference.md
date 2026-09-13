@@ -458,7 +458,7 @@ typedef enum {
     POISSON_METHOD_CG,            // Conjugate Gradient (SPD systems)
     POISSON_METHOD_BICGSTAB,      // BiCGSTAB (non-symmetric systems)
     POISSON_METHOD_GMRES,         // Restarted GMRES(m) (scalar/SIMD/OMP)
-    POISSON_METHOD_MULTIGRID      // Geometric multigrid V/W/F cycles (scalar; dims 2^k+1)
+    POISSON_METHOD_MULTIGRID      // Geometric multigrid V/W/F cycles (scalar/OMP; dims 2^k+1)
 } poisson_solver_method_t;
 ```
 
@@ -512,6 +512,10 @@ poisson_solver_params_t poisson_solver_params_default(void);
 > Multigrid requires 2^k+1 grid points per active dimension (e.g. 33, 65, 129);
 > `poisson_solver_init` returns `CFD_ERROR_INVALID` otherwise. In the default
 > `MG_BC_NEUMANN` mode the solution is defined up to an additive constant.
+> Multigrid has scalar and OpenMP backends: `POISSON_BACKEND_AUTO` picks scalar
+> (AUTO prefers SIMD, which multigrid lacks), so request `POISSON_BACKEND_OMP`
+> (or the `POISSON_SOLVER_MG_OMP` preset) explicitly; its results are
+> bit-identical to scalar.
 
 `poisson_precond_type_t` values: `POISSON_PRECOND_NONE` (0, default),
 `POISSON_PRECOND_JACOBI` (1), `POISSON_PRECOND_MULTIGRID` (2 — one MG V-cycle

@@ -30,6 +30,9 @@
     #include <sys/time.h>
 #endif
 
+/* After <windows.h>: this header includes it without WIN32_LEAN_AND_MEAN */
+#include "../../core/cfd_threading_internal.h"
+
 /* ============================================================================
  * DEFAULT PARAMETERS
  * ============================================================================ */
@@ -279,14 +282,24 @@ poisson_solver_t* poisson_solver_create(
             }
 
         case POISSON_METHOD_MULTIGRID:
-            /* Only the scalar backend exists. AUTO means "best available",
-             * which for multigrid IS scalar; explicit SIMD/OMP/GPU requests
+            /* No SIMD/GPU multigrid. AUTO means "best available", which
+             * select_best_backend() resolves to SIMD — a backend multigrid
+             * lacks — so AUTO keeps resolving to the scalar reference. OMP is
+             * opt-in, as for every other method; explicit SIMD/GPU requests
              * return NULL (no silent fallbacks). */
-            if (requested == POISSON_BACKEND_AUTO ||
-                backend == POISSON_BACKEND_SCALAR) {
+            if (requested == POISSON_BACKEND_AUTO) {
                 return create_multigrid_scalar_solver();
             }
-            return backend_unavailable("multigrid");
+            switch (backend) {
+#ifdef CFD_ENABLE_OPENMP
+                case POISSON_BACKEND_OMP:
+                    return create_multigrid_omp_solver();
+#endif
+                case POISSON_BACKEND_SCALAR:
+                    return create_multigrid_scalar_solver();
+                default:
+                    return backend_unavailable("multigrid");
+            }
 
         default:
             cfd_set_error(CFD_ERROR_INVALID, "Unknown Poisson solver method");
@@ -527,7 +540,9 @@ cfd_status_t poisson_solver_solve_common(
     double end_time = poisson_solver_get_time_ms();
 
     if (stats) {
-        stats->iterations = iter + 1;
+        /* A converged break leaves iter at the index of the last iteration run;
+         * an exhausted loop leaves it at max_iterations, the count run */
+        stats->iterations = converged ? iter + 1 : iter;
         stats->final_residual = res;
         stats->elapsed_time_ms = end_time - start_time;
         stats->status = converged ? POISSON_CONVERGED : POISSON_MAX_ITER;
@@ -583,69 +598,51 @@ cfd_status_t poisson_solver_iterate(
  * ============================================================================ */
 
 /*
- * Cached solver instances for poisson_solve() convenience API.
- * Avoids creating/destroying solvers on each call.
+ * Cached solver instances for the poisson_solve() convenience API, one slot per
+ * preset, so repeated calls skip solver creation.
+ *
+ * A call takes the instance out of its slot and puts it back when it returns.
+ * A concurrent call for the same preset finds the slot empty and builds its own
+ * instance, so two threads never share one, and an instance left in a slot is
+ * always idle.
  */
-static poisson_solver_t* g_cached_jacobi_simd = NULL;
-static poisson_solver_t* g_cached_sor = NULL;
-static poisson_solver_t* g_cached_sor_simd = NULL;
-static poisson_solver_t* g_cached_redblack_simd = NULL;
-static poisson_solver_t* g_cached_redblack_omp = NULL;
-static poisson_solver_t* g_cached_redblack_scalar = NULL;
-static poisson_solver_t* g_cached_cg_scalar = NULL;
-static poisson_solver_t* g_cached_cg_omp = NULL;
-static poisson_solver_t* g_cached_cg_simd = NULL;
-static poisson_solver_t* g_cached_mg_scalar = NULL;
-static poisson_solver_t* g_cached_pcg_mg_scalar = NULL;
+static cfd_atomic_ptr g_cached_jacobi_simd;
+static cfd_atomic_ptr g_cached_sor;
+static cfd_atomic_ptr g_cached_sor_simd;
+static cfd_atomic_ptr g_cached_redblack_simd;
+static cfd_atomic_ptr g_cached_redblack_omp;
+static cfd_atomic_ptr g_cached_redblack_scalar;
+static cfd_atomic_ptr g_cached_cg_scalar;
+static cfd_atomic_ptr g_cached_cg_omp;
+static cfd_atomic_ptr g_cached_cg_simd;
+static cfd_atomic_ptr g_cached_mg_scalar;
+static cfd_atomic_ptr g_cached_mg_omp;
+static cfd_atomic_ptr g_cached_pcg_mg_scalar;
+
+/* Set to 1 once cleanup_cached_solvers is registered with atexit */
+static cfd_atomic_int g_cleanup_registered = 0;
+
+/** Empty a cache slot, returning the instance it held (NULL if none) */
+static poisson_solver_t* take_cached_solver(cfd_atomic_ptr* slot) {
+    return (poisson_solver_t*)cfd_atomic_ptr_exchange(slot, NULL);
+}
 
 /**
  * Cleanup cached solvers (called at program exit)
  */
 static void cleanup_cached_solvers(void) {
-    if (g_cached_jacobi_simd) {
-        poisson_solver_destroy(g_cached_jacobi_simd);
-        g_cached_jacobi_simd = NULL;
-    }
-    if (g_cached_sor) {
-        poisson_solver_destroy(g_cached_sor);
-        g_cached_sor = NULL;
-    }
-    if (g_cached_sor_simd) {
-        poisson_solver_destroy(g_cached_sor_simd);
-        g_cached_sor_simd = NULL;
-    }
-    if (g_cached_redblack_simd) {
-        poisson_solver_destroy(g_cached_redblack_simd);
-        g_cached_redblack_simd = NULL;
-    }
-    if (g_cached_redblack_omp) {
-        poisson_solver_destroy(g_cached_redblack_omp);
-        g_cached_redblack_omp = NULL;
-    }
-    if (g_cached_redblack_scalar) {
-        poisson_solver_destroy(g_cached_redblack_scalar);
-        g_cached_redblack_scalar = NULL;
-    }
-    if (g_cached_cg_scalar) {
-        poisson_solver_destroy(g_cached_cg_scalar);
-        g_cached_cg_scalar = NULL;
-    }
-    if (g_cached_cg_omp) {
-        poisson_solver_destroy(g_cached_cg_omp);
-        g_cached_cg_omp = NULL;
-    }
-    if (g_cached_cg_simd) {
-        poisson_solver_destroy(g_cached_cg_simd);
-        g_cached_cg_simd = NULL;
-    }
-    if (g_cached_mg_scalar) {
-        poisson_solver_destroy(g_cached_mg_scalar);
-        g_cached_mg_scalar = NULL;
-    }
-    if (g_cached_pcg_mg_scalar) {
-        poisson_solver_destroy(g_cached_pcg_mg_scalar);
-        g_cached_pcg_mg_scalar = NULL;
-    }
+    poisson_solver_destroy(take_cached_solver(&g_cached_jacobi_simd));
+    poisson_solver_destroy(take_cached_solver(&g_cached_sor));
+    poisson_solver_destroy(take_cached_solver(&g_cached_sor_simd));
+    poisson_solver_destroy(take_cached_solver(&g_cached_redblack_simd));
+    poisson_solver_destroy(take_cached_solver(&g_cached_redblack_omp));
+    poisson_solver_destroy(take_cached_solver(&g_cached_redblack_scalar));
+    poisson_solver_destroy(take_cached_solver(&g_cached_cg_scalar));
+    poisson_solver_destroy(take_cached_solver(&g_cached_cg_omp));
+    poisson_solver_destroy(take_cached_solver(&g_cached_cg_simd));
+    poisson_solver_destroy(take_cached_solver(&g_cached_mg_scalar));
+    poisson_solver_destroy(take_cached_solver(&g_cached_mg_omp));
+    poisson_solver_destroy(take_cached_solver(&g_cached_pcg_mg_scalar));
 }
 
 int poisson_solve_3d(
@@ -654,73 +651,79 @@ int poisson_solve_3d(
     double dx, double dy, double dz,
     poisson_solver_type solver_type)
 {
-    poisson_solver_t** solver_ptr;
+    cfd_atomic_ptr* slot;
     poisson_solver_method_t method;
     poisson_solver_backend_t backend;
 
     switch (solver_type) {
         case POISSON_SOLVER_JACOBI_SIMD:
-            solver_ptr = &g_cached_jacobi_simd;
+            slot = &g_cached_jacobi_simd;
             method = POISSON_METHOD_JACOBI;
             backend = POISSON_BACKEND_SIMD;
             break;
 
         case POISSON_SOLVER_REDBLACK_SIMD:
-            solver_ptr = &g_cached_redblack_simd;
+            slot = &g_cached_redblack_simd;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SIMD;
             break;
 
         case POISSON_SOLVER_REDBLACK_OMP:
-            solver_ptr = &g_cached_redblack_omp;
+            slot = &g_cached_redblack_omp;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_OMP;
             break;
 
         case POISSON_SOLVER_SOR_SCALAR:
-            solver_ptr = &g_cached_sor;
+            slot = &g_cached_sor;
             method = POISSON_METHOD_SOR;
             backend = POISSON_BACKEND_SCALAR;
             break;
 
         case POISSON_SOLVER_REDBLACK_SCALAR:
-            solver_ptr = &g_cached_redblack_scalar;
+            slot = &g_cached_redblack_scalar;
             method = POISSON_METHOD_REDBLACK_SOR;
             backend = POISSON_BACKEND_SCALAR;
             break;
 
         case POISSON_SOLVER_CG_SCALAR:
-            solver_ptr = &g_cached_cg_scalar;
+            slot = &g_cached_cg_scalar;
             method = POISSON_METHOD_CG;
             backend = POISSON_BACKEND_SCALAR;
             break;
 
         case POISSON_SOLVER_CG_SIMD:
-            solver_ptr = &g_cached_cg_simd;
+            slot = &g_cached_cg_simd;
             method = POISSON_METHOD_CG;
             backend = POISSON_BACKEND_SIMD;
             break;
 
         case POISSON_SOLVER_CG_OMP:
-            solver_ptr = &g_cached_cg_omp;
+            slot = &g_cached_cg_omp;
             method = POISSON_METHOD_CG;
             backend = POISSON_BACKEND_OMP;
             break;
 
         case POISSON_SOLVER_SOR_SIMD:
-            solver_ptr = &g_cached_sor_simd;
+            slot = &g_cached_sor_simd;
             method = POISSON_METHOD_SOR;
             backend = POISSON_BACKEND_SIMD;
             break;
 
         case POISSON_SOLVER_MG_SCALAR:
-            solver_ptr = &g_cached_mg_scalar;
+            slot = &g_cached_mg_scalar;
             method = POISSON_METHOD_MULTIGRID;
             backend = POISSON_BACKEND_SCALAR;
             break;
 
+        case POISSON_SOLVER_MG_OMP:
+            slot = &g_cached_mg_omp;
+            method = POISSON_METHOD_MULTIGRID;
+            backend = POISSON_BACKEND_OMP;
+            break;
+
         case POISSON_SOLVER_PCG_MG_SCALAR:
-            solver_ptr = &g_cached_pcg_mg_scalar;
+            slot = &g_cached_pcg_mg_scalar;
             method = POISSON_METHOD_CG;
             backend = POISSON_BACKEND_SCALAR;
             break;
@@ -730,68 +733,55 @@ int poisson_solve_3d(
             return -1;
     }
 
-    /* Recreate solver if grid dimensions or spacing changed.
-     * Compare against the solver's own stored dimensions, not shared globals,
-     * because each solver type is cached independently. */
-    if (*solver_ptr == NULL
-        || (*solver_ptr)->nx != nx || (*solver_ptr)->ny != ny
-        || (*solver_ptr)->nz != nz
-        || (*solver_ptr)->dx != dx || (*solver_ptr)->dy != dy
-        || (*solver_ptr)->dz != dz) {
-        /* Register cleanup on first use */
-        static int cleanup_registered = 0;
-        if (!cleanup_registered) {
-            atexit(cleanup_cached_solvers);
-            cleanup_registered = 1;
-        }
+    /* This call owns the cached instance until it puts it back */
+    poisson_solver_t* solver = take_cached_solver(slot);
 
-        /* Destroy old solver if exists */
-        if (*solver_ptr) {
-            poisson_solver_destroy(*solver_ptr);
-            *solver_ptr = NULL;
-        }
-
-        /* Create new solver. A failed init (e.g. multigrid on non-2^k+1
-         * dims) must not leave a broken solver in the cache. */
-        *solver_ptr = poisson_solver_create(method, backend);
-
-        if (*solver_ptr) {
-            /* The convenience API has no params argument, so the PCG_MG
-             * preset carries its preconditioner into the cached instance. */
-            poisson_solver_params_t pcg_mg_params;
-            const poisson_solver_params_t* init_params = NULL;
-            if (solver_type == POISSON_SOLVER_PCG_MG_SCALAR) {
-                pcg_mg_params = poisson_solver_params_default();
-                pcg_mg_params.preconditioner = POISSON_PRECOND_MULTIGRID;
-                init_params = &pcg_mg_params;
-            }
-
-            cfd_status_t init_status =
-                poisson_solver_init(*solver_ptr, nx, ny, nz, dx, dy, dz, init_params);
-            if (init_status != CFD_SUCCESS) {
-                poisson_solver_destroy(*solver_ptr);
-                *solver_ptr = NULL;
-            }
-        }
+    /* Recreate the solver if grid dimensions or spacing changed */
+    if (solver
+        && (solver->nx != nx || solver->ny != ny || solver->nz != nz
+            || solver->dx != dx || solver->dy != dy || solver->dz != dz)) {
+        poisson_solver_destroy(solver);
+        solver = NULL;
     }
 
-    if (!*solver_ptr) {
-        return -1;
+    if (!solver) {
+        /* Register cleanup on first use */
+        if (cfd_atomic_cas(&g_cleanup_registered, 0, 1)) {
+            atexit(cleanup_cached_solvers);
+        }
+
+        solver = poisson_solver_create(method, backend);
+        if (!solver) {
+            return -1;
+        }
+
+        /* The convenience API has no params argument, so the PCG_MG
+         * preset carries its preconditioner into the cached instance. */
+        poisson_solver_params_t pcg_mg_params;
+        const poisson_solver_params_t* init_params = NULL;
+        if (solver_type == POISSON_SOLVER_PCG_MG_SCALAR) {
+            pcg_mg_params = poisson_solver_params_default();
+            pcg_mg_params.preconditioner = POISSON_PRECOND_MULTIGRID;
+            init_params = &pcg_mg_params;
+        }
+
+        /* A failed init (e.g. multigrid on non-2^k+1 dims) must not leave a
+         * broken solver in the cache. */
+        if (poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, init_params) != CFD_SUCCESS) {
+            poisson_solver_destroy(solver);
+            return -1;
+        }
     }
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
-    cfd_status_t status = poisson_solver_solve(*solver_ptr, p, p_temp, rhs, &stats);
+    cfd_status_t status = poisson_solver_solve(solver, p, p_temp, rhs, &stats);
 
-    if (status == CFD_SUCCESS && stats.status == POISSON_CONVERGED) {
-        return stats.iterations;
-    }
+    /* Put the instance back. Anything it displaces was put back by a concurrent
+     * call and is idle. */
+    poisson_solver_destroy((poisson_solver_t*)cfd_atomic_ptr_exchange(slot, solver));
 
-    /* Return iterations even if not converged (legacy behavior) */
-    if (stats.iterations > 0) {
-        return -1;  /* Signal non-convergence */
-    }
-
-    return -1;
+    return (status == CFD_SUCCESS && stats.status == POISSON_CONVERGED)
+        ? stats.iterations : -1;
 }
 
 int poisson_solve(

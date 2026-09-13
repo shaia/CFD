@@ -3,7 +3,8 @@
  * @brief Geometric multigrid solver convergence and API tests
  *
  * Tests cover:
- *   - Creation / initialization / backend rules (AUTO -> scalar, others NULL)
+ *   - Creation / initialization / backend rules (AUTO -> scalar, OMP when
+ *     built, SIMD/GPU NULL)
  *   - Grid dimension validation (2^k+1 per active dimension)
  *   - V(2,2) per-cycle convergence factor < 0.15 (Dirichlet, acceptance)
  *   - Grid-size-independent cycle counts, 9x9 .. 129x129 (acceptance)
@@ -148,18 +149,30 @@ void test_mg_create_init_metadata(void) {
         solver, 33, 33, 1, 1.0 / 32.0, 1.0 / 32.0, 0.0, NULL));
     poisson_solver_destroy(solver);
 
-    /* AUTO resolves to the only (hence best) available backend: scalar */
+    /* AUTO resolves to scalar: it prefers SIMD, which multigrid lacks, and
+     * never picks OMP implicitly */
     solver = poisson_solver_create(POISSON_METHOD_MULTIGRID,
                                    POISSON_BACKEND_AUTO);
     TEST_ASSERT_NOT_NULL(solver);
     TEST_ASSERT_EQUAL(POISSON_BACKEND_SCALAR, solver->backend);
     poisson_solver_destroy(solver);
 
-    /* Explicit non-scalar backends: no silent fallbacks */
+    /* OMP multigrid exists whenever the OMP backend is built; a NULL solver
+     * while the backend is available is a regression, not a skip */
+    solver = poisson_solver_create(POISSON_METHOD_MULTIGRID, POISSON_BACKEND_OMP);
+    if (poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
+        TEST_ASSERT_NOT_NULL_MESSAGE(solver,
+            "OMP backend available but OMP multigrid solver creation returned NULL");
+        TEST_ASSERT_EQUAL(POISSON_BACKEND_OMP, solver->backend);
+        TEST_ASSERT_EQUAL_STRING("multigrid_omp", solver->name);
+        poisson_solver_destroy(solver);
+    } else {
+        TEST_ASSERT_NULL(solver);
+    }
+
+    /* Explicit SIMD/GPU backends: no silent fallbacks */
     TEST_ASSERT_NULL(poisson_solver_create(POISSON_METHOD_MULTIGRID,
                                            POISSON_BACKEND_SIMD));
-    TEST_ASSERT_NULL(poisson_solver_create(POISSON_METHOD_MULTIGRID,
-                                           POISSON_BACKEND_OMP));
     TEST_ASSERT_NULL(poisson_solver_create(POISSON_METHOD_MULTIGRID,
                                            POISSON_BACKEND_GPU));
 }

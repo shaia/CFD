@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Geometric multigrid OpenMP backend** — `poisson_solver_create(POISSON_METHOD_MULTIGRID,
+  POISSON_BACKEND_OMP)` (`multigrid_omp`) and the `POISSON_SOLVER_MG_OMP`
+  convenience preset. The algorithm now lives in one template shared with the
+  scalar solver; the OpenMP backend supplies row-parallel smoother, residual,
+  restriction/prolongation and boundary primitives with no parallel reductions
+  (the Neumann interior mean and the convergence residual stay serial), so its
+  solutions are bit-identical to `multigrid_scalar` at any thread count (verified
+  over a V/W/F x smoother x BC-mode matrix at 1, 2 and 4 threads). A kernel uses the
+  thread team only when its loop covers at least 32,768 points of a plane; smaller
+  loops (the coarser levels, small grids) run on the calling thread, where a team
+  would cost more than the work.
+  `POISSON_BACKEND_AUTO` still resolves multigrid to scalar; request OMP
+  explicitly. Both multigrid backends now reject grids whose `nx` or `ny`
+  exceeds `INT_MAX` with `CFD_ERROR_LIMIT_EXCEEDED` at init. The multigrid
+  pressure solve in `projection_omp` and MG preconditioning for OMP CG remain
+  follow-ups (`lib/src/solvers/linear/multigrid_template/linear_solver_multigrid_template.h`,
+  `lib/src/solvers/linear/omp/linear_solver_multigrid_omp.c`,
+  `lib/src/solvers/linear/cpu/linear_solver_multigrid.c`,
+  `tests/math/test_omp_consistency.c`, `tests/math/test_multigrid_convergence.c`,
+  `tests/solvers/test_linear_solver.c`).
 - **Jacobi and BiCGSTAB OpenMP backends** — completes the OpenMP linear-solver
   tier (previously CG, GMRES, and Red-Black SOR). Both are selectable via
   `poisson_solver_create(method, POISSON_BACKEND_OMP)`; per-element updates are
@@ -76,6 +96,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose `nx*ny*nz` overflows `size_t`, with `CFD_ERROR_LIMIT_EXCEEDED` at init. Their
   primitives loop over `int` bounds, which such grids silently truncated (`cg_omp`) or
   emptied (`bicgstab_simd`, where a solve then reported convergence from a zero residual).
+- `poisson_solve()` and `poisson_solve_3d()` are safe to call from several threads. Their
+  per-preset solver cache handed the same instance to concurrent callers, and a
+  function-static flag guarded the `atexit` cleanup registration. A call now takes the
+  cached instance out of an atomic slot for its duration, so a concurrent call builds its
+  own (`lib/src/solvers/linear/linear_solver.c`, `lib/src/core/cfd_threading_internal.h`,
+  `tests/solvers/test_linear_solver.c`).
+- Solvers on the shared solve loop (Jacobi, SOR, Red-Black SOR and multigrid on every CPU
+  backend) reported one more iteration than they ran when they exhausted
+  `max_iterations`; `stats.iterations` now counts the iterations performed, as CG,
+  BiCGSTAB and GMRES already did (`lib/src/solvers/linear/linear_solver.c`,
+  `tests/solvers/test_linear_solver.c`, `tests/math/test_omp_consistency.c`).
 
 ## [0.3.0] - 2026-06-23
 

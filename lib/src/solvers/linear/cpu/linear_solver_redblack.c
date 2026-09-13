@@ -74,8 +74,8 @@ static void redblack_scalar_destroy(poisson_solver_t* solver) {
 /**
  * Red-Black SOR iteration (scalar)
  *
- * Red cells: (i+j) % 2 == 0
- * Black cells: (i+j) % 2 == 1
+ * Red cells: (i+j+k) % 2 == 1
+ * Black cells: (i+j+k) % 2 == 0
  */
 static cfd_status_t redblack_scalar_iterate(
     poisson_solver_t* solver,
@@ -97,7 +97,7 @@ static cfd_status_t redblack_scalar_iterate(
     size_t stride_z = ctx->stride_z;
     double inv_dz2 = ctx->inv_dz2;
 
-    /* Red sweep: (i+j+k) % 2 == 0 */
+    /* Red sweep: (i+j+k) % 2 == 1 */
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
         for (size_t j = 1; j < ny - 1; j++) {
             size_t i_start = ((j + k) % 2 == 0) ? 1 : 2;
@@ -116,7 +116,7 @@ static cfd_status_t redblack_scalar_iterate(
         }
     }
 
-    /* Black sweep: (i+j+k) % 2 == 1 */
+    /* Black sweep: (i+j+k) % 2 == 0 */
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
         for (size_t j = 1; j < ny - 1; j++) {
             size_t i_start = ((j + k) % 2 == 0) ? 2 : 1;

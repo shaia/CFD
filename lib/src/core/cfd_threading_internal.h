@@ -36,6 +36,11 @@ static inline void cfd_atomic_ptr_store(cfd_atomic_ptr* ptr, void* value) {
     InterlockedExchangePointer(ptr, value);
 }
 
+/** Store value and return the previous pointer, as one atomic step */
+static inline void* cfd_atomic_ptr_exchange(cfd_atomic_ptr* ptr, void* value) {
+    return InterlockedExchangePointer(ptr, value);
+}
+
 #else
 #include <stdatomic.h>
 
@@ -67,6 +72,10 @@ static inline void* cfd_atomic_ptr_load(cfd_atomic_ptr* ptr) {
 
 static inline void cfd_atomic_ptr_store(cfd_atomic_ptr* ptr, void* value) {
     atomic_store(ptr, (uintptr_t)value);
+}
+
+static inline void* cfd_atomic_ptr_exchange(cfd_atomic_ptr* ptr, void* value) {
+    return (void*)atomic_exchange(ptr, (uintptr_t)value);
 }
 
 #endif

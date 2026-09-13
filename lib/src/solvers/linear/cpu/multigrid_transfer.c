@@ -4,6 +4,8 @@
  *
  * Pure array math with no library runtime dependencies, so the operator unit
  * test can compile this translation unit directly (see multigrid_internal.h).
+ * The OpenMP multigrid backend has row-parallel counterparts with the same
+ * arithmetic in omp/linear_solver_multigrid_omp.c.
  *
  * Grid relationship: nxf = 2*nxc - 1 (fine dims are 2^k+1, coarse (2^(k-1))+1).
  * Coarse interior point (I,J,K) sits at fine point (2I,2J,2K); its
@@ -19,19 +21,6 @@
 /* ============================================================================
  * RESTRICTION (fine -> coarse, full weighting)
  * ============================================================================ */
-
-/**
- * Per-dimension 1D restriction weights at a coarse index: (1,2,1) in the
- * interior. With fold_neumann, the toward-boundary weight doubles at
- * boundary-adjacent coarse points (I==1 and/or I==n_coarse-2) — the exact
- * adjoint of prolongation through mirrored (zero-gradient) ghost values.
- */
-static void mg_weights_1d(size_t idx, size_t n_coarse, int fold_neumann,
-                          double w[3]) {
-    w[0] = (fold_neumann && idx == 1) ? 2.0 : 1.0;
-    w[1] = 2.0;
-    w[2] = (fold_neumann && idx == n_coarse - 2) ? 2.0 : 1.0;
-}
 
 void mg_restrict_2d(const double* fine, double* coarse,
                     size_t nxf, size_t nyf, size_t nxc, size_t nyc,
@@ -164,24 +153,6 @@ void mg_prolongate_add_3d(const double* coarse, double* fine,
 /* ============================================================================
  * INTERIOR MEAN (Neumann nullspace handling)
  * ============================================================================ */
-
-double mg_interior_mean(const double* f, size_t nx, size_t ny, size_t nz) {
-    size_t stride_z = (nz > 1) ? nx * ny : 0;
-    size_t k_start = (nz > 1) ? 1 : 0;
-    size_t k_end = (nz > 1) ? nz - 1 : 1;
-
-    double sum = 0.0;
-    size_t count = 0;
-    for (size_t k = k_start; k < k_end; k++) {
-        for (size_t j = 1; j < ny - 1; j++) {
-            for (size_t i = 1; i < nx - 1; i++) {
-                sum += f[k * stride_z + IDX_2D(i, j, nx)];
-                count++;
-            }
-        }
-    }
-    return (count > 0) ? sum / (double)count : 0.0;
-}
 
 void mg_subtract_interior_mean(double* f, size_t nx, size_t ny, size_t nz) {
     double mean = mg_interior_mean(f, nx, ny, nz);

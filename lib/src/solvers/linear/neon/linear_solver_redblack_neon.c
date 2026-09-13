@@ -219,7 +219,7 @@ static cfd_status_t redblack_neon_iterate(
     size_t stride_z = ctx->stride_z;
     int ny_int = size_to_int(ny);
 
-    /* Red sweep: (i+j+k) % 2 == 0 */
+    /* Red sweep: (i+j+k) % 2 == 1 */
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
         size_t k_offset = k * stride_z;
         int j;
@@ -230,7 +230,7 @@ static cfd_status_t redblack_neon_iterate(
         }
     }
 
-    /* Black sweep: (i+j+k) % 2 == 1 */
+    /* Black sweep: (i+j+k) % 2 == 0 */
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
         size_t k_offset = k * stride_z;
         int j;
