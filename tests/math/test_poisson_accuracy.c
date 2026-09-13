@@ -434,20 +434,28 @@ void test_zero_rhs_redblack(void) {
  * Use Dirichlet BCs (enforce analytical solution on boundary).
  */
 
+/* apply_bc hook holding the walls at the quadratic solution */
+static void hold_quadratic_walls(poisson_solver_t* solver, double* p) {
+    apply_quadratic_bc(p, solver->nx, solver->ny, solver->dx, solver->dy);
+}
+
 /**
- * Custom solver loop for quadratic solution with Dirichlet BCs
+ * Custom solver loop for quadratic solution with Dirichlet BCs.
+ *
+ * The walls are held through solver->apply_bc, the hook the solver applies after
+ * each sweep and before it measures the residual. Writing them after
+ * poisson_solver_iterate() instead would leave apply_bc NULL, which tells the SOR
+ * solvers the walls are zero-gradient copies of the interior.
  */
 static int solve_quadratic_with_dirichlet_bc(poisson_solver_t* solver,
                                               double* p, double* p_temp, const double* rhs,
-                                              size_t nx, size_t ny, double dx, double dy,
                                               int max_iters, double tol) {
     double residual = 0.0;
+    solver->apply_bc = hold_quadratic_walls;
 
     for (int iter = 0; iter < max_iters; iter++) {
         cfd_status_t status = poisson_solver_iterate(solver, p, p_temp, rhs, &residual);
         if (status != CFD_SUCCESS) return -1;
-
-        apply_quadratic_bc(p, nx, ny, dx, dy);
 
         if (residual < tol) {
             return iter + 1;
@@ -489,7 +497,7 @@ void test_uniform_rhs_jacobi(void) {
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
 
     int iters = solve_quadratic_with_dirichlet_bc(solver, p, p_temp, rhs,
-                                                   nx, ny, dx, dy, 10000, 1e-10);
+                                                   10000, 1e-10);
     printf("      Iterations: %d\n", iters);
 
     double l2_error = compute_l2_error(p, analytical, nx, ny);
@@ -538,7 +546,7 @@ void test_uniform_rhs_sor(void) {
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
 
     int iters = solve_quadratic_with_dirichlet_bc(solver, p, NULL, rhs,
-                                                   nx, ny, dx, dy, 10000, 1e-10);
+                                                   10000, 1e-10);
     printf("      Iterations: %d\n", iters);
 
     double l2_error = compute_l2_error(p, analytical, nx, ny);
@@ -586,7 +594,7 @@ void test_uniform_rhs_redblack(void) {
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
 
     int iters = solve_quadratic_with_dirichlet_bc(solver, p, NULL, rhs,
-                                                   nx, ny, dx, dy, 10000, 1e-10);
+                                                   10000, 1e-10);
     printf("      Iterations: %d\n", iters);
 
     double l2_error = compute_l2_error(p, analytical, nx, ny);
@@ -612,22 +620,29 @@ void test_uniform_rhs_redblack(void) {
  * Use Dirichlet BCs (enforce analytical solution on boundary) for this test.
  */
 
+/* apply_bc hook holding the walls at the sinusoidal solution */
+static void hold_sinusoidal_walls(poisson_solver_t* solver, double* p) {
+    apply_sinusoidal_bc(p, solver->nx, solver->ny, solver->dx, solver->dy);
+}
+
 /**
- * Custom solver loop that applies Dirichlet BCs after each iteration
+ * Custom solver loop with the walls held at the analytical solution.
+ *
+ * The walls are held through solver->apply_bc, the hook the solver applies after
+ * each sweep and before it measures the residual. Writing them after
+ * poisson_solver_iterate() instead would leave apply_bc NULL, which tells the SOR
+ * solvers the walls are zero-gradient copies of the interior.
  */
 static int solve_with_dirichlet_bc(poisson_solver_t* solver,
                                     double* p, double* p_temp, const double* rhs,
-                                    size_t nx, size_t ny, double dx, double dy,
                                     int max_iter, double tolerance) {
     double residual = 0.0;
+    solver->apply_bc = hold_sinusoidal_walls;
 
     for (int iter = 0; iter < max_iter; iter++) {
         /* Perform one iteration */
         cfd_status_t status = poisson_solver_iterate(solver, p, p_temp, rhs, &residual);
         if (status != CFD_SUCCESS) return -1;
-
-        /* Apply Dirichlet BCs */
-        apply_sinusoidal_bc(p, nx, ny, dx, dy);
 
         /* Check convergence */
         if (residual < tolerance) {
@@ -672,7 +687,6 @@ void test_sinusoidal_rhs_jacobi(void) {
 
     /* Solve with Dirichlet BCs */
     int iterations = solve_with_dirichlet_bc(solver, p, p_temp, rhs,
-                                              nx, ny, dx, dy,
                                               MAX_ITERATIONS, SOLVER_TOLERANCE);
 
     double l2_error = compute_l2_error(p, analytical, nx, ny);
@@ -724,7 +738,6 @@ void test_sinusoidal_rhs_sor(void) {
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
 
     int iterations = solve_with_dirichlet_bc(solver, p, NULL, rhs,
-                                              nx, ny, dx, dy,
                                               MAX_ITERATIONS, SOLVER_TOLERANCE);
 
     double l2_error = compute_l2_error(p, analytical, nx, ny);
@@ -774,7 +787,6 @@ void test_sinusoidal_rhs_redblack(void) {
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
 
     int iterations = solve_with_dirichlet_bc(solver, p, NULL, rhs,
-                                              nx, ny, dx, dy,
                                               MAX_ITERATIONS, SOLVER_TOLERANCE);
 
     double l2_error = compute_l2_error(p, analytical, nx, ny);
@@ -841,7 +853,7 @@ void test_grid_convergence_jacobi(void) {
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
-        solve_with_dirichlet_bc(solver, p, p_temp, rhs, n, n, dx, dy, 10000, 1e-10);
+        solve_with_dirichlet_bc(solver, p, p_temp, rhs, 10000, 1e-10);
 
         errors[s] = compute_l2_error(p, analytical, n, n);
         printf("      %zux%zu: L2 error = %.6e\n", n, n, errors[s]);
@@ -906,7 +918,7 @@ void test_grid_convergence_sor(void) {
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
-        solve_with_dirichlet_bc(solver, p, NULL, rhs, n, n, dx, dy, 10000, 1e-10);
+        solve_with_dirichlet_bc(solver, p, NULL, rhs, 10000, 1e-10);
 
         errors[s] = compute_l2_error(p, analytical, n, n);
         printf("      %zux%zu: L2 error = %.6e\n", n, n, errors[s]);
@@ -968,7 +980,7 @@ void test_grid_convergence_redblack(void) {
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
-        solve_with_dirichlet_bc(solver, p, NULL, rhs, n, n, dx, dy, 10000, 1e-10);
+        solve_with_dirichlet_bc(solver, p, NULL, rhs, 10000, 1e-10);
 
         errors[s] = compute_l2_error(p, analytical, n, n);
         printf("      %zux%zu: L2 error = %.6e\n", n, n, errors[s]);
@@ -1179,7 +1191,7 @@ void test_solver_comparison(void) {
         cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
         int iterations = solve_with_dirichlet_bc(solver, p, p_temp, rhs,
-                                                  nx, ny, dx, dy, 10000, 1e-10);
+                                                  10000, 1e-10);
 
         double l2_error = compute_l2_error(p, analytical, nx, ny);
         printf("      %s: L2 error = %.6e, iterations = %d\n",

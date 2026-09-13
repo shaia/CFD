@@ -44,8 +44,11 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
+    double inv_dx2;    /* 1/dx^2 */
+    double inv_dy2;    /* 1/dy^2 */
     double inv_dz2;    /* 1/dz^2 (0.0 for 2D) */
-    double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2 + inv_dz2)) */
+    double factor;     /* 2 * (1/dx^2 + 1/dy^2 + inv_dz2) */
+    double inv_factor; /* 1 / factor */
     double omega;      /* SOR relaxation parameter */
     size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
     size_t k_start;    /* first interior k index */
@@ -54,7 +57,6 @@ typedef struct {
     float64x2_t dy2_inv_vec;
     float64x2_t dz2_inv_vec;
     float64x2_t neg_inv_factor_vec;
-    float64x2_t omega_vec;
     int initialized;
 } redblack_neon_context_t;
 
@@ -79,6 +81,8 @@ static inline int size_to_int(size_t sz) {
  * @param nx       Grid width
  * @param stride_z Stride between z-planes (nx*ny for 3D, 0 for 2D)
  * @param k_offset Offset for the current z-plane (k * stride_z)
+ * @param w_row    Relaxation factor for points away from the x-walls
+ * @param w_edge   Relaxation factor for the row's first and last point
  * @param ctx      Solver context with precomputed SIMD vectors
  */
 static inline void redblack_neon_process_row(
@@ -89,13 +93,14 @@ static inline void redblack_neon_process_row(
     size_t nx,
     size_t stride_z,
     size_t k_offset,
+    double w_row,
+    double w_edge,
     const redblack_neon_context_t* ctx)
 {
     double dx2 = ctx->dx2;
     double dy2 = ctx->dy2;
     double inv_dz2 = ctx->inv_dz2;
     double inv_factor = ctx->inv_factor;
-    double omega = ctx->omega;
     size_t i = i_start;
 
     /* NEON loop: gather 2 same-color cells (stride 2) */
@@ -103,9 +108,11 @@ static inline void redblack_neon_process_row(
         /* Gather 2 values with stride 2 */
         double vals[2];
         double p_xp[2], p_xm[2], p_yp[2], p_ym[2], p_zp[2], p_zm[2], rhs_vals[2];
+        double w_lane[2];
 
         for (int kk = 0; kk < 2; kk++) {
-            size_t idx = k_offset + IDX_2D(i + (size_t)kk * 2, (size_t)j, nx);
+            size_t col = i + (size_t)kk * 2;
+            size_t idx = k_offset + IDX_2D(col, (size_t)j, nx);
             vals[kk] = x[idx];
             p_xp[kk] = x[idx + 1];
             p_xm[kk] = x[idx - 1];
@@ -114,6 +121,7 @@ static inline void redblack_neon_process_row(
             p_zp[kk] = x[idx + stride_z];
             p_zm[kk] = x[idx - stride_z];
             rhs_vals[kk] = rhs[idx];
+            w_lane[kk] = (col == 1 || col == nx - 2) ? w_edge : w_row;
         }
 
         /* Load into SIMD registers */
@@ -125,6 +133,7 @@ static inline void redblack_neon_process_row(
         float64x2_t v_zp = vld1q_f64(p_zp);
         float64x2_t v_zm = vld1q_f64(p_zm);
         float64x2_t v_rhs = vld1q_f64(rhs_vals);
+        float64x2_t v_w = vld1q_f64(w_lane);
 
         /* Compute: p_new = -(rhs - (xp+xm)/dx2 - (yp+ym)/dy2 - (zp+zm)*inv_dz2) * inv_factor */
         float64x2_t sum_x = vaddq_f64(v_xp, v_xm);
@@ -137,9 +146,9 @@ static inline void redblack_neon_process_row(
         float64x2_t diff = vsubq_f64(v_rhs, sum_terms);
         float64x2_t v_p_new = vmulq_f64(diff, ctx->neg_inv_factor_vec);
 
-        /* SOR update: x = x + omega * (p_new - x) */
+        /* SOR update: x = x + w * (p_new - x) */
         float64x2_t v_diff = vsubq_f64(v_p_new, v_vals);
-        float64x2_t v_update = vmulq_f64(ctx->omega_vec, v_diff);
+        float64x2_t v_update = vmulq_f64(v_w, v_diff);
         float64x2_t v_result = vaddq_f64(v_vals, v_update);
 
         /* Scatter back */
@@ -159,7 +168,8 @@ static inline void redblack_neon_process_row(
             - (x[idx + nx] + x[idx - nx]) / dy2
             - (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2
             ) * inv_factor;
-        x[idx] = x[idx] + omega * (p_new - x[idx]);
+        double w = (i == 1 || i == nx - 2) ? w_edge : w_row;
+        x[idx] = x[idx] + w * (p_new - x[idx]);
     }
 }
 
@@ -178,19 +188,19 @@ static cfd_status_t redblack_neon_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
+    ctx->inv_dx2 = 1.0 / ctx->dx2;
+    ctx->inv_dy2 = 1.0 / ctx->dy2;
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
-    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
-    ctx->inv_factor = 1.0 / factor;
-    ctx->omega = poisson_solver_resolve_omega(
-        params ? params->omega : 0.0, nx, ny, nz, dx, dy, dz);
+    ctx->factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
+    ctx->inv_factor = 1.0 / ctx->factor;
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
 
     /* Pre-compute SIMD vectors */
     ctx->dx2_inv_vec = vdupq_n_f64(1.0 / ctx->dx2);
     ctx->dy2_inv_vec = vdupq_n_f64(1.0 / ctx->dy2);
     ctx->dz2_inv_vec = vdupq_n_f64(ctx->inv_dz2);
     ctx->neg_inv_factor_vec = vdupq_n_f64(-ctx->inv_factor);
-    ctx->omega_vec = vdupq_n_f64(ctx->omega);
 
     ctx->initialized = 1;
     solver->context = ctx;
@@ -216,8 +226,10 @@ static cfd_status_t redblack_neon_iterate(
     redblack_neon_context_t* ctx = (redblack_neon_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
+    size_t nz = solver->nz;
     size_t stride_z = ctx->stride_z;
     int ny_int = size_to_int(ny);
+    int walls = poisson_solver_uses_default_walls(solver);
 
     /* Red sweep: (i+j+k) % 2 == 1 */
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
@@ -225,8 +237,11 @@ static cfd_status_t redblack_neon_iterate(
         int j;
         #pragma omp parallel for schedule(static)
         for (j = 1; j < ny_int - 1; j++) {
+            double w_row, w_edge;
+            poisson_solver_row_omegas(walls, ctx->omega, ctx->factor, nx, ny, nz, (size_t)j, k,
+                                      ctx->inv_dx2, ctx->inv_dy2, ctx->inv_dz2, &w_row, &w_edge);
             size_t i_start = ((j + (int)k) % 2 == 0) ? 1 : 2;
-            redblack_neon_process_row(j, i_start, x, rhs, nx, stride_z, k_offset, ctx);
+            redblack_neon_process_row(j, i_start, x, rhs, nx, stride_z, k_offset, w_row, w_edge, ctx);
         }
     }
 
@@ -236,8 +251,11 @@ static cfd_status_t redblack_neon_iterate(
         int j;
         #pragma omp parallel for schedule(static)
         for (j = 1; j < ny_int - 1; j++) {
+            double w_row, w_edge;
+            poisson_solver_row_omegas(walls, ctx->omega, ctx->factor, nx, ny, nz, (size_t)j, k,
+                                      ctx->inv_dx2, ctx->inv_dy2, ctx->inv_dz2, &w_row, &w_edge);
             size_t i_start = ((j + (int)k) % 2 == 0) ? 2 : 1;
-            redblack_neon_process_row(j, i_start, x, rhs, nx, stride_z, k_offset, ctx);
+            redblack_neon_process_row(j, i_start, x, rhs, nx, stride_z, k_offset, w_row, w_edge, ctx);
         }
     }
 

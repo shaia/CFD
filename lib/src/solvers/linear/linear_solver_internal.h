@@ -293,20 +293,169 @@ static inline double poisson_solver_compute_optimal_omega(
 }
 
 /**
- * Resolve omega: if omega <= 0.0 (auto sentinel), compute optimal value.
- * Otherwise return the user-specified omega as-is.
+ * Optimal SOR omega for zero-gradient (Neumann) walls.
  *
- * Supports both 2D (nz <= 1 or dz <= 0) and 3D (nz > 1, dz > 0) problems.
+ * Relaxed as poisson_solver_wall_omega() describes, the iteration is SOR on the
+ * Neumann matrix A itself, which is consistently ordered, so Young's
+ * omega_opt = 2 / (1 + sqrt(1 - rho_J^2)) applies. rho_J = 1 - lambda, with lambda
+ * the smallest nonzero eigenvalue of A v = lambda D v, D the diagonal of A; the
+ * zero eigenvalue is the constant, the null space every Neumann problem has.
+ *
+ * The slowest mode varies as cos((i - 1/2) pi / N_a) along one axis a, where N_a
+ * is its number of interior points, and is constant along the others. Its
+ * Rayleigh quotient is
+ *   lambda_a = w_a (2 - 2 cos(pi / N_a)) / (factor - deficit_a)
+ *   deficit_a = w_a (4 / N_a) cos^2(pi / (2 N_a)) + sum over b != a of w_b (2 / N_b)
+ * with w_b = 1/h_b^2, factor = 2 (w_x + w_y + w_z) the diagonal away from the
+ * walls, and deficit_a what the walls take off the diagonal as that mode weighs
+ * it. lambda is the smallest lambda_a. A Rayleigh quotient can only overestimate
+ * the eigenvalue, so the omega this gives never exceeds the optimum, and it
+ * approaches it as the grid grows.
+ *
+ * An axis with fewer than two interior points has no such mode and is skipped;
+ * with no axis left there is nothing to relax, and omega is 1.
  */
-static inline double poisson_solver_resolve_omega(
-    double omega,
+static inline double poisson_solver_compute_neumann_omega(
     size_t nx, size_t ny, size_t nz,
     double dx, double dy, double dz)
 {
-    if (omega <= 0.0) {
-        return poisson_solver_compute_optimal_omega(nx, ny, nz, dx, dy, dz);
+    size_t n[3] = { nx, ny, nz };
+    double w[3] = { 1.0 / (dx * dx), 1.0 / (dy * dy), 0.0 };
+    if (nz > 1) {
+        w[2] = poisson_solver_compute_inv_dz2(dz);
     }
-    return omega;
+    double factor = 2.0 * (w[0] + w[1] + w[2]);
+
+    /* Interior points per active axis; a 2D grid has none along z */
+    double interior[3];
+    for (int a = 0; a < 3; a++) {
+        interior[a] = (w[a] > 0.0) ? (double)(n[a] - 2) : 0.0;
+    }
+
+    double lambda = -1.0;
+    for (int a = 0; a < 3; a++) {
+        if (interior[a] < 2.0) {
+            continue;
+        }
+        double half = cos(M_PI / (2.0 * interior[a]));
+        double deficit = w[a] * (4.0 / interior[a]) * half * half;
+        for (int b = 0; b < 3; b++) {
+            if (b != a && interior[b] >= 1.0) {
+                deficit += w[b] * (2.0 / interior[b]);
+            }
+        }
+        double mode = w[a] * (2.0 - 2.0 * cos(M_PI / interior[a])) / (factor - deficit);
+        if (lambda < 0.0 || mode < lambda) {
+            lambda = mode;
+        }
+    }
+    if (lambda < 0.0) {
+        return 1.0;
+    }
+    double rho_j = 1.0 - lambda;
+    return 2.0 / (1.0 + sqrt(1.0 - (rho_j * rho_j)));
+}
+
+/* ============================================================================
+ * SOR RELAXATION AT ZERO-GRADIENT WALLS
+ * ============================================================================ */
+
+/**
+ * Stencil weight of the zero-gradient walls a point touches along one axis:
+ * inv_h2 for each of its two neighbours on that axis that is a wall. With n
+ * points along the axis, walls included, interior index 1 touches the low wall
+ * and n - 2 the high one; a lone interior point (n == 3) touches both.
+ */
+static inline double poisson_solver_wall_weight(size_t index, size_t n, double inv_h2)
+{
+    int walls = (index == 1) + (index + 2 == n);
+    return walls * inv_h2;
+}
+
+/**
+ * Relaxation factor for a point beside the default zero-gradient walls.
+ *
+ * poisson_solver_apply_bc() copies each wall from its inner neighbour after the
+ * sweep, so while sweeping, a point next to a wall reads its own previous value
+ * through the copy. Relaxed with the plain omega, that stale self-coupling leaves
+ * the iteration inconsistently ordered: SOR theory no longer predicts its best
+ * omega, which lies well above any formula.
+ *
+ * Scaling the point's step by factor / (factor - wall_weight) removes the stale
+ * term. The update becomes relaxation against the point's real neighbours only,
+ * which is SOR on the Neumann matrix itself, whose optimum
+ * poisson_solver_compute_neumann_omega() gives. factor is the full stencil weight
+ * 2 (1/dx^2 + 1/dy^2 + 1/dz^2) and wall_weight the sum of
+ * poisson_solver_wall_weight() over the axes: on a square 2D grid an edge point
+ * relaxes with 4/3 omega and a corner point with 2 omega. The converged solution
+ * is unchanged, because with the walls copied both updates solve the same
+ * equation.
+ *
+ * A point whose every neighbour is a wall has nothing to relax against and keeps
+ * its value.
+ */
+static inline double poisson_solver_wall_omega(double omega, double factor, double wall_weight)
+{
+    if (wall_weight <= 0.0) {
+        return omega;
+    }
+    double interior = factor - wall_weight;
+    return (interior > 0.0) ? omega * factor / interior : 0.0;
+}
+
+/**
+ * Whether a CPU solver relaxes against the default zero-gradient wall copy.
+ * A caller-supplied apply_bc holds wall values that are data rather than copies
+ * of the interior, so its points keep the plain omega.
+ */
+static inline int poisson_solver_uses_default_walls(const poisson_solver_t* solver)
+{
+    return solver->apply_bc == NULL;
+}
+
+/**
+ * Relaxation factors for one row of interior points (fixed j and k): w_row for
+ * the points away from the x-walls, w_edge for the first and last (i == 1 and
+ * i == nx - 2). Both are the plain omega when walls is 0.
+ */
+static inline void poisson_solver_row_omegas(
+    int walls, double omega, double factor,
+    size_t nx, size_t ny, size_t nz, size_t j, size_t k,
+    double inv_dx2, double inv_dy2, double inv_dz2,
+    double* w_row, double* w_edge)
+{
+    if (!walls) {
+        *w_row = omega;
+        *w_edge = omega;
+        return;
+    }
+    double w_yz = poisson_solver_wall_weight(j, ny, inv_dy2)
+                + poisson_solver_wall_weight(k, nz, inv_dz2);
+    *w_row = poisson_solver_wall_omega(omega, factor, w_yz);
+    *w_edge = poisson_solver_wall_omega(omega, factor,
+                                        w_yz + poisson_solver_wall_weight(1, nx, inv_dx2));
+}
+
+/**
+ * The omega a SOR or Red-Black SOR solver relaxes with.
+ *
+ * An explicit omega > 0 is used as given. omega <= 0, the default, asks for the
+ * optimum: the Neumann formula for the default wall copy, and the Dirichlet
+ * formula above when the caller supplies its own apply_bc. poisson_solver_init()
+ * fills in the grid before calling the backend init that resolves omega, so a
+ * custom apply_bc must be installed before it.
+ */
+static inline double poisson_solver_resolve_omega(const poisson_solver_t* solver, double omega)
+{
+    if (omega > 0.0) {
+        return omega;
+    }
+    if (poisson_solver_uses_default_walls(solver)) {
+        return poisson_solver_compute_neumann_omega(
+            solver->nx, solver->ny, solver->nz, solver->dx, solver->dy, solver->dz);
+    }
+    return poisson_solver_compute_optimal_omega(
+        solver->nx, solver->ny, solver->nz, solver->dx, solver->dy, solver->dz);
 }
 
 /* ============================================================================

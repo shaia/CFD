@@ -27,8 +27,11 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
+    double inv_dx2;    /* 1/dx^2 */
+    double inv_dy2;    /* 1/dy^2 */
     double inv_dz2;    /* 1/dz^2 (0 for 2D) */
-    double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2 + inv_dz2)) */
+    double factor;     /* 2 * (1/dx^2 + 1/dy^2 + inv_dz2) */
+    double inv_factor; /* 1 / factor */
     double omega;      /* SOR relaxation parameter */
     size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
     size_t k_start;    /* first interior k index */
@@ -55,12 +58,13 @@ static cfd_status_t redblack_omp_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
+    ctx->inv_dx2 = 1.0 / ctx->dx2;
+    ctx->inv_dy2 = 1.0 / ctx->dy2;
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
-    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
-    ctx->inv_factor = 1.0 / factor;
-    ctx->omega = poisson_solver_resolve_omega(
-        params ? params->omega : 0.0, nx, ny, nz, dx, dy, dz);
+    ctx->factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
+    ctx->inv_factor = 1.0 / ctx->factor;
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
     ctx->initialized = 1;
 
     solver->context = ctx;
@@ -86,6 +90,7 @@ static cfd_status_t redblack_omp_iterate(
     redblack_omp_context_t* ctx = (redblack_omp_context_t*)solver->context;
     size_t nx = solver->nx;
     size_t ny = solver->ny;
+    size_t nz = solver->nz;
     double dx2 = ctx->dx2;
     double dy2 = ctx->dy2;
     double inv_dz2 = ctx->inv_dz2;
@@ -94,12 +99,16 @@ static cfd_status_t redblack_omp_iterate(
     size_t stride_z = ctx->stride_z;
     size_t k_start = ctx->k_start;
     size_t k_end = ctx->k_end;
+    int walls = poisson_solver_uses_default_walls(solver);
 
     /* Red sweep (parallel) */
     for (size_t k = k_start; k < k_end; k++) {
         int j;
 #pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
+            double w_row, w_edge;
+            poisson_solver_row_omegas(walls, omega, ctx->factor, nx, ny, nz, (size_t)j, k,
+                                      ctx->inv_dx2, ctx->inv_dy2, inv_dz2, &w_row, &w_edge);
             size_t i_start = ((j + k) % 2 == 0) ? 1 : 2;
             size_t i;
             for (i = i_start; i < nx - 1; i += 2) {
@@ -111,7 +120,8 @@ static cfd_status_t redblack_omp_iterate(
                     - (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2
                     ) * inv_factor;
 
-                x[idx] = x[idx] + omega * (p_new - x[idx]);
+                double w = (i == 1 || i == nx - 2) ? w_edge : w_row;
+                x[idx] = x[idx] + w * (p_new - x[idx]);
             }
         }
     }
@@ -121,6 +131,9 @@ static cfd_status_t redblack_omp_iterate(
         int j;
 #pragma omp parallel for schedule(static)
         for (j = 1; j < (int)ny - 1; j++) {
+            double w_row, w_edge;
+            poisson_solver_row_omegas(walls, omega, ctx->factor, nx, ny, nz, (size_t)j, k,
+                                      ctx->inv_dx2, ctx->inv_dy2, inv_dz2, &w_row, &w_edge);
             size_t i_start = ((j + k) % 2 == 0) ? 2 : 1;
             size_t i;
             for (i = i_start; i < nx - 1; i += 2) {
@@ -132,7 +145,8 @@ static cfd_status_t redblack_omp_iterate(
                     - (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2
                     ) * inv_factor;
 
-                x[idx] = x[idx] + omega * (p_new - x[idx]);
+                double w = (i == 1 || i == nx - 2) ? w_edge : w_row;
+                x[idx] = x[idx] + w * (p_new - x[idx]);
             }
         }
     }

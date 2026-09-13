@@ -136,7 +136,7 @@ typedef struct {
     double tolerance;          /**< Relative convergence tolerance (default: 1e-6) */
     double absolute_tolerance; /**< Absolute tolerance (default: 1e-10) */
     int max_iterations;        /**< Maximum iterations (default: 1000) */
-    double omega;              /**< SOR relaxation parameter (default: 0 = auto-optimal; set > 0 to override) */
+    double omega;              /**< SOR relaxation (default: 0 = the optimum for the grid and the walls in use; set > 0 to override) */
     int check_interval;        /**< Check convergence every N iterations (default: 1) */
     bool verbose;              /**< Print iteration progress (default: false) */
     poisson_precond_type_t preconditioner; /**< Preconditioner type (default: NONE) */
@@ -170,7 +170,7 @@ typedef struct {
  * - tolerance: 1e-6
  * - absolute_tolerance: 1e-10
  * - max_iterations: 5000
- * - omega: 0.0 (auto-compute optimal for grid dimensions)
+ * - omega: 0.0 (the optimum for the grid and the walls in use)
  * - check_interval: 1
  * - verbose: false
  * - mg_cycle: MG_CYCLE_V, mg_smoother: MG_SMOOTHER_REDBLACK_GS, mg_bc: MG_BC_NEUMANN
@@ -276,7 +276,11 @@ struct poisson_solver {
     poisson_solver_destroy_func destroy;  /**< Destroy solver */
     poisson_solver_solve_func solve;      /**< Solve to convergence */
     poisson_solver_iterate_func iterate;  /**< Single iteration */
-    poisson_solver_apply_bc_func apply_bc; /**< Apply boundary conditions */
+    poisson_solver_apply_bc_func apply_bc; /**< Apply boundary conditions. NULL: zero-gradient walls copied
+                                                from the interior, for which the SOR solvers relax the points
+                                                beside a wall and choose omega. To hold other wall values,
+                                                install a function here before poisson_solver_init() rather
+                                                than writing the walls between iterations. */
 };
 
 /* ============================================================================
@@ -350,7 +354,9 @@ CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_solve(
 /**
  * Perform a single iteration
  *
- * Useful for custom iteration control or monitoring.
+ * Useful for custom iteration control or monitoring. Wall values other than the
+ * default zero-gradient copy belong in solver->apply_bc, which every iteration
+ * applies after its sweep (see struct poisson_solver).
  *
  * @param solver Initialized Poisson solver
  * @param x Solution vector (in/out)

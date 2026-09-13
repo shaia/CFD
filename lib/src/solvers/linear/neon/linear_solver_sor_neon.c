@@ -45,8 +45,11 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
+    double inv_dx2;    /* 1/dx^2 */
+    double inv_dy2;    /* 1/dy^2 */
     double inv_dz2;    /* 1/dz^2 (0.0 for 2D) */
-    double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2 + inv_dz2)) */
+    double factor;     /* 2 * (1/dx^2 + 1/dy^2 + inv_dz2) */
+    double inv_factor; /* 1 / factor */
     double omega;      /* SOR relaxation parameter */
     size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
     size_t k_start;    /* first interior k index */
@@ -55,7 +58,6 @@ typedef struct {
     float64x2_t dy2_inv_vec;
     float64x2_t dz2_inv_vec;
     float64x2_t neg_inv_factor_vec;
-    float64x2_t omega_vec;
     int initialized;
 } sor_neon_context_t;
 
@@ -85,20 +87,20 @@ static cfd_status_t sor_neon_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
+    ctx->inv_dx2 = 1.0 / ctx->dx2;
+    ctx->inv_dy2 = 1.0 / ctx->dy2;
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
-    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
-    ctx->inv_factor = 1.0 / factor;
-    ctx->omega = poisson_solver_resolve_omega(
-        params ? params->omega : 0.0, nx, ny, nz, dx, dy, dz);
+    ctx->factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
+    ctx->inv_factor = 1.0 / ctx->factor;
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
 
     /* Pre-compute SIMD vectors */
     ctx->dx2_inv_vec = vdupq_n_f64(1.0 / ctx->dx2);
     ctx->dy2_inv_vec = vdupq_n_f64(1.0 / ctx->dy2);
     ctx->dz2_inv_vec = vdupq_n_f64(ctx->inv_dz2);
     ctx->neg_inv_factor_vec = vdupq_n_f64(-ctx->inv_factor);
-    ctx->omega_vec = vdupq_n_f64(ctx->omega);
 
     ctx->initialized = 1;
     solver->context = ctx;
@@ -139,10 +141,15 @@ static cfd_status_t sor_neon_iterate(
     double omega = ctx->omega;
     size_t stride_z = ctx->stride_z;
     double inv_dz2 = ctx->inv_dz2;
+    int walls = poisson_solver_uses_default_walls(solver);
 
     /* Single sweep: sequential row-major order (no OpenMP on j-loop) */
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
         for (size_t j = 1; j < ny - 1; j++) {
+            double w_row, w_edge;
+            poisson_solver_row_omegas(walls, omega, ctx->factor, nx, ny, solver->nz, j, k,
+                                      ctx->inv_dx2, ctx->inv_dy2, inv_dz2, &w_row, &w_edge);
+            float64x2_t w_row_vec = vdupq_n_f64(w_row);
             size_t i = 1;
 
             /* NEON loop: process 2 consecutive cells at a time */
@@ -176,10 +183,22 @@ static cfd_status_t sor_neon_iterate(
                 float64x2_t diff = vsubq_f64(rhs_vec, sum_terms);
                 float64x2_t p_new = vmulq_f64(diff, ctx->neg_inv_factor_vec);
 
-                /* SOR update: x = x + omega * (p_new - x) */
+                /* A pair holding the row's first or last point relaxes that lane
+                 * with the wall factor */
+                float64x2_t w_vec = w_row_vec;
+                if (i == 1 || i + 1 == nx - 2) {
+                    double w_lane[2];
+                    for (int lane = 0; lane < 2; lane++) {
+                        size_t col = i + (size_t)lane;
+                        w_lane[lane] = (col == 1 || col == nx - 2) ? w_edge : w_row;
+                    }
+                    w_vec = vld1q_f64(w_lane);
+                }
+
+                /* SOR update: x = x + w * (p_new - x) */
                 float64x2_t v_diff = vsubq_f64(p_new, v_x);
                 /* vfmaq_f64(c, a, b) = c + a*b */
-                float64x2_t v_result = vfmaq_f64(v_x, ctx->omega_vec, v_diff);
+                float64x2_t v_result = vfmaq_f64(v_x, w_vec, v_diff);
 
                 /* Store result in-place */
                 vst1q_f64(&x[idx], v_result);
@@ -193,7 +212,8 @@ static cfd_status_t sor_neon_iterate(
                     - (x[idx + nx] + x[idx - nx]) / dy2
                     - (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2
                     ) * inv_factor;
-                x[idx] = x[idx] + omega * (p_new - x[idx]);
+                double w = (i == 1 || i == nx - 2) ? w_edge : w_row;
+                x[idx] = x[idx] + w * (p_new - x[idx]);
             }
         }
     }

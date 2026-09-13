@@ -490,7 +490,7 @@ typedef struct {
     double tolerance;           // Relative tolerance (default: 1e-6)
     double absolute_tolerance;  // Absolute tolerance (default: 1e-10)
     int max_iterations;         // Max iterations (default: 5000)
-    double omega;               // SOR relaxation (default: 0 = auto-optimal)
+    double omega;               // SOR relaxation (default: 0 = optimum for the grid and walls)
     int check_interval;         // Convergence check interval (default: 1)
     bool verbose;               // Print convergence info (default: false)
     poisson_precond_type_t preconditioner;  // Preconditioner (default: POISSON_PRECOND_NONE)

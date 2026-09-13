@@ -17,7 +17,8 @@
  * Updates are in-place, so no double-buffer is needed.
  *
  * Boundary handling matches the interface default: Neumann (zero-gradient) on
- * every face, applied via the unified bc_apply_scalar_3d_gpu() kernels.
+ * every face, applied via the unified bc_apply_scalar_3d_gpu() kernels, with the
+ * wall relaxation factor of poisson_solver_wall_omega() beside the walls.
  *
  * Restrictions (return CFD_ERROR_UNSUPPORTED from init): no CUDA device present.
  */
@@ -114,8 +115,7 @@ static cfd_status_t redblack_gpu_init(poisson_solver_t* solver,
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     ctx->factor = 2.0 * (ctx->inv_dx2 + ctx->inv_dy2 + ctx->inv_dz2);
     ctx->inv_factor = 1.0 / ctx->factor;
-    ctx->omega = poisson_solver_resolve_omega(
-        params ? params->omega : 0.0, nx, ny, nz, dx, dy, dz);
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
 
     size_t sz, ks, ke;
     poisson_solver_compute_3d_bounds(nz, nx, ny, &sz, &ks, &ke);
@@ -213,12 +213,12 @@ static cfd_status_t redblack_gpu_solve(poisson_solver_t* solver,
         for (iter = 0; iter < max_iter; iter++) {
             /* Red sweep, then black sweep: the launch boundary is the color sync. */
             lin_gpu_kernel_redblack_sweep<<<grid_dim, block, 0, ctx->stream>>>(
-                ctx->d_x, ctx->d_rhs, /*color=*/0, ctx->omega, nx, ny,
-                ctx->stride_z, ctx->k_start, ctx->k_end,
+                ctx->d_x, ctx->d_rhs, /*color=*/0, ctx->omega, /*walls=*/1, ctx->factor,
+                nx, ny, ctx->stride_z, ctx->k_start, ctx->k_end,
                 ctx->inv_dx2, ctx->inv_dy2, ctx->inv_dz2, ctx->inv_factor);
             lin_gpu_kernel_redblack_sweep<<<grid_dim, block, 0, ctx->stream>>>(
-                ctx->d_x, ctx->d_rhs, /*color=*/1, ctx->omega, nx, ny,
-                ctx->stride_z, ctx->k_start, ctx->k_end,
+                ctx->d_x, ctx->d_rhs, /*color=*/1, ctx->omega, /*walls=*/1, ctx->factor,
+                nx, ny, ctx->stride_z, ctx->k_start, ctx->k_end,
                 ctx->inv_dx2, ctx->inv_dy2, ctx->inv_dz2, ctx->inv_factor);
             bc_apply_scalar_3d_gpu(ctx->d_x, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
 

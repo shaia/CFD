@@ -107,6 +107,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_iterations`; `stats.iterations` now counts the iterations performed, as CG,
   BiCGSTAB and GMRES already did (`lib/src/solvers/linear/linear_solver.c`,
   `tests/solvers/test_linear_solver.c`, `tests/math/test_omp_consistency.c`).
+- SOR and Red-Black SOR ran far from their best omega with the default zero-gradient walls.
+  The walls are copied from the interior after each sweep, so a point beside a wall read its own
+  previous value through the copy, and the automatic omega came from the Dirichlet formula, well
+  below the best one: Red-Black SOR on a 33x33 seeded-noise problem took 361 sweeps at the
+  automatic omega and 193 at the best. Wall-adjacent points now relax by
+  omega * factor / (factor - wall weight), which makes the iteration SOR on the Neumann matrix
+  itself, and the automatic omega is that matrix's optimum, from a Rayleigh quotient of its slowest
+  mode. The same problem now takes 117 sweeps, and 65x65 to 257x257 grids about a third of their
+  former sweeps (709 to 235 at 65x65). The converged solution is unchanged. A custom `apply_bc`
+  keeps the Dirichlet formula and no wall scaling; wall values other than the default copy now
+  have to be set through `apply_bc` rather than written between iterations. Applies to every SOR
+  and Red-Black SOR backend: scalar, OpenMP, AVX2, NEON and CUDA
+  (`lib/src/solvers/linear/linear_solver_internal.h`, `lib/src/solvers/linear/cpu/`,
+  `lib/src/solvers/linear/omp/`, `lib/src/solvers/linear/avx2/`, `lib/src/solvers/linear/neon/`,
+  `lib/src/solvers/linear/gpu/`, `tests/math/test_optimal_omega.c`,
+  `tests/math/test_poisson_accuracy.c`).
 
 ## [0.3.0] - 2026-06-23
 
