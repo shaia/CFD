@@ -146,13 +146,33 @@ static int parse_options(int argc, char** argv, sweep_options_t* opt) {
         if (strcmp(key, "--grid") == 0) {
             opt->grid = parse_grid(value);
         } else if (strcmp(key, "--method") == 0) {
-            opt->method = (strcmp(value, "sor") == 0) ? POISSON_METHOD_SOR : POISSON_METHOD_REDBLACK_SOR;
+            if (strcmp(value, "sor") == 0) {
+                opt->method = POISSON_METHOD_SOR;
+            } else if (strcmp(value, "redblack") == 0) {
+                opt->method = POISSON_METHOD_REDBLACK_SOR;
+            } else {
+                return 0;
+            }
         } else if (strcmp(key, "--backend") == 0) {
-            opt->backend = (strcmp(value, "simd") == 0) ? POISSON_BACKEND_SIMD :
-                           (strcmp(value, "omp") == 0)  ? POISSON_BACKEND_OMP :
-                           (strcmp(value, "gpu") == 0)  ? POISSON_BACKEND_GPU : POISSON_BACKEND_SCALAR;
+            if (strcmp(value, "scalar") == 0) {
+                opt->backend = POISSON_BACKEND_SCALAR;
+            } else if (strcmp(value, "simd") == 0) {
+                opt->backend = POISSON_BACKEND_SIMD;
+            } else if (strcmp(value, "omp") == 0) {
+                opt->backend = POISSON_BACKEND_OMP;
+            } else if (strcmp(value, "gpu") == 0) {
+                opt->backend = POISSON_BACKEND_GPU;
+            } else {
+                return 0;
+            }
         } else if (strcmp(key, "--walls") == 0) {
-            opt->dirichlet = (strcmp(value, "dirichlet") == 0);
+            if (strcmp(value, "neumann") == 0) {
+                opt->dirichlet = 0;
+            } else if (strcmp(value, "dirichlet") == 0) {
+                opt->dirichlet = 1;
+            } else {
+                return 0;
+            }
         } else if (strcmp(key, "--from") == 0) {
             opt->from = strtod(value, NULL);
         } else if (strcmp(key, "--to") == 0) {
