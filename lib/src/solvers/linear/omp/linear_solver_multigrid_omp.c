@@ -349,9 +349,12 @@ static void mg_prolongate_add_3d_omp(const double* coarse, double* fine,
  * INTERIOR MEAN / INTERIOR ZERO
  * ============================================================================ */
 
-/** Subtract the (serially computed) interior mean from interior points */
-static void mg_subtract_interior_mean_omp(double* f, size_t nx, size_t ny,
-                                          size_t nz) {
+/**
+ * Subtract the (serially computed) interior mean from interior points. Declared in
+ * multigrid_internal.h: the OpenMP projection solver shares it.
+ */
+void mg_subtract_interior_mean_omp(double* f, size_t nx, size_t ny,
+                                   size_t nz) {
     double mean = mg_interior_mean(f, nx, ny, nz);
 
     size_t stride_z, k_start, k_end;

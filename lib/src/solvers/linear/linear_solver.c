@@ -656,6 +656,7 @@ static cfd_atomic_ptr g_cached_cg_simd;
 static cfd_atomic_ptr g_cached_mg_scalar;
 static cfd_atomic_ptr g_cached_mg_omp;
 static cfd_atomic_ptr g_cached_pcg_mg_scalar;
+static cfd_atomic_ptr g_cached_pcg_mg_omp;
 
 /* Set to 1 once cleanup_cached_solvers is registered with atexit */
 static cfd_atomic_int g_cleanup_registered = 0;
@@ -681,6 +682,7 @@ static void cleanup_cached_solvers(void) {
     poisson_solver_destroy(take_cached_solver(&g_cached_mg_scalar));
     poisson_solver_destroy(take_cached_solver(&g_cached_mg_omp));
     poisson_solver_destroy(take_cached_solver(&g_cached_pcg_mg_scalar));
+    poisson_solver_destroy(take_cached_solver(&g_cached_pcg_mg_omp));
 }
 
 int poisson_solve_3d(
@@ -766,6 +768,12 @@ int poisson_solve_3d(
             backend = POISSON_BACKEND_SCALAR;
             break;
 
+        case POISSON_SOLVER_PCG_MG_OMP:
+            slot = &g_cached_pcg_mg_omp;
+            method = POISSON_METHOD_CG;
+            backend = POISSON_BACKEND_OMP;
+            break;
+
         default:
             CFD_LOG_ERROR("poisson", "poisson_solve_3d: Unknown solver type %d", solver_type);
             return -1;
@@ -794,10 +802,11 @@ int poisson_solve_3d(
         }
 
         /* The convenience API has no params argument, so the PCG_MG
-         * preset carries its preconditioner into the cached instance. */
+         * presets carry their preconditioner into the cached instance. */
         poisson_solver_params_t pcg_mg_params;
         const poisson_solver_params_t* init_params = NULL;
-        if (solver_type == POISSON_SOLVER_PCG_MG_SCALAR) {
+        if (solver_type == POISSON_SOLVER_PCG_MG_SCALAR ||
+            solver_type == POISSON_SOLVER_PCG_MG_OMP) {
             pcg_mg_params = poisson_solver_params_default();
             pcg_mg_params.preconditioner = POISSON_PRECOND_MULTIGRID;
             init_params = &pcg_mg_params;

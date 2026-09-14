@@ -271,9 +271,10 @@ ns_solver_params_t ns_solver_params_default(void);
 ```
 
 `ns_pressure_solver_t` selects the pressure Poisson solve of the projection
-method (scalar `projection` solver only; the multigrid modes require 2^k+1
-grid points per active dimension, and other projection backends reject
-non-default values with `CFD_ERROR_UNSUPPORTED` at init):
+method (`projection` and `projection_omp`, each on its own backend; the
+multigrid modes require 2^k+1 grid points per active dimension, and
+`projection_optimized` and `projection_gpu` reject non-default values with
+`CFD_ERROR_UNSUPPORTED` at init):
 
 ```c
 typedef enum {
@@ -519,9 +520,9 @@ poisson_solver_params_t poisson_solver_params_default(void);
 
 `poisson_precond_type_t` values: `POISSON_PRECOND_NONE` (0, default),
 `POISSON_PRECOND_JACOBI` (1), `POISSON_PRECOND_MULTIGRID` (2 — one MG V-cycle
-per apply; scalar CG only, 2^k+1 dims; other backends return
+per apply; scalar and OpenMP CG, 2^k+1 dims; other backends return
 `CFD_ERROR_UNSUPPORTED`). The convenience API exposes the MG-preconditioned CG
-as the `POISSON_SOLVER_PCG_MG_SCALAR` preset for
+as the `POISSON_SOLVER_PCG_MG_SCALAR` and `POISSON_SOLVER_PCG_MG_OMP` presets for
 `poisson_solve()`/`poisson_solve_3d()`.
 
 ### Poisson Statistics

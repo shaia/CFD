@@ -8,6 +8,7 @@
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/solvers/turbulence_solver.h"
 #include "../../energy/energy_solver_internal.h"
+#include "../../linear/multigrid_internal.h"
 #include "../../turbulence/turbulence_solver_internal.h"
 
 #include "../boundary_copy_utils.h"
@@ -62,6 +63,25 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
     double nu = params->mu;
     double inv_2dz = (nz > 1 && grid->dz) ? 1.0 / (2.0 * dz) : 0.0;
     double inv_dz2 = (nz > 1 && grid->dz) ? 1.0 / (dz * dz) : 0.0;
+
+    /* Map the pressure-solver selection to an OpenMP Poisson preset (never a
+     * scalar one). Grid-dimension compatibility for the MG modes is validated
+     * at solver init; a failed solve here still degrades loudly via
+     * poisson_iters < 0. */
+    poisson_solver_type pressure_preset;
+    switch (params->pressure_solver) {
+        case NS_PRESSURE_SOLVER_DEFAULT:
+            pressure_preset = POISSON_SOLVER_CG_OMP;
+            break;
+        case NS_PRESSURE_SOLVER_MULTIGRID:
+            pressure_preset = POISSON_SOLVER_MG_OMP;
+            break;
+        case NS_PRESSURE_SOLVER_PCG_MG:
+            pressure_preset = POISSON_SOLVER_PCG_MG_OMP;
+            break;
+        default:
+            return CFD_ERROR_INVALID;
+    }
 
     double* u_star = (double*)cfd_calloc(total, sizeof(double));
     double* v_star = (double*)cfd_calloc(total, sizeof(double));
@@ -214,9 +234,18 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             }
         }
 
-        /* Use OMP CG for parallelized Poisson solve */
+        /* Neumann compatibility projection: standalone multigrid solves the
+         * true singular Neumann system, so the RHS must have zero interior
+         * mean or the residual stalls at the incompatible component. The
+         * CG-based presets are insensitive to it (their interior-only Krylov
+         * updates act as a nonsingular operator) and keep today's behavior. */
+        if (pressure_preset == POISSON_SOLVER_MG_OMP) {
+            mg_subtract_interior_mean_omp(rhs, nx, ny, nz);
+        }
+
+        /* Parallel Poisson solve on the selected OpenMP preset */
         int poisson_iters = poisson_solve_3d(p_new, p_temp, rhs, nx, ny, nz,
-                                             dx, dy, dz, POISSON_SOLVER_CG_OMP);
+                                             dx, dy, dz, pressure_preset);
 
         if (poisson_iters < 0) {
             cfd_free(u_star);

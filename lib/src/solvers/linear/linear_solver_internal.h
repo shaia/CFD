@@ -82,16 +82,55 @@ poisson_solver_t* create_multigrid_omp_solver(void);
 
 /**
  * Reject POISSON_PRECOND_MULTIGRID on backends that don't implement it.
- * Only the scalar CG solver supports the MG preconditioner; silently
- * ignoring it would be a forbidden silent fallback.
+ * Only the scalar and OpenMP CG solvers support the MG preconditioner;
+ * silently ignoring it would be a forbidden silent fallback.
  */
 static inline cfd_status_t poisson_solver_reject_mg_precond(
     const poisson_solver_params_t* params) {
     if (params && params->preconditioner == POISSON_PRECOND_MULTIGRID) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "POISSON_PRECOND_MULTIGRID is only supported by the scalar CG solver");
+            "POISSON_PRECOND_MULTIGRID is only supported by the scalar and OpenMP CG solvers");
         return CFD_ERROR_UNSUPPORTED;
     }
+    return CFD_SUCCESS;
+}
+
+/**
+ * Create and initialize the inner solver of POISSON_PRECOND_MULTIGRID: one
+ * multigrid V-cycle per preconditioner apply. Every CG backend that supports
+ * the preconditioner builds it here, so all of them apply the same M.
+ *
+ * Dirichlet mode matches CG's interior operator (Krylov vectors carry a
+ * permanent zero halo) and keeps M nonsingular; Jacobi smoothing with equal
+ * pre/post sweeps keeps M symmetric, as CG requires.
+ *
+ * @param factory  Multigrid backend factory (create_multigrid_<backend>_solver)
+ * @param out      Receives the initialized solver; written only on success
+ * @return CFD_SUCCESS, CFD_ERROR_NOMEM, or the multigrid init status
+ *         (CFD_ERROR_INVALID for grid dims that are not 2^k+1)
+ */
+static inline cfd_status_t poisson_solver_create_mg_precond(
+    poisson_solver_t* (*factory)(void),
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
+    poisson_solver_t** out) {
+    poisson_solver_t* mg = factory();
+    if (!mg) {
+        return CFD_ERROR_NOMEM;
+    }
+
+    poisson_solver_params_t mg_params = poisson_solver_params_default();
+    mg_params.mg_cycle = MG_CYCLE_V;
+    mg_params.mg_smoother = MG_SMOOTHER_JACOBI;
+    mg_params.mg_bc = MG_BC_DIRICHLET;
+
+    cfd_status_t status = poisson_solver_init(mg, nx, ny, nz, dx, dy, dz, &mg_params);
+    if (status != CFD_SUCCESS) {
+        poisson_solver_destroy(mg);
+        return status;
+    }
+
+    *out = mg;
     return CFD_SUCCESS;
 }
 

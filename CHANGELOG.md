@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multigrid pressure solve on the OpenMP projection solver** — `projection_omp`
+  now accepts `NS_PRESSURE_SOLVER_MULTIGRID` (OpenMP multigrid V-cycles, RHS
+  interior mean subtracted for Neumann compatibility) and
+  `NS_PRESSURE_SOLVER_PCG_MG` (OpenMP CG preconditioned by an OpenMP multigrid
+  V-cycle), gated at init like the scalar `projection`: non-2^k+1 grids return
+  `CFD_ERROR_UNSUPPORTED` and degenerate grids `CFD_ERROR_INVALID`. No scalar
+  sub-solver runs on either path. OpenMP CG therefore accepts
+  `POISSON_PRECOND_MULTIGRID`, also exposed as the new `POISSON_SOLVER_PCG_MG_OMP`
+  convenience preset; both CG backends build the preconditioner through one
+  shared helper, so they apply the same V(2,2) weighted-Jacobi Dirichlet cycle.
+  OpenMP PCG-MG solves match scalar within 1e-9 at 1, 2 and 4 threads (257x257,
+  where the multigrid kernels run threaded, and 17^3), and the OpenMP multigrid
+  projection matches the scalar one within 1e-10 on 257x257.
+  `projection_optimized` and `projection_gpu` still reject the multigrid modes
+  (`lib/src/solvers/navier_stokes/omp/solver_projection_omp.c`,
+  `lib/src/solvers/linear/omp/linear_solver_cg_omp.c`,
+  `lib/src/solvers/linear/linear_solver_internal.h`,
+  `lib/src/api/solver_registry.c`,
+  `tests/solvers/navier_stokes/cpu/test_projection_pressure_solver.c`,
+  `tests/math/test_mg_pcg_convergence.c`, `tests/math/test_omp_consistency.c`).
 - **Geometric multigrid OpenMP backend** — `poisson_solver_create(POISSON_METHOD_MULTIGRID,
   POISSON_BACKEND_OMP)` (`multigrid_omp`) and the `POISSON_SOLVER_MG_OMP`
   convenience preset. The algorithm now lives in one template shared with the
@@ -22,9 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would cost more than the work.
   `POISSON_BACKEND_AUTO` still resolves multigrid to scalar; request OMP
   explicitly. Both multigrid backends now reject grids whose `nx` or `ny`
-  exceeds `INT_MAX` with `CFD_ERROR_LIMIT_EXCEEDED` at init. The multigrid
-  pressure solve in `projection_omp` and MG preconditioning for OMP CG remain
-  follow-ups (`lib/src/solvers/linear/multigrid_template/linear_solver_multigrid_template.h`,
+  exceeds `INT_MAX` with `CFD_ERROR_LIMIT_EXCEEDED` at init
+  (`lib/src/solvers/linear/multigrid_template/linear_solver_multigrid_template.h`,
   `lib/src/solvers/linear/omp/linear_solver_multigrid_omp.c`,
   `lib/src/solvers/linear/cpu/linear_solver_multigrid.c`,
   `tests/math/test_omp_consistency.c`, `tests/math/test_multigrid_convergence.c`,
@@ -45,15 +64,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing CG behavior) selects the pressure Poisson solve of the scalar
   `projection` solver: `NS_PRESSURE_SOLVER_MULTIGRID` (multigrid V-cycles,
   RHS interior mean subtracted for Neumann compatibility) or
-  `NS_PRESSURE_SOLVER_PCG_MG` (MG-preconditioned CG). Non-2^k+1 grids and
-  non-scalar projection backends reject the selection with
+  `NS_PRESSURE_SOLVER_PCG_MG` (MG-preconditioned CG). Non-2^k+1 grids and the
+  `projection_optimized` and `projection_gpu` backends reject the selection with
   `CFD_ERROR_UNSUPPORTED` at init
   (`lib/src/solvers/navier_stokes/cpu/solver_projection.c`,
   `lib/src/api/solver_registry.c`,
   `tests/solvers/navier_stokes/cpu/test_projection_pressure_solver.c`).
 - **Multigrid-preconditioned CG** — `POISSON_PRECOND_MULTIGRID` runs one
   symmetric V(2,2) weighted-Jacobi multigrid cycle in Dirichlet mode per
-  preconditioner apply (scalar CG only; other CG/GMRES backends reject it
+  preconditioner apply (scalar and OpenMP CG; SIMD/GPU CG and GMRES reject it
   with `CFD_ERROR_UNSUPPORTED`). Grid-size-independent convergence: 5 CG
   iterations at 33²–129² (tol 1e-8) vs 50–170 unpreconditioned. Exposed as
   the `POISSON_SOLVER_PCG_MG_SCALAR` convenience preset

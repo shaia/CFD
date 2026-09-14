@@ -704,6 +704,8 @@ if(BUILD_TESTS)
         GhiaEulerOmpTest
         GhiaProjectionOmpTest
         OMPConsistencyTest
+        ProjectionPressureSolverTest
+        MgPcgConvergenceTest
         PROPERTIES PROCESSORS 2
     )
 endif()

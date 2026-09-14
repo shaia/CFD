@@ -473,6 +473,20 @@ static inline test_result test_result_init(void) {
     return r;
 }
 
+/**
+ * Nonzero when the solver type is registered in this build. The runners below
+ * report a NULL solver as a failure, not a skip, so tests that cover optional
+ * backends check this first.
+ */
+static inline int test_solver_available(ns_solver_registry_t* registry, const char* type) {
+    ns_solver_t* slv = cfd_solver_create(registry, type);
+    if (!slv) {
+        return 0;
+    }
+    solver_destroy(slv);
+    return 1;
+}
+
 //=============================================================================
 // GENERIC TEST RUNNERS (using solver type strings)
 //=============================================================================

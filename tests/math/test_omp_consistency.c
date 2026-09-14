@@ -22,6 +22,9 @@
  *   zero RHS), printed one line per configuration; an explicit apply_bc
  *   comparison; and the POISSON_SOLVER_MG_OMP convenience preset. The OMP
  *   multigrid path has no parallel reductions, so the expected difference is 0.
+ * - MG-preconditioned CG OMP vs Scalar: interior RMS difference <= 1e-9 and
+ *   |iteration delta| <= 2 on 257x257 (finest multigrid plane above
+ *   MG_OMP_MIN_POINTS) and 17^3
  *
  * The thread count comes from OMP_NUM_THREADS: CMake registers this executable at
  * 1, 2 and 4 threads. It is not set in-process because on MSVC this test binds
@@ -1149,6 +1152,109 @@ void test_multigrid_omp_convenience_preset(void) {
     cfd_free(p_bad);
 }
 
+/* ============================================================================
+ * MULTIGRID-PRECONDITIONED CG: OMP vs SCALAR
+ * ============================================================================ */
+
+/* Both backends build the same V-cycle preconditioner (the OMP multigrid cycle
+ * is bit-identical to the scalar one), so only OMP CG's dot-product reductions
+ * separate the solves: the bounds match test_cg_omp_vs_scalar. The tight solver
+ * tolerance leaves both solutions well converged. */
+#define PCG_MG_TOLERANCE 1.0e-10
+#define PCG_MG_L2_TOL    1.0e-9
+#define PCG_MG_ITER_TOL  2
+
+typedef struct {
+    size_t nx, ny, nz;
+} pcg_mg_config_t;
+
+/* 257x257 puts the finest multigrid plane over MG_OMP_MIN_POINTS, so the
+ * preconditioner's kernels run threaded; 17^3 covers 3D */
+static const pcg_mg_config_t PCG_MG_CONFIGS[] = {
+    {257, 257, 1},
+    {17, 17, 17},
+};
+
+/** Solve one configuration with CG + POISSON_PRECOND_MULTIGRID on the given backend */
+static void solve_pcg_mg(poisson_solver_backend_t backend, const pcg_mg_config_t* cfg,
+                         const double* rhs, double* x, poisson_solver_stats_t* stats) {
+    double dx, dy, dz;
+    config_spacing(cfg->nx, cfg->ny, cfg->nz, &dx, &dy, &dz);
+
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG, backend);
+    TEST_ASSERT_NOT_NULL_MESSAGE(solver,
+        "CG solver creation returned NULL for an available backend");
+
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance = PCG_MG_TOLERANCE;
+    params.preconditioner = POISSON_PRECOND_MULTIGRID;
+
+    cfd_status_t status = poisson_solver_init(solver, cfg->nx, cfg->ny, cfg->nz,
+                                              dx, dy, dz, &params);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+
+    *stats = poisson_solver_stats_default();
+    status = poisson_solver_solve(solver, x, NULL, rhs, stats);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+    TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats->status);
+
+    poisson_solver_destroy(solver);
+}
+
+/**
+ * Test: MG-preconditioned CG OMP vs Scalar Consistency
+ *
+ * Solves each configuration with CG + POISSON_PRECOND_MULTIGRID on both
+ * backends and compares interior solutions and iteration counts.
+ */
+void test_pcg_mg_omp_vs_scalar(void) {
+    if (!poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
+        TEST_IGNORE_MESSAGE("OMP backend not available on this platform");
+        return;
+    }
+
+    const pcg_mg_config_t* large = &PCG_MG_CONFIGS[0];
+    TEST_ASSERT_TRUE_MESSAGE((large->nx - 2) * (large->ny - 2) >= MG_OMP_MIN_POINTS,
+        "PCG-MG consistency needs a grid whose finest multigrid plane uses threads");
+
+    size_t num_configs = sizeof(PCG_MG_CONFIGS) / sizeof(PCG_MG_CONFIGS[0]);
+    for (size_t c = 0; c < num_configs; c++) {
+        const pcg_mg_config_t* cfg = &PCG_MG_CONFIGS[c];
+        size_t n = cfg->nx * cfg->ny * cfg->nz;
+        double dx, dy, dz;
+        config_spacing(cfg->nx, cfg->ny, cfg->nz, &dx, &dy, &dz);
+
+        double* rhs      = (double*)cfd_calloc(n, sizeof(double));
+        double* x_scalar = (double*)cfd_calloc(n, sizeof(double));
+        double* x_omp    = (double*)cfd_calloc(n, sizeof(double));
+        TEST_ASSERT_NOT_NULL(rhs);
+        TEST_ASSERT_NOT_NULL(x_scalar);
+        TEST_ASSERT_NOT_NULL(x_omp);
+
+        init_sinusoidal_rhs(rhs, cfg->nx, cfg->ny, cfg->nz, dx, dy, dz);
+
+        poisson_solver_stats_t stats_scalar;
+        poisson_solver_stats_t stats_omp;
+        solve_pcg_mg(POISSON_BACKEND_SCALAR, cfg, rhs, x_scalar, &stats_scalar);
+        solve_pcg_mg(POISSON_BACKEND_OMP, cfg, rhs, x_omp, &stats_omp);
+
+        double l2_diff = interior_rms_diff(x_scalar, x_omp, cfg->nx, cfg->ny, cfg->nz);
+        int iters_scalar = (int)stats_scalar.iterations;
+        int iters_omp = (int)stats_omp.iterations;
+
+        printf("pcg_mg %zux%zux%zu threads=%d l2=%.3e iters_ref=%d iters_target=%d\n",
+               cfg->nx, cfg->ny, cfg->nz, reported_threads(), l2_diff,
+               iters_scalar, iters_omp);
+
+        TEST_ASSERT_LESS_OR_EQUAL(PCG_MG_ITER_TOL, abs(iters_scalar - iters_omp));
+        TEST_ASSERT_DOUBLE_WITHIN(PCG_MG_L2_TOL, 0.0, l2_diff);
+
+        cfd_free(rhs);
+        cfd_free(x_scalar);
+        cfd_free(x_omp);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cg_omp_vs_scalar);
@@ -1161,5 +1267,6 @@ int main(void) {
     RUN_TEST(test_multigrid_omp_vs_scalar);
     RUN_TEST(test_multigrid_omp_apply_bc_matches_scalar);
     RUN_TEST(test_multigrid_omp_convenience_preset);
+    RUN_TEST(test_pcg_mg_omp_vs_scalar);
     return UNITY_END();
 }
