@@ -137,18 +137,28 @@ Two modes are available:
 - Purpose: Quick regression testing
 
 **Full Validation Mode:**
-- Iterations: 3000-10000 steps
-- Time step: 0.0005
-- Purpose: Comprehensive validation
+- Grid: 129×129 at Re = 100, 400 and 1000
+- Steps: 50000 at Re=100 (dt 0.0002), 60000 at Re=400 and 100000 at Re=1000 (dt 0.0005)
+- Purpose: Release validation; runs in the EC2 GPU workflow on every push to master
 
-Enable full mode with:
-```c
-#define CAVITY_FULL_VALIDATION 1
+Enable full mode with the CMake option:
+```bash
+cmake -B build -DCAVITY_FULL_VALIDATION=ON
 ```
+
+See [cavity-backends-validation.md](cavity-backends-validation.md) for the per-backend
+parameters and ctest entries.
 
 ## Current Solver Performance
 
-### Status: ACCEPTABLE (Engineering Quality)
+### 129×129 Release Validation
+
+The AVX2, OpenMP and CUDA projection backends match Ghia et al. at 129×129, all under the
+0.10 target (RMS_u / RMS_v): Re=100 0.0017 / 0.0024, Re=400 0.0096 / 0.0328, Re=1000
+0.0299 / 0.0300. The full table and run details are in
+[cavity-backends-validation.md](cavity-backends-validation.md).
+
+### Status at 33×33: ACCEPTABLE (Engineering Quality)
 
 The current projection solver with CG Poisson achieves:
 - **u-centerline RMS: ~0.10** (target: < 0.10 ✅)
@@ -197,10 +207,13 @@ The lid-driven cavity flow at Re = 100 requires ~10-20 time units to reach stead
 - Even 1% pressure error → 5-10% velocity error after many time steps
 - Insufficient Poisson convergence → spurious divergence → incorrect vortex structure
 
-**Current solution:** All backends now use robust solvers:
-- CPU: Conjugate Gradient (CG) - reliable convergence in ~150 iterations
-- SIMD/OMP: Red-Black SOR or CG-SIMD
-- GPU: Jacobi with sufficient iterations for parallelism
+**Current solution:** Every projection backend solves the pressure equation with Conjugate
+Gradient (CG) on its own backend (the scalar and OpenMP solvers can switch to multigrid through
+`ns_solver_params_t.pressure_solver`):
+- CPU: scalar CG - reliable convergence in ~150 iterations
+- SIMD: CG with AVX2/NEON kernels
+- OMP: OpenMP CG
+- GPU: device-resident CUDA CG
 
 #### 3. Time Step Selection
 
