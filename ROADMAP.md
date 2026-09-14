@@ -85,9 +85,11 @@ Genuine constraints to be aware of (not backlog items):
   MG-preconditioned CG (`POISSON_PRECOND_MULTIGRID`) gives grid-size-independent
   iteration counts on uniform grids where Jacobi PCG gives no benefit.
 
-> The SOR optimal-ω and Jacobi spectral-radius formulas (ρ = cos(πh),
-> ω = 2/(1 + sin(πh))) assume Dirichlet BCs; with Neumann BCs optimal ω is typically lower
-> (1.5–1.7).
+> SOR's automatic ω is chosen for the walls in use. With the default zero-gradient walls,
+> points beside a wall relax by ω·F/(F − W), which makes the iteration SOR on the Neumann matrix,
+> whose optimum is higher than the Dirichlet ω = 2/(1 + sin(πh)), not lower; the automatic ω
+> estimates it from just below. With a custom `apply_bc` the exact Dirichlet formula applies. See
+> the SOR section of `docs/reference/solvers.md`.
 
 ---
 
@@ -241,7 +243,9 @@ SIMD Poisson integration is done; current ~1.3–1.5× speedup is Amdahl-limited
       selectable in the scalar projection via `pressure_solver = NS_PRESSURE_SOLVER_PCG_MG`;
       PCG-MG stays scalar-CG only — SIMD/OMP PCG-MG are pending (an OMP multigrid
       solver exists, see §1.2, but OMP CG does not yet use it as a preconditioner)
-- [ ] Red-Black omega parameter tuning
+- [x] Red-Black omega parameter tuning — the automatic ω is at or just below the optimum for the
+      walls in use, with wall-adjacent points relaxed so that SOR theory holds for the Neumann matrix
+      (`poisson_solver_resolve_omega`)
 - [ ] Profile to identify remaining bottlenecks
 - [ ] OpenMP+SIMD hybrid projection (OMP across rows, SIMD within rows); benchmark vs pure OMP
       and pure SIMD

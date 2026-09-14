@@ -199,19 +199,30 @@ poisson_solver_t* poisson_solver_create(
             }
 
         case POISSON_METHOD_SOR:
-        case POISSON_METHOD_GAUSS_SEIDEL:
+        case POISSON_METHOD_GAUSS_SEIDEL: {
+            /* Gauss-Seidel is SOR at omega = 1: the same solvers, marked with the
+             * requested method so that init resolves omega to 1 */
+            poisson_solver_t* sor;
             switch (backend) {
                 case POISSON_BACKEND_SIMD:
-                    return create_sor_simd_solver();
+                    sor = create_sor_simd_solver();
+                    break;
 #ifdef CFD_HAS_CUDA
                 case POISSON_BACKEND_GPU:
-                    return create_sor_gpu_solver();
+                    sor = create_sor_gpu_solver();
+                    break;
 #endif
                 case POISSON_BACKEND_SCALAR:
-                    return create_sor_scalar_solver();
+                    sor = create_sor_scalar_solver();
+                    break;
                 default:
-                    return backend_unavailable("SOR");
+                    return backend_unavailable(method == POISSON_METHOD_GAUSS_SEIDEL ? "Gauss-Seidel" : "SOR");
             }
+            if (sor) {
+                sor->method = method;
+            }
+            return sor;
+        }
 
         case POISSON_METHOD_REDBLACK_SOR:
             switch (backend) {
@@ -400,7 +411,9 @@ double poisson_solver_compute_residual(
                      - 2.0 * x[idx]) * inv_dz2;
 
                 double residual = fabs(laplacian - rhs[idx]);
-                if (residual > max_residual) {
+                /* A NaN compares false against everything, so without the
+                 * isnan() a diverged field would read as a zero residual */
+                if (residual > max_residual || isnan(residual)) {
                     max_residual = residual;
                 }
             }
@@ -490,6 +503,17 @@ cfd_status_t poisson_solver_solve_common(
         stats->initial_residual = initial_res;
     }
 
+    /* A start whose residual is not finite has diverged before the first sweep */
+    if (!isfinite(initial_res)) {
+        if (stats) {
+            stats->status = POISSON_DIVERGED;
+            stats->iterations = 0;
+            stats->final_residual = initial_res;
+            stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
+        }
+        return CFD_ERROR_DIVERGED;
+    }
+
     /* Already converged? */
     if (initial_res < params->absolute_tolerance) {
         if (stats) {
@@ -502,15 +526,19 @@ cfd_status_t poisson_solver_solve_common(
     }
 
     int converged = 0;
+    int diverged = 0;
     int iter;
     double res = initial_res;
 
     for (iter = 0; iter < params->max_iterations; iter++) {
         double new_res = 0.0;
 
+        /* Check at intervals and on the last iteration, so that a solve never ends
+         * on a residual older than the field it returns */
+        int check = (iter % params->check_interval == 0) || (iter + 1 == params->max_iterations);
+
         /* Perform one iteration */
-        cfd_status_t status = solver->iterate(solver, x, x_temp, rhs,
-            (iter % params->check_interval == 0) ? &new_res : NULL);
+        cfd_status_t status = solver->iterate(solver, x, x_temp, rhs, check ? &new_res : NULL);
 
         if (status != CFD_SUCCESS) {
             if (stats) {
@@ -522,9 +550,14 @@ cfd_status_t poisson_solver_solve_common(
             return status;
         }
 
-        /* Check convergence at intervals */
-        if (iter % params->check_interval == 0) {
+        if (check) {
             res = new_res;
+
+            /* A residual that is no longer finite will never meet the tolerance */
+            if (!isfinite(res)) {
+                diverged = 1;
+                break;
+            }
 
             if (params->verbose) {
                 CFD_LOG_DEBUG("poisson", "Iter %d: residual = %.6e", iter, res);
@@ -540,15 +573,20 @@ cfd_status_t poisson_solver_solve_common(
     double end_time = poisson_solver_get_time_ms();
 
     if (stats) {
-        /* A converged break leaves iter at the index of the last iteration run;
+        /* A break leaves iter at the index of the last iteration run;
          * an exhausted loop leaves it at max_iterations, the count run */
-        stats->iterations = converged ? iter + 1 : iter;
+        stats->iterations = (converged || diverged) ? iter + 1 : iter;
         stats->final_residual = res;
         stats->elapsed_time_ms = end_time - start_time;
-        stats->status = converged ? POISSON_CONVERGED : POISSON_MAX_ITER;
+        stats->status = converged ? POISSON_CONVERGED
+                      : diverged  ? POISSON_DIVERGED
+                                  : POISSON_MAX_ITER;
     }
 
-    return converged ? CFD_SUCCESS : CFD_ERROR_MAX_ITER;
+    if (converged) {
+        return CFD_SUCCESS;
+    }
+    return diverged ? CFD_ERROR_DIVERGED : CFD_ERROR_MAX_ITER;
 }
 
 cfd_status_t poisson_solver_solve(

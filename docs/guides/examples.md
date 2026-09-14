@@ -673,7 +673,7 @@ CFD Platform Diagnostics
 
 **What it demonstrates:**
 - `poisson_solver_create(method, backend)` factory API
-- `poisson_solver_params_t` with tolerance, max iterations, omega, preconditioner
+- `poisson_solver_params_t` with tolerance, max iterations and preconditioner, leaving omega at 0 (automatic)
 - `poisson_solver_init()`, `poisson_solver_solve()`, `poisson_solver_destroy()`
 - `poisson_solver_stats_t` for convergence monitoring
 - `poisson_solve()` convenience API
@@ -881,6 +881,45 @@ Recovered u_tau = 0.9712 (exact force balance: 1.0000)
 Wrote turbulent_channel.vtk (open in ParaView to inspect nu_t/k).
 ```
 The SA variant converges similarly (u_τ ≈ 0.969, u+ within ~4% of the log law).
+
+---
+
+### 18. sor_omega_sweep.c
+
+**Purpose:** Count the sweeps SOR and Red-Black SOR need for every relaxation factor ω across a range, on one grid, and compare the automatic ω
+
+**What it demonstrates:**
+
+- Setting `params.omega` explicitly, and leaving it at `0` for the automatic value
+- Replacing the default zero-gradient walls through `solver->apply_bc`, installed before `poisson_solver_init()`, which chooses ω
+- Reading `iterations` and `status` from `poisson_solver_stats_t`
+
+**Problem setup:**
+
+- Unit square, `--grid N` points per side (default 33), zero initial guess
+- Right-hand side: seeded splitmix64 noise with zero interior mean, so every error mode is present and the zero-gradient problem has a solution
+- Tolerance 1e-6 relative to the initial residual, at most 100,000 sweeps
+- `--walls dirichlet` holds the boundary at zero instead of copying the interior onto it (the CUDA solvers reject it)
+
+**Run:**
+```bash
+./sor_omega_sweep                                   # Red-Black SOR, 33x33, omega 1.00 to 1.99
+./sor_omega_sweep --grid 65 --method sor --from 1.90 --to 1.99 --step 0.005
+./sor_omega_sweep --walls dirichlet --backend simd
+./sor_omega_sweep --backend gpu                     # CUDA build; also scalar, simd, omp
+```
+
+**Expected output** (`--grid 33 --from 1.80 --to 1.95 --step 0.05`):
+```
+omega,sweeps,status,final_residual
+1.8000,244,converged,9.639475e-07
+1.8500,154,converged,9.741168e-07
+1.9000,145,converged,9.315211e-07
+1.9500,294,converged,6.763749e-07
+auto,117,converged,9.625996e-07
+```
+Over the full range the sweeps form a U whose lowest point moves towards 2 as the grid grows; the
+automatic ω sits just below it (1.863 on this grid, where the fewest sweeps, 104, come at 1.866).
 
 ---
 

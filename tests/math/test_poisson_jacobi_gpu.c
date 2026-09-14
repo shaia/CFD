@@ -420,6 +420,41 @@ void test_redblack_sor_gpu_matches_cpu(void) {
     cfd_free(p_cpu);
 }
 
+/* A GPU Jacobi start whose residual is not finite has diverged before the first
+ * sweep. The GPU loop used to switch its convergence checks off instead, run every
+ * sweep on the bad field and report max_iter. */
+void test_jacobi_gpu_non_finite_start_reports_divergence(void) {
+    printf("\n    GPU Jacobi: non-finite start...\n");
+    const size_t n = 3;
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_JACOBI, POISSON_BACKEND_GPU);
+    if (!solver) {
+        printf("      SKIPPED (GPU backend unavailable)\n");
+        return;
+    }
+    cfd_status_t st = poisson_solver_init(solver, n, n, 1, 0.5, 0.5, 0.0, NULL);
+    if (st == CFD_ERROR_UNSUPPORTED) {
+        poisson_solver_destroy(solver);
+        printf("      SKIPPED (no GPU device at runtime)\n");
+        return;
+    }
+    double* x = create_field(n * n);
+    double* rhs = create_field(n * n);
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = CFD_ERROR;
+    if (st == CFD_SUCCESS && x && rhs) {
+        x[1 * n + 1] = nan("");
+        status = poisson_solver_solve(solver, x, NULL, rhs, &stats);
+    }
+    poisson_solver_destroy(solver);
+    cfd_free(x);
+    cfd_free(rhs);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, st);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_DIVERGED, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_DIVERGED, stats.status);
+    TEST_ASSERT_EQUAL_INT(0, stats.iterations);
+}
+
 int main(void) {
     UNITY_BEGIN();
     printf("\n========================================\n");
@@ -430,5 +465,6 @@ int main(void) {
     RUN_TEST(test_cg_gpu_matches_cpu);
     RUN_TEST(test_bicgstab_gpu_matches_cpu);
     RUN_TEST(test_redblack_sor_gpu_matches_cpu);
+    RUN_TEST(test_jacobi_gpu_non_finite_start_reports_divergence);
     return UNITY_END();
 }

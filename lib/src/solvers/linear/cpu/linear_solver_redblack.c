@@ -24,8 +24,11 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
+    double inv_dx2;    /* 1/dx^2 */
+    double inv_dy2;    /* 1/dy^2 */
     double inv_dz2;
-    double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2)) */
+    double factor;     /* 2 * (1/dx^2 + 1/dy^2 + inv_dz2) */
+    double inv_factor; /* 1 / factor */
     double omega;      /* SOR relaxation parameter */
     size_t stride_z;
     size_t k_start;
@@ -50,14 +53,15 @@ static cfd_status_t redblack_scalar_init(
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
+    ctx->inv_dx2 = 1.0 / ctx->dx2;
+    ctx->inv_dy2 = 1.0 / ctx->dy2;
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     poisson_solver_compute_3d_bounds(nz, nx, ny,
         &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
-    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
-    ctx->inv_factor = 1.0 / factor;
-    ctx->omega = poisson_solver_resolve_omega(
-        params ? params->omega : 0.0, nx, ny, nz, dx, dy, dz);
+    ctx->factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
+    ctx->inv_factor = 1.0 / ctx->factor;
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
     ctx->initialized = 1;
 
     solver->context = ctx;
@@ -96,10 +100,14 @@ static cfd_status_t redblack_scalar_iterate(
 
     size_t stride_z = ctx->stride_z;
     double inv_dz2 = ctx->inv_dz2;
+    int walls = poisson_solver_uses_default_walls(solver);
 
     /* Red sweep: (i+j+k) % 2 == 1 */
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
         for (size_t j = 1; j < ny - 1; j++) {
+            double w_row, w_edge;
+            poisson_solver_row_omegas(walls, omega, ctx->factor, nx, ny, solver->nz, j, k,
+                                      ctx->inv_dx2, ctx->inv_dy2, inv_dz2, &w_row, &w_edge);
             size_t i_start = ((j + k) % 2 == 0) ? 1 : 2;
             for (size_t i = i_start; i < nx - 1; i += 2) {
                 size_t idx = k * stride_z + IDX_2D(i, j, nx);
@@ -110,8 +118,9 @@ static cfd_status_t redblack_scalar_iterate(
                     - (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2
                     ) * inv_factor;
 
-                /* SOR update */
-                x[idx] = x[idx] + omega * (p_new - x[idx]);
+                /* SOR update, with the wall factor at the row's first and last point */
+                double w = (i == 1 || i == nx - 2) ? w_edge : w_row;
+                x[idx] = x[idx] + w * (p_new - x[idx]);
             }
         }
     }
@@ -119,6 +128,9 @@ static cfd_status_t redblack_scalar_iterate(
     /* Black sweep: (i+j+k) % 2 == 0 */
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
         for (size_t j = 1; j < ny - 1; j++) {
+            double w_row, w_edge;
+            poisson_solver_row_omegas(walls, omega, ctx->factor, nx, ny, solver->nz, j, k,
+                                      ctx->inv_dx2, ctx->inv_dy2, inv_dz2, &w_row, &w_edge);
             size_t i_start = ((j + k) % 2 == 0) ? 2 : 1;
             for (size_t i = i_start; i < nx - 1; i += 2) {
                 size_t idx = k * stride_z + IDX_2D(i, j, nx);
@@ -129,8 +141,9 @@ static cfd_status_t redblack_scalar_iterate(
                     - (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2
                     ) * inv_factor;
 
-                /* SOR update */
-                x[idx] = x[idx] + omega * (p_new - x[idx]);
+                /* SOR update, with the wall factor at the row's first and last point */
+                double w = (i == 1 || i == nx - 2) ? w_edge : w_row;
+                x[idx] = x[idx] + w * (p_new - x[idx]);
             }
         }
     }

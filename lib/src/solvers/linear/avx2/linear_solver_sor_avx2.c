@@ -1,21 +1,25 @@
 /**
  * @file linear_solver_sor_avx2.c
- * @brief Block SOR (Successive Over-Relaxation) solver - AVX2 implementation
+ * @brief SOR (Successive Over-Relaxation) solver - AVX2 implementation
  *
  * SOR method characteristics:
  * - In-place update: reads from and writes to the same array (no double-buffer)
  * - Sequential row dependency: row j depends on row j-1 (no OpenMP on j-loop)
- * - Faster convergence than Jacobi (~1/2 iterations for optimal omega)
- * - SIMD speedup comes from vectorizing within each row only
+ * - Lexicographic order, the same iteration as the scalar solver, so the
+ *   automatic omega applies to it
  *
- * This implementation uses:
- * - AVX2 intrinsics for SIMD vectorization (4 doubles per operation)
- * - Block SOR: process 4 consecutive cells per SIMD iteration; intra-block
- *   left-neighbor dependency uses stale values (well-known HPC technique)
- * - Sequential j-loop (rows are not parallelizable due to data dependency)
+ * Each row is swept in two passes:
+ * - AVX2, four cells at a time: every stencil term except the left neighbour.
+ *   The right neighbour, the rows above and below and the planes either side
+ *   are not written while this row is swept, so these reads are the scalar
+ *   sweep's own.
+ * - In order: add the left neighbour, which this sweep has just updated, and
+ *   relax.
  *
- * See docs/technical-notes/block-sor-simd.md for algorithm details and
- * convergence analysis.
+ * The Block SOR this replaces read the left neighbour inside each block of four
+ * from the previous sweep. That is a different iteration: on every grid measured,
+ * 17x17 to 65x65, it diverged for omega between 1.40 and 1.50, below those grids'
+ * automatic omega. See docs/technical-notes/block-sor-simd.md.
  */
 
 #include "../linear_solver_internal.h"
@@ -48,17 +52,19 @@
 typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
+    double inv_dx2;    /* 1/dx^2 */
+    double inv_dy2;    /* 1/dy^2 */
     double inv_dz2;    /* 1/dz^2 (0.0 for 2D) */
-    double inv_factor; /* 1 / (2 * (1/dx^2 + 1/dy^2 + inv_dz2)) */
-    double omega;      /* SOR relaxation parameter (default: 1.5) */
+    double factor;     /* 2 * (1/dx^2 + 1/dy^2 + inv_dz2) */
+    double inv_factor; /* 1 / factor */
+    double omega;      /* SOR relaxation parameter */
     size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
     size_t k_start;    /* first interior k index */
     size_t k_end;      /* one-past-last interior k index */
+    double* partial;   /* nx doubles: a row's stencil terms without the left neighbour */
     __m256d dx2_inv_vec;
     __m256d dy2_inv_vec;
     __m256d dz2_inv_vec;
-    __m256d neg_inv_factor_vec;
-    __m256d omega_vec;
     int initialized;
 } sor_avx2_context_t;
 
@@ -72,31 +78,35 @@ static cfd_status_t sor_avx2_init(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    (void)nx; (void)ny;
+    (void)ny;
 
     /* Use aligned allocation for struct containing __m256d members */
     sor_avx2_context_t* ctx = (sor_avx2_context_t*)cfd_aligned_calloc(1, sizeof(sor_avx2_context_t));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
+    ctx->partial = (double*)cfd_calloc(nx, sizeof(double));
+    if (!ctx->partial) {
+        cfd_aligned_free(ctx);
+        return CFD_ERROR_NOMEM;
+    }
 
     ctx->dx2 = dx * dx;
     ctx->dy2 = dy * dy;
+    ctx->inv_dx2 = 1.0 / ctx->dx2;
+    ctx->inv_dy2 = 1.0 / ctx->dy2;
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
-    double factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
-    ctx->inv_factor = 1.0 / factor;
+    ctx->factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
+    ctx->inv_factor = 1.0 / ctx->factor;
 
-    ctx->omega = poisson_solver_resolve_omega(
-        params ? params->omega : 0.0, nx, ny, nz, dx, dy, dz);
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
 
     /* Pre-compute SIMD vectors */
-    ctx->dx2_inv_vec        = _mm256_set1_pd(1.0 / ctx->dx2);
-    ctx->dy2_inv_vec        = _mm256_set1_pd(1.0 / ctx->dy2);
-    ctx->dz2_inv_vec        = _mm256_set1_pd(ctx->inv_dz2);
-    ctx->neg_inv_factor_vec = _mm256_set1_pd(-ctx->inv_factor);
-    ctx->omega_vec          = _mm256_set1_pd(ctx->omega);
+    ctx->dx2_inv_vec = _mm256_set1_pd(ctx->inv_dx2);
+    ctx->dy2_inv_vec = _mm256_set1_pd(ctx->inv_dy2);
+    ctx->dz2_inv_vec = _mm256_set1_pd(ctx->inv_dz2);
 
     ctx->initialized = 1;
     solver->context = ctx;
@@ -105,7 +115,9 @@ static cfd_status_t sor_avx2_init(
 
 static void sor_avx2_destroy(poisson_solver_t* solver) {
     if (solver && solver->context) {
-        cfd_aligned_free(solver->context);
+        sor_avx2_context_t* ctx = (sor_avx2_context_t*)solver->context;
+        cfd_free(ctx->partial);
+        cfd_aligned_free(ctx);
         solver->context = NULL;
     }
 }
@@ -120,72 +132,64 @@ static cfd_status_t sor_avx2_iterate(
     (void)x_temp;
 
     sor_avx2_context_t* ctx = (sor_avx2_context_t*)solver->context;
-    size_t nx       = solver->nx;
-    size_t ny       = solver->ny;
-    double dx2      = ctx->dx2;
-    double dy2      = ctx->dy2;
-    double inv_dz2  = ctx->inv_dz2;
+    size_t nx         = solver->nx;
+    size_t ny         = solver->ny;
+    double inv_dx2    = ctx->inv_dx2;
+    double inv_dy2    = ctx->inv_dy2;
+    double inv_dz2    = ctx->inv_dz2;
     double inv_factor = ctx->inv_factor;
-    double omega    = ctx->omega;
-    size_t stride_z = ctx->stride_z;
+    double omega      = ctx->omega;
+    size_t stride_z   = ctx->stride_z;
+    double* partial   = ctx->partial;
+    int walls         = poisson_solver_uses_default_walls(solver);
 
-    __m256d dx2_inv      = ctx->dx2_inv_vec;
-    __m256d dy2_inv      = ctx->dy2_inv_vec;
-    __m256d dz2_inv      = ctx->dz2_inv_vec;
-    __m256d neg_inv_factor = ctx->neg_inv_factor_vec;
-    __m256d omega_vec    = ctx->omega_vec;
+    __m256d dx2_inv = ctx->dx2_inv_vec;
+    __m256d dy2_inv = ctx->dy2_inv_vec;
+    __m256d dz2_inv = ctx->dz2_inv_vec;
 
     /* Sequential k→j loop.
      * SOR rows are sequential: row j uses the updated row j-1, so no OpenMP
-     * on the j-loop.  SIMD vectorization is applied within each row only. */
+     * on the j-loop. */
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
         for (size_t j = 1; j < ny - 1; j++) {
+            double w_row, w_edge;
+            poisson_solver_row_omegas(walls, omega, ctx->factor, nx, ny, solver->nz, j, k,
+                                      inv_dx2, inv_dy2, inv_dz2, &w_row, &w_edge);
+            size_t row = k * stride_z + IDX_2D(0, j, nx);
             size_t i = 1;
 
-            /* SIMD loop: process 4 doubles at a time (Block SOR).
-             * Between blocks the left-neighbor dependency is satisfied.
-             * Within a block, the intra-block left-neighbor uses stale values
-             * from the beginning of the block — this is the accepted Block SOR
-             * approximation and does not affect convergence in practice. */
+            /* Pass 1, four cells at a time: the right neighbour, the rows above and
+             * below and the planes either side, less the right-hand side. Nothing
+             * this row's sweep writes is read here. */
             for (; i + 4 <= nx - 1; i += 4) {
-                size_t idx = k * stride_z + IDX_2D(i, j, nx);
-
-                /* Load center and all six neighbors */
-                __m256d x_c  = _mm256_loadu_pd(&x[idx]);
-                __m256d x_xp = _mm256_loadu_pd(&x[idx + 1]);
-                __m256d x_xm = _mm256_loadu_pd(&x[idx - 1]);
-                __m256d x_yp = _mm256_loadu_pd(&x[idx + nx]);
-                __m256d x_ym = _mm256_loadu_pd(&x[idx - nx]);
-                __m256d x_zp = _mm256_loadu_pd(&x[idx + stride_z]);
-                __m256d x_zm = _mm256_loadu_pd(&x[idx - stride_z]);
+                size_t idx = row + i;
+                __m256d x_xp    = _mm256_loadu_pd(&x[idx + 1]);
+                __m256d x_yp    = _mm256_loadu_pd(&x[idx + nx]);
+                __m256d x_ym    = _mm256_loadu_pd(&x[idx - nx]);
+                __m256d x_zp    = _mm256_loadu_pd(&x[idx + stride_z]);
+                __m256d x_zm    = _mm256_loadu_pd(&x[idx - stride_z]);
                 __m256d rhs_vec = _mm256_loadu_pd(&rhs[idx]);
 
-                /* Compute stencil: sum each axis pair, scale by 1/h^2 */
-                __m256d sum_x = _mm256_mul_pd(_mm256_add_pd(x_xp, x_xm), dx2_inv);
-                __m256d sum_y = _mm256_mul_pd(_mm256_add_pd(x_yp, x_ym), dy2_inv);
-                __m256d sum_z = _mm256_mul_pd(_mm256_add_pd(x_zp, x_zm), dz2_inv);
-                __m256d sum_terms = _mm256_add_pd(_mm256_add_pd(sum_x, sum_y), sum_z);
-
-                /* p_new = -(rhs - sum_terms) * inv_factor */
-                __m256d diff  = _mm256_sub_pd(rhs_vec, sum_terms);
-                __m256d p_new = _mm256_mul_pd(diff, neg_inv_factor);
-
-                /* SOR relaxation: x = x + omega * (p_new - x) */
-                __m256d delta  = _mm256_sub_pd(p_new, x_c);
-                __m256d update = _mm256_fmadd_pd(omega_vec, delta, x_c);
-
-                _mm256_storeu_pd(&x[idx], update);
+                __m256d terms = _mm256_add_pd(_mm256_mul_pd(x_xp, dx2_inv),
+                                              _mm256_mul_pd(_mm256_add_pd(x_yp, x_ym), dy2_inv));
+                terms = _mm256_add_pd(terms, _mm256_mul_pd(_mm256_add_pd(x_zp, x_zm), dz2_inv));
+                _mm256_storeu_pd(&partial[i], _mm256_sub_pd(terms, rhs_vec));
+            }
+            for (; i < nx - 1; i++) {
+                size_t idx = row + i;
+                partial[i] = x[idx + 1] * inv_dx2
+                           + (x[idx + nx] + x[idx - nx]) * inv_dy2
+                           + (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2
+                           - rhs[idx];
             }
 
-            /* Scalar remainder for cells that don't fill a full SIMD block */
-            for (; i < nx - 1; i++) {
-                size_t idx = k * stride_z + IDX_2D(i, j, nx);
-                double p_new = -(rhs[idx]
-                    - (x[idx + 1] + x[idx - 1]) / dx2
-                    - (x[idx + nx] + x[idx - nx]) / dy2
-                    - (x[idx + stride_z] + x[idx - stride_z]) * inv_dz2
-                    ) * inv_factor;
-                x[idx] = x[idx] + omega * (p_new - x[idx]);
+            /* Pass 2, in order: add the left neighbour this sweep has just updated
+             * and relax, with the wall factor at the row's first and last point */
+            for (i = 1; i < nx - 1; i++) {
+                size_t idx = row + i;
+                double p_new = (partial[i] + x[idx - 1] * inv_dx2) * inv_factor;
+                double w = (i == 1 || i == nx - 2) ? w_edge : w_row;
+                x[idx] = x[idx] + w * (p_new - x[idx]);
             }
         }
     }
@@ -217,7 +221,7 @@ poisson_solver_t* create_sor_avx2_solver(void) {
     }
 
     solver->name        = POISSON_SOLVER_TYPE_SOR_SIMD;
-    solver->description = "SOR iteration (AVX2, Block SOR)";
+    solver->description = "SOR iteration (AVX2 stencil terms, sequential relaxation)";
     solver->method      = POISSON_METHOD_SOR;
     solver->backend     = POISSON_BACKEND_SIMD;
     solver->params      = poisson_solver_params_default();

@@ -61,7 +61,7 @@ This **read-after-write hazard** prevents parallel execution.
 
 The SOR method's fast convergence relies on using the **most recent values**. This is what makes Gauss-Seidel converge ~2x faster than Jacobi iteration. Breaking this dependency would require switching to a different algorithm.
 
-> **Update (March 2025):** A **Block SOR** SIMD implementation has been added that partially breaks this dependency at SIMD block boundaries. Within each block of 4 (AVX2) or 2 (NEON) consecutive cells, the left-neighbor uses stale values, but between blocks the dependency is satisfied. This is a well-known HPC technique that trades slightly slower convergence per iteration for significantly higher throughput. See [Block SOR technical note](block-sor-simd.md) for details.
+> **Update (September 2026):** The Block SOR added in March 2025 read stale left neighbors inside each block of 4 (AVX2) or 2 (NEON) cells. That is a different iteration from SOR: on the AVX2 build it diverged for omega between 1.40 and 1.50 on every grid measured (17x17 to 65x65), below those grids' automatic omega, and reported convergence because a NaN residual compared below the tolerance. The SIMD SOR solvers now keep the dependency: they vectorize the stencil terms the sweep does not write and relax each cell in order, which is the scalar SOR iteration. See [SIMD SOR technical note](block-sor-simd.md).
 
 ## Performance Impact
 

@@ -257,6 +257,246 @@ void test_sor_gpu_matches_cpu(void) {
     cfd_free(p_cpu);
 }
 
+static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
+    (void)solver;
+    (void)x;
+}
+
+/* The GPU SOR and Red-Black SOR solvers apply the zero-gradient walls on the
+ * device and never call apply_bc, so init rejects a caller-supplied one rather
+ * than solve the zero-gradient problem with the omega for the caller's walls. */
+void test_sor_gpu_rejects_custom_apply_bc(void) {
+    printf("\n    GPU SOR and Red-Black SOR: custom apply_bc rejected at init...\n");
+    poisson_solver_method_t methods[] = { POISSON_METHOD_SOR, POISSON_METHOD_REDBLACK_SOR };
+    for (size_t m = 0; m < sizeof(methods) / sizeof(methods[0]); m++) {
+        poisson_solver_t* solver = poisson_solver_create(methods[m], POISSON_BACKEND_GPU);
+        if (!solver) {
+            printf("      SKIPPED (GPU backend unavailable)\n");
+            return;
+        }
+        cfd_status_t plain = poisson_solver_init(solver, 17, 17, 1, 1.0 / 16.0, 1.0 / 16.0, 0.0, NULL);
+        poisson_solver_destroy(solver);
+        if (plain == CFD_ERROR_UNSUPPORTED) {
+            printf("      SKIPPED (no GPU device at runtime)\n");
+            return;
+        }
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, plain);
+
+        solver = poisson_solver_create(methods[m], POISSON_BACKEND_GPU);
+        TEST_ASSERT_NOT_NULL(solver);
+        solver->apply_bc = hold_walls_at_zero;
+        cfd_status_t custom = poisson_solver_init(solver, 17, 17, 1, 1.0 / 16.0, 1.0 / 16.0, 0.0, NULL);
+        poisson_solver_destroy(solver);
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_UNSUPPORTED, custom);
+    }
+}
+
+/* ---- 3D zero-gradient walls ----------------------------------------------- */
+
+/* Run exactly `sweeps` sweeps from a zero start with the default walls and the
+ * automatic omega; a zero tolerance keeps the solve from stopping early. Returns 0
+ * if the backend is unavailable, 1 once the sweeps have run. */
+static int run_sweeps_3d(poisson_solver_method_t method, poisson_solver_backend_t backend,
+                         size_t nx, size_t ny, size_t nz, double h, int sweeps,
+                         double* x, const double* rhs) {
+    poisson_solver_t* solver = poisson_solver_create(method, backend);
+    if (!solver) {
+        return 0;
+    }
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.tolerance = 0.0;
+    params.absolute_tolerance = 0.0;
+    params.max_iterations = sweeps;
+
+    cfd_status_t st = poisson_solver_init(solver, nx, ny, nz, h, h, h, &params);
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    if (st == CFD_SUCCESS) {
+        poisson_solver_solve(solver, x, NULL, rhs, &stats);
+    }
+    poisson_solver_destroy(solver);
+    if (st == CFD_ERROR_UNSUPPORTED) {
+        return 0;
+    }
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, st);
+    TEST_ASSERT_EQUAL_INT(sweeps, stats.iterations);
+    return 1;
+}
+
+/* Index of cell (i, j, k), mirrored in x and/or z */
+static size_t mirrored_index(size_t i, size_t j, size_t k, size_t nx, size_t ny, size_t nz,
+                             int mirror_x, int mirror_z) {
+    size_t mi = mirror_x ? nx - 1 - i : i;
+    size_t mk = mirror_z ? nz - 1 - k : k;
+    return (mk * ny + j) * nx + mi;
+}
+
+/* Compare 20 GPU sweeps with 20 scalar sweeps on a 10x10xnz grid, cell for cell.
+ * A wrong wall factor at a z-face changes the field in the first sweep, so this
+ * checks the GPU z-wall relaxation against the scalar reference.
+ *
+ * Both runs must visit the cells in the same order. The 8x8 interior of a 10x10
+ * plane is a single GPU SOR tile, which it sweeps like scalar SOR, but it sweeps
+ * even k-planes before odd ones: with nz = 3 there is one plane, and with nz = 4
+ * the scalar run on the z-mirrored problem takes the planes in the GPU's order.
+ * GPU Red-Black SOR updates the even (i + j + k) cells first and the scalar solver
+ * the odd ones; mirroring x on an even nx swaps the two colours.
+ * Returns 0 if the GPU backend is unavailable. */
+static int compare_gpu_sweeps_with_scalar(poisson_solver_method_t method, size_t nz,
+                                          int mirror_x, int mirror_z) {
+    const size_t nx = 10, ny = 10;
+    const double h = 1.0 / 9.0;
+    const int sweeps = 20;
+    size_t n = nx * ny * nz;
+
+    double* rhs = create_field(n);
+    double* rhs_mirrored = create_field(n);
+    double* x_gpu = create_field(n);
+    double* x_scalar = create_field(n);
+    TEST_ASSERT_NOT_NULL(rhs);
+    TEST_ASSERT_NOT_NULL(rhs_mirrored);
+    TEST_ASSERT_NOT_NULL(x_gpu);
+    TEST_ASSERT_NOT_NULL(x_scalar);
+
+    /* Any interior field without mirror symmetry */
+    for (size_t k = 1; k < nz - 1; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                double v = sin(1.3 * (double)i + 0.7 * (double)j + 2.1 * (double)k);
+                rhs[(k * ny + j) * nx + i] = v;
+                rhs_mirrored[mirrored_index(i, j, k, nx, ny, nz, mirror_x, mirror_z)] = v;
+            }
+        }
+    }
+
+    int ran = run_sweeps_3d(method, POISSON_BACKEND_GPU, nx, ny, nz, h, sweeps, x_gpu, rhs);
+    if (ran) {
+        TEST_ASSERT_EQUAL_INT(1, run_sweeps_3d(method, POISSON_BACKEND_SCALAR, nx, ny, nz, h,
+                                               sweeps, x_scalar, rhs_mirrored));
+        double max_diff = 0.0;
+        double max_abs = 0.0;
+        for (size_t k = 1; k < nz - 1; k++) {
+            for (size_t j = 1; j < ny - 1; j++) {
+                for (size_t i = 1; i < nx - 1; i++) {
+                    double g = x_gpu[(k * ny + j) * nx + i];
+                    double d = fabs(g - x_scalar[mirrored_index(i, j, k, nx, ny, nz, mirror_x, mirror_z)]);
+                    if (d > max_diff || isnan(d)) max_diff = d;
+                    if (fabs(g) > max_abs) max_abs = fabs(g);
+                }
+            }
+        }
+        char msg[128];
+        snprintf(msg, sizeof(msg), "%s, nz = %zu: max |GPU - scalar| %.3e of max |x| %.3e",
+                 method == POISSON_METHOD_SOR ? "SOR" : "Red-Black SOR", nz, max_diff, max_abs);
+        printf("      %s\n", msg);
+        TEST_ASSERT_TRUE_MESSAGE(max_abs > 1e-6, "the sweeps did not move the field");
+        TEST_ASSERT_TRUE_MESSAGE(max_diff <= 1e-10 * max_abs, msg);
+    }
+
+    cfd_free(rhs);
+    cfd_free(rhs_mirrored);
+    cfd_free(x_gpu);
+    cfd_free(x_scalar);
+    return ran;
+}
+
+/* The GPU SOR and Red-Black SOR sweeps relax beside the z-walls as the scalar ones
+ * do, on a lone interior plane that touches both z-walls and on planes that touch
+ * one each. */
+void test_sor_gpu_3d_walls_match_scalar(void) {
+    printf("\n    GPU SOR and Red-Black SOR vs scalar, 3D zero-gradient walls...\n");
+    if (!compare_gpu_sweeps_with_scalar(POISSON_METHOD_SOR, 3, 0, 0)) {
+        printf("      SKIPPED (GPU backend unavailable)\n");
+        return;
+    }
+    compare_gpu_sweeps_with_scalar(POISSON_METHOD_SOR, 4, 0, 1);
+    compare_gpu_sweeps_with_scalar(POISSON_METHOD_REDBLACK_SOR, 3, 1, 0);
+    compare_gpu_sweeps_with_scalar(POISSON_METHOD_REDBLACK_SOR, 6, 1, 0);
+}
+
+/* ---- divergence ----------------------------------------------------------- */
+
+/* Solve the manufactured problem on a 17x17 grid on the GPU, starting from x.
+ * Returns 0 if the GPU backend is unavailable. */
+static int solve_gpu_17x17(poisson_solver_method_t method, double omega, int max_iterations,
+                           int check_interval, double* x, poisson_solver_stats_t* stats,
+                           cfd_status_t* status) {
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
+    double* rhs = create_field(n * n);
+    TEST_ASSERT_NOT_NULL(rhs);
+    init_rhs(rhs, n, n, h, h);
+
+    poisson_solver_t* solver = poisson_solver_create(method, POISSON_BACKEND_GPU);
+    if (!solver) {
+        cfd_free(rhs);
+        return 0;
+    }
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.omega = omega;
+    params.max_iterations = max_iterations;
+    params.check_interval = check_interval;
+    cfd_status_t st = poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params);
+    if (st == CFD_SUCCESS) {
+        *stats = poisson_solver_stats_default();
+        *status = poisson_solver_solve(solver, x, NULL, rhs, stats);
+    }
+    poisson_solver_destroy(solver);
+    cfd_free(rhs);
+    if (st == CFD_ERROR_UNSUPPORTED) {
+        return 0;
+    }
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, st);
+    return 1;
+}
+
+/* A GPU SOR solve that blows up stops and says so, as the shared CPU loop does.
+ * Omega 2.5 is outside SOR's convergent range, and a check interval longer than the
+ * solve leaves only the last iteration to catch it. */
+void test_sor_gpu_reports_divergence(void) {
+    printf("\n    GPU SOR and Red-Black SOR: divergence at omega 2.5...\n");
+    poisson_solver_method_t methods[] = { POISSON_METHOD_SOR, POISSON_METHOD_REDBLACK_SOR };
+    for (size_t m = 0; m < sizeof(methods) / sizeof(methods[0]); m++) {
+        double* x = create_field(17 * 17);
+        TEST_ASSERT_NOT_NULL(x);
+        poisson_solver_stats_t stats = poisson_solver_stats_default();
+        cfd_status_t status = CFD_ERROR;
+        int ran = solve_gpu_17x17(methods[m], 2.5, 5000, 5001, x, &stats, &status);
+        cfd_free(x);
+        if (!ran) {
+            printf("      SKIPPED (GPU backend unavailable)\n");
+            return;
+        }
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_DIVERGED, status);
+        TEST_ASSERT_EQUAL_INT(POISSON_DIVERGED, stats.status);
+        TEST_ASSERT_EQUAL_INT(5000, stats.iterations);
+        TEST_ASSERT_FALSE(isfinite(stats.final_residual));
+    }
+}
+
+/* A start whose residual is not finite has diverged before the first sweep. The GPU
+ * loop used to switch its convergence checks off instead, run every sweep on the
+ * bad field and report max_iter. */
+void test_sor_gpu_non_finite_start_reports_divergence(void) {
+    printf("\n    GPU SOR and Red-Black SOR: non-finite start...\n");
+    poisson_solver_method_t methods[] = { POISSON_METHOD_SOR, POISSON_METHOD_REDBLACK_SOR };
+    for (size_t m = 0; m < sizeof(methods) / sizeof(methods[0]); m++) {
+        double* x = create_field(17 * 17);
+        TEST_ASSERT_NOT_NULL(x);
+        x[8 * 17 + 8] = nan("");
+        poisson_solver_stats_t stats = poisson_solver_stats_default();
+        cfd_status_t status = CFD_ERROR;
+        int ran = solve_gpu_17x17(methods[m], 0.0, 5000, 1, x, &stats, &status);
+        cfd_free(x);
+        if (!ran) {
+            printf("      SKIPPED (GPU backend unavailable)\n");
+            return;
+        }
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_DIVERGED, status);
+        TEST_ASSERT_EQUAL_INT(POISSON_DIVERGED, stats.status);
+        TEST_ASSERT_EQUAL_INT(0, stats.iterations);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     printf("\n========================================\n");
@@ -264,5 +504,9 @@ int main(void) {
     printf("========================================\n");
     RUN_TEST(test_sor_gpu_converges);
     RUN_TEST(test_sor_gpu_matches_cpu);
+    RUN_TEST(test_sor_gpu_rejects_custom_apply_bc);
+    RUN_TEST(test_sor_gpu_3d_walls_match_scalar);
+    RUN_TEST(test_sor_gpu_reports_divergence);
+    RUN_TEST(test_sor_gpu_non_finite_start_reports_divergence);
     return UNITY_END();
 }

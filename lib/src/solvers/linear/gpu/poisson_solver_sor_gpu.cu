@@ -11,9 +11,8 @@
  *
  * Plain lexicographic SOR is sequential (each cell depends on its already-updated
  * left/down neighbors), which the GPU cannot reproduce cheaply. This backend uses
- * the same "Block SOR" idea as the AVX2/NEON plain-SOR solvers — each thread does a
- * sequential Gauss-Seidel/SOR sweep over a small tile — but parallelizes the tiles
- * with a red-black *tile* coloring: each iteration launches the red tile pass then
+ * a Block SOR instead: each thread does a sequential Gauss-Seidel/SOR sweep over a
+ * small tile, and the tiles are parallelized with a red-black *tile* coloring: each iteration launches the red tile pass then
  * the black tile pass (the launch boundary is the color sync). Because adjacency
  * flips tile parity, a tile's halo is never written by another thread in the same
  * pass, so the update is in-place, race-free, and (being a consistent ordering)
@@ -24,9 +23,11 @@
  * (lin_gpu_kernel_block_sor_tile_sweep) for the per-cell update.
  *
  * Boundary handling matches the interface default: Neumann (zero-gradient) on
- * every face, applied via the unified bc_apply_scalar_3d_gpu() kernels.
+ * every face, applied via the unified bc_apply_scalar_3d_gpu() kernels, with the
+ * wall relaxation factor of poisson_solver_wall_omega() beside the walls.
  *
- * Restrictions (return CFD_ERROR_UNSUPPORTED from init): no CUDA device present.
+ * Restrictions (return CFD_ERROR_UNSUPPORTED from init): no CUDA device present, or a
+ * caller-supplied apply_bc, which the on-device solve would never call.
  */
 
 #include "cfd/boundary/boundary_conditions_gpu.cuh"
@@ -47,9 +48,7 @@ extern "C" {
 #include "../linear_solver_internal.h"
 }
 
-/* Tile dimensions swept sequentially by each thread. 8x8 keeps the stale-halo
- * fraction small enough that the auto optimal-omega remains stable (mirrors the
- * AVX2 Block SOR, whose only staleness is the intra-block left neighbor). */
+/* Tile dimensions swept sequentially by each thread */
 #define SOR_GPU_TILE_W 8
 #define SOR_GPU_TILE_H 8
 
@@ -107,6 +106,11 @@ static cfd_status_t sor_gpu_init(poisson_solver_t* solver,
                                  size_t nx, size_t ny, size_t nz,
                                  double dx, double dy, double dz,
                                  const poisson_solver_params_t* params) {
+    cfd_status_t bc_status = poisson_solver_reject_custom_bc(solver);
+    if (bc_status != CFD_SUCCESS) {
+        return bc_status;
+    }
+
     if (!gpu_is_available()) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED, "CUDA GPU not available at runtime");
         return CFD_ERROR_UNSUPPORTED;
@@ -128,8 +132,7 @@ static cfd_status_t sor_gpu_init(poisson_solver_t* solver,
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     ctx->factor = 2.0 * (ctx->inv_dx2 + ctx->inv_dy2 + ctx->inv_dz2);
     ctx->inv_factor = 1.0 / ctx->factor;
-    ctx->omega = poisson_solver_resolve_omega(
-        params ? params->omega : 0.0, nx, ny, nz, dx, dy, dz);
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
 
     size_t sz, ks, ke;
     poisson_solver_compute_3d_bounds(nz, nx, ny, &sz, &ks, &ke);
@@ -210,7 +213,10 @@ static cfd_status_t sor_gpu_solve(poisson_solver_t* solver,
 
     const double RES_FLOOR = 1e-30;
     double tol_abs = p->absolute_tolerance;
-    int can_check = std::isfinite(r0) && (r0 >= 0.0);
+    /* A residual that is not finite has diverged before the first sweep; a failed
+     * device reduction (-1) only turns the convergence checks off */
+    int diverged = !std::isfinite(r0);
+    int can_check = !diverged && (r0 >= 0.0);
     double tol_target = can_check ? p->tolerance * r0 : 0.0;
     if (tol_target < tol_abs)
         tol_target = tol_abs;
@@ -218,11 +224,10 @@ static cfd_status_t sor_gpu_solve(poisson_solver_t* solver,
     int max_iter = p->max_iterations;
     /* Each convergence check is a device-side reduction + stream sync, so never
      * poll more often than every CHECK_FLOOR iterations; honor a larger explicit
-     * check_interval. A small max_iter still polls once at the final iteration. */
+     * check_interval. The last iteration is always polled, so a solve never ends
+     * on a residual older than the field it returns. */
     const int CHECK_FLOOR = 20;
     int check_every = p->check_interval > CHECK_FLOOR ? p->check_interval : CHECK_FLOOR;
-    if (max_iter > 0 && check_every > max_iter)
-        check_every = max_iter;
 
     double res = r0;
     int iter = 0;
@@ -230,27 +235,32 @@ static cfd_status_t sor_gpu_solve(poisson_solver_t* solver,
 
     if (can_check && r0 <= tol_abs) {
         converged = 1;  /* already converged */
-    } else {
+    } else if (!diverged) {
         for (iter = 0; iter < max_iter; iter++) {
             /* Red tile pass, then black tile pass: the launch boundary is the color
              * sync. In-place, so no double buffer. BCs applied after both passes,
              * matching the CPU/Red-Black reference. */
             lin_gpu_kernel_block_sor_tile_sweep<<<sweep_grid, block, 0, ctx->stream>>>(
-                ctx->d_x, ctx->d_rhs, /*color=*/0, ctx->omega, ctx->tile_w, ctx->tile_h,
-                nx, ny, ctx->stride_z, ctx->k_start, ctx->k_end,
+                ctx->d_x, ctx->d_rhs, /*color=*/0, ctx->omega, /*walls=*/1, ctx->factor,
+                ctx->tile_w, ctx->tile_h, nx, ny, ctx->stride_z, ctx->k_start, ctx->k_end,
                 ctx->inv_dx2, ctx->inv_dy2, ctx->inv_dz2, ctx->inv_factor);
             lin_gpu_kernel_block_sor_tile_sweep<<<sweep_grid, block, 0, ctx->stream>>>(
-                ctx->d_x, ctx->d_rhs, /*color=*/1, ctx->omega, ctx->tile_w, ctx->tile_h,
-                nx, ny, ctx->stride_z, ctx->k_start, ctx->k_end,
+                ctx->d_x, ctx->d_rhs, /*color=*/1, ctx->omega, /*walls=*/1, ctx->factor,
+                ctx->tile_w, ctx->tile_h, nx, ny, ctx->stride_z, ctx->k_start, ctx->k_end,
                 ctx->inv_dx2, ctx->inv_dy2, ctx->inv_dz2, ctx->inv_factor);
             bc_apply_scalar_3d_gpu(ctx->d_x, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
 
-            if (can_check && (iter + 1) % check_every == 0) {
+            if (can_check && ((iter + 1) % check_every == 0 || iter + 1 == max_iter)) {
                 double rnorm = sor_residual_norm(ctx, ctx->d_x, cell_grid, block);
-                if (rnorm < 0.0 || !std::isfinite(rnorm)) {
+                if (rnorm < 0.0) {
                     can_check = 0;  /* residual eval failed: run out the cap */
                 } else {
                     res = rnorm;
+                    if (!std::isfinite(rnorm)) {
+                        diverged = 1;
+                        iter++;
+                        break;
+                    }
                     if (rnorm <= tol_target || rnorm <= RES_FLOOR) {
                         converged = 1;
                         iter++;
@@ -273,9 +283,14 @@ static cfd_status_t sor_gpu_solve(poisson_solver_t* solver,
         stats->initial_residual = (std::isfinite(r0) && r0 >= 0.0) ? r0 : NAN;
         stats->final_residual = (std::isfinite(res) && res >= 0.0) ? res : NAN;
         stats->iterations = iter;
-        stats->status = converged ? POISSON_CONVERGED : POISSON_MAX_ITER;
+        stats->status = converged ? POISSON_CONVERGED
+                      : diverged  ? POISSON_DIVERGED
+                                  : POISSON_MAX_ITER;
     }
-    return converged ? CFD_SUCCESS : CFD_ERROR_MAX_ITER;
+    if (converged) {
+        return CFD_SUCCESS;
+    }
+    return diverged ? CFD_ERROR_DIVERGED : CFD_ERROR_MAX_ITER;
 }
 
 /* ============================================================================
