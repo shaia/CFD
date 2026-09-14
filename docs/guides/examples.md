@@ -905,9 +905,12 @@ The SA variant converges similarly (u_τ ≈ 0.969, u+ within ~4% of the log law
 ```bash
 ./sor_omega_sweep                                   # Red-Black SOR, 33x33, omega 1.00 to 1.99
 ./sor_omega_sweep --grid 65 --method sor --from 1.90 --to 1.99 --step 0.005
-./sor_omega_sweep --walls dirichlet --backend simd
+./sor_omega_sweep --walls dirichlet --backend simd  # x86: configure with -DCFD_ENABLE_AVX2=ON
 ./sor_omega_sweep --backend gpu                     # CUDA build; also scalar, simd, omp
 ```
+`--backend simd` needs a SIMD build: on x86, configure with `-DCFD_ENABLE_AVX2=ON` (off by default) and run on
+an AVX2 CPU; ARM64 builds get NEON without a flag. Otherwise the example prints
+`Solver not available for this method, backend and walls` and exits with status 1.
 
 **Expected output** (`--grid 33 --from 1.80 --to 1.95 --step 0.05`):
 ```
