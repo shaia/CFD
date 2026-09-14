@@ -503,6 +503,17 @@ cfd_status_t poisson_solver_solve_common(
         stats->initial_residual = initial_res;
     }
 
+    /* A start whose residual is not finite has diverged before the first sweep */
+    if (!isfinite(initial_res)) {
+        if (stats) {
+            stats->status = POISSON_DIVERGED;
+            stats->iterations = 0;
+            stats->final_residual = initial_res;
+            stats->elapsed_time_ms = poisson_solver_get_time_ms() - start_time;
+        }
+        return CFD_ERROR_DIVERGED;
+    }
+
     /* Already converged? */
     if (initial_res < params->absolute_tolerance) {
         if (stats) {

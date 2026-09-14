@@ -870,6 +870,42 @@ void test_divergence_after_last_scheduled_check_is_reported(void) {
     poisson_solver_destroy(solver);
 }
 
+/**
+ * A solve that starts from a field whose residual is not finite has diverged
+ * before its first sweep. A sweep can overwrite the bad value: the lone interior
+ * cell of a 3x3x3 zero problem reads only its six zero walls, so Jacobi replaces
+ * its NaN with a zero, and without the check the solve would report convergence.
+ */
+void test_non_finite_initial_residual_reports_divergence(void) {
+    const size_t n = 3;
+    const double h = 0.5;
+    size_t total = n * n * n;
+    double* x = (double*)cfd_calloc(total, sizeof(double));
+    double* x_temp = (double*)cfd_calloc(total, sizeof(double));
+    double* rhs = (double*)cfd_calloc(total, sizeof(double));
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(x_temp);
+    TEST_ASSERT_NOT_NULL(rhs);
+    x[(1 * n + 1) * n + 1] = nan("");
+
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(solver, n, n, n, h, h, h, NULL));
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(solver, x, x_temp, rhs, &stats);
+
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_DIVERGED, status);
+    TEST_ASSERT_EQUAL_INT(POISSON_DIVERGED, stats.status);
+    TEST_ASSERT_EQUAL_INT(0, stats.iterations);
+    TEST_ASSERT_FALSE(isfinite(stats.final_residual));
+
+    cfd_free(x);
+    cfd_free(x_temp);
+    cfd_free(rhs);
+    poisson_solver_destroy(solver);
+}
+
 /* ============================================================================
  * GAUSS-SEIDEL
  * ============================================================================ */
@@ -1688,6 +1724,7 @@ int main(void) {
     RUN_TEST(test_solve_common_max_iter_reports_iterations_run);
     RUN_TEST(test_diverging_solve_reports_divergence);
     RUN_TEST(test_divergence_after_last_scheduled_check_is_reported);
+    RUN_TEST(test_non_finite_initial_residual_reports_divergence);
 
     /* NULL guard / edge case tests */
     RUN_TEST(test_poisson_create_invalid_method);
