@@ -283,29 +283,9 @@ static cfd_status_t cg_scalar_init(
     }
 
     if (ctx->precond_type == POISSON_PRECOND_MULTIGRID) {
-        ctx->mg_precond = create_multigrid_scalar_solver();
-        if (!ctx->mg_precond) {
-            cfd_free(ctx->r);
-            cfd_free(ctx->z);
-            cfd_free(ctx->p);
-            cfd_free(ctx->Ap);
-            cfd_free(ctx);
-            return CFD_ERROR_NOMEM;
-        }
-
-        /* One V-cycle per apply. Dirichlet mode matches CG's interior
-         * operator (Krylov vectors carry a permanent zero halo) and keeps M
-         * nonsingular; Jacobi smoothing with equal pre/post sweeps keeps M
-         * symmetric, as CG requires. */
-        poisson_solver_params_t mg_params = poisson_solver_params_default();
-        mg_params.mg_cycle = MG_CYCLE_V;
-        mg_params.mg_smoother = MG_SMOOTHER_JACOBI;
-        mg_params.mg_bc = MG_BC_DIRICHLET;
-
-        cfd_status_t mg_status = poisson_solver_init(
-            ctx->mg_precond, nx, ny, nz, dx, dy, dz, &mg_params);
+        cfd_status_t mg_status = poisson_solver_create_mg_precond(
+            create_multigrid_scalar_solver, nx, ny, nz, dx, dy, dz, &ctx->mg_precond);
         if (mg_status != CFD_SUCCESS) {
-            poisson_solver_destroy(ctx->mg_precond);
             cfd_free(ctx->r);
             cfd_free(ctx->z);
             cfd_free(ctx->p);

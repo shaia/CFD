@@ -89,7 +89,7 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
 
     if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "Multigrid pressure solver is only supported by the scalar projection solver");
+            "Multigrid pressure solver is only supported by the scalar and OpenMP projection solvers");
         return CFD_ERROR_UNSUPPORTED;
     }
 

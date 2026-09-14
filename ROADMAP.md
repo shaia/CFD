@@ -150,8 +150,7 @@ non-symmetric operators arrive, e.g. implicit advection-diffusion in §1.5).
       preset `POISSON_SOLVER_MG_OMP`). One algorithm template shared with scalar; the
       OMP backend supplies row-parallel smoother/residual/transfer/BC primitives with no
       parallel reductions, so results are bit-identical to scalar at 1/2/4 threads.
-      AUTO still resolves multigrid to scalar. Deferred: multigrid pressure solve in
-      `projection_omp`, MG-preconditioned OMP CG, SIMD/GPU multigrid.
+      AUTO still resolves multigrid to scalar. Deferred: SIMD/GPU multigrid.
       Files created: `lib/src/solvers/linear/multigrid_template/linear_solver_multigrid_template.h`,
       `lib/src/solvers/linear/omp/linear_solver_multigrid_omp.c`.
       Files modified: `lib/src/solvers/linear/cpu/linear_solver_multigrid.c`,
@@ -161,6 +160,23 @@ non-symmetric operators arrive, e.g. implicit advection-diffusion in §1.5).
       `lib/src/solvers/linear/linear_solver.c`, `lib/include/cfd/solvers/poisson_solver.h`,
       `lib/CMakeLists.txt`, `tests/math/test_omp_consistency.c`,
       `tests/math/test_multigrid_convergence.c`, `tests/solvers/test_linear_solver.c`.
+- [x] Multigrid pressure solve in `projection_omp` and MG-preconditioned OpenMP CG —
+      `NS_PRESSURE_SOLVER_MULTIGRID` → `POISSON_SOLVER_MG_OMP` and
+      `NS_PRESSURE_SOLVER_PCG_MG` → new `POISSON_SOLVER_PCG_MG_OMP` (OMP CG with an OMP
+      multigrid V-cycle preconditioner), with the scalar projection's init gating and no
+      scalar sub-solver on the OMP path. Both CG backends share one preconditioner
+      setup (`poisson_solver_create_mg_precond`).
+      Files modified: `lib/src/solvers/navier_stokes/omp/solver_projection_omp.c`,
+      `lib/src/solvers/linear/omp/linear_solver_cg_omp.c`,
+      `lib/src/solvers/linear/cpu/linear_solver_cg.c`,
+      `lib/src/solvers/linear/omp/linear_solver_multigrid_omp.c`,
+      `lib/src/solvers/linear/multigrid_internal.h`,
+      `lib/src/solvers/linear/linear_solver_internal.h`,
+      `lib/src/solvers/linear/linear_solver.c`, `lib/src/api/solver_registry.c`,
+      `lib/include/cfd/solvers/poisson_solver.h`,
+      `lib/include/cfd/solvers/navier_stokes_solver.h`,
+      `tests/solvers/navier_stokes/cpu/test_projection_pressure_solver.c`,
+      `tests/math/test_mg_pcg_convergence.c`, `tests/math/test_omp_consistency.c`.
 - [ ] Algebraic multigrid (AMG) — solver and preconditioner (for CG/GMRES/BiCGSTAB)
 - [x] GPU plain SOR (Block SOR: per-thread tile sweep, red-black tile coloring, in-place; closes the matrix)
 
@@ -239,10 +255,9 @@ SIMD Poisson integration is done; current ~1.3–1.5× speedup is Amdahl-limited
 
 - [ ] Increase `POISSON_MAX_ITER` or implement adaptive tolerance
 - [x] Optional multigrid preconditioner for faster convergence (see §1.2 multigrid) —
-      done for scalar CG (`POISSON_PRECOND_MULTIGRID`, symmetric V(2,2) Jacobi cycle) and
-      selectable in the scalar projection via `pressure_solver = NS_PRESSURE_SOLVER_PCG_MG`;
-      PCG-MG stays scalar-CG only — SIMD/OMP PCG-MG are pending (an OMP multigrid
-      solver exists, see §1.2, but OMP CG does not yet use it as a preconditioner)
+      done for scalar and OpenMP CG (`POISSON_PRECOND_MULTIGRID`, symmetric V(2,2) Jacobi
+      cycle) and selectable in the scalar and OpenMP projections via
+      `pressure_solver = NS_PRESSURE_SOLVER_PCG_MG`; SIMD PCG-MG is pending
 - [x] Red-Black omega parameter tuning — the automatic ω is at or just below the optimum for the
       walls in use, with wall-adjacent points relaxed so that SOR theory holds for the Neumann matrix
       (`poisson_solver_resolve_omega`)

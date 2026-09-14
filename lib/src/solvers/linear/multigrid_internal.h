@@ -175,6 +175,16 @@ static inline double mg_interior_mean(const double* f, size_t nx, size_t ny,
 /** Subtract the interior mean from interior points (boundary untouched) */
 void mg_subtract_interior_mean(double* f, size_t nx, size_t ny, size_t nz);
 
+#ifdef CFD_ENABLE_OPENMP
+/**
+ * Row-parallel counterpart (omp/linear_solver_multigrid_omp.c). The mean stays
+ * serial, so the result matches mg_subtract_interior_mean. The OpenMP projection
+ * solver calls it before its multigrid pressure solve. External linkage, not
+ * exported, like the scalar operators above.
+ */
+void mg_subtract_interior_mean_omp(double* f, size_t nx, size_t ny, size_t nz);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

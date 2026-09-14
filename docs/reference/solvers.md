@@ -81,20 +81,23 @@ Chorin's projection method - properly enforces incompressibility constraint.
 **Pressure solver selection** (`ns_solver_params_t.pressure_solver`):
 
 Each backend pairs with a CG Poisson preset by default. On the scalar
-`projection` solver the pressure solve can be switched to geometric multigrid:
+`projection` and OpenMP `projection_omp` solvers the pressure solve can be
+switched to geometric multigrid, on the solver's own backend:
 
-| `pressure_solver` value | Pressure Poisson solve |
-|-------------------------|------------------------|
-| `NS_PRESSURE_SOLVER_DEFAULT` (0) | Backend's CG preset (existing behavior) |
-| `NS_PRESSURE_SOLVER_MULTIGRID` | Multigrid V-cycles (`POISSON_SOLVER_MG_SCALAR`) |
-| `NS_PRESSURE_SOLVER_PCG_MG` | CG + MG V-cycle preconditioner (`POISSON_SOLVER_PCG_MG_SCALAR`) |
+| `pressure_solver` value | `projection` | `projection_omp` |
+|-------------------------|--------------|------------------|
+| `NS_PRESSURE_SOLVER_DEFAULT` (0) | `POISSON_SOLVER_CG_SCALAR` | `POISSON_SOLVER_CG_OMP` |
+| `NS_PRESSURE_SOLVER_MULTIGRID` | `POISSON_SOLVER_MG_SCALAR` | `POISSON_SOLVER_MG_OMP` |
+| `NS_PRESSURE_SOLVER_PCG_MG` | `POISSON_SOLVER_PCG_MG_SCALAR` | `POISSON_SOLVER_PCG_MG_OMP` |
 
-The MG modes require 2^k+1 grid points per active dimension (33, 65, 129, ...);
-`solver_init` returns `CFD_ERROR_UNSUPPORTED` otherwise. `projection_optimized`,
-`projection_omp`, and `projection_gpu` reject any non-default value with
-`CFD_ERROR_UNSUPPORTED` at init — those projection backends do not yet wire a
-multigrid pressure solve (an OpenMP multigrid exists as a Poisson backend, see
-§8) and the library never falls back across backends silently.
+`NS_PRESSURE_SOLVER_MULTIGRID` runs multigrid V-cycles (the RHS interior mean is
+subtracted first, for Neumann compatibility); `NS_PRESSURE_SOLVER_PCG_MG` runs CG
+preconditioned by one multigrid V-cycle. The MG modes require 2^k+1 grid points
+per active dimension (33, 65, 129, ...); `solver_init` returns
+`CFD_ERROR_UNSUPPORTED` otherwise. `projection_optimized` and `projection_gpu`
+reject any non-default value with `CFD_ERROR_UNSUPPORTED` at init — they do not
+wire a multigrid pressure solve, and the library never falls back across
+backends silently.
 
 ```c
 ns_solver_params_t params = ns_solver_params_default();
@@ -247,7 +250,8 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
   per apply
   - Grid-size-independent outer iteration count (measured 5 CG iterations at
     33²–129², tol 1e-8, vs 50–170 for plain CG)
-  - Scalar CG backend only; other backends reject it with
+  - Scalar and OpenMP CG backends (OpenMP CG runs the cycle on the OpenMP
+    multigrid backend); SIMD and GPU CG and GMRES reject it with
     `CFD_ERROR_UNSUPPORTED`
   - Requires 2^k+1 grid points per active dimension (inherited from the
     multigrid hierarchy); init fails with `CFD_ERROR_INVALID` otherwise
@@ -266,18 +270,19 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
 poisson_solver_init(solver, nx, ny, dx, dy, &params);  // Pass params with preconditioner
 ```
 
-**Multigrid-preconditioned CG (scalar backend, 2^k+1 dims):**
+**Multigrid-preconditioned CG (scalar or OpenMP backend, 2^k+1 dims):**
 
 ```c
 poisson_solver_params_t params = poisson_solver_params_default();
 params.preconditioner = POISSON_PRECOND_MULTIGRID;
 
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
-                                                 POISSON_BACKEND_SCALAR);
+                                                 POISSON_BACKEND_SCALAR);  // or POISSON_BACKEND_OMP
 poisson_solver_init(solver, 65, 65, 1, dx, dy, 0.0, &params);
 ```
 The convenience API exposes the same configuration as the
-`POISSON_SOLVER_PCG_MG_SCALAR` preset for `poisson_solve()`/`poisson_solve_3d()`.
+`POISSON_SOLVER_PCG_MG_SCALAR` and `POISSON_SOLVER_PCG_MG_OMP` presets for
+`poisson_solve()`/`poisson_solve_3d()`.
 
 #### 6. BiCGSTAB
 
@@ -386,10 +391,9 @@ on the calling thread, where starting a thread team would cost more than the wor
 `POISSON_BACKEND_AUTO` resolves to scalar; request `POISSON_BACKEND_OMP` explicitly.
 Grids whose `nx` or `ny` exceeds `INT_MAX` return `CFD_ERROR_LIMIT_EXCEEDED` at init.
 Also available as a CG
-preconditioner (`POISSON_PRECOND_MULTIGRID`, scalar CG only — see §5) and as the
-scalar projection method's pressure solver (`ns_solver_params_t.pressure_solver`).
-SIMD/GPU variants, OMP MG preconditioning and an OMP projection pressure solve
-are planned follow-ups.
+preconditioner (`POISSON_PRECOND_MULTIGRID`, scalar and OpenMP CG — see §5) and as
+the pressure solver of the scalar and OpenMP projection methods
+(`ns_solver_params_t.pressure_solver`). SIMD/GPU variants are planned follow-ups.
 
 **Usage:**
 ```c
