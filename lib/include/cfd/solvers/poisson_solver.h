@@ -344,8 +344,11 @@ CFD_LIBRARY_EXPORT void poisson_solver_destroy(poisson_solver_t* solver);
  * @param x_temp Temporary buffer (required for Jacobi, may be NULL for SOR)
  * @param rhs Right-hand side vector
  * @param stats Output statistics (may be NULL)
- * @return CFD_SUCCESS on convergence, CFD_ERROR_MAX_ITER if not converged,
- *         CFD_ERROR_DIVERGED if the residual stops being finite
+ * @return CFD_SUCCESS on convergence, CFD_ERROR_MAX_ITER if not converged.
+ *         Jacobi, SOR, Red-Black SOR and multigrid, on every backend, return
+ *         CFD_ERROR_DIVERGED when the residual is not finite at the start or at a
+ *         convergence check; the Krylov solvers (CG, BiCGSTAB, GMRES) do not report
+ *         a non-finite residual as divergence.
  */
 CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_solve(
     poisson_solver_t* solver,

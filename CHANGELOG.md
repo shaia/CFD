@@ -133,9 +133,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loop also checks the last iteration, whatever `check_interval` is, so a solve never ends on a
   residual older than the field it returns, and a solve whose starting residual is not finite
   stops before its first sweep, which could otherwise overwrite the bad value and report
-  convergence
+  convergence. The CUDA Jacobi, SOR and Red-Black SOR solvers, which turned their checks off and
+  ran out `max_iterations` on a residual that was not finite, report divergence the same way
   (`lib/src/solvers/linear/linear_solver.c`, `lib/include/cfd/solvers/poisson_solver.h`,
-  `tests/solvers/test_linear_solver.c`).
+  `lib/src/solvers/linear/gpu/`, `tests/solvers/test_linear_solver.c`,
+  `tests/math/test_poisson_sor_gpu.c`, `tests/math/test_poisson_jacobi_gpu.c`).
 - The SIMD SOR solvers (AVX2 and NEON) ran a Block SOR that read the left neighbour inside each
   SIMD block from the previous sweep. That is not the SOR iteration, and on the AVX2 build it
   diverged for omega between 1.40 and 1.50 on every grid measured, below the automatic omega: a

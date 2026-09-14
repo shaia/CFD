@@ -413,6 +413,90 @@ void test_sor_gpu_3d_walls_match_scalar(void) {
     compare_gpu_sweeps_with_scalar(POISSON_METHOD_REDBLACK_SOR, 6, 1, 0);
 }
 
+/* ---- divergence ----------------------------------------------------------- */
+
+/* Solve the manufactured problem on a 17x17 grid on the GPU, starting from x.
+ * Returns 0 if the GPU backend is unavailable. */
+static int solve_gpu_17x17(poisson_solver_method_t method, double omega, int max_iterations,
+                           int check_interval, double* x, poisson_solver_stats_t* stats,
+                           cfd_status_t* status) {
+    const size_t n = 17;
+    const double h = 1.0 / 16.0;
+    double* rhs = create_field(n * n);
+    TEST_ASSERT_NOT_NULL(rhs);
+    init_rhs(rhs, n, n, h, h);
+
+    poisson_solver_t* solver = poisson_solver_create(method, POISSON_BACKEND_GPU);
+    if (!solver) {
+        cfd_free(rhs);
+        return 0;
+    }
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.omega = omega;
+    params.max_iterations = max_iterations;
+    params.check_interval = check_interval;
+    cfd_status_t st = poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params);
+    if (st == CFD_SUCCESS) {
+        *stats = poisson_solver_stats_default();
+        *status = poisson_solver_solve(solver, x, NULL, rhs, stats);
+    }
+    poisson_solver_destroy(solver);
+    cfd_free(rhs);
+    if (st == CFD_ERROR_UNSUPPORTED) {
+        return 0;
+    }
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, st);
+    return 1;
+}
+
+/* A GPU SOR solve that blows up stops and says so, as the shared CPU loop does.
+ * Omega 2.5 is outside SOR's convergent range, and a check interval longer than the
+ * solve leaves only the last iteration to catch it. */
+void test_sor_gpu_reports_divergence(void) {
+    printf("\n    GPU SOR and Red-Black SOR: divergence at omega 2.5...\n");
+    poisson_solver_method_t methods[] = { POISSON_METHOD_SOR, POISSON_METHOD_REDBLACK_SOR };
+    for (size_t m = 0; m < sizeof(methods) / sizeof(methods[0]); m++) {
+        double* x = create_field(17 * 17);
+        TEST_ASSERT_NOT_NULL(x);
+        poisson_solver_stats_t stats = poisson_solver_stats_default();
+        cfd_status_t status = CFD_ERROR;
+        int ran = solve_gpu_17x17(methods[m], 2.5, 5000, 5001, x, &stats, &status);
+        cfd_free(x);
+        if (!ran) {
+            printf("      SKIPPED (GPU backend unavailable)\n");
+            return;
+        }
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_DIVERGED, status);
+        TEST_ASSERT_EQUAL_INT(POISSON_DIVERGED, stats.status);
+        TEST_ASSERT_EQUAL_INT(5000, stats.iterations);
+        TEST_ASSERT_FALSE(isfinite(stats.final_residual));
+    }
+}
+
+/* A start whose residual is not finite has diverged before the first sweep. The GPU
+ * loop used to switch its convergence checks off instead, run every sweep on the
+ * bad field and report max_iter. */
+void test_sor_gpu_non_finite_start_reports_divergence(void) {
+    printf("\n    GPU SOR and Red-Black SOR: non-finite start...\n");
+    poisson_solver_method_t methods[] = { POISSON_METHOD_SOR, POISSON_METHOD_REDBLACK_SOR };
+    for (size_t m = 0; m < sizeof(methods) / sizeof(methods[0]); m++) {
+        double* x = create_field(17 * 17);
+        TEST_ASSERT_NOT_NULL(x);
+        x[8 * 17 + 8] = nan("");
+        poisson_solver_stats_t stats = poisson_solver_stats_default();
+        cfd_status_t status = CFD_ERROR;
+        int ran = solve_gpu_17x17(methods[m], 0.0, 5000, 1, x, &stats, &status);
+        cfd_free(x);
+        if (!ran) {
+            printf("      SKIPPED (GPU backend unavailable)\n");
+            return;
+        }
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_DIVERGED, status);
+        TEST_ASSERT_EQUAL_INT(POISSON_DIVERGED, stats.status);
+        TEST_ASSERT_EQUAL_INT(0, stats.iterations);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     printf("\n========================================\n");
@@ -422,5 +506,7 @@ int main(void) {
     RUN_TEST(test_sor_gpu_matches_cpu);
     RUN_TEST(test_sor_gpu_rejects_custom_apply_bc);
     RUN_TEST(test_sor_gpu_3d_walls_match_scalar);
+    RUN_TEST(test_sor_gpu_reports_divergence);
+    RUN_TEST(test_sor_gpu_non_finite_start_reports_divergence);
     return UNITY_END();
 }

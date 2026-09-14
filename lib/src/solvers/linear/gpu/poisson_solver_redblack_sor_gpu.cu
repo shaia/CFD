@@ -195,7 +195,10 @@ static cfd_status_t redblack_gpu_solve(poisson_solver_t* solver,
 
     const double RES_FLOOR = 1e-30;
     double tol_abs = p->absolute_tolerance;
-    int can_check = std::isfinite(r0) && (r0 >= 0.0);
+    /* A residual that is not finite has diverged before the first sweep; a failed
+     * device reduction (-1) only turns the convergence checks off */
+    int diverged = !std::isfinite(r0);
+    int can_check = !diverged && (r0 >= 0.0);
     double tol_target = can_check ? p->tolerance * r0 : 0.0;
     if (tol_target < tol_abs)
         tol_target = tol_abs;
@@ -203,11 +206,10 @@ static cfd_status_t redblack_gpu_solve(poisson_solver_t* solver,
     int max_iter = p->max_iterations;
     /* Each convergence check is a device-side reduction + stream sync, so never
      * poll more often than every CHECK_FLOOR iterations; honor a larger explicit
-     * check_interval. A small max_iter still polls once at the final iteration. */
+     * check_interval. The last iteration is always polled, so a solve never ends
+     * on a residual older than the field it returns. */
     const int CHECK_FLOOR = 20;
     int check_every = p->check_interval > CHECK_FLOOR ? p->check_interval : CHECK_FLOOR;
-    if (max_iter > 0 && check_every > max_iter)
-        check_every = max_iter;
 
     double res = r0;
     int iter = 0;
@@ -215,7 +217,7 @@ static cfd_status_t redblack_gpu_solve(poisson_solver_t* solver,
 
     if (can_check && r0 <= tol_abs) {
         converged = 1;  /* already converged */
-    } else {
+    } else if (!diverged) {
         for (iter = 0; iter < max_iter; iter++) {
             /* Red sweep, then black sweep: the launch boundary is the color sync. */
             lin_gpu_kernel_redblack_sweep<<<grid_dim, block, 0, ctx->stream>>>(
@@ -228,12 +230,17 @@ static cfd_status_t redblack_gpu_solve(poisson_solver_t* solver,
                 ctx->inv_dx2, ctx->inv_dy2, ctx->inv_dz2, ctx->inv_factor);
             bc_apply_scalar_3d_gpu(ctx->d_x, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
 
-            if (can_check && (iter + 1) % check_every == 0) {
+            if (can_check && ((iter + 1) % check_every == 0 || iter + 1 == max_iter)) {
                 double rnorm = rb_residual_norm(ctx, ctx->d_x, grid_dim, block);
-                if (rnorm < 0.0 || !std::isfinite(rnorm)) {
+                if (rnorm < 0.0) {
                     can_check = 0;  /* residual eval failed: run out the cap */
                 } else {
                     res = rnorm;
+                    if (!std::isfinite(rnorm)) {
+                        diverged = 1;
+                        iter++;
+                        break;
+                    }
                     if (rnorm <= tol_target || rnorm <= RES_FLOOR) {
                         converged = 1;
                         iter++;
@@ -256,9 +263,14 @@ static cfd_status_t redblack_gpu_solve(poisson_solver_t* solver,
         stats->initial_residual = (std::isfinite(r0) && r0 >= 0.0) ? r0 : NAN;
         stats->final_residual = (std::isfinite(res) && res >= 0.0) ? res : NAN;
         stats->iterations = iter;
-        stats->status = converged ? POISSON_CONVERGED : POISSON_MAX_ITER;
+        stats->status = converged ? POISSON_CONVERGED
+                      : diverged  ? POISSON_DIVERGED
+                                  : POISSON_MAX_ITER;
     }
-    return converged ? CFD_SUCCESS : CFD_ERROR_MAX_ITER;
+    if (converged) {
+        return CFD_SUCCESS;
+    }
+    return diverged ? CFD_ERROR_DIVERGED : CFD_ERROR_MAX_ITER;
 }
 
 /* ============================================================================
