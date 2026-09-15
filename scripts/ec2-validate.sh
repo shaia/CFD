@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# ec2-validate.sh — Build and run 129x129 cavity validation on EC2
+# ec2-validate.sh — Build and run the 129x129 cavity validation on EC2
+#
+# Runs every CavityBackend_* ctest entry (Re=100, 400 and 1000), the same cases the
+# Cross-Architecture Validation (EC2) workflow runs on each push to master.
 #
 # Quick-start (on a fresh g4dn.4xlarge with NVIDIA Deep Learning AMI):
 #
 #   # First time:
 #   git clone <your-repo-url> cfd && cd cfd
 #   ./scripts/ec2-validate.sh --setup
-#   ./scripts/ec2-validate.sh --build --run
+#   ./scripts/ec2-validate.sh --build --release --run
 #
 #   # Subsequent runs (after code changes):
 #   git pull  # or: rsync from local machine
-#   ./scripts/ec2-validate.sh --build --run
-#
-#   # Release mode for benchmarking:
 #   ./scripts/ec2-validate.sh --build --release --run
+#
+#   # Debug build (much slower; for stepping through with gdb):
+#   ./scripts/ec2-validate.sh --build --run
 #
 # VSCode Remote-SSH debugging:
 #   1. Install "Remote - SSH" extension in VSCode
@@ -56,10 +59,10 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "  --setup    Install build dependencies (first time only)"
             echo "  --build    Build the project (Debug mode by default)"
-            echo "  --release  Use Release mode instead of Debug"
-            echo "  --run      Run the 129x129 cavity validation test"
+            echo "  --release  Use Release mode instead of Debug (matches CI)"
+            echo "  --run      Run all 129x129 cavity validation cases (Re=100/400/1000)"
             echo "  --all      Do setup + build + run (default if no flags given)"
-            echo "  --threads  Set OMP_NUM_THREADS (default: auto-detect)"
+            echo "  --threads  Set OMP_NUM_THREADS per test (default: nproc / 4)"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -158,14 +161,17 @@ fi
 # ---------- Run ----------
 if [[ "${DO_RUN}" == "true" ]]; then
     echo ""
-    echo "=== Running 129x129 Cavity Validation ==="
+    echo "=== Running 129x129 Cavity Validation (Re=100/400/1000) ==="
 
-    if [[ -n "${OMP_THREADS}" ]]; then
-        export OMP_NUM_THREADS="${OMP_THREADS}"
-        echo "OMP_NUM_THREADS=${OMP_NUM_THREADS}"
-    else
-        echo "OMP_NUM_THREADS=auto ($(nproc) cores available)"
+    # Same scheduling as CI: 4 ctest slots (each CavityBackend_ entry reserves 2)
+    # and nproc/4 OpenMP threads per test
+    CTEST_JOBS=4
+    if [[ -z "${OMP_THREADS}" ]]; then
+        OMP_THREADS=$(( $(nproc) / CTEST_JOBS ))
+        OMP_THREADS=$(( OMP_THREADS > 0 ? OMP_THREADS : 1 ))
     fi
+    export OMP_NUM_THREADS="${OMP_THREADS}"
+    echo "ctest -j ${CTEST_JOBS}, OMP_NUM_THREADS=${OMP_NUM_THREADS} ($(nproc) cores available)"
 
     BINARY="${BUILD_DIR}/test_cavity_backends"
     if [[ ! -f "${BINARY}" ]]; then
@@ -173,14 +179,21 @@ if [[ "${DO_RUN}" == "true" ]]; then
         exit 1
     fi
 
+    LOG="${BUILD_DIR}/validation_output.txt"
     echo ""
     START_TIME=$(date +%s)
-    "${BINARY}"
-    EXIT_CODE=$?
+    # Capture the status instead of letting set -e end the script before the summary
+    EXIT_CODE=0
+    ctest --test-dir "${BUILD_DIR}" -R '^CavityBackend_' --no-tests=error \
+        --output-on-failure -V -j "${CTEST_JOBS}" 2>&1 | tee "${LOG}" || EXIT_CODE=$?
     END_TIME=$(date +%s)
     ELAPSED=$((END_TIME - START_TIME))
     MINUTES=$((ELAPSED / 60))
     SECONDS=$((ELAPSED % 60))
+
+    echo ""
+    echo "=== Results (full log: ${LOG}) ==="
+    grep -E 'Testing backend|Steps run:|RMS_u:|SKIPPED|\[FAILED\]' "${LOG}" || true
 
     echo ""
     echo "============================================"

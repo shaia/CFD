@@ -455,10 +455,15 @@ headers. See CHANGELOG.
 Lid-driven cavity (33×33, Re=100, all backends), Taylor-Green vortex, and Poiseuille flow are
 all validated. See CHANGELOG and `docs/validation/`.
 
-**Still needed — 129×129 release validation** (too slow for CI; uses `CAVITY_FULL_VALIDATION=1`):
+**129×129 release validation** (`-DCAVITY_FULL_VALIDATION=ON`; runs in the EC2 GPU workflow on
+every push to master, about 50 minutes):
 
-- [ ] Full Ghia validation at 129×129 for Re=100, 400, 1000 (record RMS on EC2)
+- [x] Full Ghia validation at 129×129 for Re=100, 400, 1000 — AVX2/OMP/GPU projection RMS
+  ≤ 0.033, recorded in `docs/validation/cavity-backends-validation.md`
 - [ ] Extended cavity convergence to true steady-state (residual < 1e-8)
+- [ ] Explicit Euler cavity cases stop at 11,300–11,800 steps (t ≈ 1.1–1.2) through the harness's
+  kinetic-energy exit, on the 33×33 CI grid (of 25,000) and at 129×129 (of 250,000) alike; make
+  them run to a developed flow or drop them from Ghia validation
 - [ ] Multi-Reynolds grid-convergence study (Richardson extrapolation)
 - [ ] Extended-time Taylor-Green decay-rate verification
 - [ ] Cross-architecture consistency (all backends identical within 0.1%)
@@ -473,7 +478,7 @@ all validated. See CHANGELOG and `docs/validation/`.
 
 | Test | CI Mode | Release Mode |
 |------|---------|--------------|
-| Cavity Ghia Validation | 33×33, 5000 steps | 129×129, 50000 steps |
+| Cavity Ghia Validation | 33×33, 5000 steps | 129×129; 50000 steps (Re=100), 60000 (Re=400), 100000 (Re=1000) |
 | Cavity Re=400 Stability | 25×25, 500 steps | 65×65, 20000 steps |
 | Grid Convergence | 17→25→33 | 33→65→129 |
 | Taylor-Green Vortex | 32×32, 200 steps | 128×128, 10000 steps |
