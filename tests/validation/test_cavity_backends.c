@@ -230,7 +230,7 @@ static void test_backend_validation(const char* solver_type,
     TEST_ASSERT_NOT_NULL(ctx);
 
     /* Steps actually run: the harness stops early once the KE residual drops below 1e-8 */
-    printf("      Steps run: %d/%d  converged: %s  KE residual: %.2e\n",
+    printf("      Steps run: %d/%d  stopped by KE threshold: %s  KE residual: %.2e\n",
            result.steps_completed, max_steps, result.converged ? "yes" : "no",
            result.final_residual);
 
