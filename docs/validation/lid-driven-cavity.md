@@ -132,7 +132,7 @@ Computed by:
 Two modes are available:
 
 **Fast Mode (CI):**
-- Iterations: 1500-4000 steps
+- Steps: 5000 for the 33×33 Ghia comparisons (25000 for the Explicit Euler backend cases)
 - Time step: 0.0005
 - Purpose: Quick regression testing
 
@@ -158,19 +158,19 @@ The AVX2, OpenMP and CUDA projection backends match Ghia et al. at 129×129, all
 0.0299 / 0.0300. The full table and run details are in
 [cavity-backends-validation.md](cavity-backends-validation.md).
 
-### Status at 33×33: ACCEPTABLE (Engineering Quality)
+### 33×33 CI Validation
 
-The current projection solver with CG Poisson achieves:
-- **u-centerline RMS: ~0.10** (target: < 0.10 ✅)
-- **v-centerline RMS: ~0.08** (target: < 0.10 ✅)
-- **Convergence:** Reaches steady state within tolerance
-- **Poisson Solver:** Conjugate Gradient (CG) with tolerance 1e-6
+`CavityBackendsTest` runs each projection backend at 33×33 for 5000 steps with dt = 0.0005
+(t = 2.5), each with a CG pressure solve on its own backend. The CPU scalar backend gives:
+- **u-centerline RMS: 0.0382** (target: < 0.10 ✅)
+- **v-centerline RMS: 0.0440** (target: < 0.10 ✅)
+- **Not a steady state:** the run uses its whole 5000-step budget and ends with a kinetic-energy
+  change of about 2.7e-5 per step, far above the 1e-8 stop threshold. t = 2.5 is also well short
+  of the 10–20 time units the flow needs (see Insufficient Time Stepping below), so this is a
+  quick regression check, not a converged comparison.
 
-**Configuration:**
-- Grid: 33×33 (current CI tests)
-- Time steps: ~3000-4000 iterations
-- dt = 0.0005
-- Poisson: CG method (`POISSON_METHOD_CG`) with scalar or SIMD backend (`POISSON_BACKEND_SCALAR` / `POISSON_BACKEND_SIMD`)
+See [cavity-backends-validation.md](cavity-backends-validation.md) for the other backends' CI
+results.
 
 ### Path to Excellence (RMS < 0.05)
 
