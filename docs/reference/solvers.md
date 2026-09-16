@@ -641,11 +641,13 @@ Classic benchmark problem validated against Ghia et al. (1982):
 - All other walls no-slip
 - Reynolds number Re = ρUL/μ
 
-**Results (Re=100, 129×129 grid):**
-- Centerline velocity profiles match published data
-- RMS error < 0.01
+**Results (129×129 grid, AVX2/OpenMP/CUDA projection):**
+- Centerline velocity profiles match published data at Re = 100, 400 and 1000
+- RMS error vs Ghia (u / v): 0.0017 / 0.0024 at Re=100, 0.0096 / 0.0328 at Re=400,
+  0.0299 / 0.0300 at Re=1000
 
-See [validation/lid-driven-cavity.md](validation/lid-driven-cavity.md) for details.
+See [lid-driven-cavity.md](../validation/lid-driven-cavity.md) and
+[cavity-backends-validation.md](../validation/cavity-backends-validation.md) for details.
 
 ### Taylor-Green Vortex
 

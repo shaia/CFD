@@ -132,35 +132,45 @@ Computed by:
 Two modes are available:
 
 **Fast Mode (CI):**
-- Iterations: 1500-4000 steps
+- Steps: 5000 for the 33×33 Ghia comparisons (25000 for the Explicit Euler backend cases)
 - Time step: 0.0005
 - Purpose: Quick regression testing
 
 **Full Validation Mode:**
-- Iterations: 3000-10000 steps
-- Time step: 0.0005
-- Purpose: Comprehensive validation
+- Grid: 129×129 at Re = 100, 400 and 1000
+- Steps: 50000 at Re=100 (dt 0.0002), 60000 at Re=400 and 100000 at Re=1000 (dt 0.0005)
+- Purpose: Release validation; runs in the EC2 GPU workflow on every push to master
 
-Enable full mode with:
-```c
-#define CAVITY_FULL_VALIDATION 1
+Enable full mode with the CMake option:
+```bash
+cmake -B build -DCAVITY_FULL_VALIDATION=ON
 ```
+
+See [cavity-backends-validation.md](cavity-backends-validation.md) for the per-backend
+parameters and ctest entries.
 
 ## Current Solver Performance
 
-### Status: ACCEPTABLE (Engineering Quality)
+### 129×129 Release Validation
 
-The current projection solver with CG Poisson achieves:
-- **u-centerline RMS: ~0.10** (target: < 0.10 ✅)
-- **v-centerline RMS: ~0.08** (target: < 0.10 ✅)
-- **Convergence:** Reaches steady state within tolerance
-- **Poisson Solver:** Conjugate Gradient (CG) with tolerance 1e-6
+The AVX2, OpenMP and CUDA projection backends match Ghia et al. at 129×129, all under the
+0.10 target (RMS_u / RMS_v): Re=100 0.0017 / 0.0024, Re=400 0.0096 / 0.0328, Re=1000
+0.0299 / 0.0300. The full table and run details are in
+[cavity-backends-validation.md](cavity-backends-validation.md).
 
-**Configuration:**
-- Grid: 33×33 (current CI tests)
-- Time steps: ~3000-4000 iterations
-- dt = 0.0005
-- Poisson: CG method (`POISSON_METHOD_CG`) with scalar or SIMD backend (`POISSON_BACKEND_SCALAR` / `POISSON_BACKEND_SIMD`)
+### 33×33 CI Validation
+
+`CavityBackendsTest` runs each projection backend at 33×33 for 5000 steps with dt = 0.0005
+(t = 2.5), each with a CG pressure solve on its own backend. The CPU scalar backend gives:
+- **u-centerline RMS: 0.0382** (target: < 0.10 ✅)
+- **v-centerline RMS: 0.0440** (target: < 0.10 ✅)
+- **Not a steady state:** the run uses its whole 5000-step budget and ends with a kinetic-energy
+  change of about 2.7e-5 per step, far above the 1e-8 stop threshold. t = 2.5 is also well short
+  of the 10–20 time units the flow needs (see Insufficient Time Stepping below), so this is a
+  quick regression check, not a converged comparison.
+
+See [cavity-backends-validation.md](cavity-backends-validation.md) for the other backends' CI
+results.
 
 ### Path to Excellence (RMS < 0.05)
 
@@ -197,10 +207,13 @@ The lid-driven cavity flow at Re = 100 requires ~10-20 time units to reach stead
 - Even 1% pressure error → 5-10% velocity error after many time steps
 - Insufficient Poisson convergence → spurious divergence → incorrect vortex structure
 
-**Current solution:** All backends now use robust solvers:
-- CPU: Conjugate Gradient (CG) - reliable convergence in ~150 iterations
-- SIMD/OMP: Red-Black SOR or CG-SIMD
-- GPU: Jacobi with sufficient iterations for parallelism
+**Current solution:** Every projection backend solves the pressure equation with Conjugate
+Gradient (CG) on its own backend (the scalar and OpenMP solvers can switch to multigrid through
+`ns_solver_params_t.pressure_solver`):
+- CPU: scalar CG - reliable convergence in ~150 iterations
+- SIMD: CG with AVX2/NEON kernels
+- OMP: OpenMP CG
+- GPU: device-resident CUDA CG
 
 #### 3. Time Step Selection
 

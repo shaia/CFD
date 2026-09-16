@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **129×129 lid-driven cavity validation recorded** — the AVX2, OpenMP and CUDA projection
+  backends match Ghia et al. (1982) at 129×129 with RMS_u / RMS_v of 0.0017 / 0.0024
+  (Re=100), 0.0096 / 0.0328 (Re=400) and 0.0299 / 0.0300 (Re=1000), identical across
+  backends to four decimals and across three EC2 workflow runs. Each backend line of
+  `test_cavity_backends` now also prints the steps actually run, whether the kinetic-energy
+  residual stopped the run early, and that residual
+  (`docs/validation/cavity-backends-validation.md`, `tests/validation/test_cavity_backends.c`).
 - **Multigrid pressure solve on the OpenMP projection solver** — `projection_omp`
   now accepts `NS_PRESSURE_SOLVER_MULTIGRID` (OpenMP multigrid V-cycles, RHS
   interior mean subtracted for Neumann compatibility) and
@@ -108,6 +115,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `scripts/ec2-validate.sh` runs every `CavityBackend_*` ctest entry. It ran the test binary
+  without a filter, which skips the Re=400 and Re=1000 cases, and under `set -e` a failing run
+  ended the script before its FAILED summary.
 - `poisson_solve_3d()` now checks `poisson_solver_init()`'s return status: a failed init
   (e.g. multigrid on non-2^k+1 dims) no longer leaves a broken solver in the convenience
   cache; the call returns -1 and later valid calls re-create the solver.
