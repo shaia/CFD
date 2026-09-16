@@ -225,11 +225,13 @@ their 250,000-step budget:
 
 | Backend   | Steps run | Simulated time | KE residual | RMS_u  | RMS_v  |
 |-----------|-----------|----------------|-------------|--------|--------|
-| AVX2/SIMD | 11,323    | ≈ 1.1          | 8.3e-9      | 0.0957 | 0.1293 |
+| AVX2/SIMD | 11,775    | ≈ 1.2          | 9.8e-9      | 0.0957 | 0.1277 |
 | OpenMP    | 11,775    | ≈ 1.2          | 9.8e-9      | 0.0957 | 0.1277 |
 
-Measured on a local Windows (MSVC Release) build with 4 OpenMP threads; the RMS values match the
-EC2 runs. The 33×33 CI case stops the same way: the scalar Euler solver ends at 11,300 of 25,000
+Measured on a local Windows (MSVC Release) build with 4 OpenMP threads. The AVX2 row was
+re-measured after the fix for the AVX2 solver's unprocessed row-tail columns (127 interior
+columns left 3 per row stale), which had produced 11,323 steps and RMS_v 0.1293; it now matches
+OpenMP. The 33×33 CI case stops the same way: the scalar Euler solver ends at 11,300 of 25,000
 steps with RMS_u 0.0957 and RMS_v 0.1284. The flow needs about 10–20 time units to reach steady
 state at Re=100 (see [lid-driven-cavity.md](lid-driven-cavity.md)), so these runs pass the 0.15
 target without a developed solution on either grid. The test logic is unchanged; the follow-up is

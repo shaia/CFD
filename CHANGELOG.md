@@ -115,6 +115,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`explicit_euler_optimized` updates every interior column.** The AVX2 row loop processed
+  4-wide groups with no scalar remainder, so when `(nx-2) % 4 != 0` the last 1-3 interior
+  columns of each row kept their old values (3 per row at 33×33 and 129×129). The remainder
+  now runs through the solver's scalar row path, and a 19×19 AVX2-vs-scalar run agrees to
+  1e-17. The 129×129 Re=100 AVX2 Euler case now matches OpenMP (11,775 steps, RMS_v 0.1277
+  instead of 0.1293)
+  (`lib/src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c`,
+  `tests/solvers/navier_stokes/avx2/test_solver_explicit_euler_avx2.c`,
+  `docs/validation/cavity-backends-validation.md`).
 - `scripts/ec2-validate.sh` runs every `CavityBackend_*` ctest entry. It ran the test binary
   without a filter, which skips the Re=400 and Re=1000 cases, and under `set -e` a failing run
   ended the script before its FAILED summary.

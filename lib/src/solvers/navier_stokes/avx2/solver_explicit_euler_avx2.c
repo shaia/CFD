@@ -259,15 +259,19 @@ static void init_simd_constants(simd_constants* c, const ns_solver_params_t* par
     c->gz_vec = _mm256_set1_pd(params->gravity[2]);
 }
 
-static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field, const grid* grid,
-                             size_t j, const simd_constants* sc,
-                             size_t stride_z, size_t k_offset) {
+/* Vectorized update of row j in 4-wide groups. Returns the first interior
+ * column not processed (1-3 columns remain when (nx-2) % 4 != 0); the caller
+ * finishes the row with the scalar row path. */
+static size_t process_simd_row(explicit_euler_simd_context* ctx, flow_field* field, const grid* grid,
+                               size_t j, const simd_constants* sc,
+                               size_t stride_z, size_t k_offset) {
     double dy2 = grid->dy[j] * grid->dy[j];
     __m256d dy_inv_val = _mm256_set1_pd(ctx->dy_inv[j]);
     __m256d dy2_val = _mm256_set1_pd(dy2);
     __m256d dy2_recip = _mm256_div_pd(sc->one_vec, dy2_val);
 
-    for (size_t i = 1; i + 3 < ctx->nx - 1; i += 4) {
+    size_t i = 1;
+    for (; i + 3 < ctx->nx - 1; i += 4) {
         size_t idx = k_offset + IDX_2D(i, j, ctx->nx);
 
         __m256d u = _mm256_loadu_pd(&field->u[idx]);
@@ -423,14 +427,16 @@ static void process_simd_row(explicit_euler_simd_context* ctx, flow_field* field
         _mm256_storeu_pd(&ctx->w_new[idx], w_next);
         _mm256_storeu_pd(&ctx->p_new[idx], p_next);
     }
+    return i;
 }
 #endif
 
+/* Scalar update of row j for interior columns i_start..nx-2 */
 static void process_scalar_row_turb(explicit_euler_simd_context* ctx, flow_field* field,
                                     const grid* grid, const ns_solver_params_t* params, size_t j,
                                     double conservative_dt, double t, size_t stride_z,
-                                    size_t k_offset, int turb_on_flag) {
-    for (size_t i = 1; i < ctx->nx - 1; i++) {
+                                    size_t k_offset, int turb_on_flag, size_t i_start) {
+    for (size_t i = i_start; i < ctx->nx - 1; i++) {
         size_t idx = k_offset + IDX_2D(i, j, ctx->nx);
 
         double du_dx = (field->u[idx + 1] - field->u[idx - 1]) / (2.0 * grid->dx[i]);
@@ -601,7 +607,10 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
             #pragma omp parallel for schedule(static)
 #endif
             for (j = 1; j < ny_int - 1; j++) {
-                process_simd_row(ctx, field, grid, (size_t)j, &sc, ctx->stride_z, k_offset);
+                size_t i_tail = process_simd_row(ctx, field, grid, (size_t)j, &sc,
+                                                 ctx->stride_z, k_offset);
+                process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt,
+                                        0.0, ctx->stride_z, k_offset, 0, i_tail);
             }
         }
     } else {
@@ -612,7 +621,7 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
 #endif
             for (j = 1; j < ny_int - 1; j++) {
                 process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt,
-                                        0.0, ctx->stride_z, k_offset, 1);
+                                        0.0, ctx->stride_z, k_offset, 1, 1);
             }
         }
     }
@@ -624,7 +633,7 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
 #endif
         for (j = 1; j < ny_int - 1; j++) {
             process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt, 0.0,
-                                    ctx->stride_z, k_offset, turb_on);
+                                    ctx->stride_z, k_offset, turb_on, 1);
         }
     }
 #endif
