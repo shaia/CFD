@@ -146,6 +146,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`lib/src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c`,
   `tests/solvers/navier_stokes/avx2/test_solver_explicit_euler_avx2.c`,
   `docs/validation/cavity-backends-validation.md`).
+- **`explicit_euler_optimized` applies momentum source terms in its AVX2 lanes.** The
+  vectorized columns skipped `source_func` and the default sinusoidal sources, while the
+  scalar remainder columns applied them, so a run with sources on disagreed from column to
+  column. Both paths now call `compute_source_terms()` as the scalar `explicit_euler` step
+  does, which also passes the z coordinate to `source_func` in 3D and applies negative
+  amplitudes and a v-amplitude set without a u-amplitude. With the default sources on,
+  AVX2 matches scalar to 4e-18 on 19×19 and 3e-17 on 32×32 (previously 2.5e-3 on 19×19).
+  Runs with both amplitudes zero and no `source_func`, such as the cavity validation,
+  are unchanged
+  (`lib/src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c`,
+  `tests/solvers/navier_stokes/avx2/test_solver_explicit_euler_avx2.c`).
 - `scripts/ec2-validate.sh` runs every `CavityBackend_*` ctest entry. It ran the test binary
   without a filter, which skips the Re=400 and Re=1000 cases, and under `set -e` a failing run
   ended the script before its FAILED summary.

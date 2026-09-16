@@ -15,7 +15,6 @@
 // Enable C11 features for aligned_alloc
 #define _POSIX_C_SOURCE 200809L
 #define _ISOC11_SOURCE
-#define _USE_MATH_DEFINES
 
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/grid.h"
@@ -33,10 +32,6 @@
 #include "upwind_avx2.h"
 
 #include <math.h>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -204,6 +199,16 @@ void explicit_euler_simd_destroy(struct NSSolver* solver) {
     }
 }
 
+/* Momentum source terms at column i of row j, shared by the vector lanes and
+ * the scalar row. Iteration 0 matches the scalar explicit_euler step, which
+ * runs every step as a one-iteration solve. */
+static void cell_source_terms(const grid* grid, const ns_solver_params_t* params, size_t i,
+                              size_t j, double z_coord, double dt, double* source_u,
+                              double* source_v, double* source_w) {
+    compute_source_terms(grid->x[i], grid->y[j], z_coord, 0, dt, params,
+                         source_u, source_v, source_w);
+}
+
 #if USE_AVX
 static inline __m256d vector_fmax(__m256d a, __m256d b) {
     return _mm256_max_pd(a, b);
@@ -213,6 +218,7 @@ static inline __m256d vector_fmin(__m256d a, __m256d b) {
 }
 
 typedef struct {
+    double dt;
     __m256d dt_vec;
     __m256d max_deriv;
     __m256d min_deriv;
@@ -237,11 +243,13 @@ typedef struct {
     __m256d gx_vec;
     __m256d gy_vec;
     __m256d gz_vec;
-    int upwind;  /* First-order upwind convective derivatives */
+    int upwind;      /* First-order upwind convective derivatives */
+    int has_source;  /* Momentum sources can be nonzero; skips per-lane evaluation otherwise */
 } simd_constants;
 
 static void init_simd_constants(simd_constants* c, const ns_solver_params_t* params,
                                 double conservative_dt, double inv_2dz, double inv_dz2) {
+    c->dt = conservative_dt;
     c->dt_vec = _mm256_set1_pd(conservative_dt);
     c->max_deriv = _mm256_set1_pd(MAX_DERIVATIVE_LIMIT);
     c->min_deriv = _mm256_set1_pd(-MAX_DERIVATIVE_LIMIT);
@@ -266,6 +274,8 @@ static void init_simd_constants(simd_constants* c, const ns_solver_params_t* par
     c->gy_vec = _mm256_set1_pd(params->gravity[1]);
     c->gz_vec = _mm256_set1_pd(params->gravity[2]);
     c->upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
+    c->has_source = (params->source_func != NULL || params->source_amplitude_u != 0.0 ||
+                     params->source_amplitude_v != 0.0);
 }
 
 static inline __m256d clamp_deriv(const simd_constants* sc, __m256d x) {
@@ -276,7 +286,8 @@ static inline __m256d clamp_deriv(const simd_constants* sc, __m256d x) {
  * column not processed (1-3 columns remain when (nx-2) % 4 != 0); the caller
  * finishes the row with the scalar row path. */
 static size_t process_simd_row(explicit_euler_simd_context* ctx, flow_field* field, const grid* grid,
-                               size_t j, const simd_constants* sc,
+                               const ns_solver_params_t* params, size_t j,
+                               const simd_constants* sc, double z_coord,
                                size_t stride_z, size_t k_offset) {
     double dy2 = grid->dy[j] * grid->dy[j];
     __m256d dy_inv_val = _mm256_set1_pd(ctx->dy_inv[j]);
@@ -426,6 +437,20 @@ static size_t process_simd_row(explicit_euler_simd_context* ctx, flow_field* fie
             _mm256_mul_pd(sc->dt_vec, _mm256_add_pd(_mm256_sub_pd(term_visc_w, term_pres_z),
                                                     _mm256_sub_pd(sc->zero, conv_w)));
 
+        /* Momentum sources: dvel += dt * source, evaluated per lane */
+        if (sc->has_source) {
+            double src_u[4] = {0.0, 0.0, 0.0, 0.0};
+            double src_v[4] = {0.0, 0.0, 0.0, 0.0};
+            double src_w[4] = {0.0, 0.0, 0.0, 0.0};
+            for (size_t lane = 0; lane < 4; lane++) {
+                cell_source_terms(grid, params, i + lane, j, z_coord, sc->dt,
+                                  &src_u[lane], &src_v[lane], &src_w[lane]);
+            }
+            du = _mm256_add_pd(du, _mm256_mul_pd(sc->dt_vec, _mm256_loadu_pd(src_u)));
+            dv = _mm256_add_pd(dv, _mm256_mul_pd(sc->dt_vec, _mm256_loadu_pd(src_v)));
+            dw = _mm256_add_pd(dw, _mm256_mul_pd(sc->dt_vec, _mm256_loadu_pd(src_w)));
+        }
+
         /* Boussinesq buoyancy: dvel += dt * (-beta*(T - T_ref)) * g.
          * When beta == 0 this adds exactly 0.0, matching the scalar path. */
         __m256d Tcell = _mm256_loadu_pd(&field->T[idx]);
@@ -467,7 +492,7 @@ static size_t process_simd_row(explicit_euler_simd_context* ctx, flow_field* fie
 /* Scalar update of row j for interior columns i_start..nx-2 */
 static void process_scalar_row_turb(explicit_euler_simd_context* ctx, flow_field* field,
                                     const grid* grid, const ns_solver_params_t* params, size_t j,
-                                    double conservative_dt, double t, size_t stride_z,
+                                    double conservative_dt, double z_coord, size_t stride_z,
                                     size_t k_offset, int turb_on_flag, size_t i_start) {
     for (size_t i = i_start; i < ctx->nx - 1; i++) {
         size_t idx = k_offset + IDX_2D(i, j, ctx->nx);
@@ -534,14 +559,8 @@ static void process_scalar_row_turb(explicit_euler_simd_context* ctx, flow_field
         double source_u = 0.0;
         double source_v = 0.0;
         double source_w = 0.0;
-        if (params->source_func) {
-            params->source_func(grid->x[i], grid->y[j], 0.0, t,
-                                params->source_context,
-                                &source_u, &source_v, &source_w);
-        } else if (params->source_amplitude_u > 0) {
-            source_u = params->source_amplitude_u * sin(M_PI * grid->y[j]);
-            source_v = params->source_amplitude_v * sin(2.0 * M_PI * grid->x[i]);
-        }
+        cell_source_terms(grid, params, i, j, z_coord, conservative_dt,
+                          &source_u, &source_v, &source_w);
 
         /* Boussinesq buoyancy source (no-op when beta == 0) */
         energy_compute_buoyancy(field->T[idx], params, &source_u, &source_v, &source_w);
@@ -646,36 +665,39 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
         init_simd_constants(&sc, params, conservative_dt, ctx->inv_2dz, ctx->inv_dz2);
         for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
             size_t k_offset = k * ctx->stride_z;
+            double z_coord = (ctx->nz > 1 && grid->z) ? grid->z[k] : 0.0;
 #ifdef _OPENMP
             #pragma omp parallel for schedule(static)
 #endif
             for (j = 1; j < ny_int - 1; j++) {
-                size_t i_tail = process_simd_row(ctx, field, grid, (size_t)j, &sc,
-                                                 ctx->stride_z, k_offset);
+                size_t i_tail = process_simd_row(ctx, field, grid, params, (size_t)j, &sc,
+                                                 z_coord, ctx->stride_z, k_offset);
                 process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt,
-                                        0.0, ctx->stride_z, k_offset, 0, i_tail);
+                                        z_coord, ctx->stride_z, k_offset, 0, i_tail);
             }
         }
     } else {
         for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
             size_t k_offset = k * ctx->stride_z;
+            double z_coord = (ctx->nz > 1 && grid->z) ? grid->z[k] : 0.0;
 #ifdef _OPENMP
             #pragma omp parallel for schedule(static)
 #endif
             for (j = 1; j < ny_int - 1; j++) {
                 process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt,
-                                        0.0, ctx->stride_z, k_offset, 1, 1);
+                                        z_coord, ctx->stride_z, k_offset, 1, 1);
             }
         }
     }
 #else
     for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
         size_t k_offset = k * ctx->stride_z;
+        double z_coord = (ctx->nz > 1 && grid->z) ? grid->z[k] : 0.0;
 #ifdef _OPENMP
         #pragma omp parallel for schedule(static)
 #endif
         for (j = 1; j < ny_int - 1; j++) {
-            process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt, 0.0,
+            process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt, z_coord,
                                     ctx->stride_z, k_offset, turb_on, 1);
         }
     }

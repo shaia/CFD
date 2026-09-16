@@ -80,14 +80,13 @@ void test_simd_row_tail_matches_scalar(void) {
     printf("\n=== Test: SIMD Row Tail Matches Scalar ===\n");
 
     /* 19 points leave 17 interior columns: four 4-wide groups plus one
-     * remainder column per row that the vector loop cannot cover. Sources are
-     * zeroed because the vector lanes do not apply them. */
+     * remainder column per row that the vector loop cannot cover. The default
+     * source terms stay on, so the vector lanes and the scalar remainder must
+     * both apply them. */
     ns_solver_params_t params = ns_solver_params_default();
     params.dt = 0.0005;
     params.mu = 0.01;
     params.max_iter = 1;
-    params.source_amplitude_u = 0.0;
-    params.source_amplitude_v = 0.0;
 
     test_result result = test_run_consistency(
         NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
