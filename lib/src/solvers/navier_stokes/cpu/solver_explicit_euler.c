@@ -13,6 +13,7 @@
 #include "../../energy/energy_solver_internal.h"
 #include "../../turbulence/turbulence_solver_internal.h"
 #include "../boundary_copy_utils.h"
+#include "../ns_convection_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -78,7 +79,8 @@ ns_solver_params_t ns_solver_params_default(void) {
                             .thermal_bc = {0},
                             .turb_model = TURB_MODEL_NONE,
                             .turb_bc = {0},
-                            .pressure_solver = NS_PRESSURE_SOLVER_DEFAULT};
+                            .pressure_solver = NS_PRESSURE_SOLVER_DEFAULT,
+                            .convection_scheme = NS_CONVECTION_SCHEME_CENTRAL};
     return params;
 }
 flow_field* flow_field_create(size_t nx, size_t ny, size_t nz) {
@@ -401,6 +403,8 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
     size_t k_end   = (nz > 1) ? (nz - 1) : 1;
     double inv_2dz = (nz > 1 && grid->dz) ? 1.0 / (2.0 * grid->dz[0]) : 0.0;
     double inv_dz2 = (nz > 1 && grid->dz) ? 1.0 / (grid->dz[0] * grid->dz[0]) : 0.0;
+    double inv_dz  = 2.0 * inv_2dz;
+    const int upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
 
     double* u_new = (double*)cfd_calloc(total, sizeof(double));
     double* v_new = (double*)cfd_calloc(total, sizeof(double));
@@ -513,6 +517,18 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
                     d2w_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2w_dy2));
                     d2w_dz2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2w_dz2));
 
+                    /* Convective derivatives: the clamped central ones, or
+                     * first-order upwind. The divergence below stays central. */
+                    ns_conv_derivs_t cd = {du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz,
+                                           dw_dx, dw_dy, dw_dz};
+                    if (upwind) {
+                        ns_upwind_conv_derivs(field->u, field->v, field->w, idx,
+                                              idx - 1, idx + 1, idx - nx, idx + nx,
+                                              idx - stride_z, idx + stride_z,
+                                              grid->dx[i], grid->dy[j], inv_dz, &cd);
+                        ns_clamp_conv_derivs(&cd, MAX_DERIVATIVE_LIMIT);
+                    }
+
                     /* Source terms */
                     double x = grid->x[i];
                     double y = grid->y[j];
@@ -573,21 +589,21 @@ cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_s
 
                     /* u-momentum */
                     double du = conservative_dt *
-                        (-u_c * du_dx - v_c * du_dy - w_c * du_dz
+                        (-u_c * cd.du_dx - v_c * cd.du_dy - w_c * cd.du_dz
                          - dp_dx / field->rho[idx]
                          + visc_u
                          + source_u);
 
                     /* v-momentum */
                     double dv = conservative_dt *
-                        (-u_c * dv_dx - v_c * dv_dy - w_c * dv_dz
+                        (-u_c * cd.dv_dx - v_c * cd.dv_dy - w_c * cd.dv_dz
                          - dp_dy / field->rho[idx]
                          + visc_v
                          + source_v);
 
                     /* w-momentum */
                     double dw = conservative_dt *
-                        (-u_c * dw_dx - v_c * dw_dy - w_c * dw_dz
+                        (-u_c * cd.dw_dx - v_c * cd.dw_dy - w_c * cd.dw_dz
                          - dp_dz / field->rho[idx]
                          + visc_w
                          + source_w);

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **First-order upwind convection** — new `ns_solver_params_t.convection_scheme` field
+  (`ns_convection_scheme_t`; 0 = existing central differencing, unchanged).
+  `NS_CONVECTION_SCHEME_UPWIND` takes each convective first derivative from the side the
+  local velocity comes from, for momentum (`u·∇u`) and temperature advection (`u·∇T`), so
+  convection-dominated flows stay free of the wiggles central differencing produces. The
+  scheme is O(h) with numerical diffusion |u|h/2; pressure gradients, viscous terms and
+  the divergence stay central. Implemented on the scalar, OpenMP and AVX2 backends of the
+  explicit Euler, projection, RK2 and RK4 solvers (the AVX2 kernels blend the one-sided
+  differences with a mask). GPU solvers reject upwind with `CFD_ERROR_UNSUPPORTED` at init
+  and at step, and unknown values return `CFD_ERROR_INVALID` at init. The derivative is
+  also available as `stencil_upwind_deriv_x/y/z()` in `cfd/math/stencils.h`.
+  Verified: stencil and solver-level refinement give first order (RK2 advection rates
+  0.90 and 0.95, central 2.02 and 2.01); a step advected at CFL 0.5 stays within its
+  initial range on all four scalar solvers and in the energy equation while central differencing
+  overshoots; OpenMP and AVX2 upwind match scalar to round-off (relative L2 below 2e-16)
+  in 2D and 3D
+  (`lib/src/solvers/navier_stokes/ns_convection_internal.h`,
+  `lib/src/solvers/navier_stokes/avx2/upwind_avx2.h`, `lib/src/api/solver_registry.c`,
+  `tests/math/test_upwind_stencils.c`, `tests/math/test_upwind_convergence.c`,
+  `tests/solvers/navier_stokes/test_convection_scheme.c`,
+  `tests/solvers/energy/test_energy_solver.c`,
+  `tests/solvers/navier_stokes/cpu/test_ns_solver_3d.c`).
 - **129×129 lid-driven cavity validation recorded** — the AVX2, OpenMP and CUDA projection
   backends match Ghia et al. (1982) at 129×129 with RMS_u / RMS_v of 0.0017 / 0.0024
   (Re=100), 0.0096 / 0.0328 (Re=400) and 0.0299 / 0.0300 (Re=1000), identical across

@@ -241,9 +241,9 @@ Without regularization, local numerical errors at corners propagate into the dom
 
 #### 5. Numerical Dissipation
 
-First-order upwinding for advection introduces artificial viscosity, effectively increasing Re beyond the physical value. This smears out vortex structures and reduces peak velocities.
+The solvers use second-order central differences for advection by default, which add no artificial viscosity. Selecting first-order upwinding (`params.convection_scheme = NS_CONVECTION_SCHEME_UPWIND`) introduces numerical viscosity |u|h/2, which lowers the effective Reynolds number below the physical value, smears vortex structures and reduces peak velocities.
 
-**Solution:** Use second-order centered differences or QUICK scheme for advection terms (requires additional stabilization).
+**Solution:** Keep central differencing for accuracy runs, and refine the grid or reduce dt when it oscillates; reserve upwinding for coarse-grid or startup runs where robustness matters more than accuracy.
 
 ## Test Files Reference
 

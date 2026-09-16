@@ -181,6 +181,33 @@ typedef enum {
 } ns_pressure_solver_t;
 
 /**
+ * Discretization of the convective terms.
+ *
+ * NS_CONVECTION_SCHEME_CENTRAL (0) keeps the O(h^2) central differences, so
+ * zero-initialization is fully backward compatible.
+ *
+ * NS_CONVECTION_SCHEME_UPWIND selects O(h) first-order upwind differences: each
+ * convective first derivative takes the one-sided difference on the side the
+ * local velocity comes from. Its numerical diffusion (|u|*h/2) keeps
+ * convection-dominated flows (cell Peclet number |u|*h/nu > 2) free of the
+ * wiggles central differencing produces, at the cost of smearing gradients.
+ *
+ * The scheme applies to the momentum convection u.grad(u) and to temperature
+ * advection u.grad(T). Pressure gradients, viscous terms and the divergence stay
+ * central; turbulence transport is always upwind. Explicit time steps must
+ * still satisfy both the convective CFL limit and the diffusion limit.
+ *
+ * Implemented on the scalar, OpenMP and AVX2 backends of every solver.
+ * GPU solvers reject NS_CONVECTION_SCHEME_UPWIND with CFD_ERROR_UNSUPPORTED at
+ * init and at step; any other value is rejected with CFD_ERROR_INVALID at
+ * init. Checkpoints do not store the selection, so set it again after a restore.
+ */
+typedef enum {
+    NS_CONVECTION_SCHEME_CENTRAL = 0, /**< O(h^2) central differences (default) */
+    NS_CONVECTION_SCHEME_UPWIND = 1,  /**< O(h) first-order upwind differences */
+} ns_convection_scheme_t;
+
+/**
  * Navier-Stokes solver parameters
  */
 typedef struct {
@@ -231,6 +258,10 @@ typedef struct {
     /* Pressure Poisson solver for projection solvers ("projection" and
      * "projection_omp"; 0 = existing CG behavior, backward compatible). */
     ns_pressure_solver_t pressure_solver;  /**< Pressure solver selection */
+
+    /* Convective-term discretization (0 = central differences, backward
+     * compatible). */
+    ns_convection_scheme_t convection_scheme;  /**< Convection scheme selection */
 } ns_solver_params_t;
 
 

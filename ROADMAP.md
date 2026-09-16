@@ -46,6 +46,7 @@ The single source of truth for backend gaps. Each algorithm targets scalar (CPU)
 |                     | Projection     | done | done     | —        | done     | done |
 |                     | RK2 (Heun)     | done | done     | —        | done     | done |
 |                     | RK4 (classical)| done | done     | —        | done     | done |
+|                     | Upwind convection (1st order) | done | done | — | done | —² |
 | **Energy Eq.**      | Advec-diff + Boussinesq + thermal BCs | done | done | — | done | done |
 | **Turbulence**      | k-ε / SA + wall functions             | done | done | — | done | —    |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | done     | done |
@@ -61,6 +62,8 @@ The single source of truth for backend gaps. Each algorithm targets scalar (CPU)
 already-updated neighbors. Its parallel form is **Red-Black SOR**, which has an
 OMP backend; a "plain SOR OMP" would either change the numerics silently or need
 low-value wavefront machinery, so it is intentionally omitted.
+
+² GPU solvers reject `NS_CONVECTION_SCHEME_UPWIND` with `CFD_ERROR_UNSUPPORTED`.
 
 ### Known Limitations
 
@@ -186,7 +189,24 @@ Stencil tests, convergence-order, MMS, and divergence-free validation are done (
 
 **Still needed:**
 
-- [ ] Upwind differencing (1st order) for stability
+- [x] Upwind differencing (1st order) for stability — `ns_solver_params_t.convection_scheme`
+      (`NS_CONVECTION_SCHEME_UPWIND`) switches the convective first derivatives of momentum
+      and temperature to first-order upwind on the scalar, OpenMP and AVX2 backends of all
+      four solvers; pressure gradients, viscous terms and divergence stay central. GPU
+      solvers reject it at init and at step. Validated: O(h) stencil and solver-level
+      convergence (rate ~0.95 vs ~2.0 central), bounded step advection where central
+      overshoots, and OMP/AVX2 agreement with scalar within 1e-10 in 2D and 3D.
+      Files created: `lib/src/solvers/navier_stokes/ns_convection_internal.h`,
+      `lib/src/solvers/navier_stokes/avx2/upwind_avx2.h`,
+      `tests/math/test_upwind_stencils.c`, `tests/math/test_upwind_convergence.c`,
+      `tests/solvers/navier_stokes/test_convection_scheme.c`.
+      Files modified: `lib/include/cfd/math/stencils.h`,
+      `lib/include/cfd/solvers/navier_stokes_solver.h`, `lib/src/api/solver_registry.c`,
+      the explicit Euler / projection / RK kernels under `lib/src/solvers/navier_stokes/`
+      (`cpu/`, `omp/`, `avx2/`, `momentum_rhs/`), the energy solvers under
+      `lib/src/solvers/energy/`, the GPU drivers `solver_projection_gpu.cu` and
+      `solver_rk_gpu.cu`, `tests/solvers/energy/test_energy_solver.c`,
+      `tests/solvers/navier_stokes/cpu/test_ns_solver_3d.c`.
 - [ ] Central differencing with delayed correction
 - [ ] High-resolution TVD schemes (Van Leer, Superbee)
 - [ ] Gradient limiters (Barth-Jespersen, Venkatakrishnan)

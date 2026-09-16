@@ -3,7 +3,9 @@
  * @brief AVX2-vectorized energy equation solver (advection-diffusion step)
  *
  * Solves: dT/dt + u*nabla(T) = alpha * nabla^2(T) + Q
- * using explicit Euler time integration and central differences.
+ * using explicit Euler time integration, central differences for diffusion, and
+ * central or first-order upwind differences for advection
+ * (params->convection_scheme).
  *
  * Same numerics as the scalar reference (energy/cpu/energy_solver.c). The
  * interior stencil is vectorized along the unit-stride i direction (4 doubles
@@ -23,6 +25,8 @@
 
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
+#include "cfd/math/stencils.h"
+#include "../../navier_stokes/avx2/upwind_avx2.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -123,6 +127,8 @@ cfd_status_t energy_step_explicit_avx2_with_workspace(
     size_t k_end    = (nz > 1) ? (nz - 1) : 1;
     double inv_2dz  = (nz > 1 && grid->dz) ? 1.0 / (2.0 * grid->dz[0]) : 0.0;
     double inv_dz2  = (nz > 1 && grid->dz) ? 1.0 / (grid->dz[0] * grid->dz[0]) : 0.0;
+    double inv_dz   = 2.0 * inv_2dz;
+    const int upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
 
     /* Use caller's workspace or allocate internally */
     int owns_buffer = 0;
@@ -151,6 +157,9 @@ cfd_status_t energy_step_explicit_avx2_with_workspace(
     const __m256d inv_2dx_v = _mm256_set1_pd(inv_2dx);
     const __m256d inv_2dy_v = _mm256_set1_pd(inv_2dy);
     const __m256d inv_2dz_v = _mm256_set1_pd(inv_2dz);
+    const __m256d inv_dx_v  = _mm256_set1_pd(1.0 / dx0);
+    const __m256d inv_dy_v  = _mm256_set1_pd(1.0 / dy0);
+    const __m256d inv_dz_v  = _mm256_set1_pd(inv_dz);
     const __m256d inv_dx2_v = _mm256_set1_pd(inv_dx2);
     const __m256d inv_dy2_v = _mm256_set1_pd(inv_dy2);
     const __m256d inv_dz2_v = _mm256_set1_pd(inv_dz2);
@@ -184,10 +193,18 @@ cfd_status_t energy_step_explicit_avx2_with_workspace(
                 __m256d T_zp = _mm256_loadu_pd(&T[idx + stride_z]);
                 __m256d T_zm = _mm256_loadu_pd(&T[idx - stride_z]);
 
-                /* Advection: u*dT/dx + v*dT/dy + w*dT/dz */
-                __m256d dT_dx = _mm256_mul_pd(_mm256_sub_pd(T_xp, T_xm), inv_2dx_v);
-                __m256d dT_dy = _mm256_mul_pd(_mm256_sub_pd(T_yp, T_ym), inv_2dy_v);
-                __m256d dT_dz = _mm256_mul_pd(_mm256_sub_pd(T_zp, T_zm), inv_2dz_v);
+                /* Advection: u*dT/dx + v*dT/dy + w*dT/dz, with central or
+                 * first-order upwind derivatives */
+                __m256d dT_dx, dT_dy, dT_dz;
+                if (upwind) {
+                    dT_dx = upwind_deriv_avx2(uc, T_xm, T_c, T_xp, inv_dx_v);
+                    dT_dy = upwind_deriv_avx2(vc, T_ym, T_c, T_yp, inv_dy_v);
+                    dT_dz = upwind_deriv_avx2(wc, T_zm, T_c, T_zp, inv_dz_v);
+                } else {
+                    dT_dx = _mm256_mul_pd(_mm256_sub_pd(T_xp, T_xm), inv_2dx_v);
+                    dT_dy = _mm256_mul_pd(_mm256_sub_pd(T_yp, T_ym), inv_2dy_v);
+                    dT_dz = _mm256_mul_pd(_mm256_sub_pd(T_zp, T_zm), inv_2dz_v);
+                }
                 __m256d adv = _mm256_add_pd(
                     _mm256_add_pd(_mm256_mul_pd(uc, dT_dx), _mm256_mul_pd(vc, dT_dy)),
                     _mm256_mul_pd(wc, dT_dz));
@@ -212,9 +229,17 @@ cfd_status_t energy_step_explicit_avx2_with_workspace(
                 size_t idx = row + i;
 
                 double T_cs = T[idx];
-                double dT_dx = (T[idx + 1] - T[idx - 1]) * inv_2dx;
-                double dT_dy = (T[idx + nx] - T[idx - nx]) * inv_2dy;
-                double dT_dz = (T[idx + stride_z] - T[idx - stride_z]) * inv_2dz;
+                double dT_dx, dT_dy, dT_dz;
+                if (upwind) {
+                    dT_dx = stencil_upwind_deriv_x(T[idx + 1], T_cs, T[idx - 1], dx0, u[idx]);
+                    dT_dy = stencil_upwind_deriv_y(T[idx + nx], T_cs, T[idx - nx], dy0, v[idx]);
+                    dT_dz = stencil_upwind_diff(T[idx + stride_z], T_cs, T[idx - stride_z],
+                                                w[idx]) * inv_dz;
+                } else {
+                    dT_dx = (T[idx + 1] - T[idx - 1]) * inv_2dx;
+                    dT_dy = (T[idx + nx] - T[idx - nx]) * inv_2dy;
+                    dT_dz = (T[idx + stride_z] - T[idx - stride_z]) * inv_2dz;
+                }
                 double adv = u[idx] * dT_dx + v[idx] * dT_dy + w[idx] * dT_dz;
 
                 double d2x = (T[idx + 1] - 2.0 * T_cs + T[idx - 1]) * inv_dx2;

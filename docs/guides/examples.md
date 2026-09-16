@@ -979,6 +979,25 @@ cleanup:
     if (field) flow_field_destroy(field);
 ```
 
+### Selecting the Convection Scheme
+
+Central differencing (the default) is second-order accurate but oscillates when
+convection dominates, for example on a coarse grid at high Reynolds number.
+First-order upwind trades accuracy for bounded, wiggle-free advection of both
+velocity and temperature:
+
+```c
+simulation_data* sim = init_simulation_with_solver(33, 33, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0,
+                                                    NS_SOLVER_TYPE_RK2_OMP);
+sim->params.convection_scheme = NS_CONVECTION_SCHEME_UPWIND;
+
+/* GPU solvers return CFD_ERROR_UNSUPPORTED for upwind */
+cfd_status_t status = run_simulation_step(sim);
+```
+
+See [Convection Scheme](../reference/solvers.md#convection-scheme) for backend
+support and stability notes.
+
 ### Output Organization
 
 ```c

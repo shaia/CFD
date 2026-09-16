@@ -29,6 +29,8 @@
 #include "../../turbulence/turbulence_solver_internal.h"
 
 #include "../boundary_copy_utils.h"
+#include "../ns_convection_internal.h"
+#include "upwind_avx2.h"
 
 #include <math.h>
 
@@ -93,9 +95,12 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
 
 cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
                                       const ns_solver_params_t* params) {
-    (void)params;  // Unused
     if (!solver || !grid) {
         return CFD_ERROR_INVALID;
+    }
+    cfd_status_t scheme_status = ns_check_convection_scheme(params, 1);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
     }
     if (grid->nx < 3 || grid->ny < 3 || (grid->nz > 1 && grid->nz < 3)) {
         return CFD_ERROR_INVALID;
@@ -224,6 +229,7 @@ typedef struct {
     __m256d mu_vec;
     __m256d zero;
     __m256d inv_2dz_vec;
+    __m256d inv_dz_vec;
     __m256d inv_dz2_vec;
     /* Boussinesq buoyancy: accel = -beta*(T - T_ref)*g. Zero beta -> no-op. */
     __m256d neg_beta_vec;
@@ -231,6 +237,7 @@ typedef struct {
     __m256d gx_vec;
     __m256d gy_vec;
     __m256d gz_vec;
+    int upwind;  /* First-order upwind convective derivatives */
 } simd_constants;
 
 static void init_simd_constants(simd_constants* c, const ns_solver_params_t* params,
@@ -251,12 +258,18 @@ static void init_simd_constants(simd_constants* c, const ns_solver_params_t* par
     c->mu_vec = _mm256_set1_pd(params->mu);
     c->zero = _mm256_setzero_pd();
     c->inv_2dz_vec = _mm256_set1_pd(inv_2dz);
+    c->inv_dz_vec = _mm256_set1_pd(2.0 * inv_2dz);
     c->inv_dz2_vec = _mm256_set1_pd(inv_dz2);
     c->neg_beta_vec = _mm256_set1_pd(-params->beta);
     c->t_ref_vec = _mm256_set1_pd(params->T_ref);
     c->gx_vec = _mm256_set1_pd(params->gravity[0]);
     c->gy_vec = _mm256_set1_pd(params->gravity[1]);
     c->gz_vec = _mm256_set1_pd(params->gravity[2]);
+    c->upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
+}
+
+static inline __m256d clamp_deriv(const simd_constants* sc, __m256d x) {
+    return vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, x));
 }
 
 /* Vectorized update of row j in 4-wide groups. Returns the first interior
@@ -341,6 +354,26 @@ static size_t process_simd_row(explicit_euler_simd_context* ctx, flow_field* fie
         dw_dy = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dw_dy));
         dw_dz = vector_fmax(sc->min_deriv, vector_fmin(sc->max_deriv, dw_dz));
 
+        /* Convective derivatives: the clamped central ones, or first-order
+         * upwind. The divergence below stays central. */
+        __m256d cdu_dx = du_dx, cdu_dy = du_dy, cdu_dz = du_dz;
+        __m256d cdv_dx = dv_dx, cdv_dy = dv_dy, cdv_dz = dv_dz;
+        __m256d cdw_dx = dw_dx, cdw_dy = dw_dy, cdw_dz = dw_dz;
+        if (sc->upwind) {
+            /* dx_inv and dy_inv hold 1/(2h); upwind differences need 1/h */
+            __m256d inv_dx = _mm256_add_pd(dx_inv_val, dx_inv_val);
+            __m256d inv_dy = _mm256_add_pd(dy_inv_val, dy_inv_val);
+            cdu_dx = clamp_deriv(sc, upwind_deriv_avx2(u, u_xm, u, u_xp, inv_dx));
+            cdu_dy = clamp_deriv(sc, upwind_deriv_avx2(v, u_ym, u, u_yp, inv_dy));
+            cdu_dz = clamp_deriv(sc, upwind_deriv_avx2(w, u_zm, u, u_zp, sc->inv_dz_vec));
+            cdv_dx = clamp_deriv(sc, upwind_deriv_avx2(u, v_xm, v, v_xp, inv_dx));
+            cdv_dy = clamp_deriv(sc, upwind_deriv_avx2(v, v_ym, v, v_yp, inv_dy));
+            cdv_dz = clamp_deriv(sc, upwind_deriv_avx2(w, v_zm, v, v_zp, sc->inv_dz_vec));
+            cdw_dx = clamp_deriv(sc, upwind_deriv_avx2(u, w_xm, w, w_xp, inv_dx));
+            cdw_dy = clamp_deriv(sc, upwind_deriv_avx2(v, w_ym, w, w_yp, inv_dy));
+            cdw_dz = clamp_deriv(sc, upwind_deriv_avx2(w, w_zm, w, w_zp, sc->inv_dz_vec));
+        }
+
         __m256d inv_dx_sq = _mm256_mul_pd(sc->four, _mm256_mul_pd(dx_inv_val, dx_inv_val));
 
         __m256d d2u_dx2 = _mm256_mul_pd(
@@ -369,8 +402,8 @@ static size_t process_simd_row(explicit_euler_simd_context* ctx, flow_field* fie
         __m256d term_pres_x = _mm256_mul_pd(dp_dx, rho_inv);
         __m256d term_visc_u = _mm256_mul_pd(nu, _mm256_add_pd(_mm256_add_pd(d2u_dx2, d2u_dy2), d2u_dz2));
         __m256d conv_u = _mm256_add_pd(
-            _mm256_add_pd(_mm256_mul_pd(u, du_dx), _mm256_mul_pd(v, du_dy)),
-            _mm256_mul_pd(w, du_dz));
+            _mm256_add_pd(_mm256_mul_pd(u, cdu_dx), _mm256_mul_pd(v, cdu_dy)),
+            _mm256_mul_pd(w, cdu_dz));
         __m256d du =
             _mm256_mul_pd(sc->dt_vec, _mm256_add_pd(_mm256_sub_pd(term_visc_u, term_pres_x),
                                                     _mm256_sub_pd(sc->zero, conv_u)));
@@ -378,8 +411,8 @@ static size_t process_simd_row(explicit_euler_simd_context* ctx, flow_field* fie
         __m256d term_pres_y = _mm256_mul_pd(dp_dy, rho_inv);
         __m256d term_visc_v = _mm256_mul_pd(nu, _mm256_add_pd(_mm256_add_pd(d2v_dx2, d2v_dy2), d2v_dz2));
         __m256d conv_v = _mm256_add_pd(
-            _mm256_add_pd(_mm256_mul_pd(u, dv_dx), _mm256_mul_pd(v, dv_dy)),
-            _mm256_mul_pd(w, dv_dz));
+            _mm256_add_pd(_mm256_mul_pd(u, cdv_dx), _mm256_mul_pd(v, cdv_dy)),
+            _mm256_mul_pd(w, cdv_dz));
         __m256d dv =
             _mm256_mul_pd(sc->dt_vec, _mm256_add_pd(_mm256_sub_pd(term_visc_v, term_pres_y),
                                                     _mm256_sub_pd(sc->zero, conv_v)));
@@ -387,8 +420,8 @@ static size_t process_simd_row(explicit_euler_simd_context* ctx, flow_field* fie
         __m256d term_pres_z = _mm256_mul_pd(dp_dz, rho_inv);
         __m256d term_visc_w = _mm256_mul_pd(nu, _mm256_add_pd(_mm256_add_pd(d2w_dx2, d2w_dy2), d2w_dz2));
         __m256d conv_w = _mm256_add_pd(
-            _mm256_add_pd(_mm256_mul_pd(u, dw_dx), _mm256_mul_pd(v, dw_dy)),
-            _mm256_mul_pd(w, dw_dz));
+            _mm256_add_pd(_mm256_mul_pd(u, cdw_dx), _mm256_mul_pd(v, cdw_dy)),
+            _mm256_mul_pd(w, cdw_dz));
         __m256d dw =
             _mm256_mul_pd(sc->dt_vec, _mm256_add_pd(_mm256_sub_pd(term_visc_w, term_pres_z),
                                                     _mm256_sub_pd(sc->zero, conv_w)));
@@ -488,6 +521,16 @@ static void process_scalar_row_turb(explicit_euler_simd_context* ctx, flow_field
         dp_dy = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dy));
         dp_dz = fmax(-MAX_DERIVATIVE_LIMIT, fmin(MAX_DERIVATIVE_LIMIT, dp_dz));
 
+        /* Convective derivatives: the clamped central ones, or first-order
+         * upwind. The divergence below stays central. */
+        ns_conv_derivs_t cd = {du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz, dw_dx, dw_dy, dw_dz};
+        if (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND) {
+            ns_upwind_conv_derivs(field->u, field->v, field->w, idx, idx - 1, idx + 1,
+                                  idx - ctx->nx, idx + ctx->nx, idx - stride_z, idx + stride_z,
+                                  grid->dx[i], grid->dy[j], 2.0 * ctx->inv_2dz, &cd);
+            ns_clamp_conv_derivs(&cd, MAX_DERIVATIVE_LIMIT);
+        }
+
         double source_u = 0.0;
         double source_v = 0.0;
         double source_w = 0.0;
@@ -542,11 +585,11 @@ static void process_scalar_row_turb(explicit_euler_simd_context* ctx, flow_field
             visc_w = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, visc_w));
         }
 
-        double du = conservative_dt * (-u_c * du_dx - v_c * du_dy - w_c * du_dz -
+        double du = conservative_dt * (-u_c * cd.du_dx - v_c * cd.du_dy - w_c * cd.du_dz -
                                        dp_dx / rho + visc_u + source_u);
-        double dv = conservative_dt * (-u_c * dv_dx - v_c * dv_dy - w_c * dv_dz -
+        double dv = conservative_dt * (-u_c * cd.dv_dx - v_c * cd.dv_dy - w_c * cd.dv_dz -
                                        dp_dy / rho + visc_v + source_v);
-        double dw = conservative_dt * (-u_c * dw_dx - v_c * dw_dy - w_c * dw_dz -
+        double dw = conservative_dt * (-u_c * cd.dw_dx - v_c * cd.dw_dy - w_c * cd.dw_dz -
                                        dp_dz / rho + visc_w + source_w);
 
         du = fmax(-UPDATE_LIMIT, fmin(UPDATE_LIMIT, du));

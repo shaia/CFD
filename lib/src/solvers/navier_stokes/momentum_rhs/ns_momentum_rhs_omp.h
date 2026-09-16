@@ -18,6 +18,8 @@
 #ifndef CFD_NS_MOMENTUM_RHS_OMP_H
 #define CFD_NS_MOMENTUM_RHS_OMP_H
 
+#include "../ns_convection_internal.h"
+
 /* Physical stability limits (shared by the RK2/RK4 OMP RHS kernel) */
 #ifndef MAX_DERIVATIVE_LIMIT
 #define MAX_DERIVATIVE_LIMIT        100.0
@@ -51,6 +53,8 @@ static void compute_rhs_omp(const double* u, const double* v, const double* w,
                              int iter, double dt) {
     /* nu_t is frozen across RK stages (updated once per full step) */
     const int turb_on = (params->turb_model != TURB_MODEL_NONE) && (nu_t != NULL);
+    const int upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
+    const double inv_dz = 2.0 * inv_2dz;
     ptrdiff_t ny_int = (ptrdiff_t)ny;
     ptrdiff_t nx_int = (ptrdiff_t)nx;
 
@@ -151,6 +155,16 @@ static void compute_rhs_omp(const double* u, const double* v, const double* w,
                 d2w_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2w_dy2));
                 d2w_dz2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2w_dz2));
 
+                /* Convective derivatives: the clamped central ones, or first-order
+                 * upwind. The divergence below stays central. */
+                ns_conv_derivs_t cd = {du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz,
+                                       dw_dx, dw_dy, dw_dz};
+                if (upwind) {
+                    ns_upwind_conv_derivs(u, v, w, idx, il, ir, jd, ju, kd, ku,
+                                          grid->dx[i], grid->dy[j], inv_dz, &cd);
+                    ns_clamp_conv_derivs(&cd, MAX_DERIVATIVE_LIMIT);
+                }
+
                 /* Source terms */
                 double source_u = 0.0, source_v = 0.0, source_w = 0.0;
                 double z_coord = (nz > 1 && grid->z) ? grid->z[k] : 0.0;
@@ -203,19 +217,19 @@ static void compute_rhs_omp(const double* u, const double* v, const double* w,
                 }
 
                 /* RHS for u-momentum */
-                rhs_u[idx] = -u[idx] * du_dx - v[idx] * du_dy - w[idx] * du_dz
+                rhs_u[idx] = -u[idx] * cd.du_dx - v[idx] * cd.du_dy - w[idx] * cd.du_dz
                              - dp_dx / rho[idx]
                              + visc_u
                              + source_u;
 
                 /* RHS for v-momentum */
-                rhs_v[idx] = -u[idx] * dv_dx - v[idx] * dv_dy - w[idx] * dv_dz
+                rhs_v[idx] = -u[idx] * cd.dv_dx - v[idx] * cd.dv_dy - w[idx] * cd.dv_dz
                              - dp_dy / rho[idx]
                              + visc_v
                              + source_v;
 
                 /* RHS for w-momentum */
-                rhs_w[idx] = -u[idx] * dw_dx - v[idx] * dw_dy - w[idx] * dw_dz
+                rhs_w[idx] = -u[idx] * cd.dw_dx - v[idx] * cd.dw_dy - w[idx] * cd.dw_dz
                              - dp_dz / rho[idx]
                              + visc_w
                              + source_w;

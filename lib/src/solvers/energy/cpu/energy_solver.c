@@ -3,7 +3,9 @@
  * @brief Scalar CPU implementation of the energy equation solver
  *
  * Solves: dT/dt + u*nabla(T) = alpha * nabla^2(T) + Q
- * using explicit Euler time integration and central differences.
+ * using explicit Euler time integration, central differences for diffusion, and
+ * central or first-order upwind differences for advection
+ * (params->convection_scheme).
  *
  * Branch-free 3D: when nz==1, stride_z=0 and inv_2dz/inv_dz2=0.0 cause all
  * z-terms to vanish, producing identical results to a 2D code path.
@@ -14,6 +16,7 @@
 
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
+#include "cfd/math/stencils.h"
 
 #include <math.h>
 #include <string.h>
@@ -102,6 +105,8 @@ cfd_status_t energy_step_explicit_with_workspace(
     size_t k_end    = (nz > 1) ? (nz - 1) : 1;
     double inv_2dz  = (nz > 1 && grid->dz) ? 1.0 / (2.0 * grid->dz[0]) : 0.0;
     double inv_dz2  = (nz > 1 && grid->dz) ? 1.0 / (grid->dz[0] * grid->dz[0]) : 0.0;
+    double inv_dz   = 2.0 * inv_2dz;
+    const int upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
 
     /* Use caller's workspace or allocate internally */
     int owns_buffer = 0;
@@ -127,10 +132,21 @@ cfd_status_t energy_step_explicit_with_workspace(
                 double v_c = field->v[idx];
                 double w_c = field->w[idx];
 
-                /* Advection: u * dT/dx + v * dT/dy + w * dT/dz */
-                double dT_dx = (field->T[idx + 1] - field->T[idx - 1]) * inv_2dx;
-                double dT_dy = (field->T[idx + nx] - field->T[idx - nx]) * inv_2dy;
-                double dT_dz = (field->T[idx + stride_z] - field->T[idx - stride_z]) * inv_2dz;
+                /* Advection: u * dT/dx + v * dT/dy + w * dT/dz, with central or
+                 * first-order upwind derivatives */
+                double dT_dx, dT_dy, dT_dz;
+                if (upwind) {
+                    dT_dx = stencil_upwind_deriv_x(field->T[idx + 1], T_c, field->T[idx - 1],
+                                                   dx0, u_c);
+                    dT_dy = stencil_upwind_deriv_y(field->T[idx + nx], T_c, field->T[idx - nx],
+                                                   dy0, v_c);
+                    dT_dz = stencil_upwind_diff(field->T[idx + stride_z], T_c,
+                                                field->T[idx - stride_z], w_c) * inv_dz;
+                } else {
+                    dT_dx = (field->T[idx + 1] - field->T[idx - 1]) * inv_2dx;
+                    dT_dy = (field->T[idx + nx] - field->T[idx - nx]) * inv_2dy;
+                    dT_dz = (field->T[idx + stride_z] - field->T[idx - stride_z]) * inv_2dz;
+                }
 
                 double advection = u_c * dT_dx + v_c * dT_dy + w_c * dT_dz;
 

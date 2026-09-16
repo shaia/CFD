@@ -23,6 +23,7 @@
 #include "../../turbulence/turbulence_solver_internal.h"
 
 #include "../boundary_copy_utils.h"
+#include "../ns_convection_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -85,6 +86,11 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     }
     if (grid->nx < 3 || grid->ny < 3 || (grid->nz > 1 && grid->nz < 3)) {
         return CFD_ERROR_INVALID;
+    }
+
+    cfd_status_t scheme_status = ns_check_convection_scheme(params, 1);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
     }
 
     if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
@@ -205,6 +211,8 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     double nu = params->mu;  // Viscosity (treated as kinematic for ρ=1)
 
     const int turb_on = (params->turb_model != TURB_MODEL_NONE);
+    const int upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
+    const double inv_dz = 2.0 * ctx->inv_2dz;
 
     double* u_star = ctx->u_star;
     double* v_star = ctx->v_star;
@@ -258,9 +266,19 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
                 double dw_dz = (field->w[idx + ctx->stride_z] - field->w[idx - ctx->stride_z]) *
                                ctx->inv_2dz;
 
-                double conv_u = (u * du_dx) + (v * du_dy) + (w * du_dz);
-                double conv_v = (u * dv_dx) + (v * dv_dy) + (w * dv_dz);
-                double conv_w = (u * dw_dx) + (v * dw_dy) + (w * dw_dz);
+                // Convective derivatives: central, or first-order upwind
+                ns_conv_derivs_t cd = {du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz,
+                                       dw_dx, dw_dy, dw_dz};
+                if (upwind) {
+                    ns_upwind_conv_derivs(field->u, field->v, field->w, idx,
+                                          idx - 1, idx + 1, idx - nx, idx + nx,
+                                          idx - ctx->stride_z, idx + ctx->stride_z,
+                                          dx, dy, inv_dz, &cd);
+                }
+
+                double conv_u = (u * cd.du_dx) + (v * cd.du_dy) + (w * cd.du_dz);
+                double conv_v = (u * cd.dv_dx) + (v * cd.dv_dy) + (w * cd.dv_dz);
+                double conv_w = (u * cd.dw_dx) + (v * cd.dw_dy) + (w * cd.dw_dz);
 
                 // Viscous terms: ν∇²u
                 double d2u_dx2 = (field->u[idx + 1] - 2.0 * u + field->u[idx - 1]) / (dx * dx);

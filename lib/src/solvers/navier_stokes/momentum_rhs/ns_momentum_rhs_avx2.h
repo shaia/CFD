@@ -28,6 +28,9 @@
 #ifndef CFD_NS_MOMENTUM_RHS_AVX2_H
 #define CFD_NS_MOMENTUM_RHS_AVX2_H
 
+#include "../ns_convection_internal.h"
+#include "../avx2/upwind_avx2.h"
+
 /* Physical stability limits (shared by the RK2/RK4 AVX2 RHS kernel) */
 #ifndef MAX_DERIVATIVE_LIMIT
 #define MAX_DERIVATIVE_LIMIT        100.0
@@ -122,6 +125,14 @@ static void ns_rhs_point(
     d2w_dy2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2w_dy2));
     d2w_dz2 = fmax(-MAX_SECOND_DERIVATIVE_LIMIT, fmin(MAX_SECOND_DERIVATIVE_LIMIT, d2w_dz2));
 
+    /* Convective derivatives: the clamped central ones, or first-order upwind.
+     * The divergence below stays central. */
+    ns_conv_derivs_t cd = {du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz, dw_dx, dw_dy, dw_dz};
+    if (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND) {
+        ns_upwind_conv_derivs(u, v, w, idx, il, ir, jd, ju, kd, ku, dx, dy, 2.0 * inv_2dz, &cd);
+        ns_clamp_conv_derivs(&cd, MAX_DERIVATIVE_LIMIT);
+    }
+
     double source_u = 0.0, source_v = 0.0, source_w = 0.0;
     double z_coord = (nz > 1 && g->z) ? g->z[k] : 0.0;
     compute_source_terms(g->x[i], g->y[j], z_coord, iter, dt, params,
@@ -171,17 +182,17 @@ static void ns_rhs_point(
         visc_w = t_w_x + t_w_y + nu * d2w_dz2;
     }
 
-    rhs_u[idx] = -(u[idx] * du_dx) - (v[idx] * du_dy) - (w[idx] * du_dz)
+    rhs_u[idx] = -(u[idx] * cd.du_dx) - (v[idx] * cd.du_dy) - (w[idx] * cd.du_dz)
                  - dp_dx / rho[idx]
                  + visc_u
                  + source_u;
 
-    rhs_v[idx] = -(u[idx] * dv_dx) - (v[idx] * dv_dy) - (w[idx] * dv_dz)
+    rhs_v[idx] = -(u[idx] * cd.dv_dx) - (v[idx] * cd.dv_dy) - (w[idx] * cd.dv_dz)
                  - dp_dy / rho[idx]
                  + visc_v
                  + source_v;
 
-    rhs_w[idx] = -(u[idx] * dw_dx) - (v[idx] * dw_dy) - (w[idx] * dw_dz)
+    rhs_w[idx] = -(u[idx] * cd.dw_dx) - (v[idx] * cd.dw_dy) - (w[idx] * cd.dw_dz)
                  - dp_dz / rho[idx]
                  + visc_w
                  + source_w;
@@ -216,6 +227,7 @@ static void compute_rhs_row(
     const ns_solver_params_t* params, size_t j, size_t k, int iter, double dt)
 {
     const int turb_on = (params->turb_model != TURB_MODEL_NONE) && (nu_t != NULL);
+    const int upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
     size_t nx       = ctx->nx;
     size_t ny       = ctx->ny;
     size_t nz       = ctx->nz;
@@ -279,6 +291,9 @@ static void compute_rhs_row(
         __m256d dy2_inv_v = _mm256_set1_pd(4.0 * ctx->dy_inv[j] * ctx->dy_inv[j]);
         __m256d dz_inv_v  = _mm256_set1_pd(inv_2dz);
         __m256d dz2_inv_v = _mm256_set1_pd(inv_dz2);
+        /* Upwind differences divide by h, not 2h */
+        __m256d dy_up_v   = _mm256_set1_pd(2.0 * ctx->dy_inv[j]);
+        __m256d dz_up_v   = _mm256_set1_pd(2.0 * inv_2dz);
         __m256d two       = _mm256_set1_pd(2.0);
         __m256d four      = _mm256_set1_pd(4.0);
         __m256d max_d1    = _mm256_set1_pd( MAX_DERIVATIVE_LIMIT);
@@ -370,6 +385,24 @@ static void compute_rhs_row(
             __m256d dw_dz = avx2_clamp(
                 _mm256_mul_pd(_mm256_sub_pd(w_ku, w_kd), dz_inv_v), min_d1, max_d1);
 
+            /* Convective derivatives: the clamped central ones, or first-order
+             * upwind. The divergence below stays central. */
+            __m256d cdu_dx = du_dx, cdu_dy = du_dy, cdu_dz = du_dz;
+            __m256d cdv_dx = dv_dx, cdv_dy = dv_dy, cdv_dz = dv_dz;
+            __m256d cdw_dx = dw_dx, cdw_dy = dw_dy, cdw_dz = dw_dz;
+            if (upwind) {
+                __m256d dx_up_v = _mm256_add_pd(dx_inv_v, dx_inv_v);
+                cdu_dx = avx2_clamp(upwind_deriv_avx2(u_c, u_il, u_c, u_ir, dx_up_v), min_d1, max_d1);
+                cdu_dy = avx2_clamp(upwind_deriv_avx2(v_c, u_jd, u_c, u_ju, dy_up_v), min_d1, max_d1);
+                cdu_dz = avx2_clamp(upwind_deriv_avx2(w_c, u_kd, u_c, u_ku, dz_up_v), min_d1, max_d1);
+                cdv_dx = avx2_clamp(upwind_deriv_avx2(u_c, v_il, v_c, v_ir, dx_up_v), min_d1, max_d1);
+                cdv_dy = avx2_clamp(upwind_deriv_avx2(v_c, v_jd, v_c, v_ju, dy_up_v), min_d1, max_d1);
+                cdv_dz = avx2_clamp(upwind_deriv_avx2(w_c, v_kd, v_c, v_ku, dz_up_v), min_d1, max_d1);
+                cdw_dx = avx2_clamp(upwind_deriv_avx2(u_c, w_il, w_c, w_ir, dx_up_v), min_d1, max_d1);
+                cdw_dy = avx2_clamp(upwind_deriv_avx2(v_c, w_jd, w_c, w_ju, dy_up_v), min_d1, max_d1);
+                cdw_dz = avx2_clamp(upwind_deriv_avx2(w_c, w_kd, w_c, w_ku, dz_up_v), min_d1, max_d1);
+            }
+
             /* Pressure gradients */
             __m256d dp_dx = avx2_clamp(
                 _mm256_mul_pd(_mm256_sub_pd(p_ir, p_il), dx_inv_v), min_d1, max_d1);
@@ -456,9 +489,9 @@ static void compute_rhs_row(
             /* RHS u: nu*(d2u_dx2+d2u_dy2+d2u_dz2) - dp_dx/rho - conv_u + src_u */
             __m256d conv_u = _mm256_add_pd(
                 _mm256_add_pd(
-                    _mm256_mul_pd(u_c, du_dx),
-                    _mm256_mul_pd(v_c, du_dy)),
-                _mm256_mul_pd(w_c, du_dz));
+                    _mm256_mul_pd(u_c, cdu_dx),
+                    _mm256_mul_pd(v_c, cdu_dy)),
+                _mm256_mul_pd(w_c, cdu_dz));
             __m256d rhs_u_v = _mm256_add_pd(
                 _mm256_sub_pd(
                     _mm256_sub_pd(
@@ -470,9 +503,9 @@ static void compute_rhs_row(
             /* RHS v: nu*(d2v_dx2+d2v_dy2+d2v_dz2) - dp_dy/rho - conv_v + src_v */
             __m256d conv_v = _mm256_add_pd(
                 _mm256_add_pd(
-                    _mm256_mul_pd(u_c, dv_dx),
-                    _mm256_mul_pd(v_c, dv_dy)),
-                _mm256_mul_pd(w_c, dv_dz));
+                    _mm256_mul_pd(u_c, cdv_dx),
+                    _mm256_mul_pd(v_c, cdv_dy)),
+                _mm256_mul_pd(w_c, cdv_dz));
             __m256d rhs_v_v = _mm256_add_pd(
                 _mm256_sub_pd(
                     _mm256_sub_pd(
@@ -484,9 +517,9 @@ static void compute_rhs_row(
             /* RHS w: nu*(d2w_dx2+d2w_dy2+d2w_dz2) - dp_dz/rho - conv_w + src_w */
             __m256d conv_w = _mm256_add_pd(
                 _mm256_add_pd(
-                    _mm256_mul_pd(u_c, dw_dx),
-                    _mm256_mul_pd(v_c, dw_dy)),
-                _mm256_mul_pd(w_c, dw_dz));
+                    _mm256_mul_pd(u_c, cdw_dx),
+                    _mm256_mul_pd(v_c, cdw_dy)),
+                _mm256_mul_pd(w_c, cdw_dz));
             __m256d rhs_w_v = _mm256_add_pd(
                 _mm256_sub_pd(
                     _mm256_sub_pd(
