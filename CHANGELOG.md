@@ -127,6 +127,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `lib/src/solvers/navier_stokes/omp/solver_explicit_euler_omp.c`,
   `tests/solvers/navier_stokes/cpu/test_solver_explicit_euler.c`,
   `tests/solvers/navier_stokes/omp/test_solver_explicit_euler_omp.c`).
+- **`init_simulation` and `init_simulation_with_solver` return NULL when the solver fails
+  to initialize.** They ignored `solver_init()`'s status and returned a simulation whose
+  solver was never set up, so the failure only surfaced on the first step, if at all. They
+  now free the partial simulation and return NULL, with `cfd_get_last_status()` reporting
+  the solver's status (for example `CFD_ERROR_INVALID` from `explicit_euler_optimized` on a
+  grid narrower than 3 points)
+  (`lib/src/api/simulation_api.c`, `lib/include/cfd/api/simulation_api.h`,
+  `tests/simulation/test_simulation_api.c`).
 - `scripts/ec2-validate.sh` runs every `CavityBackend_*` ctest entry. It ran the test binary
   without a filter, which skips the Re=400 and Re=1000 cases, and under `set -e` a failing run
   ended the script before its FAILED summary.
