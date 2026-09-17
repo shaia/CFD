@@ -827,6 +827,80 @@ cleanup:
 }
 
 /**
+ * Check that a solver reports divergence through both step and solve.
+ * Seeds one NaN pressure value in an otherwise valid Taylor-Green field, so the
+ * solver's NaN/Inf check returns CFD_ERROR_DIVERGED, which the step and solve
+ * wrappers must pass back to the caller.
+ */
+static inline test_result test_run_nan_reports_diverged(const char* solver_type) {
+    test_result result = test_result_init();
+    const size_t nx = 16, ny = 16;
+    grid* g = NULL;
+    flow_field* field = NULL;
+    ns_solver_registry_t* registry = NULL;
+    ns_solver_t* slv = NULL;
+
+    g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    field = flow_field_create(nx, ny, 1);
+    registry = cfd_registry_create();
+    if (!g || !field || !registry) {
+        result.passed = 0;
+        snprintf(result.message, sizeof(result.message), "Failed to create grid/field/registry");
+        goto cleanup;
+    }
+    grid_initialize_uniform(g);
+    cfd_registry_register_defaults(registry);
+
+    slv = cfd_solver_create(registry, solver_type);
+    if (!slv) {
+        result.passed = 0;
+        snprintf(result.message, sizeof(result.message), "NSSolver not available");
+        goto cleanup;
+    }
+
+    {
+        ns_solver_params_t params = ns_solver_params_default();
+        params.max_iter = 1;
+        cfd_status_t init_status = solver_init(slv, g, &params);
+        if (init_status != CFD_SUCCESS) {
+            result.passed = 0;
+            result.solver_unavailable = (init_status == CFD_ERROR_UNSUPPORTED);
+            snprintf(result.message, sizeof(result.message),
+                     "Solver init failed with status %d", init_status);
+            goto cleanup;
+        }
+
+        const char* const call_names[2] = {"step", "solve"};
+        for (int call = 0; call < 2; call++) {
+            test_init_taylor_green(field, g);
+            field->p[IDX_2D(nx / 2, ny / 2, nx)] = NAN;
+
+            ns_solver_stats_t stats = ns_solver_stats_default();
+            cfd_status_t status = (call == 0)
+                ? solver_step(slv, field, g, &params, &stats)
+                : solver_solve(slv, field, g, &params, &stats);
+            if (status != CFD_ERROR_DIVERGED) {
+                result.passed = 0;
+                snprintf(result.message, sizeof(result.message),
+                         "%s returned status %d on a NaN field, expected CFD_ERROR_DIVERGED (%d)",
+                         call_names[call], status, CFD_ERROR_DIVERGED);
+                goto cleanup;
+            }
+        }
+    }
+
+    snprintf(result.message, sizeof(result.message), "step and solve report CFD_ERROR_DIVERGED");
+
+cleanup:
+    if (slv) solver_destroy(slv);
+    if (registry) cfd_registry_destroy(registry);
+    if (field) flow_field_destroy(field);
+    if (g) grid_destroy(g);
+
+    return result;
+}
+
+/**
  * Run divergence-free test for projection solvers
  */
 static inline test_result test_run_divergence_free(

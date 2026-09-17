@@ -246,6 +246,31 @@ void test_omp_energy_decay(void) {
 }
 
 //=============================================================================
+// TEST: ERROR PROPAGATION
+//=============================================================================
+
+void test_omp_nan_field_reports_diverged(void) {
+    printf("\n=== Test: OpenMP NaN Field Reports Divergence ===\n");
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    cfd_registry_register_defaults(registry);
+
+    if (!omp_solver_available(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP)) {
+        printf("OpenMP solver not available, skipping\n");
+        cfd_registry_destroy(registry);
+        TEST_PASS();
+        return;
+    }
+    cfd_registry_destroy(registry);
+
+    test_result result = test_run_nan_reports_diverged(NS_SOLVER_TYPE_EXPLICIT_EULER_OMP);
+    printf("%s\n", result.message);
+
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
+    printf("PASSED\n");
+}
+
+//=============================================================================
 // MAIN
 //=============================================================================
 
@@ -268,6 +293,7 @@ int main(void) {
     RUN_TEST(test_omp_stability_large_grid);
     RUN_TEST(test_omp_deterministic_results);
     RUN_TEST(test_omp_energy_decay);
+    RUN_TEST(test_omp_nan_field_reports_diverged);
 
     printf("\n================================================\n");
 

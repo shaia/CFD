@@ -78,8 +78,6 @@ static double compute_max_nu_t(const flow_field* field) {
 cfd_status_t explicit_euler_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params);
 cfd_status_t rk2_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params);
 cfd_status_t rk4_impl(flow_field* field, const grid* grid, const ns_solver_params_t* params);
-void explicit_euler_optimized_impl(flow_field* field, const grid* grid,
-                                   const ns_solver_params_t* params);
 #ifdef CFD_ENABLE_OPENMP
 cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params);
@@ -590,7 +588,10 @@ static cfd_status_t explicit_euler_step(ns_solver_t* solver, flow_field* field, 
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
-    explicit_euler_impl(field, grid, &step_params);
+    cfd_status_t status = explicit_euler_impl(field, grid, &step_params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     if (stats) {
         stats->iterations = 1;
@@ -616,7 +617,10 @@ static cfd_status_t explicit_euler_solve(ns_solver_t* solver, flow_field* field,
         return CFD_ERROR_INVALID;
     }
 
-    explicit_euler_impl(field, grid, params);
+    cfd_status_t status = explicit_euler_impl(field, grid, params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     if (stats) {
         stats->iterations = params->max_iter;
@@ -1415,7 +1419,10 @@ static cfd_status_t explicit_euler_omp_step(ns_solver_t* solver, flow_field* fie
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
-    explicit_euler_omp_impl(field, grid, &step_params);
+    cfd_status_t status = explicit_euler_omp_impl(field, grid, &step_params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     if (stats) {
         stats->iterations = 1;
@@ -1435,7 +1442,10 @@ static cfd_status_t explicit_euler_omp_solve(ns_solver_t* solver, flow_field* fi
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    explicit_euler_omp_impl(field, grid, params);
+    cfd_status_t status = explicit_euler_omp_impl(field, grid, params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     if (stats) {
         stats->iterations = params->max_iter;
