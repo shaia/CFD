@@ -250,7 +250,7 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
                 iter * conservative_dt, T_energy_ws, total);
             if (energy_status != CFD_SUCCESS) {
                 cfd_free(u_new); cfd_free(v_new); cfd_free(w_new);
-                cfd_free(p_new); cfd_free(T_energy_ws);
+                cfd_free(p_new); cfd_free(T_energy_ws); cfd_free(turb_ws);
                 return energy_status;
             }
         }
