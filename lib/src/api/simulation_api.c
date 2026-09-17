@@ -112,7 +112,16 @@ static simulation_data* create_simulation_with_solver(size_t nx, size_t ny, size
         return NULL;
     }
 
-    solver_init(sim_data->solver, sim_data->grid, &sim_data->params);
+    cfd_status_t init_status = solver_init(sim_data->solver, sim_data->grid, &sim_data->params);
+    if (init_status != CFD_SUCCESS) {
+        // Keep a message the solver recorded; otherwise record the status so the
+        // caller can tell why no simulation was returned.
+        if (cfd_get_last_status() != init_status) {
+            cfd_set_error(init_status, "init_simulation: solver init failed");
+        }
+        free_simulation(sim_data);
+        return NULL;
+    }
 
     return sim_data;
 }

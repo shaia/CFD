@@ -409,6 +409,20 @@ void test_consistency_with_optimized(void) {
 }
 
 //=============================================================================
+// TEST: ERROR PROPAGATION
+//=============================================================================
+
+void test_nan_field_reports_diverged(void) {
+    printf("\n=== Test: NaN Field Reports Divergence ===\n");
+
+    test_result result = test_run_nan_reports_diverged(NS_SOLVER_TYPE_EXPLICIT_EULER);
+    printf("%s\n", result.message);
+
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
+    printf("PASSED\n");
+}
+
+//=============================================================================
 // TEST: EDGE CASES
 //=============================================================================
 
@@ -512,6 +526,7 @@ int main(void) {
 
     // Cross-solver consistency
     RUN_TEST(test_consistency_with_optimized);
+    RUN_TEST(test_nan_field_reports_diverged);
 
     // Edge cases
     RUN_TEST(test_zero_velocity);

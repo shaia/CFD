@@ -36,13 +36,16 @@ typedef struct {
 // INITIALIZATION & CLEANUP
 //=============================================================================
 
-// Initialize simulation with default solver
+// Initialize simulation with default solver.
+// Returns NULL on failure, including a failed solver init; cfd_get_last_status()
+// reports the reason.
 CFD_LIBRARY_EXPORT simulation_data* init_simulation(size_t nx, size_t ny, size_t nz,
                                                      double xmin, double xmax,
                                                      double ymin, double ymax,
                                                      double zmin, double zmax);
 
-// Initialize simulation with specific solver type
+// Initialize simulation with specific solver type (NULL = default).
+// Returns NULL on failure, as init_simulation() does.
 CFD_LIBRARY_EXPORT simulation_data* init_simulation_with_solver(size_t nx, size_t ny, size_t nz,
                                                                  double xmin, double xmax,
                                                                  double ymin, double ymax,

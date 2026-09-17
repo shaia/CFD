@@ -160,6 +160,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unchanged
   (`lib/src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c`,
   `tests/solvers/navier_stokes/avx2/test_solver_explicit_euler_avx2.c`).
+- **`explicit_euler` and `explicit_euler_omp` return their errors from `step` and `solve`.**
+  The registry wrappers discarded the implementation's status and always returned
+  `CFD_SUCCESS`, so a diverged (NaN/Inf) field, an allocation failure, non-uniform z
+  spacing or a failed energy, thermal-BC or turbulence step went unreported and the
+  simulation kept stepping. The wrappers now return the status before filling in stats,
+  as the projection wrappers do. A new test seeds a NaN pressure value and checks that
+  both calls return `CFD_ERROR_DIVERGED` on each backend. The OpenMP implementation also
+  frees its turbulence workspace when the energy step fails, which it previously leaked
+  (`lib/src/api/solver_registry.c`, `tests/solvers/navier_stokes/test_solver_helpers.h`,
+  `lib/src/solvers/navier_stokes/omp/solver_explicit_euler_omp.c`,
+  `tests/solvers/navier_stokes/cpu/test_solver_explicit_euler.c`,
+  `tests/solvers/navier_stokes/omp/test_solver_explicit_euler_omp.c`).
+- **`init_simulation` and `init_simulation_with_solver` return NULL when the solver fails
+  to initialize.** They ignored `solver_init()`'s status and returned a simulation whose
+  solver was never set up, so the failure only surfaced on the first step, if at all. They
+  now free the partial simulation and return NULL, with `cfd_get_last_status()` reporting
+  the solver's status (for example `CFD_ERROR_INVALID` from `explicit_euler_optimized` on a
+  grid narrower than 3 points)
+  (`lib/src/api/simulation_api.c`, `lib/include/cfd/api/simulation_api.h`,
+  `tests/simulation/test_simulation_api.c`).
 - `scripts/ec2-validate.sh` runs every `CavityBackend_*` ctest entry. It ran the test binary
   without a filter, which skips the Re=400 and Re=1000 cases, and under `set -e` a failing run
   ended the script before its FAILED summary.

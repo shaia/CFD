@@ -95,6 +95,14 @@ void test_init_simulation_with_invalid_solver_returns_null(void) {
     TEST_ASSERT_NULL(sim);
 }
 
+void test_init_simulation_with_failing_solver_init_returns_null(void) {
+    /* explicit_euler_optimized rejects grids narrower than 3 points at init */
+    simulation_data* sim = init_simulation_with_solver(2, 5, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0,
+                                                       NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
+    TEST_ASSERT_NULL(sim);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+}
+
 //=============================================================================
 // SOLVER MANAGEMENT TESTS
 //=============================================================================
@@ -465,6 +473,7 @@ int main(void) {
     RUN_TEST(test_init_simulation_with_solver_creates_valid_structure);
     RUN_TEST(test_init_simulation_with_null_solver_uses_default);
     RUN_TEST(test_init_simulation_with_invalid_solver_returns_null);
+    RUN_TEST(test_init_simulation_with_failing_solver_init_returns_null);
 
     // NSSolver management tests
     RUN_TEST(test_simulation_get_solver_returns_solver);
