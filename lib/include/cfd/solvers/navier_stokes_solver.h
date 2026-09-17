@@ -200,7 +200,7 @@ typedef enum {
  * Implemented on the scalar, OpenMP and AVX2 backends of every solver.
  * GPU solvers reject NS_CONVECTION_SCHEME_UPWIND with CFD_ERROR_UNSUPPORTED at
  * init and at step; any other value is rejected with CFD_ERROR_INVALID at
- * init. Checkpoints do not store the selection, so set it again after a restore.
+ * init.
  */
 typedef enum {
     NS_CONVECTION_SCHEME_CENTRAL = 0, /**< O(h^2) central differences (default) */

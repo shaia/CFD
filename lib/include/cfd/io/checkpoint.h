@@ -19,8 +19,10 @@ extern "C" {
  *
  * The checkpoint format is a portable, versioned binary file (`.cfdchk`) that
  * captures everything needed to resume a simulation bit-exactly from a step
- * boundary: the grid geometry, the flow field, the scalar solver parameters,
- * the accumulated simulation time, and the active solver's registry name.
+ * boundary: the grid geometry, the flow field, the solver parameters (including
+ * the turbulence model, pressure solver, convection scheme and the thermal and
+ * turbulence boundary conditions), the accumulated simulation time, and the
+ * active solver's registry name.
  *
  * Solver context buffers (e.g. Runge-Kutta stage arrays) are deliberately NOT
  * serialized: they are pure per-step scratch, recomputed from the field at the
@@ -39,7 +41,7 @@ extern "C" {
  */
 
 /** Current on-disk checkpoint format version. Bumped on any layout change. */
-#define CFD_CHECKPOINT_FORMAT_VERSION 1u
+#define CFD_CHECKPOINT_FORMAT_VERSION 2u
 
 /** Recommended file extension for checkpoint files. */
 #define CFD_CHECKPOINT_EXTENSION ".cfdchk"
@@ -50,7 +52,8 @@ extern "C" {
  * @param path             Destination file path (overwritten if it exists).
  * @param g                Grid geometry to serialize.
  * @param field            Flow field to serialize (dimensions must match @p g).
- * @param params           Solver parameters (scalar fields only are stored).
+ * @param params           Solver parameters (all fields except the callbacks and
+ *                         their contexts are stored).
  * @param current_time     Accumulated simulation time to record.
  * @param solver_name      Registry name of the active solver (e.g. "rk2_optimized").
  * @param run_prefix       Optional run-directory prefix to record (may be NULL).
@@ -76,8 +79,8 @@ CFD_LIBRARY_EXPORT cfd_status_t cfd_checkpoint_write(const char* path,
  *
  * @param out_grid            Receives a newly allocated grid (caller frees).
  * @param out_field           Receives a newly allocated flow field (caller frees).
- * @param out_params          Caller-provided; zero-initialized then scalar fields
- *                            are filled. Function-pointer fields are left NULL.
+ * @param out_params          Caller-provided; zero-initialized then every stored
+ *                            field is filled. Function-pointer fields are left NULL.
  * @param out_current_time    Receives the recorded simulation time (may be NULL).
  * @param out_solver_name     Buffer to receive the solver name (may be NULL).
  * @param solver_name_cap     Capacity of @p out_solver_name in bytes.

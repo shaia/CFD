@@ -131,8 +131,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/math/test_gmres.c`, `tests/math/test_omp_consistency.c`).
 - **Restart / checkpoint support** — portable, versioned, CRC-protected binary checkpoint
   format (`.cfdchk`) that saves and restores complete simulation state (grid, flow field,
-  scalar params, time, solver name). Little-endian fixed-width encoding with an endianness
-  marker and a format-version header that rejects unknown versions
+  solver parameters, time, solver name). The parameters include the turbulence model,
+  pressure solver, convection scheme and the thermal and turbulence boundary conditions,
+  so a restored run keeps them; only the `source_func` / `heat_source_func` callbacks must
+  be re-supplied. Little-endian fixed-width encoding with an endianness marker and a
+  format-version header that rejects unknown versions
   (`lib/src/io/checkpoint.c`, `lib/include/cfd/io/checkpoint.h`, `tests/io/test_checkpoint.c`).
 
 ### Fixed

@@ -143,8 +143,7 @@ diffusion limit; the numerical diffusion of upwind relaxes neither.
 
 On builds without AVX2, `explicit_euler_optimized` and `projection_optimized` run
 their scalar paths, which implement upwind as well. Values other than the two
-above are rejected with `CFD_ERROR_INVALID` at init. Checkpoints do not store the
-selection, so set it again after a restore.
+above are rejected with `CFD_ERROR_INVALID` at init.
 
 ```c
 ns_solver_params_t params = ns_solver_params_default();

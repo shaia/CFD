@@ -394,7 +394,7 @@ cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char
         return CFD_ERROR_NOT_FOUND;
     }
 
-    // Preserve the caller's custom callbacks; only scalar parameters are restored.
+    // Preserve the caller's custom callbacks; checkpoints cannot store them.
     new_params.source_func = sim_data->params.source_func;
     new_params.source_context = sim_data->params.source_context;
     new_params.heat_source_func = sim_data->params.heat_source_func;
