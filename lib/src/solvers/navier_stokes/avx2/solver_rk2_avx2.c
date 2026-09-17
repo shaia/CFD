@@ -256,7 +256,12 @@ cleanup:
 cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
                              const ns_solver_params_t* params)
 {
-    (void)params;
+    /* Validate the parameters before reporting a build without AVX2, so an
+     * invalid scheme is reported as such in every build. */
+    cfd_status_t scheme_status = ns_check_convection_scheme(params, 1);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
+    }
 
 #if !USE_AVX2
     (void)solver;

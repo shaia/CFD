@@ -265,6 +265,8 @@ typedef struct {
     ns_turbulence_bc_config_t turb_bc;    // Per-face turbulence BC types
     // Pressure Poisson solver (projection solvers)
     ns_pressure_solver_t pressure_solver;  // NS_PRESSURE_SOLVER_DEFAULT (0) = backend's CG
+    // Convective-term discretization (momentum and temperature advection)
+    ns_convection_scheme_t convection_scheme;  // NS_CONVECTION_SCHEME_CENTRAL (0) = central
 } ns_solver_params_t;
 
 ns_solver_params_t ns_solver_params_default(void);
@@ -282,6 +284,20 @@ typedef enum {
     NS_PRESSURE_SOLVER_MULTIGRID = 1, // Geometric multigrid V-cycle solver
     NS_PRESSURE_SOLVER_PCG_MG = 2,    // CG preconditioned by one MG V-cycle
 } ns_pressure_solver_t;
+```
+
+`ns_convection_scheme_t` selects how the convective first derivatives of the
+momentum and temperature equations are discretized. Upwind is implemented on the
+scalar, OpenMP and AVX2 solvers; GPU solvers reject it with
+`CFD_ERROR_UNSUPPORTED` at init and at step, and unknown values are rejected with
+`CFD_ERROR_INVALID` at init (see
+[Convection Scheme](solvers.md#convection-scheme)):
+
+```c
+typedef enum {
+    NS_CONVECTION_SCHEME_CENTRAL = 0, // O(h^2) central differences (default)
+    NS_CONVECTION_SCHEME_UPWIND = 1,  // O(h) first-order upwind differences
+} ns_convection_scheme_t;
 ```
 
 `turbulence_model_t` is defined in `cfd/solvers/navier_stokes_solver.h`:
@@ -671,8 +687,10 @@ cfd_status_t write_centerline_to_csv(flow_field* field, grid_t* grid,
 ### Restart / Checkpoint
 
 Portable, versioned binary save/restore of the complete simulation state. The
-`.cfdchk` format stores the grid, flow field, scalar solver parameters, the
-accumulated simulation time, and the active solver's registry name. Solver
+`.cfdchk` format stores the grid, flow field, solver parameters (including the
+turbulence model, pressure solver, convection scheme, and thermal and turbulence
+boundary conditions), the accumulated simulation time, and the active solver's
+registry name. Solver
 context buffers (e.g. Runge-Kutta stages) are pure per-step scratch and are
 **not** stored — on restore the solver is recreated by name and re-initialized,
 giving a bit-exact restart from a step boundary. Custom `source_func` /

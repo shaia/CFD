@@ -277,10 +277,11 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
                       "use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
-    // RANS turbulence models have no GPU kernels.
-    if (params->turb_model != TURB_MODEL_NONE) {
+    // RANS turbulence models and upwind convection have no GPU kernels.
+    if (params->turb_model != TURB_MODEL_NONE ||
+        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "GPU RK solver does not support turbulence models; "
+                      "GPU RK solver does not support turbulence models or upwind convection; "
                       "use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }

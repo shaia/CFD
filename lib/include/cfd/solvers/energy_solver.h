@@ -32,10 +32,13 @@ extern "C" {
  * Computes: T^{n+1} = T^n + dt * (-u*nabla(T) + alpha*nabla^2(T) + Q)
  *
  * Only active when params->alpha > 0. Returns immediately otherwise.
+ * Advection uses central differences, or first-order upwind differences when
+ * params->convection_scheme is NS_CONVECTION_SCHEME_UPWIND; diffusion is
+ * always central.
  *
  * @param field  Flow field (T is updated in-place, u/v/w are read-only)
  * @param grid   Computational grid
- * @param params Solver parameters (alpha, heat_source_func, dt)
+ * @param params Solver parameters (alpha, heat_source_func, convection_scheme)
  * @param dt     Time step size
  * @param time   Current physical time (passed to heat_source_func)
  * @return CFD_SUCCESS, or CFD_ERROR_DIVERGED if NaN detected in T

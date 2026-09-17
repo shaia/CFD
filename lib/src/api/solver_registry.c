@@ -8,6 +8,8 @@
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
 
+#include "../solvers/navier_stokes/ns_convection_internal.h"
+
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -556,7 +558,11 @@ typedef struct {
 static cfd_status_t explicit_euler_init(ns_solver_t* solver, const grid* grid,
                                         const ns_solver_params_t* params) {
     (void)grid;
-    (void)params;
+
+    cfd_status_t scheme_status = ns_check_convection_scheme(params, 1);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
+    }
 
     explicit_euler_context* ctx =
         (explicit_euler_context*)cfd_malloc(sizeof(explicit_euler_context));
@@ -989,6 +995,10 @@ static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const
     if (!solver || !grid) {
         return CFD_ERROR_INVALID;
     }
+    cfd_status_t scheme_status = ns_check_convection_scheme(params, 1);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
+    }
     cfd_status_t pressure_status = check_mg_pressure_solver(grid, params, POISSON_BACKEND_SCALAR);
     if (pressure_status != CFD_SUCCESS) {
         return pressure_status;
@@ -1143,6 +1153,15 @@ static ns_solver_t* create_projection_optimized_solver(void) {
 }
 
 #ifdef CFD_HAS_CUDA
+/* Init for the stateless GPU explicit solvers (Euler, RK2, RK4): the GPU
+ * kernels implement central convection only. */
+static cfd_status_t gpu_explicit_init(ns_solver_t* solver, const grid* grid,
+                                      const ns_solver_params_t* params) {
+    (void)solver;
+    (void)grid;
+    return ns_check_convection_scheme(params, 0);
+}
+
 /**
  * Built-in solver: GPU-Accelerated Explicit Euler
  *
@@ -1200,7 +1219,7 @@ static ns_solver_t* create_explicit_euler_gpu_solver(void) {
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
     s->backend = NS_SOLVER_BACKEND_CUDA;
 
-    s->init = NULL;
+    s->init = gpu_explicit_init;
     s->destroy = NULL;
     s->step = gpu_euler_step;
     s->solve = gpu_euler_solve;
@@ -1218,6 +1237,10 @@ static cfd_status_t gpu_projection_init(ns_solver_t* solver, const grid* grid,
                                         const ns_solver_params_t* params) {
     (void)solver;
     (void)grid;
+    cfd_status_t scheme_status = ns_check_convection_scheme(params, 0);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
+    }
     if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
             "Multigrid pressure solver is only supported by the scalar and OpenMP projection solvers");
@@ -1372,7 +1395,7 @@ static ns_solver_t* create_rk2_gpu_solver(void) {
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
     s->backend = NS_SOLVER_BACKEND_CUDA;
-    s->init = NULL;
+    s->init = gpu_explicit_init;
     s->destroy = NULL;
     s->step = gpu_rk2_step;
     s->solve = gpu_rk2_solve;
@@ -1395,7 +1418,7 @@ static ns_solver_t* create_rk4_gpu_solver(void) {
     s->version = "1.0.0";
     s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_GPU;
     s->backend = NS_SOLVER_BACKEND_CUDA;
-    s->init = NULL;
+    s->init = gpu_explicit_init;
     s->destroy = NULL;
     s->step = gpu_rk4_step;
     s->solve = gpu_rk4_solve;
@@ -1627,6 +1650,10 @@ static cfd_status_t projection_omp_init(ns_solver_t* solver, const grid* grid,
                                         const ns_solver_params_t* params) {
     if (!solver || !grid) {
         return CFD_ERROR_INVALID;
+    }
+    cfd_status_t scheme_status = ns_check_convection_scheme(params, 1);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
     }
 
     /* The MG pressure modes run on OMP multigrid, never on the scalar one */

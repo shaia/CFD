@@ -591,10 +591,11 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
-    // RANS turbulence models have no GPU kernels.
-    if (params->turb_model != TURB_MODEL_NONE) {
+    // RANS turbulence models and upwind convection have no GPU kernels.
+    if (params->turb_model != TURB_MODEL_NONE ||
+        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "GPU NS solver does not support turbulence models; "
+                      "GPU NS solver does not support turbulence models or upwind convection; "
                       "use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -625,11 +626,12 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
-    // RANS turbulence models have no GPU kernels.
-    if (params->turb_model != TURB_MODEL_NONE) {
+    // RANS turbulence models and upwind convection have no GPU kernels.
+    if (params->turb_model != TURB_MODEL_NONE ||
+        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "GPU projection solver does not support turbulence models; "
-                      "use a CPU, OMP, or AVX2 solver");
+                      "GPU projection solver does not support turbulence models or upwind "
+                      "convection; use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
     gpu_config_t cfg = config ? *config : gpu_config_default();

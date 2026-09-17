@@ -9,6 +9,7 @@
 #include "../../energy/energy_solver_internal.h"
 #include "../../turbulence/turbulence_solver_internal.h"
 #include "../boundary_copy_utils.h"
+#include "../ns_convection_internal.h"
 #include <math.h>
 #include <omp.h>
 #include <stdio.h>
@@ -55,6 +56,8 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
     size_t k_end    = (nz > 1) ? (nz - 1) : 1;
     double inv_2dz  = (nz > 1 && grid->dz) ? 1.0 / (2.0 * grid->dz[0]) : 0.0;
     double inv_dz2  = (nz > 1 && grid->dz) ? 1.0 / (grid->dz[0] * grid->dz[0]) : 0.0;
+    double inv_dz   = 2.0 * inv_2dz;
+    const int upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
 
     // Allocate temporary arrays
     double* u_new = (double*)cfd_calloc(total, sizeof(double));
@@ -138,6 +141,17 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
                     double nu = params->mu / fmax(field->rho[idx], 1e-10);
                     nu = fmin(nu, 1.0);
 
+                    // Convective derivatives: central, or first-order upwind.
+                    // The divergence below stays central.
+                    ns_conv_derivs_t cd = {du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz,
+                                           dw_dx, dw_dy, dw_dz};
+                    if (upwind) {
+                        ns_upwind_conv_derivs(field->u, field->v, field->w, idx,
+                                              idx - 1, idx + 1, idx - nx, idx + nx,
+                                              idx - stride_z, idx + stride_z,
+                                              grid->dx[i], grid->dy[j], inv_dz, &cd);
+                    }
+
                     // Source terms
                     double source_u = 0.0;
                     double source_v = 0.0;
@@ -196,20 +210,20 @@ cfd_status_t explicit_euler_omp_impl(flow_field* field, const grid* grid,
                     }
 
                     // Update u
-                    double du = conservative_dt * (-field->u[idx] * du_dx - field->v[idx] * du_dy
-                                                   - field->w[idx] * du_dz
+                    double du = conservative_dt * (-field->u[idx] * cd.du_dx - field->v[idx] * cd.du_dy
+                                                   - field->w[idx] * cd.du_dz
                                                    - dp_dx / fmax(field->rho[idx], 1e-10)
                                                    + visc_u + source_u);
 
                     // Update v
-                    double dv = conservative_dt * (-field->u[idx] * dv_dx - field->v[idx] * dv_dy
-                                                   - field->w[idx] * dv_dz
+                    double dv = conservative_dt * (-field->u[idx] * cd.dv_dx - field->v[idx] * cd.dv_dy
+                                                   - field->w[idx] * cd.dv_dz
                                                    - dp_dy / fmax(field->rho[idx], 1e-10)
                                                    + visc_v + source_v);
 
                     // Update w
-                    double dw = conservative_dt * (-field->u[idx] * dw_dx - field->v[idx] * dw_dy
-                                                   - field->w[idx] * dw_dz
+                    double dw = conservative_dt * (-field->u[idx] * cd.dw_dx - field->v[idx] * cd.dw_dy
+                                                   - field->w[idx] * cd.dw_dz
                                                    - dp_dz / fmax(field->rho[idx], 1e-10)
                                                    + visc_w + source_w);
 

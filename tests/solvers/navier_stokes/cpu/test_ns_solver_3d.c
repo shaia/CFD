@@ -9,6 +9,8 @@
  *   solvers accept nz>1 and remain stable.
  * - Backward compatibility tests verify nz=1 produces identical results
  *   to the 2D code path.
+ * - Upwind convection on a field that varies along z, with nonzero w, matches
+ *   the scalar reference on the OMP and AVX2 backends.
  */
 
 #include "cfd/core/cfd_init.h"
@@ -606,6 +608,123 @@ void test_3d_rk4_omp_vs_scalar(void) {
 }
 
 /* ========================================================================
+ * UPWIND CONVECTION — 3D BACKENDS vs SCALAR
+ * The field varies along every axis and each velocity component changes sign,
+ * so both upwind branches of all three directions (including z) contribute.
+ * ======================================================================== */
+
+#define UPWIND_3D_NX 11  /* 9 interior columns: AVX2 kernels run a remainder */
+#define UPWIND_3D_NY 10
+#define UPWIND_3D_NZ 7
+#define UPWIND_3D_STEPS 5
+#define UPWIND_3D_MATCH_TOL 1e-10
+#define UPWIND_3D_SEPARATION_MIN 1e-8
+
+static void init_3d_upwind_field(flow_field* field, const grid* g) {
+    size_t plane = field->nx * field->ny;
+    for (size_t k = 0; k < field->nz; k++) {
+        for (size_t j = 0; j < field->ny; j++) {
+            for (size_t i = 0; i < field->nx; i++) {
+                size_t idx = (k * plane) + (j * field->nx) + i;
+                double x = g->x[i], y = g->y[j], z = g->z[k];
+                field->u[idx] = 0.05 + 0.1 * sin(2.0 * M_PI * z) * cos(2.0 * M_PI * y);
+                field->v[idx] = -0.03 + 0.1 * sin(2.0 * M_PI * x) * cos(2.0 * M_PI * z);
+                field->w[idx] = 0.02 + 0.1 * sin(2.0 * M_PI * y) * sin(2.0 * M_PI * x);
+                field->p[idx] = 1.0;
+                field->rho[idx] = 1.0;
+                field->T[idx] = 300.0;
+            }
+        }
+    }
+}
+
+/* Run a solver on the 3D upwind field. Returns the field (caller destroys it),
+ * or NULL when the solver is not registered or reports CFD_ERROR_UNSUPPORTED. */
+static flow_field* run_3d_upwind_case(const char* solver_name, ns_convection_scheme_t scheme) {
+    grid* g = grid_create(UPWIND_3D_NX, UPWIND_3D_NY, UPWIND_3D_NZ,
+                          0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+    flow_field* field = flow_field_create(UPWIND_3D_NX, UPWIND_3D_NY, UPWIND_3D_NZ);
+    TEST_ASSERT_NOT_NULL(field);
+    init_3d_upwind_field(field, g);
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.dt = 1e-4;
+    params.mu = 0.01;
+    params.source_amplitude_u = 0.0;
+    params.source_amplitude_v = 0.0;
+    params.convection_scheme = scheme;
+
+    cfd_status_t status = CFD_SUCCESS;
+    for (int step = 0; step < UPWIND_3D_STEPS && status == CFD_SUCCESS; step++) {
+        status = run_solver_steps(solver_name, field, g, &params, 1);
+    }
+    grid_destroy(g);
+    if (status == CFD_ERROR_UNSUPPORTED || status == CFD_ERROR_NOT_FOUND) {
+        flow_field_destroy(field);
+        return NULL;
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, solver_name);
+    return field;
+}
+
+/* max over u, v, w of ||a - b||_2 / ||a||_2 */
+static double relative_difference_3d(const flow_field* a, const flow_field* b) {
+    size_t total = a->nx * a->ny * a->nz;
+    const double* fa[3] = {a->u, a->v, a->w};
+    const double* fb[3] = {b->u, b->v, b->w};
+    double worst = 0.0;
+    for (int c = 0; c < 3; c++) {
+        double diff = 0.0, norm = 0.0;
+        for (size_t n = 0; n < total; n++) {
+            diff += (fa[c][n] - fb[c][n]) * (fa[c][n] - fb[c][n]);
+            norm += fa[c][n] * fa[c][n];
+        }
+        worst = fmax(worst, sqrt(diff / norm));
+    }
+    return worst;
+}
+
+void test_3d_upwind_backends_match_scalar(void) {
+    printf("\n=== Test: 3D Upwind Backends vs Scalar ===\n");
+
+    const char* const pairs[][2] = {
+        {NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP},
+        {NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED},
+        {NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK2_OMP},
+        {NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK2_OPTIMIZED},
+        {NS_SOLVER_TYPE_RK4, NS_SOLVER_TYPE_RK4_OMP},
+        {NS_SOLVER_TYPE_RK4, NS_SOLVER_TYPE_RK4_OPTIMIZED},
+    };
+
+    for (size_t p = 0; p < sizeof(pairs) / sizeof(pairs[0]); p++) {
+        flow_field* reference = run_3d_upwind_case(pairs[p][0], NS_CONVECTION_SCHEME_UPWIND);
+        flow_field* central = run_3d_upwind_case(pairs[p][0], NS_CONVECTION_SCHEME_CENTRAL);
+        TEST_ASSERT_NOT_NULL(reference);
+        TEST_ASSERT_NOT_NULL(central);
+
+        /* The scheme must change the scalar result for the comparison to mean anything */
+        double separation = relative_difference_3d(reference, central);
+        TEST_ASSERT_TRUE_MESSAGE(separation >= UPWIND_3D_SEPARATION_MIN, pairs[p][0]);
+
+        flow_field* alt = run_3d_upwind_case(pairs[p][1], NS_CONVECTION_SCHEME_UPWIND);
+        if (!alt) {
+            printf("  %s unavailable (skipping)\n", pairs[p][1]);
+        } else {
+            double match = relative_difference_3d(reference, alt);
+            printf("  %-26s vs %-16s: %.2e (upwind vs central %.2e)\n",
+                   pairs[p][1], pairs[p][0], match, separation);
+            TEST_ASSERT_TRUE_MESSAGE(match <= UPWIND_3D_MATCH_TOL, pairs[p][1]);
+            flow_field_destroy(alt);
+        }
+        flow_field_destroy(reference);
+        flow_field_destroy(central);
+    }
+    printf("PASSED\n");
+}
+
+/* ========================================================================
  * MAIN
  * ======================================================================== */
 
@@ -645,6 +764,9 @@ int main(void) {
     RUN_TEST(test_3d_explicit_euler_omp_vs_scalar);
     RUN_TEST(test_3d_rk2_omp_vs_scalar);
     RUN_TEST(test_3d_rk4_omp_vs_scalar);
+
+    /* Upwind convection, 3D backends vs scalar */
+    RUN_TEST(test_3d_upwind_backends_match_scalar);
 
     return UNITY_END();
 }

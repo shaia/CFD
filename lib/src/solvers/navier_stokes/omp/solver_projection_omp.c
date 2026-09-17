@@ -12,6 +12,7 @@
 #include "../../turbulence/turbulence_solver_internal.h"
 
 #include "../boundary_copy_utils.h"
+#include "../ns_convection_internal.h"
 
 #include <math.h>
 #include <omp.h>
@@ -63,6 +64,8 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
     double nu = params->mu;
     double inv_2dz = (nz > 1 && grid->dz) ? 1.0 / (2.0 * dz) : 0.0;
     double inv_dz2 = (nz > 1 && grid->dz) ? 1.0 / (dz * dz) : 0.0;
+    double inv_dz  = 2.0 * inv_2dz;
+    const int upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
 
     /* Map the pressure-solver selection to an OpenMP Poisson preset (never a
      * scalar one). Grid-dimension compatibility for the MG modes is validated
@@ -137,9 +140,19 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
                     double dw_dy = (field->w[idx + nx] - field->w[idx - nx]) / (2.0 * dy);
                     double dw_dz = (field->w[idx + stride_z] - field->w[idx - stride_z]) * inv_2dz;
 
-                    double conv_u = u * du_dx + v * du_dy + w * du_dz;
-                    double conv_v = u * dv_dx + v * dv_dy + w * dv_dz;
-                    double conv_w = u * dw_dx + v * dw_dy + w * dw_dz;
+                    /* Convective derivatives: central, or first-order upwind */
+                    ns_conv_derivs_t cd = {du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz,
+                                           dw_dx, dw_dy, dw_dz};
+                    if (upwind) {
+                        ns_upwind_conv_derivs(field->u, field->v, field->w, idx,
+                                              idx - 1, idx + 1, idx - nx, idx + nx,
+                                              idx - stride_z, idx + stride_z,
+                                              dx, dy, inv_dz, &cd);
+                    }
+
+                    double conv_u = u * cd.du_dx + v * cd.du_dy + w * cd.du_dz;
+                    double conv_v = u * cd.dv_dx + v * cd.dv_dy + w * cd.dv_dz;
+                    double conv_w = u * cd.dw_dx + v * cd.dw_dy + w * cd.dw_dz;
 
                     double d2u_dx2 = (field->u[idx + 1] - 2.0 * u + field->u[idx - 1]) / (dx * dx);
                     double d2u_dy2 = (field->u[idx + nx] - 2.0 * u + field->u[idx - nx]) / (dy * dy);

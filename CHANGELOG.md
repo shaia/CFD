@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **First-order upwind convection** — new `ns_solver_params_t.convection_scheme` field
+  (`ns_convection_scheme_t`; 0 = existing central differencing, unchanged).
+  `NS_CONVECTION_SCHEME_UPWIND` takes each convective first derivative from the side the
+  local velocity comes from, for momentum (`u·∇u`) and temperature advection (`u·∇T`), so
+  convection-dominated flows stay free of the wiggles central differencing produces. The
+  scheme is O(h) with numerical diffusion |u|h/2; pressure gradients, viscous terms and
+  the divergence stay central. Implemented on the scalar, OpenMP and AVX2 backends of the
+  explicit Euler, projection, RK2 and RK4 solvers (the AVX2 kernels blend the one-sided
+  differences with a mask). GPU solvers reject upwind with `CFD_ERROR_UNSUPPORTED` at init
+  and at step, and unknown values return `CFD_ERROR_INVALID` at init. The derivative is
+  also available as `stencil_upwind_deriv_x/y/z()` in `cfd/math/stencils.h`.
+  Verified: stencil and solver-level refinement give first order (RK2 advection rates
+  0.90 and 0.95, central 2.02 and 2.01); a step advected at CFL 0.5 stays within its
+  initial range on all four scalar solvers and in the energy equation while central differencing
+  overshoots; OpenMP and AVX2 upwind match scalar to round-off (relative L2 below 2e-16)
+  in 2D and 3D
+  (`lib/src/solvers/navier_stokes/ns_convection_internal.h`,
+  `lib/src/solvers/navier_stokes/avx2/upwind_avx2.h`, `lib/src/api/solver_registry.c`,
+  `tests/math/test_upwind_stencils.c`, `tests/math/test_upwind_convergence.c`,
+  `tests/solvers/navier_stokes/test_convection_scheme.c`,
+  `tests/solvers/energy/test_energy_solver.c`,
+  `tests/solvers/navier_stokes/cpu/test_ns_solver_3d.c`).
 - **129×129 lid-driven cavity validation recorded** — the AVX2, OpenMP and CUDA projection
   backends match Ghia et al. (1982) at 129×129 with RMS_u / RMS_v of 0.0017 / 0.0024
   (Re=100), 0.0096 / 0.0328 (Re=400) and 0.0299 / 0.0300 (Re=1000), identical across
@@ -109,12 +131,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/math/test_gmres.c`, `tests/math/test_omp_consistency.c`).
 - **Restart / checkpoint support** — portable, versioned, CRC-protected binary checkpoint
   format (`.cfdchk`) that saves and restores complete simulation state (grid, flow field,
-  scalar params, time, solver name). Little-endian fixed-width encoding with an endianness
-  marker and a format-version header that rejects unknown versions
+  solver parameters, time, solver name). The parameters include the turbulence model,
+  pressure solver, convection scheme and the thermal and turbulence boundary conditions,
+  so a restored run keeps them; only the `source_func` / `heat_source_func` callbacks must
+  be re-supplied. Little-endian fixed-width encoding with an endianness marker and a
+  format-version header that rejects unknown versions
   (`lib/src/io/checkpoint.c`, `lib/include/cfd/io/checkpoint.h`, `tests/io/test_checkpoint.c`).
 
 ### Fixed
 
+- **`explicit_euler_optimized` updates every interior column.** The AVX2 row loop processed
+  4-wide groups with no scalar remainder, so when `(nx-2) % 4 != 0` the last 1-3 interior
+  columns of each row kept their old values (3 per row at 33×33 and 129×129). The remainder
+  now runs through the solver's scalar row path, and a 19×19 AVX2-vs-scalar run agrees to
+  1e-17. The 129×129 Re=100 AVX2 Euler case now matches OpenMP (11,775 steps, RMS_v 0.1277
+  instead of 0.1293)
+  (`lib/src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c`,
+  `tests/solvers/navier_stokes/avx2/test_solver_explicit_euler_avx2.c`,
+  `docs/validation/cavity-backends-validation.md`).
+- **`explicit_euler_optimized` applies momentum source terms in its AVX2 lanes.** The
+  vectorized columns skipped `source_func` and the default sinusoidal sources, while the
+  scalar remainder columns applied them, so a run with sources on disagreed from column to
+  column. Both paths now call `compute_source_terms()` as the scalar `explicit_euler` step
+  does, which also passes the z coordinate to `source_func` in 3D and applies negative
+  amplitudes and a v-amplitude set without a u-amplitude. With the default sources on,
+  AVX2 matches scalar to 4e-18 on 19×19 and 3e-17 on 32×32 (previously 2.5e-3 on 19×19).
+  Runs with both amplitudes zero and no `source_func`, such as the cavity validation,
+  are unchanged
+  (`lib/src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c`,
+  `tests/solvers/navier_stokes/avx2/test_solver_explicit_euler_avx2.c`).
 - **`explicit_euler` and `explicit_euler_omp` return their errors from `step` and `solve`.**
   The registry wrappers discarded the implementation's status and always returned
   `CFD_SUCCESS`, so a diverged (NaN/Inf) field, an allocation failure, non-uniform z

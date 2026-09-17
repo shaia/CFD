@@ -65,7 +65,8 @@ Chorin's projection method - properly enforces incompressibility constraint.
    ```
 
 **Characteristics:**
-- Second-order accurate in space (central differences)
+- Second-order accurate in space (central differences; first-order with
+  [upwind convection](#convection-scheme))
 - First-order accurate in time
 - Properly enforces ∇·u = 0
 - More expensive due to Poisson solve
@@ -105,6 +106,54 @@ params.pressure_solver = NS_PRESSURE_SOLVER_MULTIGRID;  // 2^k+1 grids only
 ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
 cfd_status_t status = solver_init(slv, grid, &params);   // UNSUPPORTED on 128x128
 ```
+
+## Convection Scheme
+
+Every Navier-Stokes solver discretizes the momentum convection `(u·∇)u` and the
+temperature advection `u·∇T` with O(h²) central differences by default. When
+convection dominates (cell Péclet number `Pe = |u|h/ν > 2`), central differencing
+produces wiggles: the solution over- and undershoots around sharp gradients, and
+without enough viscosity the oscillations grow.
+
+`ns_solver_params_t.convection_scheme` selects first-order upwind differencing
+instead:
+
+| `convection_scheme` value | Convective derivative ∂f/∂x | Accuracy |
+|---------------------------|-----------------------------|----------|
+| `NS_CONVECTION_SCHEME_CENTRAL` (0) | `(f[i+1] - f[i-1]) / 2h` | O(h²) |
+| `NS_CONVECTION_SCHEME_UPWIND` | `(f[i] - f[i-1]) / h` when the local velocity is ≥ 0, else `(f[i+1] - f[i]) / h` | O(h) |
+
+Upwind adds numerical diffusion `|u|h/2`. At CFL ≤ 1 an advected profile stays
+within its initial bounds, but gradients smear and grid refinement only converges
+at first order. Use it for coarse grids, high-Re startup transients and
+convection-dominated flows where central differencing oscillates. Only the
+convective first derivatives change: pressure gradients, viscous terms and the
+divergence stay central. Turbulence transport (k, ε, ν̃) is always upwind,
+independent of this setting.
+
+Explicit time steps must still satisfy both the convective CFL limit and the
+diffusion limit; the numerical diffusion of upwind relaxes neither.
+
+| Backend | Upwind convection |
+|---------|-------------------|
+| Scalar (`explicit_euler`, `projection`, `rk2`, `rk4`) | Yes |
+| OpenMP (`*_omp`) | Yes |
+| AVX2 (`*_optimized`) | Yes (blend-mask vectorized) |
+| CUDA (`*_gpu`) | No: `CFD_ERROR_UNSUPPORTED` at init and at step |
+
+On builds without AVX2, `explicit_euler_optimized` and `projection_optimized` run
+their scalar paths, which implement upwind as well. Values other than the two
+above are rejected with `CFD_ERROR_INVALID` at init.
+
+```c
+ns_solver_params_t params = ns_solver_params_default();
+params.convection_scheme = NS_CONVECTION_SCHEME_UPWIND;
+ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_OMP);
+cfd_status_t status = solver_init(slv, grid, &params);  // UNSUPPORTED on projection_gpu
+```
+
+The upwind derivative itself is `stencil_upwind_deriv_x/y/z()` in
+`cfd/math/stencils.h`.
 
 ## Linear Solvers (Poisson Equation)
 

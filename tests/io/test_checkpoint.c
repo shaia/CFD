@@ -82,7 +82,43 @@ static ns_solver_params_t make_nondefault_params(void) {
     p.thermal_bc.dirichlet_values.bottom = 300.0;
     p.thermal_bc.dirichlet_values.front = 301.0;
     p.thermal_bc.dirichlet_values.back = 302.0;
+    p.turb_model = TURB_MODEL_K_EPSILON;
+    p.pressure_solver = NS_PRESSURE_SOLVER_PCG_MG;
+    p.convection_scheme = NS_CONVECTION_SCHEME_UPWIND;
+    p.turb_bc.left = BC_TYPE_DIRICHLET;
+    p.turb_bc.right = BC_TYPE_NEUMANN;
+    p.turb_bc.bottom = BC_TYPE_NOSLIP;
+    p.turb_bc.top = BC_TYPE_NOSLIP;
+    p.turb_bc.front = BC_TYPE_PERIODIC;
+    p.turb_bc.back = BC_TYPE_NEUMANN;
+    p.turb_bc.k_values.left = 0.011;
+    p.turb_bc.k_values.right = 0.012;
+    p.turb_bc.k_values.top = 0.013;
+    p.turb_bc.k_values.bottom = 0.014;
+    p.turb_bc.k_values.front = 0.015;
+    p.turb_bc.k_values.back = 0.016;
+    p.turb_bc.eps_values.left = 0.021;
+    p.turb_bc.eps_values.right = 0.022;
+    p.turb_bc.eps_values.top = 0.023;
+    p.turb_bc.eps_values.bottom = 0.024;
+    p.turb_bc.eps_values.front = 0.025;
+    p.turb_bc.eps_values.back = 0.026;
+    p.turb_bc.nu_tilde_values.left = 3.1e-5;
+    p.turb_bc.nu_tilde_values.right = 3.2e-5;
+    p.turb_bc.nu_tilde_values.top = 3.3e-5;
+    p.turb_bc.nu_tilde_values.bottom = 3.4e-5;
+    p.turb_bc.nu_tilde_values.front = 3.5e-5;
+    p.turb_bc.nu_tilde_values.back = 3.6e-5;
     return p;
+}
+
+static void assert_bc_values_equal(const bc_dirichlet_values_t* a, const bc_dirichlet_values_t* b) {
+    TEST_ASSERT_TRUE(bits_equal(a->left, b->left));
+    TEST_ASSERT_TRUE(bits_equal(a->right, b->right));
+    TEST_ASSERT_TRUE(bits_equal(a->top, b->top));
+    TEST_ASSERT_TRUE(bits_equal(a->bottom, b->bottom));
+    TEST_ASSERT_TRUE(bits_equal(a->front, b->front));
+    TEST_ASSERT_TRUE(bits_equal(a->back, b->back));
 }
 
 static void assert_grid_equal(const grid* a, const grid* b) {
@@ -143,12 +179,19 @@ static void assert_params_equal(const ns_solver_params_t* a, const ns_solver_par
     TEST_ASSERT_EQUAL_INT(a->thermal_bc.top, b->thermal_bc.top);
     TEST_ASSERT_EQUAL_INT(a->thermal_bc.front, b->thermal_bc.front);
     TEST_ASSERT_EQUAL_INT(a->thermal_bc.back, b->thermal_bc.back);
-    TEST_ASSERT_TRUE(bits_equal(a->thermal_bc.dirichlet_values.left, b->thermal_bc.dirichlet_values.left));
-    TEST_ASSERT_TRUE(bits_equal(a->thermal_bc.dirichlet_values.right, b->thermal_bc.dirichlet_values.right));
-    TEST_ASSERT_TRUE(bits_equal(a->thermal_bc.dirichlet_values.top, b->thermal_bc.dirichlet_values.top));
-    TEST_ASSERT_TRUE(bits_equal(a->thermal_bc.dirichlet_values.bottom, b->thermal_bc.dirichlet_values.bottom));
-    TEST_ASSERT_TRUE(bits_equal(a->thermal_bc.dirichlet_values.front, b->thermal_bc.dirichlet_values.front));
-    TEST_ASSERT_TRUE(bits_equal(a->thermal_bc.dirichlet_values.back, b->thermal_bc.dirichlet_values.back));
+    assert_bc_values_equal(&a->thermal_bc.dirichlet_values, &b->thermal_bc.dirichlet_values);
+    TEST_ASSERT_EQUAL_INT(a->turb_model, b->turb_model);
+    TEST_ASSERT_EQUAL_INT(a->pressure_solver, b->pressure_solver);
+    TEST_ASSERT_EQUAL_INT(a->convection_scheme, b->convection_scheme);
+    TEST_ASSERT_EQUAL_INT(a->turb_bc.left, b->turb_bc.left);
+    TEST_ASSERT_EQUAL_INT(a->turb_bc.right, b->turb_bc.right);
+    TEST_ASSERT_EQUAL_INT(a->turb_bc.bottom, b->turb_bc.bottom);
+    TEST_ASSERT_EQUAL_INT(a->turb_bc.top, b->turb_bc.top);
+    TEST_ASSERT_EQUAL_INT(a->turb_bc.front, b->turb_bc.front);
+    TEST_ASSERT_EQUAL_INT(a->turb_bc.back, b->turb_bc.back);
+    assert_bc_values_equal(&a->turb_bc.k_values, &b->turb_bc.k_values);
+    assert_bc_values_equal(&a->turb_bc.eps_values, &b->turb_bc.eps_values);
+    assert_bc_values_equal(&a->turb_bc.nu_tilde_values, &b->turb_bc.nu_tilde_values);
 }
 
 /* File-corruption helpers for the rejection tests. */
@@ -261,6 +304,7 @@ void test_highlevel_save_load_roundtrip(void) {
     TEST_ASSERT_NOT_NULL(sim);
     fill_field_known(sim->field, 2.0);
     sim->current_time = 0.875;
+    sim->params.convection_scheme = NS_CONVECTION_SCHEME_UPWIND;
 
     TEST_ASSERT_EQUAL(CFD_SUCCESS, save_simulation_checkpoint(sim, CK_PATH));
 
@@ -269,6 +313,7 @@ void test_highlevel_save_load_roundtrip(void) {
     assert_grid_equal(sim->grid, loaded->grid);
     assert_field_equal(sim->field, loaded->field);
     TEST_ASSERT_TRUE(bits_equal(sim->current_time, loaded->current_time));
+    TEST_ASSERT_EQUAL_INT(NS_CONVECTION_SCHEME_UPWIND, loaded->params.convection_scheme);
     TEST_ASSERT_NOT_NULL(loaded->solver);
     TEST_ASSERT_EQUAL_STRING(NS_SOLVER_TYPE_RK2, loaded->solver->name);
 

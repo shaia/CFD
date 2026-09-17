@@ -94,7 +94,7 @@ CFD_LIBRARY_EXPORT const ns_solver_stats_t* simulation_get_stats(const simulatio
 //=============================================================================
 
 // Save the complete simulation state to a binary checkpoint file.
-// Captures grid, flow field, scalar solver parameters, accumulated time, and
+// Captures grid, flow field, solver parameters, accumulated time, and
 // the active solver's registry name. Custom source/heat callbacks are NOT
 // saved (re-supply them after a restore). See cfd/io/checkpoint.h for details.
 CFD_LIBRARY_EXPORT cfd_status_t save_simulation_checkpoint(const simulation_data* sim_data,

@@ -3,10 +3,12 @@
  * @brief Finite difference stencil operations
  *
  * Shared stencil implementations used by both solvers and tests.
- * All stencils are O(h²) accurate central differences.
+ * All stencils are O(h²) accurate central differences, except the
+ * first-order upwind derivatives used for convective terms.
  *
  * This header provides inline functions for:
  *   - First derivatives (∂f/∂x, ∂f/∂y, ∂f/∂z)
+ *   - First-order upwind first derivatives (convective terms)
  *   - Second derivatives (∂²f/∂x², ∂²f/∂y², ∂²f/∂z²)
  *   - Laplacian 2D (∇²f = ∂²f/∂x² + ∂²f/∂y²) and 3D (+ ∂²f/∂z²)
  *   - Divergence 2D (∇·F = ∂u/∂x + ∂v/∂y) and 3D (+ ∂w/∂z)
@@ -62,6 +64,81 @@ static inline double stencil_first_deriv_y(double f_jp1, double f_jm1, double dy
  */
 static inline double stencil_first_deriv_z(double f_kp1, double f_km1, double dz) {
     return (f_kp1 - f_km1) / (2.0 * dz);
+}
+
+/* ============================================================================
+ * FIRST-ORDER UPWIND FIRST DERIVATIVE STENCILS (O(h))
+ * ============================================================================
+ *
+ * The advecting velocity selects the one-sided difference:
+ *   vel >= 0: df/dx ≈ (f[i] - f[i-1]) / dx   (information flows from the left)
+ *   vel <  0: df/dx ≈ (f[i+1] - f[i]) / dx   (information flows from the right)
+ * Error: O(dx); the leading error term is numerical diffusion |vel|*dx/2.
+ *
+ * `vel` is the velocity that carries f (u_c for df/dx, v_c for df/dy), not the
+ * derivative being computed. A NaN velocity selects the forward difference.
+ */
+
+/**
+ * Undivided first-order upwind difference along one axis
+ *
+ * Owns the direction convention shared by every upwind stencil. Scale the
+ * result by 1/h; for branch-free 2D/3D solver loops, multiply by a precomputed
+ * inverse spacing that is 0.0 on inactive axes instead of dividing by h.
+ *
+ * @param f_p  Function value at the + neighbor (f[i+1])
+ * @param f_c  Function value at the center (f[i])
+ * @param f_m  Function value at the - neighbor (f[i-1])
+ * @param vel  Advecting velocity component along this axis
+ * @return f_c - f_m when vel >= 0, otherwise f_p - f_c
+ */
+static inline double stencil_upwind_diff(double f_p, double f_c, double f_m, double vel) {
+    return (vel >= 0.0) ? (f_c - f_m) : (f_p - f_c);
+}
+
+/**
+ * First-order upwind first derivative in x-direction
+ *
+ * @param f_ip1  Function value at x+dx (f[i+1])
+ * @param f_i    Function value at x (f[i])
+ * @param f_im1  Function value at x-dx (f[i-1])
+ * @param dx     Grid spacing in x
+ * @param vel    Advecting velocity in x (u)
+ * @return Approximation of df/dx
+ */
+static inline double stencil_upwind_deriv_x(double f_ip1, double f_i, double f_im1,
+                                            double dx, double vel) {
+    return stencil_upwind_diff(f_ip1, f_i, f_im1, vel) / dx;
+}
+
+/**
+ * First-order upwind first derivative in y-direction
+ *
+ * @param f_jp1  Function value at y+dy (f[j+1])
+ * @param f_j    Function value at y (f[j])
+ * @param f_jm1  Function value at y-dy (f[j-1])
+ * @param dy     Grid spacing in y
+ * @param vel    Advecting velocity in y (v)
+ * @return Approximation of df/dy
+ */
+static inline double stencil_upwind_deriv_y(double f_jp1, double f_j, double f_jm1,
+                                            double dy, double vel) {
+    return stencil_upwind_diff(f_jp1, f_j, f_jm1, vel) / dy;
+}
+
+/**
+ * First-order upwind first derivative in z-direction
+ *
+ * @param f_kp1  Function value at z+dz (f[k+1])
+ * @param f_k    Function value at z (f[k])
+ * @param f_km1  Function value at z-dz (f[k-1])
+ * @param dz     Grid spacing in z (must be > 0)
+ * @param vel    Advecting velocity in z (w)
+ * @return Approximation of df/dz
+ */
+static inline double stencil_upwind_deriv_z(double f_kp1, double f_k, double f_km1,
+                                            double dz, double vel) {
+    return stencil_upwind_diff(f_kp1, f_k, f_km1, vel) / dz;
 }
 
 /* ============================================================================

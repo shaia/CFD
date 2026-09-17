@@ -120,6 +120,15 @@ static void put_f64_array(chk_io* io, const double* a, size_t n) {
     }
 }
 
+static void put_bc_values(chk_io* io, const bc_dirichlet_values_t* v) {
+    put_f64(io, v->left);
+    put_f64(io, v->right);
+    put_f64(io, v->top);
+    put_f64(io, v->bottom);
+    put_f64(io, v->front);
+    put_f64(io, v->back);
+}
+
 /* NULL or empty string both serialize as length 0. */
 static void put_string(chk_io* io, const char* s) {
     uint32_t len = s ? (uint32_t)strlen(s) : 0u;
@@ -172,6 +181,15 @@ static void get_f64_array(chk_io* io, double* a, size_t n) {
     for (size_t i = 0; i < n; i++) {
         a[i] = get_f64(io);
     }
+}
+
+static void get_bc_values(chk_io* io, bc_dirichlet_values_t* v) {
+    v->left = get_f64(io);
+    v->right = get_f64(io);
+    v->top = get_f64(io);
+    v->bottom = get_f64(io);
+    v->front = get_f64(io);
+    v->back = get_f64(io);
 }
 
 /* Reads a length-prefixed string. If buf is NULL the bytes are consumed (and
@@ -317,12 +335,21 @@ static void write_params(chk_io* io, const ns_solver_params_t* p) {
     put_i32(io, (int32_t)p->thermal_bc.top);
     put_i32(io, (int32_t)p->thermal_bc.front);
     put_i32(io, (int32_t)p->thermal_bc.back);
-    put_f64(io, p->thermal_bc.dirichlet_values.left);
-    put_f64(io, p->thermal_bc.dirichlet_values.right);
-    put_f64(io, p->thermal_bc.dirichlet_values.top);
-    put_f64(io, p->thermal_bc.dirichlet_values.bottom);
-    put_f64(io, p->thermal_bc.dirichlet_values.front);
-    put_f64(io, p->thermal_bc.dirichlet_values.back);
+    put_bc_values(io, &p->thermal_bc.dirichlet_values);
+    /* solver selections */
+    put_i32(io, (int32_t)p->turb_model);
+    put_i32(io, (int32_t)p->pressure_solver);
+    put_i32(io, (int32_t)p->convection_scheme);
+    /* turb_bc: face types then k, epsilon and nu_tilde Dirichlet values */
+    put_i32(io, (int32_t)p->turb_bc.left);
+    put_i32(io, (int32_t)p->turb_bc.right);
+    put_i32(io, (int32_t)p->turb_bc.bottom);
+    put_i32(io, (int32_t)p->turb_bc.top);
+    put_i32(io, (int32_t)p->turb_bc.front);
+    put_i32(io, (int32_t)p->turb_bc.back);
+    put_bc_values(io, &p->turb_bc.k_values);
+    put_bc_values(io, &p->turb_bc.eps_values);
+    put_bc_values(io, &p->turb_bc.nu_tilde_values);
 }
 
 /* ==========================================================================
@@ -485,7 +512,7 @@ cfd_status_t cfd_checkpoint_read(const char* path,
         get_f64_array(&io, f->T, n);
     }
 
-    /* --- params (scalars only; callbacks remain NULL from the memset) --- */
+    /* --- params (callbacks remain NULL from the memset) --- */
     out_params->dt = get_f64(&io);
     out_params->cfl = get_f64(&io);
     out_params->gamma = get_f64(&io);
@@ -509,12 +536,19 @@ cfd_status_t cfd_checkpoint_read(const char* path,
     out_params->thermal_bc.top = (bc_type_t)get_i32(&io);
     out_params->thermal_bc.front = (bc_type_t)get_i32(&io);
     out_params->thermal_bc.back = (bc_type_t)get_i32(&io);
-    out_params->thermal_bc.dirichlet_values.left = get_f64(&io);
-    out_params->thermal_bc.dirichlet_values.right = get_f64(&io);
-    out_params->thermal_bc.dirichlet_values.top = get_f64(&io);
-    out_params->thermal_bc.dirichlet_values.bottom = get_f64(&io);
-    out_params->thermal_bc.dirichlet_values.front = get_f64(&io);
-    out_params->thermal_bc.dirichlet_values.back = get_f64(&io);
+    get_bc_values(&io, &out_params->thermal_bc.dirichlet_values);
+    out_params->turb_model = (turbulence_model_t)get_i32(&io);
+    out_params->pressure_solver = (ns_pressure_solver_t)get_i32(&io);
+    out_params->convection_scheme = (ns_convection_scheme_t)get_i32(&io);
+    out_params->turb_bc.left = (bc_type_t)get_i32(&io);
+    out_params->turb_bc.right = (bc_type_t)get_i32(&io);
+    out_params->turb_bc.bottom = (bc_type_t)get_i32(&io);
+    out_params->turb_bc.top = (bc_type_t)get_i32(&io);
+    out_params->turb_bc.front = (bc_type_t)get_i32(&io);
+    out_params->turb_bc.back = (bc_type_t)get_i32(&io);
+    get_bc_values(&io, &out_params->turb_bc.k_values);
+    get_bc_values(&io, &out_params->turb_bc.eps_values);
+    get_bc_values(&io, &out_params->turb_bc.nu_tilde_values);
 
     /* --- sim metadata --- */
     double current_time = get_f64(&io);

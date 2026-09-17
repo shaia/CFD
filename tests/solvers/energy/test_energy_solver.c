@@ -9,6 +9,8 @@
  * 3. Energy equation disabled: alpha=0 should leave temperature unchanged.
  * 4. Buoyancy source: verify energy_compute_buoyancy produces correct forces.
  * 5. Backward compatibility: existing solvers work when alpha=0.
+ * 6. Upwind advection keeps a temperature step within its initial range,
+ *    and the OMP/AVX2 upwind advection matches the scalar reference.
  */
 
 #include "cfd/core/cfd_init.h"
@@ -220,6 +222,71 @@ static void test_pure_advection(void) {
 
     flow_field_destroy(field);
     grid_destroy(g);
+}
+
+/* ============================================================================
+ * TEST 2b: Upwind advection stays bounded
+ *
+ * A sharp temperature step advected at CFL 0.5 with negligible diffusion.
+ * First-order upwind makes each update a convex combination of neighboring
+ * temperatures, so T never leaves [0, 1]; central differencing overshoots.
+ * Checked for flow in both directions so both upwind branches are exercised.
+ * ============================================================================ */
+
+#define BOUNDED_ADV_NX    41
+#define BOUNDED_ADV_NY    5
+#define BOUNDED_ADV_STEPS 20
+#define BOUNDED_ADV_TOL   1e-12
+#define CENTRAL_ADV_OVERSHOOT_MIN 0.05
+
+/* Largest excursion of T outside [0, 1] over the run */
+static double run_step_advection(double u, ns_convection_scheme_t scheme) {
+    grid* g = grid_create(BOUNDED_ADV_NX, BOUNDED_ADV_NY, 1, 0.0, 2.0, 0.0, 0.5, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+    flow_field* field = flow_field_create(BOUNDED_ADV_NX, BOUNDED_ADV_NY, 1);
+    TEST_ASSERT_NOT_NULL(field);
+
+    for (size_t j = 0; j < BOUNDED_ADV_NY; j++) {
+        for (size_t i = 0; i < BOUNDED_ADV_NX; i++) {
+            size_t idx = j * BOUNDED_ADV_NX + i;
+            field->u[idx] = u;
+            field->rho[idx] = 1.0;
+            field->T[idx] = (g->x[i] < 1.0) ? 1.0 : 0.0;
+        }
+    }
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.alpha = 1e-4;  /* diffusion number ~1e-3: the update stays convex */
+    params.convection_scheme = scheme;
+    double dt = 0.5 * g->dx[0] / fabs(u);
+
+    double excursion = 0.0;
+    for (int step = 0; step < BOUNDED_ADV_STEPS; step++) {
+        TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                          energy_step_explicit(field, g, &params, dt, step * dt));
+        for (size_t n = 0; n < (size_t)(BOUNDED_ADV_NX * BOUNDED_ADV_NY); n++) {
+            excursion = fmax(excursion, fmax(field->T[n] - 1.0, -field->T[n]));
+        }
+    }
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+    return excursion;
+}
+
+static void test_upwind_advection_bounded(void) {
+    const double velocities[] = {1.0, -1.0};
+    for (size_t k = 0; k < sizeof(velocities) / sizeof(velocities[0]); k++) {
+        double upwind = run_step_advection(velocities[k], NS_CONVECTION_SCHEME_UPWIND);
+        double central = run_step_advection(velocities[k], NS_CONVECTION_SCHEME_CENTRAL);
+        printf("  u=%+.0f: excursion outside [0,1]: upwind %.3e, central %.3e\n",
+               velocities[k], upwind, central);
+        TEST_ASSERT_TRUE_MESSAGE(upwind <= BOUNDED_ADV_TOL,
+                                 "Upwind advection must keep T within its initial range");
+        TEST_ASSERT_TRUE_MESSAGE(central >= CENTRAL_ADV_OVERSHOOT_MIN,
+                                 "Central advection of a step should overshoot");
+    }
 }
 
 /* ============================================================================
@@ -758,7 +825,8 @@ static void test_thermal_bc_invalid_config(void) {
 #define CONSIST_N  (CONSIST_NX * CONSIST_NY)
 
 /* Advance `solver_name` for `steps` steps of left-hot/right-cold heat
- * conduction, writing the final temperature field into T_out (size CONSIST_N).
+ * conduction in a uniform flow (u0, v0), advected with `scheme`, writing the
+ * final temperature field into T_out (size CONSIST_N).
  *
  * Return value distinguishes "backend genuinely unavailable" (caller should
  * skip) from "backend present but rejected the energy run" (caller should
@@ -771,6 +839,8 @@ static void test_thermal_bc_invalid_config(void) {
  *                           failure rather than a silent skip. */
 static cfd_status_t run_energy_case(ns_solver_registry_t* registry,
                                     const char* solver_name, int steps,
+                                    double u0, double v0,
+                                    ns_convection_scheme_t scheme,
                                     double* T_out) {
     grid* g = grid_create(CONSIST_NX, CONSIST_NY, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     if (!g) return CFD_ERROR_NOMEM;
@@ -779,6 +849,8 @@ static cfd_status_t run_energy_case(ns_solver_registry_t* registry,
     flow_field* field = flow_field_create(CONSIST_NX, CONSIST_NY, 1);
     if (!field) { grid_destroy(g); return CFD_ERROR_NOMEM; }
     for (size_t n = 0; n < CONSIST_N; n++) {
+        field->u[n] = u0;
+        field->v[n] = v0;
         field->rho[n] = 1.0;
         field->T[n] = 300.0;
     }
@@ -801,6 +873,13 @@ static cfd_status_t run_energy_case(ns_solver_registry_t* registry,
     params.thermal_bc.top = BC_TYPE_NEUMANN;
     params.thermal_bc.dirichlet_values.left = 320.0;
     params.thermal_bc.dirichlet_values.right = 280.0;
+    params.convection_scheme = scheme;
+    if (u0 != 0.0 || v0 != 0.0) {
+        /* Keep the uniform flow uniform: the AVX2 explicit Euler lanes omit
+         * the synthetic momentum sources the other backends apply. */
+        params.source_amplitude_u = 0.0;
+        params.source_amplitude_v = 0.0;
+    }
 
     cfd_status_t status = solver_init(solver, g, &params);
     if (status == CFD_ERROR_UNSUPPORTED) {
@@ -824,40 +903,44 @@ static cfd_status_t run_energy_case(ns_solver_registry_t* registry,
     return status;
 }
 
-static void test_energy_optimized_matches_scalar(void) {
-    /* Each optimized backend (OMP and AVX2) must accept the energy equation and
-     * reproduce the scalar reference temperature field. */
-    const struct {
-        const char* scalar;
-        const char* optimized;
-    } pairs[] = {
-        { NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP },
-        { NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK2_OMP },
-        { NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OMP },
-        { NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED },
-        { NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK2_OPTIMIZED },
-        { NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED },
-    };
-    const size_t n_pairs = sizeof(pairs) / sizeof(pairs[0]);
+/* Scalar reference and optimized (OMP / AVX2) backend pairs */
+static const struct {
+    const char* scalar;
+    const char* optimized;
+} ENERGY_BACKEND_PAIRS[] = {
+    { NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OMP },
+    { NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK2_OMP },
+    { NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OMP },
+    { NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED },
+    { NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK2_OPTIMIZED },
+    { NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED },
+};
+#define NUM_ENERGY_BACKEND_PAIRS (sizeof(ENERGY_BACKEND_PAIRS) / sizeof(ENERGY_BACKEND_PAIRS[0]))
+
+/* Assert every optimized backend reproduces its scalar reference temperature
+ * field for one flow and advection scheme. */
+static void assert_energy_backends_match(double u0, double v0, ns_convection_scheme_t scheme) {
     const int steps = 20;
 
     ns_solver_registry_t* registry = cfd_registry_create();
     TEST_ASSERT_NOT_NULL(registry);
     cfd_registry_register_defaults(registry);
 
-    for (size_t p = 0; p < n_pairs; p++) {
+    for (size_t p = 0; p < NUM_ENERGY_BACKEND_PAIRS; p++) {
         double T_scalar[CONSIST_N];
         double T_opt[CONSIST_N];
 
         /* Scalar reference must always succeed. */
-        cfd_status_t ss = run_energy_case(registry, pairs[p].scalar, steps, T_scalar);
+        cfd_status_t ss = run_energy_case(registry, ENERGY_BACKEND_PAIRS[p].scalar, steps,
+                                          u0, v0, scheme, T_scalar);
         TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, ss,
                                   "scalar energy solve must succeed");
 
         /* Optimized backend: skip cleanly only if it (or its sub-solver) is
          * genuinely absent. A present backend that rejects the energy params
          * at solve time returns CFD_ERROR_UNSUPPORTED here and must fail. */
-        cfd_status_t os = run_energy_case(registry, pairs[p].optimized, steps, T_opt);
+        cfd_status_t os = run_energy_case(registry, ENERGY_BACKEND_PAIRS[p].optimized, steps,
+                                          u0, v0, scheme, T_opt);
         if (os == CFD_ERROR_NOT_FOUND) {
             continue;
         }
@@ -875,6 +958,38 @@ static void test_energy_optimized_matches_scalar(void) {
         }
     }
 
+    cfd_registry_destroy(registry);
+}
+
+static void test_energy_optimized_matches_scalar(void) {
+    /* Each optimized backend (OMP and AVX2) must accept the energy equation and
+     * reproduce the scalar reference temperature field. */
+    assert_energy_backends_match(0.0, 0.0, NS_CONVECTION_SCHEME_CENTRAL);
+}
+
+static void test_energy_upwind_optimized_matches_scalar(void) {
+    /* Upwind temperature advection in a uniform flow with both velocity signs
+     * must match the scalar reference on every optimized backend. */
+    assert_energy_backends_match(0.5, -0.3, NS_CONVECTION_SCHEME_UPWIND);
+
+    /* The comparison only means something if the scheme changes the result */
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+    double T_upwind[CONSIST_N];
+    double T_central[CONSIST_N];
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, run_energy_case(registry, NS_SOLVER_TYPE_EXPLICIT_EULER, 20,
+                                                   0.5, -0.3, NS_CONVECTION_SCHEME_UPWIND,
+                                                   T_upwind));
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, run_energy_case(registry, NS_SOLVER_TYPE_EXPLICIT_EULER, 20,
+                                                   0.5, -0.3, NS_CONVECTION_SCHEME_CENTRAL,
+                                                   T_central));
+    double separation = 0.0;
+    for (size_t n = 0; n < CONSIST_N; n++) {
+        separation = fmax(separation, fabs(T_upwind[n] - T_central[n]));
+    }
+    printf("  upwind vs central temperature: max |dT| = %.3e\n", separation);
+    TEST_ASSERT_TRUE_MESSAGE(separation > 1e-6, "Upwind advection should change T");
     cfd_registry_destroy(registry);
 }
 
@@ -1040,6 +1155,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_pure_diffusion);
     RUN_TEST(test_pure_advection);
+    RUN_TEST(test_upwind_advection_bounded);
     RUN_TEST(test_energy_disabled);
     RUN_TEST(test_buoyancy_source);
     RUN_TEST(test_backward_compatibility);
@@ -1049,6 +1165,7 @@ int main(void) {
     RUN_TEST(test_thermal_bc_3d_front_back);
     RUN_TEST(test_thermal_bc_invalid_config);
     RUN_TEST(test_energy_optimized_matches_scalar);
+    RUN_TEST(test_energy_upwind_optimized_matches_scalar);
     RUN_TEST(test_energy_gpu_diffusion_decay);
     RUN_TEST(test_energy_gpu_rejects_heat_source);
     return UNITY_END();
