@@ -146,6 +146,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   format-version header that rejects unknown versions
   (`lib/src/io/checkpoint.c`, `lib/include/cfd/io/checkpoint.h`, `tests/io/test_checkpoint.c`).
 
+- **RANS turbulence models: standard k-ε and Spalart-Allmaras with log-law wall
+  functions.** The v0.4.0 turbulence milestone (PR #199), mirroring the energy-equation
+  module architecture: per-backend kernels, workspace-aware step, in-module BCs. Upwind
+  advection, conservative face-averaged diffusion, semi-implicit Patankar sinks for
+  positivity, a production limiter and nu_t realizability clipping. Wall functions on
+  `BC_TYPE_NOSLIP` faces derive the friction velocity from the log law, set equilibrium
+  k/epsilon (or nu_tilde) at the first interior node, and set the wall-face viscosity so
+  the discrete wall shear equals u_tau^2 exactly. Eddy viscosity couples into every
+  projection/Euler/RK momentum path through a conservative `nu_eff = nu + nu_t`, leaving
+  the laminar path bitwise identical. New public API in `turbulence_solver.h`,
+  `turb_model`/`turb_bc` in params, and `k`/`eps`/`nu_tilde`/`nu_t` on `flow_field` and in
+  VTK/CSV output. Validated against turbulent channel flow at Re_tau = 395 (k-ε u_tau
+  error 2.9%, SA 3.1%; u+ within a few percent of the log law), with unit tests for decay,
+  wall functions, SA closures, laminar regression and cross-backend consistency, plus a
+  `turbulent_channel` example.
+  Scalar, OpenMP and AVX2 backends; **2D uniform grids only**, and the GPU paths return
+  `CFD_ERROR_UNSUPPORTED` when turbulence is enabled
+  (`lib/src/solvers/turbulence/`, `lib/include/cfd/solvers/turbulence_solver.h`,
+  `tests/solvers/turbulence/`, `examples/turbulent_channel.c`).
+
 ### Fixed
 
 - **Cavity validation now measures steady state as a rate, not a per-step change.** The
