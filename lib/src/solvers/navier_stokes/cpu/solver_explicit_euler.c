@@ -51,7 +51,8 @@
 #define SPEED_EPSILON         1e-10
 #define DT_MAX_LIMIT          0.01
 #define DT_MIN_LIMIT          1e-6
-#define DT_CONSERVATIVE_LIMIT 0.0001
+/* One definition lives in navier_stokes_solver.h (NS_EULER_DT_LIMIT). */
+#define DT_CONSERVATIVE_LIMIT NS_EULER_DT_LIMIT
 
 // Update limits
 #define UPDATE_LIMIT           1.0

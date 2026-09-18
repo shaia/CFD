@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ns_solver_stats_t.dt_used`** reports the time step a solve actually advanced by.
+  The explicit Euler solvers clamp their own step to the new public `NS_EULER_DT_LIMIT`
+  regardless of `params.dt`, so a caller measuring simulated time could not get it right
+  from the parameters alone. `solver_step()` and `solver_solve()` default the field to
+  `params.dt` and the Euler wrappers override it, so every solver reports a usable value;
+  the clamp itself now has one definition instead of four
+  (`lib/include/cfd/solvers/navier_stokes_solver.h`, `lib/src/api/solver_registry.c`,
+  the explicit Euler kernels under `lib/src/solvers/navier_stokes/`).
 - **First-order upwind convection** — new `ns_solver_params_t.convection_scheme` field
   (`ns_convection_scheme_t`; 0 = existing central differencing, unchanged).
   `NS_CONVECTION_SCHEME_UPWIND` takes each convective first derivative from the side the
@@ -140,6 +148,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Cavity validation now measures steady state as a rate, not a per-step change.** The
+  harness stopped a run once the relative change in kinetic energy **per step** fell below
+  1e-8. That quantity scales with dt, so it registered a slow transient as convergence:
+  the Explicit Euler cases ended at ~11,300 of 25,000 steps (t ≈ 1.13) on a flow that needs
+  t ≈ 10-20 to develop, and passed their RMS target without a developed solution. The test
+  is now `|d(ln KE)/dt| < 1e-6`, in units of 1/time, evaluated after t > 1.0, and computed
+  from the step the solver actually took rather than `params.dt`. Running to the real
+  budget improves the 33x33 Euler result from RMS_u 0.0957 / RMS_v 0.1284 to 0.0777 /
+  0.0334, scalar and OpenMP agreeing to four decimals; the projection results are
+  unchanged at 0.0382 / 0.0440. The 129x129 Explicit Euler cases are dropped: they cost
+  about an hour of EC2 per run to hold a non-production solver to a relaxed target that
+  every projection case clears with over 3x margin, and were never evidence of 129x129
+  accuracy (ROADMAP §6.1)
+  (`tests/validation/lid_driven_cavity_common.h`, `CMakeLists.txt`,
+  `docs/validation/cavity-backends-validation.md`, `ROADMAP.md`).
 - **Boundary-condition availability messages say what is actually true.**
   `BC_BACKEND_CUDA` reported "CUDA not yet implemented" while the GPU boundary kernels
   existed and were already driving the GPU solvers. They are device-side -- device
