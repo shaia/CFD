@@ -9,6 +9,7 @@
 #include "cfd/solvers/poisson_solver.h"
 
 #include "../solvers/navier_stokes/ns_convection_internal.h"
+#include "../solvers/navier_stokes/ns_simd_backend_internal.h"
 
 
 #ifdef _WIN32
@@ -1764,7 +1765,9 @@ int cfd_backend_is_available(ns_solver_backend_t backend) {
             return 1;  // Always available
 
         case NS_SOLVER_BACKEND_SIMD:
-            return cfd_has_simd();
+            /* Compiled-in AND supported at runtime. cfd_has_simd() alone reports a
+             * backend this build may not contain (AVX2 is off by default). */
+            return ns_simd_backend_available() ? 1 : 0;
 
         case NS_SOLVER_BACKEND_OMP:
 #ifdef CFD_ENABLE_OPENMP

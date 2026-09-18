@@ -140,6 +140,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SIMD backend availability now requires the compiled-in kernels, not just the CPU.**
+  `cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)` returned `cfd_has_simd()`, a pure
+  runtime CPUID query, while `CFD_ENABLE_AVX2` defaults to `OFF`. The default build on any
+  AVX2-capable machine therefore advertised a SIMD backend it did not contain, and
+  `cfd_solver_create_checked()` handed back `*_optimized` solvers that could not run. The
+  check is now compile-time AND runtime, through one shared predicate
+  (`ns_simd_backend_available()`) that the registry and all four SIMD solvers share, so
+  they cannot disagree. There are no NEON Navier-Stokes kernels, so NEON CPUs correctly
+  report the SIMD backend unavailable
+  (`lib/src/solvers/navier_stokes/simd/ns_simd_backend.c`,
+  `lib/src/solvers/navier_stokes/ns_simd_backend_internal.h`, `lib/src/api/solver_registry.c`,
+  `tests/solvers/test_solver_backend_api.c`, `tests/core/test_modular_libraries.c`,
+  `tests/core/test_modular_core_simd.c`).
+- **One failure mode for a build without SIMD.** The same configuration produced three
+  different outcomes: `explicit_euler_optimized` silently ran scalar loops and returned
+  `CFD_SUCCESS` -- the cross-backend fallback the error-handling rules forbid --
+  `rk2_optimized`/`rk4_optimized` returned `CFD_ERROR_UNSUPPORTED`, and
+  `projection_optimized` returned it indirectly via a NULL sub-solver probe whose message
+  named the wrong cause. All four now fail at init with `CFD_ERROR_UNSUPPORTED` and a
+  message that says whether the build or the CPU is missing AVX2; the dead scalar
+  fallback kernel in the AVX2 Euler solver is deleted. `rk2`/`rk4` additionally gained the
+  runtime half of the check, which they lacked -- an AVX2 build on a pre-AVX2 CPU
+  previously initialized successfully and then executed unsupported instructions
+  (`lib/src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c`,
+  `solver_projection_avx2.c`, `solver_rk2_avx2.c`, `solver_rk4_avx2.c`,
+  `tests/solvers/navier_stokes/avx2/test_solver_explicit_euler_avx2.c`,
+  `tests/solvers/navier_stokes/cpu/test_solver_explicit_euler.c`,
+  `tests/simulation/test_simulation_api.c`, `docs/reference/solvers.md`).
 - **`explicit_euler_optimized` updates every interior column.** The AVX2 row loop processed
   4-wide groups with no scalar remainder, so when `(nx-2) % 4 != 0` the last 1-3 interior
   columns of each row kept their old values (3 per row at 33×33 and 129×129). The remainder
