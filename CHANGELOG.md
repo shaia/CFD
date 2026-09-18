@@ -140,6 +140,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The laminar viscous stability limit is now applied.** `compute_time_step()` gated the
+  viscous constraint `dt < h^2 / (2*nu_eff*ndim)` behind `turb_model != TURB_MODEL_NONE`,
+  so for laminar flow it never ran and `compute_dt` could return an unstable step. The
+  limit scales as `h^2` against the convective limit's `h`, so it binds as grids refine:
+  on a 129x129 unit cavity at Re=100 (nu=1e-2, cfl=0.5) it is 7.6e-4 against a CFL limit
+  of 3.3e-3. It now applies to the molecular viscosity unconditionally, still adding any
+  eddy viscosity when a turbulence model is active. `compute_time_step()` is also
+  decomposed into `ns_dt_convective` / `ns_dt_viscous` / `ns_dt_thermal`, each returning
+  INFINITY where its process imposes no limit, so a solver that treats a term implicitly
+  can leave that constraint out. `tests/core/test_cfl.c` had no viscous case at all and
+  gains five; three existing sound-speed tests now set `mu = 0` to keep isolating the
+  acoustic branch
+  (`lib/src/solvers/navier_stokes/cpu/solver_explicit_euler.c`,
+  `lib/src/solvers/navier_stokes/ns_dt_internal.h`, `tests/core/test_cfl.c`).
 - **SIMD backend availability now requires the compiled-in kernels, not just the CPU.**
   `cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)` returned `cfd_has_simd()`, a pure
   runtime CPUID query, while `CFD_ENABLE_AVX2` defaults to `OFF`. The default build on any

@@ -175,21 +175,37 @@ void initialize_flow_field(flow_field* field, const grid* grid) {
     }
 }
 
-void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* params) {
-    double max_speed = 0.0;
-    double dx_min = grid->dx[0];
-    double dy_min = grid->dy[0];
+/* ---------------------------------------------------------------------------
+ * Time-step stability constraints
+ *
+ * Each returns the largest stable dt for one physical process, or INFINITY when
+ * that process imposes no limit, so callers compose them with a plain minimum.
+ * A solver that treats a term implicitly simply leaves its constraint out.
+ * ------------------------------------------------------------------------- */
 
-    // Find minimum grid spacing
+/** Smallest spacing over the active dimensions. */
+double ns_grid_min_spacing(const grid* grid) {
+    double dmin = min_double(grid->dx[0], grid->dy[0]);
     for (size_t i = 0; i < grid->nx - 1; i++) {
-        dx_min = min_double(dx_min, grid->dx[i]);
+        dmin = min_double(dmin, grid->dx[i]);
     }
     for (size_t j = 0; j < grid->ny - 1; j++) {
-        dy_min = min_double(dy_min, grid->dy[j]);
+        dmin = min_double(dmin, grid->dy[j]);
     }
+    if (grid->nz > 1 && grid->dz) {
+        for (size_t k = 0; k < grid->nz - 1; k++) {
+            dmin = min_double(dmin, grid->dz[k]);
+        }
+    }
+    return dmin;
+}
 
-    // Find maximum wave speed
+/** Advective/acoustic CFL limit: cfl * dmin / max_speed. */
+double ns_dt_convective(const flow_field* field, const grid* grid,
+                        const ns_solver_params_t* params) {
+    double max_speed = 0.0;
     int has_w = (grid->nz > 1 && field->w);
+
     for (size_t j = 0; j < field->ny; j++) {
         for (size_t i = 0; i < field->nx; i++) {
             size_t idx = IDX_2D(i, j, field->nx);
@@ -214,60 +230,68 @@ void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* 
         max_speed = 1.0;  // Use default if speeds are too small
     }
 
-    // Include z-direction in CFL if 3D
-    double dmin = min_double(dx_min, dy_min);
-    if (grid->nz > 1 && grid->dz) {
-        double dz_min = grid->dz[0];
-        for (size_t k = 0; k < grid->nz - 1; k++) {
-            dz_min = min_double(dz_min, grid->dz[k]);
-        }
-        dmin = min_double(dmin, dz_min);
-    }
-
-    // Compute time step based on CFL condition with safety factor
-    double dt_cfl = params->cfl * dmin / max_speed;
-
-    // Thermal diffusion stability constraint: dt < dx^2 / (2 * alpha * ndim)
-    double dt_thermal = dt_cfl;
-    if (params->alpha > 0.0) {
-        int ndim = (grid->nz > 1) ? 3 : 2;
-        dt_thermal = (dmin * dmin) / (2.0 * params->alpha * ndim);
-        dt_thermal *= params->cfl;  // Apply safety factor
-    }
-
-    double dt_stable = min_double(dt_cfl, dt_thermal);
-
-    // Viscous diffusion stability constraint with turbulent eddy viscosity:
-    // dt < dx^2 / (2 * nu_eff * ndim). Only relevant when a turbulence model
-    // is active (nu_t can exceed the laminar viscosity by orders of magnitude).
-    if (params->turb_model != TURB_MODEL_NONE && field->nu_t) {
-        size_t total = field->nx * field->ny * field->nz;
-        double nu_t_max = 0.0;
-        double rho_min = field->rho[0];
-        for (size_t n = 0; n < total; n++) {
-            nu_t_max = max_double(nu_t_max, field->nu_t[n]);
-            rho_min = min_double(rho_min, field->rho[n]);
-        }
-        /* Minimum density gives the largest (most restrictive) local nu;
-         * floor it like the kernels do (local_nu) rather than substituting
-         * 1.0, which would overestimate the stable dt at low densities. */
-        double rho_ref = max_double(rho_min, 1e-10);
-        double nu_eff_max = params->mu / rho_ref + nu_t_max;
-        if (nu_eff_max > 0.0) {
-            int ndim = (grid->nz > 1) ? 3 : 2;
-            double dt_visc = (dmin * dmin) / (2.0 * nu_eff_max * ndim);
-            dt_visc *= params->cfl;  // Apply safety factor
-            dt_stable = min_double(dt_stable, dt_visc);
-        }
-    }
-
-    // Limit time step to reasonable bounds
-    double dt_max = DT_MAX_LIMIT;  // Maximum allowed time step
-    double dt_min = DT_MIN_LIMIT;  // Minimum allowed time step
-
-    params->dt = max_double(dt_min, min_double(dt_max, dt_stable));
+    return params->cfl * ns_grid_min_spacing(grid) / max_speed;
 }
 
+/**
+ * Viscous diffusion limit: dt < dmin^2 / (2 * nu_eff * ndim).
+ *
+ * Applies to the molecular viscosity as well as any eddy viscosity. It scales
+ * as dmin^2 against the convective limit's dmin, so it becomes the binding
+ * constraint as grids refine: at Re=100 on a 129x129 unit cavity it is already
+ * several times tighter than the CFL limit.
+ */
+double ns_dt_viscous(const flow_field* field, const grid* grid,
+                     const ns_solver_params_t* params) {
+    size_t total = field->nx * field->ny * field->nz;
+    double nu_t_max = 0.0;
+    double rho_min = field->rho[0];
+
+    for (size_t n = 0; n < total; n++) {
+        rho_min = min_double(rho_min, field->rho[n]);
+    }
+    /* Eddy viscosity counts only when a model is active and has run; it can
+     * exceed the molecular value by orders of magnitude. */
+    if (params->turb_model != TURB_MODEL_NONE && field->nu_t) {
+        for (size_t n = 0; n < total; n++) {
+            nu_t_max = max_double(nu_t_max, field->nu_t[n]);
+        }
+    }
+
+    /* Minimum density gives the largest (most restrictive) local nu; floor it
+     * like the kernels do (local_nu) rather than substituting 1.0, which would
+     * overestimate the stable dt at low densities. */
+    double rho_ref = max_double(rho_min, 1e-10);
+    double nu_eff_max = params->mu / rho_ref + nu_t_max;
+    if (nu_eff_max <= 0.0) {
+        return INFINITY;  /* inviscid: no diffusive limit */
+    }
+
+    int ndim = (grid->nz > 1) ? 3 : 2;
+    double dmin = ns_grid_min_spacing(grid);
+    return params->cfl * (dmin * dmin) / (2.0 * nu_eff_max * ndim);
+}
+
+/** Thermal diffusion limit: dt < dmin^2 / (2 * alpha * ndim). */
+double ns_dt_thermal(const flow_field* field, const grid* grid,
+                     const ns_solver_params_t* params) {
+    (void)field;
+    if (params->alpha <= 0.0) {
+        return INFINITY;  /* energy equation inactive */
+    }
+    int ndim = (grid->nz > 1) ? 3 : 2;
+    double dmin = ns_grid_min_spacing(grid);
+    return params->cfl * (dmin * dmin) / (2.0 * params->alpha * ndim);
+}
+
+void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* params) {
+    double dt_stable = ns_dt_convective(field, grid, params);
+    dt_stable = min_double(dt_stable, ns_dt_viscous(field, grid, params));
+    dt_stable = min_double(dt_stable, ns_dt_thermal(field, grid, params));
+
+    // Limit time step to reasonable bounds
+    params->dt = max_double(DT_MIN_LIMIT, min_double(DT_MAX_LIMIT, dt_stable));
+}
 void apply_boundary_conditions(flow_field* field, const grid* grid) {
     (void)grid;
     size_t nx = field->nx;
