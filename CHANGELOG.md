@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Helmholtz shift in the Poisson solvers** — new
+  `poisson_solver_params_t.helmholtz_shift` (sigma; 0 = the existing pure-Poisson path).
+  The solved equation becomes `nabla^2 x - sigma*x = rhs`, which is what implicit diffusion
+  needs: `(I - nu*dt*nabla^2)u = b` rearranges to sigma = 1/(nu*dt) with rhs = -b/(nu*dt).
+  Because `-nabla^2` is already SPD, a positive shift makes the operator strictly
+  diagonally dominant, so it is better conditioned than the pressure solve beside it:
+  `lambda_min = sigma` exactly and `cond = 1 + 8d` with `d = nu*dt/h^2`. Measured on a
+  65x65 mixed-mode problem, CG takes 160 iterations at sigma = 0 and 5 at sigma = 1e6; over
+  a 33 -> 129 refinement the unshifted count grows 78 -> 325 while the shifted one moves
+  4 -> 6.
+  The shift is applied through the existing `axpy` primitive at the call site rather than
+  fused into the kernels, so at sigma = 0 the branch is not taken and the unshifted path
+  executes the instructions it always did — bit-identity by construction rather than by an
+  IEEE argument, and immune to `0.0 * inf`. Verified by memcmp against an untouched
+  `params_default()` solve, including a `-0.0` shift.
+  Support is default-deny from one central table rather than a check per `*_init`: a
+  backend that ignored the shift would silently solve the unshifted equation, which is a
+  wrong answer rather than a slow one. Scalar CG implements it (with
+  `POISSON_PRECOND_JACOBI`); every other method, backend and the multigrid preconditioner
+  return `CFD_ERROR_UNSUPPORTED` at init, and negative or non-finite shifts return
+  `CFD_ERROR_INVALID` — a negative shift is the indefinite Helmholtz operator, which is
+  not SPD. Verified exact against a discrete manufactured solution to 3e-16 in 2D and
+  5e-15 in 3D across sigma from 0 to 1e8, with a sweep asserting all 20 (method, backend)
+  pairs behave as the table says
+  (`lib/include/cfd/solvers/poisson_solver.h`, `lib/src/solvers/linear/linear_solver.c`,
+  `lib/src/solvers/linear/linear_solver_internal.h`,
+  `lib/src/solvers/linear/cpu/linear_solver_cg.c`, `tests/math/test_helmholtz_shift.c`,
+  `tests/solvers/test_linear_solver.c`).
 - **First-order upwind convection** — new `ns_solver_params_t.convection_scheme` field
   (`ns_convection_scheme_t`; 0 = existing central differencing, unchanged).
   `NS_CONVECTION_SCHEME_UPWIND` takes each convective first derivative from the side the
