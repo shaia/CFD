@@ -47,6 +47,7 @@ poisson_solver_params_t poisson_solver_params_default(void) {
     params.verbose = false;
     params.preconditioner = POISSON_PRECOND_NONE;
     params.restart = 0;  /* 0 = auto (GMRES_DEFAULT_RESTART); ignored by non-GMRES methods */
+    params.helmholtz_shift = 0.0;  /* 0 = pure Poisson */
     params.mg_cycle = MG_CYCLE_V;
     params.mg_smoother = MG_SMOOTHER_REDBLACK_GS;
     params.mg_bc = MG_BC_NEUMANN;
@@ -348,6 +349,27 @@ cfd_status_t poisson_solver_init(
         solver->params = poisson_solver_params_default();
     }
 
+    /* Helmholtz shift: validate, then default-deny any backend that has not
+     * been taught it. Ignoring a nonzero shift would silently solve the
+     * unshifted equation. */
+    {
+        double shift = solver->params.helmholtz_shift;
+        if (!isfinite(shift) || shift < 0.0) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                "helmholtz_shift must be finite and >= 0 (a negative shift is the "
+                "indefinite Helmholtz operator, which is not SPD)");
+            return CFD_ERROR_INVALID;
+        }
+        if (shift != 0.0 &&
+            !poisson_solver_shift_supported(solver->method, solver->backend,
+                                            &solver->params)) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "helmholtz_shift is currently supported only by the scalar CG solver "
+                "without the multigrid preconditioner");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+    }
+
     /* Adjust max_iterations for Jacobi (needs more iterations) */
     if (solver->method == POISSON_METHOD_JACOBI && params == NULL) {
         solver->params.max_iterations = 2000;
@@ -391,6 +413,7 @@ double poisson_solver_compute_residual(
     double dx2 = solver->dx * solver->dx;
     double dy2 = solver->dy * solver->dy;
     double inv_dz2 = poisson_solver_compute_inv_dz2(solver->dz);
+    double sigma = solver->params.helmholtz_shift;
 
     size_t stride_z, k_start, k_end;
     poisson_solver_compute_3d_bounds(solver->nz, nx, ny,
@@ -410,7 +433,12 @@ double poisson_solver_compute_residual(
                   + (x[idx + stride_z] + x[idx - stride_z]
                      - 2.0 * x[idx]) * inv_dz2;
 
-                double residual = fabs(laplacian - rhs[idx]);
+                /* Operator is nabla^2 - sigma*I; sigma = 0 leaves this exact. */
+                double diff = laplacian - rhs[idx];
+                if (sigma != 0.0) {
+                    diff -= sigma * x[idx];
+                }
+                double residual = fabs(diff);
                 /* A NaN compares false against everything, so without the
                  * isnan() a diverged field would read as a zero residual */
                 if (residual > max_residual || isnan(residual)) {
