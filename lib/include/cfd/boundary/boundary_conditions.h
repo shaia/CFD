@@ -21,8 +21,11 @@ typedef enum {
     BC_TYPE_NEUMANN,    // Zero gradient: boundary = adjacent interior value
     BC_TYPE_DIRICHLET,  // Fixed value: boundary = specified constant value
     BC_TYPE_NOSLIP,     // No-slip wall: velocity = 0 at all boundaries
-    BC_TYPE_INLET,      // Inlet velocity specification (placeholder for future)
-    BC_TYPE_OUTLET,     // Outlet/convective (placeholder for future)
+    BC_TYPE_INLET,      // Inlet velocity profile; apply via bc_apply_inlet()
+                        //   (needs a bc_inlet_config_t, so not usable via the
+                        //   type-enum entry points)
+    BC_TYPE_OUTLET,     // Outlet/convective; apply via bc_apply_outlet()
+                        //   (needs a bc_outlet_config_t, likewise)
     BC_TYPE_SYMMETRY    // Symmetry plane: zero normal velocity, zero tangential gradient
 } bc_type_t;
 
@@ -38,7 +41,10 @@ typedef enum {
     BC_BACKEND_SCALAR,  // Force scalar implementation (single-threaded)
     BC_BACKEND_OMP,     // Force OpenMP implementation (multi-threaded, scalar loops)
     BC_BACKEND_SIMD,    // Force SIMD + OpenMP (runtime: AVX2 on x86, NEON on ARM)
-    BC_BACKEND_CUDA     // Force CUDA GPU implementation
+    /* Reports unavailable from this host API by design: the GPU boundary kernels
+     * are device-side, taking device pointers and a CUDA stream. Use them from
+     * device code via cfd/boundary/boundary_conditions_gpu.cuh. */
+    BC_BACKEND_CUDA
 } bc_backend_t;
 
 /**

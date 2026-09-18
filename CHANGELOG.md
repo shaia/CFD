@@ -140,6 +140,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Boundary-condition availability messages say what is actually true.**
+  `BC_BACKEND_CUDA` reported "CUDA not yet implemented" while the GPU boundary kernels
+  existed and were already driving the GPU solvers. They are device-side -- device
+  pointers plus a CUDA stream -- and so cannot be reached through `bc_backend_impl_t`,
+  a host-pointer table; routing them through it would force a host round-trip per call
+  or reinterpret host pointers as device pointers. The host API still reports the
+  backend unavailable, now saying why and pointing at
+  `cfd/boundary/boundary_conditions_gpu.cuh`. Likewise `BC_TYPE_INLET`/`BC_TYPE_OUTLET`
+  warned "not implemented" from `apply_scalar_field_bc()` though both are implemented on
+  every backend; what they cannot do is travel through the config-free type-enum path,
+  exactly like `BC_TYPE_DIRICHLET` and `BC_TYPE_NOSLIP`. They now name
+  `bc_apply_inlet()`/`bc_apply_outlet()` and return `CFD_ERROR_INVALID` rather than
+  `CFD_ERROR_UNSUPPORTED`, which tests key on to skip a genuinely missing backend
+  (`lib/src/boundary/boundary_conditions.c`, `lib/include/cfd/boundary/boundary_conditions.h`).
 - **The laminar viscous stability limit is now applied.** `compute_time_step()` gated the
   viscous constraint `dt < h^2 / (2*nu_eff*ndim)` behind `turb_model != TURB_MODEL_NONE`,
   so for laminar flow it never ran and `compute_dt` could return an unstable step. The
