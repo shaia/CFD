@@ -24,6 +24,7 @@
 
 #include "../boundary_copy_utils.h"
 #include "../ns_convection_internal.h"
+#include "../ns_simd_backend_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -99,11 +100,22 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         return CFD_ERROR_UNSUPPORTED;
     }
 
-    /* Verify SIMD CG Poisson solver is available before allocating resources */
+    /* Same guard as the other SIMD solvers, so one build configuration gives one
+     * error rather than three. */
+    cfd_status_t simd_status = ns_check_simd_backend();
+    if (simd_status != CFD_SUCCESS) {
+        return simd_status;
+    }
+
+    /* The SIMD Poisson kernels are threaded, so they additionally need OpenMP --
+     * a stricter requirement than the NS kernels above. Probe for the real
+     * sub-solver rather than inferring it. */
     poisson_solver_t* test_solver = poisson_solver_create(
         POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
     if (!test_solver) {
-        CFD_LOG_WARNING("projection", "SIMD CG Poisson solver not available");
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "SIMD CG Poisson solver unavailable: the SIMD Poisson backend "
+                      "requires OpenMP");
         return CFD_ERROR_UNSUPPORTED;
     }
     poisson_solver_destroy(test_solver);

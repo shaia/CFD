@@ -77,10 +77,12 @@ void test_cpu_features_detection(void) {
 
 void test_simd_backend_availability(void) {
     int simd_available = cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD);
-    int has_simd = cfd_has_simd();
 
-    // Backend availability should match CPU feature detection
-    TEST_ASSERT_EQUAL(has_simd, simd_available);
+    // Availability requires compiled-in kernels AND CPU support, so it implies
+    // cfd_has_simd() but is not implied by it (AVX2 is off by default).
+    if (simd_available) {
+        TEST_ASSERT_TRUE(cfd_has_simd());
+    }
 
     const char* backend_name = cfd_backend_get_name(NS_SOLVER_BACKEND_SIMD);
     TEST_ASSERT_NOT_NULL(backend_name);

@@ -481,9 +481,14 @@ every push to master, about 50 minutes):
 - [x] Full Ghia validation at 129×129 for Re=100, 400, 1000 — AVX2/OMP/GPU projection RMS
   ≤ 0.033, recorded in `docs/validation/cavity-backends-validation.md`
 - [ ] Extended cavity convergence to true steady-state (residual < 1e-8)
-- [ ] Explicit Euler cavity cases stop at 11,300–11,800 steps (t ≈ 1.1–1.2) through the harness's
-  kinetic-energy exit, on the 33×33 CI grid (of 25,000) and at 129×129 (of 250,000) alike; make
-  them run to a developed flow or drop them from Ghia validation
+- [x] Explicit Euler cavity cases stopped at 11,300–11,800 steps (t ≈ 1.1–1.2) through the
+  harness's kinetic-energy exit. The exit compared the change in kinetic energy **per step**
+  against a fixed threshold, which scales with dt and so measured the step size as much as
+  the flow; it is now a rate, `|d(ln KE)/dt| < 1e-6`, taken from the step the solver
+  actually used. The 129×129 Euler cases are dropped (the "or" of this item): they cost
+  ~1 h of EC2 to hold a non-production solver to a relaxed target, and were never evidence
+  of 129×129 accuracy. Euler stays validated at 33×33. See
+  `docs/validation/cavity-backends-validation.md`
 - [ ] Multi-Reynolds grid-convergence study (Richardson extrapolation)
 - [ ] Extended-time Taylor-Green decay-rate verification
 - [ ] Cross-architecture consistency (all backends identical within 0.1%)
