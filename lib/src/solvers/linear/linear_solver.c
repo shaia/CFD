@@ -469,6 +469,57 @@ void poisson_solver_apply_bc(
     }
 }
 
+void poisson_solver_krylov_apply_bc(
+    poisson_solver_t* solver,
+    double* x)
+{
+    if (!solver || !x) {
+        return;
+    }
+
+    /* Zero the halo first, then let any hook write over it.
+     *
+     * For the default zero-gradient walls that is the whole job: their homogeneous
+     * form is what the Krylov correction space uses, and that space holds the walls
+     * at zero. Zeroed rather than left alone, because callers warm-start from a
+     * field whose walls carry the previous solve's extension.
+     *
+     * A custom hook is assumed to prescribe wall values that do not depend on the
+     * interior -- every one in this tree is a Dirichlet wall-setter. Those values
+     * ARE the lift, so the residual picks the wall contribution up, which is what
+     * lifting an inhomogeneous Dirichlet problem onto a homogeneous one requires.
+     * Zeroing first means a hook that only writes some walls, or that holds them at
+     * zero by writing nothing, still leaves no stale value behind for a warm start
+     * to trip on. */
+    size_t nx = solver->nx;
+    size_t ny = solver->ny;
+    size_t nz = solver->nz;
+    size_t plane_size = nx * ny;
+
+    size_t k_first = 0;
+    size_t k_last = 1;
+    if (nz > 1) {
+        memset(x, 0, plane_size * sizeof(double));
+        memset(x + (nz - 1) * plane_size, 0, plane_size * sizeof(double));
+        k_first = 1;
+        k_last = nz - 1;
+    }
+
+    for (size_t k = k_first; k < k_last; k++) {
+        double* plane = x + k * plane_size;
+        memset(plane, 0, nx * sizeof(double));                 /* j = 0 */
+        memset(plane + (ny - 1) * nx, 0, nx * sizeof(double)); /* j = ny-1 */
+        for (size_t j = 1; j < ny - 1; j++) {
+            plane[j * nx] = 0.0;                               /* i = 0 */
+            plane[(j * nx) + (nx - 1)] = 0.0;                  /* i = nx-1 */
+        }
+    }
+
+    if (solver->apply_bc) {
+        solver->apply_bc(solver, x);
+    }
+}
+
 /**
  * Common solve loop used by all solvers
  */

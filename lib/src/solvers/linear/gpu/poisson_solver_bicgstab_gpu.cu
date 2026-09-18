@@ -261,8 +261,19 @@ static cfd_status_t bicgstab_gpu_solve(poisson_solver_t* solver,
         || cudaMemsetAsync(c->d_t, 0, bytes, stream) != cudaSuccess)
         return CFD_ERROR;
 
-    /* BC on the initial guess, then r0 = b - A x0, r_hat = r0. */
-    bc_apply_scalar_3d_gpu(c->d_x, c->nx, c->ny, c->nz, BC_TYPE_NEUMANN, stream);
+    /* Halo on the initial guess, then r0 = b - A x0, r_hat = r0. Zeroed, not
+     * extended: the matvec holds the walls at zero (the Krylov vectors keep the
+     * zero boundary set above), so a Neumann extension here would make r0 describe
+     * a different operator than the one inverted, and any non-zero initial guess
+     * would converge to a field solving neither system. The final BC still extends
+     * the answer. */
+    {
+        size_t total = c->nx * c->ny * c->nz;
+        int halo_threads = 256;
+        int halo_blocks = (int)((total + (size_t)halo_threads - 1) / (size_t)halo_threads);
+        lin_gpu_kernel_zero_halo<<<halo_blocks, halo_threads, 0, stream>>>(
+            c->d_x, c->nx, c->ny, c->nz);
+    }
     bicgstab_gpu_detail::residual(d, c->d_x, c->d_rhs, c->d_r);
     if (cudaMemcpyAsync(c->d_r_hat, c->d_r, bytes, cudaMemcpyDeviceToDevice, stream)
         != cudaSuccess)

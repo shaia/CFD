@@ -81,6 +81,24 @@ poisson_solver_t* create_multigrid_omp_solver(void);
 #endif
 
 /**
+ * Prepare x's boundary values for a Krylov solve, before the initial residual.
+ *
+ * The Krylov solvers (CG, BiCGSTAB, GMRES) update interior points only, and their
+ * search directions carry a permanent zero halo, so the operator they invert holds
+ * the walls at zero. The initial residual has to be formed against that same
+ * operator, or the solve converges to a field that solves neither system: what it
+ * returns satisfies A_dirichlet*x = b + (A_dirichlet - A_bc)*x0, and the error term
+ * is O(x0/h^2) at every wall-adjacent point.
+ *
+ * So the halo must carry only the part of the boundary condition that does not
+ * depend on the interior -- the lift. Use this in place of
+ * poisson_solver_apply_bc() for the initial residual; the final apply_bc that
+ * fills the output halo stays as it is. Between the two, nothing writes the halo,
+ * so a residual recomputed mid-solve (GMRES at each restart) stays consistent.
+ */
+void poisson_solver_krylov_apply_bc(poisson_solver_t* solver, double* x);
+
+/**
  * Reject POISSON_PRECOND_MULTIGRID on backends that don't implement it.
  * Only the scalar and OpenMP CG solvers support the MG preconditioner;
  * silently ignoring it would be a forbidden silent fallback.

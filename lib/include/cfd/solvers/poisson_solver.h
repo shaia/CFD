@@ -282,7 +282,14 @@ struct poisson_solver {
                                                 install a function here before poisson_solver_init() rather
                                                 than writing the walls between iterations. The CUDA SOR and
                                                 Red-Black SOR solvers apply the walls on the device, and their
-                                                init rejects a function here with CFD_ERROR_UNSUPPORTED. */
+                                                init rejects a function here with CFD_ERROR_UNSUPPORTED.
+                                                The Krylov solvers (CG, BiCGSTAB, GMRES) update interior points
+                                                only and their search directions carry a zero halo, so the
+                                                operator they invert holds the walls at zero; a function here
+                                                must therefore prescribe wall values that do not depend on the
+                                                interior, which is what lifting an inhomogeneous Dirichlet
+                                                problem onto a homogeneous one needs. The stationary and
+                                                multigrid solvers honour any hook throughout. */
 };
 
 /* ============================================================================

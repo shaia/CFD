@@ -286,6 +286,29 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
                                                  POISSON_BACKEND_SIMD);
 ```
 
+**What the Krylov solvers invert.** CG, BiCGSTAB and GMRES update interior points
+only, and their search directions carry a permanent zero halo, so the operator
+they invert holds the walls at zero. Two things follow.
+
+The initial residual is built from the same convention, so **warm-starting is
+safe**: a solve begun from the previous step's field converges to the field a
+cold start reaches, and gets there in far fewer iterations. (Before v0.3.0 the
+residual was built from the zero-gradient extension instead, and any non-zero
+initial guess converged to a field solving neither system.)
+
+An `apply_bc` hook must prescribe wall values that **do not depend on the
+interior** — a Dirichlet lift. Those values enter the residual and the solve
+returns the interior of the lifted problem, which is the standard way to handle
+inhomogeneous Dirichlet walls. A hook that extended the interior outwards instead
+would not change the operator being inverted and so would be silently ignored.
+The stationary (Jacobi, SOR, Red-Black SOR) and multigrid solvers re-apply the
+hook on every sweep and honour either kind.
+
+Because the walls are held at zero rather than at zero gradient, the Krylov
+operator is nonsingular: unlike standalone multigrid in `MG_BC_NEUMANN` mode, these
+solvers do not require a compatible (zero-mean) RHS, and their solution carries no
+free additive constant.
+
 #### 5. Preconditioned CG (PCG)
 
 **Algorithm:** CG with preconditioner M to improve conditioning.

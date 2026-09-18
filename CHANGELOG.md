@@ -140,6 +140,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Krylov solvers form their initial residual against the operator they invert.** CG,
+  BiCGSTAB and GMRES update interior points only, and their search directions carry a
+  permanent zero halo, so the operator they invert holds the walls at zero. The initial
+  residual, however, was formed from `x` after `apply_bc` had filled its halo with
+  zero-gradient copies of the interior. The two agree only when the initial guess is zero;
+  for any other guess they disagreed at wall-adjacent points, and the solve converged to a
+  field satisfying neither system — it returned `x` with
+  `A_dirichlet*x = b + (A_dirichlet - A_neumann)*x0`, an error of O(x0/h²) along every wall.
+  Measured on a 33×33 Poisson problem, re-solving from an already-converged field moved it
+  by 9.4% of its own magnitude on all six CPU Krylov backends.
+  This reached real runs: the projection solver warm-starts each pressure solve from the
+  previous pressure, so every inner iteration after the first took the inconsistent path.
+  The initial residual is now built with only the part of the boundary condition that does
+  not depend on the interior (the lift), which is the zero halo for the default
+  zero-gradient walls and the prescribed wall values for a Dirichlet hook. Nothing writes
+  the halo between then and the final `apply_bc`, so GMRES's per-restart residual stays
+  consistent too. The operator itself is unchanged, so a zero initial guess — every
+  existing test, and the first projection iteration — produces bit-identical results;
+  warm-started solves now converge to the same field a cold start reaches, and do it in
+  0–3 iterations instead of tens. The 3D `projection` regression goldens were re-pinned:
+  velocity moves by ~5e-7 relative, and `L2(p)` drops from ~1.0 to ~8.9e-4 because the old
+  solve never removed the constant initial pressure (a constant is annihilated by the
+  zero-gradient extension but is not admitted by the operator being inverted). Pressure
+  enters the projection only through its gradient, so that constant never moved the velocity
+  (`lib/src/solvers/linear/linear_solver.c`,
+  `lib/src/solvers/linear/linear_solver_internal.h`,
+  `lib/src/solvers/linear/cpu/linear_solver_cg.c`,
+  `lib/src/solvers/linear/cpu/linear_solver_bicgstab.c`,
+  `lib/src/solvers/linear/avx2/linear_solver_cg_avx2.c`,
+  `lib/src/solvers/linear/neon/linear_solver_cg_neon.c`,
+  `lib/src/solvers/linear/omp/linear_solver_cg_omp.c`,
+  `lib/src/solvers/linear/omp/linear_solver_bicgstab_omp.c`,
+  `lib/src/solvers/linear/simd_template/linear_solver_bicgstab_simd_template.h`,
+  `lib/src/solvers/linear/gmres_template/linear_solver_gmres_template.h`,
+  `tests/math/test_krylov_warm_start.c`,
+  `tests/solvers/navier_stokes/cpu/test_ns_solver_3d.c`).
+  NOT YET MERGEABLE — this exposes a second defect it does not fix. The Krylov pressure
+  solve holds the pressure at zero on every wall, inlet and outlet included, which is the
+  wrong boundary condition for the projection method; the walls should be zero-gradient.
+  Until now the inconsistent residual masked it by letting a caller's initial pressure leak
+  through, so `PoiseuilleFlowTest`, `Poiseuille3DTest` and `TurbulentChannelTest` were
+  driven by the pressure field they initialise rather than by one the solver generates.
+  With the residual made consistent that field is recomputed from scratch each step, the
+  streamwise gradient collapses (`dp/dx` -1.275 -> -0.295 against an analytical -1.6) and
+  those three validation tests fail. Giving the pressure solve real Neumann walls is the
+  follow-up; the closed-domain benchmarks (Ghia cavity, Taylor-Green, MMS, natural
+  convection) are unaffected and pass.
 - **`explicit_euler_optimized` updates every interior column.** The AVX2 row loop processed
   4-wide groups with no scalar remainder, so when `(nx-2) % 4 != 0` the last 1-3 interior
   columns of each row kept their old values (3 per row at 33×33 and 129×129). The remainder

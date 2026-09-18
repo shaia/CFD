@@ -338,8 +338,9 @@ static cfd_status_t GMRES_FUNC(gmres_solve)(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    /* Apply initial boundary conditions */
-    poisson_solver_apply_bc(solver, x);
+    /* Not poisson_solver_apply_bc: the initial residual has to see the same walls
+     * the iteration below inverts. See poisson_solver_krylov_apply_bc. */
+    poisson_solver_krylov_apply_bc(solver, x);
 
     /* Initial residual r_0 = b - A x_0 into V[0] */
     GMRES_RESIDUAL(x, rhs, Vblock, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);

@@ -229,10 +229,38 @@ static __global__ void lin_gpu_kernel_spd_laplacian(const double* __restrict__ x
 }
 
 /**
+ * Zero every boundary cell of a field, leaving the interior untouched.
+ *
+ * The Krylov vectors r/p/Ap hold their boundary at zero from the memset above,
+ * so the operator lin_gpu_kernel_spd_laplacian applies holds the walls at zero.
+ * The initial guess has to match before the residual is formed, or r0 describes
+ * a different operator than the one the iteration inverts. One thread per cell,
+ * once per solve, which is nothing beside the iteration loop.
+ */
+static __global__ void lin_gpu_kernel_zero_halo(double* __restrict__ x,
+                                                size_t nx, size_t ny, size_t nz) {
+    size_t idx = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nx * ny * nz) {
+        return;
+    }
+
+    size_t plane = nx * ny;
+    size_t k = idx / plane;
+    size_t rem = idx - (k * plane);
+    size_t j = rem / nx;
+    size_t i = rem - (j * nx);
+
+    if (i == 0 || i == nx - 1 || j == 0 || j == ny - 1
+        || (nz > 1 && (k == 0 || k == nz - 1))) {
+        x[idx] = 0.0;
+    }
+}
+
+/**
  * CG initial residual vector: r = b - A*x with A = -Laplacian, b = -rhs, i.e.
  *   r = Laplacian(x) - rhs = (sum_neighbors - factor*x) - rhs.
- * Boundary cells of x must be set (Neumann) before launch; r is written on the
- * interior only.
+ * Boundary cells of x must carry the same wall values the matvec assumes -- zero,
+ * via lin_gpu_kernel_zero_halo -- before launch; r is written on the interior only.
  */
 static __global__ void lin_gpu_kernel_residual_vec(const double* __restrict__ x,
                                                    const double* __restrict__ rhs,
