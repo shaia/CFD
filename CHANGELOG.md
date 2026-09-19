@@ -140,53 +140,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Krylov solvers form their initial residual against the operator they invert.** CG,
-  BiCGSTAB and GMRES update interior points only, and their search directions carry a
-  permanent zero halo, so the operator they invert holds the walls at zero. The initial
-  residual, however, was formed from `x` after `apply_bc` had filled its halo with
-  zero-gradient copies of the interior. The two agree only when the initial guess is zero;
-  for any other guess they disagreed at wall-adjacent points, and the solve converged to a
-  field satisfying neither system — it returned `x` with
+- **The Krylov pressure solve uses the zero-gradient walls it always claimed, and forms
+  its residual against them.** CG, BiCGSTAB and GMRES update interior points only, so the
+  operator they invert is whatever their vectors' halos say it is. Their search directions
+  carried a permanent zero halo, making the operator Dirichlet, while the initial residual
+  was formed from `x` after `apply_bc` had filled its halo with zero-gradient copies of the
+  interior. Two defects, one on top of the other.
+  The residual and the operator disagreed for any non-zero initial guess, so the solve
+  converged to a field satisfying neither system — it returned `x` with
   `A_dirichlet*x = b + (A_dirichlet - A_neumann)*x0`, an error of O(x0/h²) along every wall.
   Measured on a 33×33 Poisson problem, re-solving from an already-converged field moved it
-  by 9.4% of its own magnitude on all six CPU Krylov backends.
-  This reached real runs: the projection solver warm-starts each pressure solve from the
-  previous pressure, so every inner iteration after the first took the inconsistent path.
-  The initial residual is now built with only the part of the boundary condition that does
-  not depend on the interior (the lift), which is the zero halo for the default
-  zero-gradient walls and the prescribed wall values for a Dirichlet hook. Nothing writes
-  the halo between then and the final `apply_bc`, so GMRES's per-restart residual stays
-  consistent too. The operator itself is unchanged, so a zero initial guess — every
-  existing test, and the first projection iteration — produces bit-identical results;
-  warm-started solves now converge to the same field a cold start reaches, and do it in
-  0–3 iterations instead of tens. The 3D `projection` regression goldens were re-pinned:
-  velocity moves by ~5e-7 relative, and `L2(p)` drops from ~1.0 to ~8.9e-4 because the old
-  solve never removed the constant initial pressure (a constant is annihilated by the
-  zero-gradient extension but is not admitted by the operator being inverted). Pressure
-  enters the projection only through its gradient, so that constant never moved the velocity
+  by 9.4% of its own magnitude on all six CPU Krylov backends. The projection solver
+  warm-starts each pressure solve from the previous pressure, so every inner iteration
+  after the first took that path.
+  And the operator itself was wrong: holding the pressure at zero on every wall is not the
+  boundary condition a projection method wants, and not the one the solver documented.
+  Each solver now applies the **homogeneous** part of the boundary condition to its search
+  directions before every operator apply, and the **full** condition to the iterate before
+  any residual — including GMRES at each restart, where the iterate has moved and the
+  extension is stale. For the default walls the homogeneous part is the zero-gradient
+  extension itself; for an `apply_bc` hook, whose prescribed values belong to the iterate,
+  it is a zero halo, since an inhomogeneous condition on a direction would make the
+  operator affine rather than linear.
+  Re-solving from a converged field now returns it in 0–3 iterations on every backend
+  (`tests/math/test_krylov_warm_start.c`, which states this as idempotence at the solution
+  and needs no reference to halos).
+  **Behaviour change:** with the default walls the operator is singular, the constants
+  being its nullspace, so the RHS must now have zero interior mean — the same requirement
+  standalone multigrid already has in `MG_BC_NEUMANN` mode. An incompatible RHS has no
+  solution and the solve returns `CFD_ERROR_MAX_ITER` rather than silently solving a
+  projected problem. The projection solvers subtract the interior mean of `div(u*)` on
+  every preset; callers who relied on a uniform RHS converging should install an `apply_bc`
+  hook to request Dirichlet walls, which is nonsingular and admits any RHS.
+  The 3D projection goldens were re-pinned: `L2(p)` now stays ~1.0, since a constant is in
+  the nullspace and the iteration keeps every direction mean-free, so the caller's pressure
+  level is carried rather than driven to zero walls; `L2(u)`/`L2(v)` move by ~3e-7 relative
   (`lib/src/solvers/linear/linear_solver.c`,
-  `lib/src/solvers/linear/linear_solver_internal.h`,
-  `lib/src/solvers/linear/cpu/linear_solver_cg.c`,
-  `lib/src/solvers/linear/cpu/linear_solver_bicgstab.c`,
-  `lib/src/solvers/linear/avx2/linear_solver_cg_avx2.c`,
-  `lib/src/solvers/linear/neon/linear_solver_cg_neon.c`,
-  `lib/src/solvers/linear/omp/linear_solver_cg_omp.c`,
-  `lib/src/solvers/linear/omp/linear_solver_bicgstab_omp.c`,
-  `lib/src/solvers/linear/simd_template/linear_solver_bicgstab_simd_template.h`,
-  `lib/src/solvers/linear/gmres_template/linear_solver_gmres_template.h`,
-  `tests/math/test_krylov_warm_start.c`,
+  `lib/src/solvers/linear/linear_solver_internal.h`, the six CPU Krylov backends and the
+  two GPU ones, `lib/src/solvers/navier_stokes/{cpu,omp,avx2}/solver_projection*.c`,
+  `tests/math/test_krylov_warm_start.c`, `tests/math/test_bicgstab.c`,
+  `tests/math/test_gmres.c`, `tests/solvers/test_linear_solver.c`,
   `tests/solvers/navier_stokes/cpu/test_ns_solver_3d.c`).
-  NOT YET MERGEABLE — this exposes a second defect it does not fix. The Krylov pressure
-  solve holds the pressure at zero on every wall, inlet and outlet included, which is the
-  wrong boundary condition for the projection method; the walls should be zero-gradient.
-  Until now the inconsistent residual masked it by letting a caller's initial pressure leak
-  through, so `PoiseuilleFlowTest`, `Poiseuille3DTest` and `TurbulentChannelTest` were
-  driven by the pressure field they initialise rather than by one the solver generates.
-  With the residual made consistent that field is recomputed from scratch each step, the
-  streamwise gradient collapses (`dp/dx` -1.275 -> -0.295 against an analytical -1.6) and
-  those three validation tests fail. Giving the pressure solve real Neumann walls is the
-  follow-up; the closed-domain benchmarks (Ghia cavity, Taylor-Green, MMS, natural
-  convection) are unaffected and pass.
+  STILL OPEN — pressure-driven channels need mixed walls, which this does not add.
+  `PoiseuilleFlowTest`, `Poiseuille3DTest` and `TurbulentChannelTest` want zero-gradient
+  walls at the solid boundaries and the inlet but a prescribed pressure at the outlet, and
+  the solver takes one condition for the whole domain. With zero-gradient everywhere,
+  dp/dx cannot develop where the test measures it, just downstream of the outlet:
+  it reads -0.891 against an analytical -1.600 (it was -1.275 on master, where the
+  inconsistent residual let the initialised pressure field leak through instead of being
+  recomputed). Per-face boundary conditions on the Poisson solver are the follow-up.
 - **`explicit_euler_optimized` updates every interior column.** The AVX2 row loop processed
   4-wide groups with no scalar remainder, so when `(nx-2) % 4 != 0` the last 1-3 interior
   columns of each row kept their old values (3 per row at 33×33 and 129×129). The remainder

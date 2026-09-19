@@ -287,27 +287,38 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
 ```
 
 **What the Krylov solvers invert.** CG, BiCGSTAB and GMRES update interior points
-only, and their search directions carry a permanent zero halo, so the operator
-they invert holds the walls at zero. Two things follow.
+only, so the operator they invert is whatever their vectors' halos say it is. Each
+applies the **homogeneous** part of the boundary condition to its search directions
+before every operator apply, and the **full** condition to the iterate before the
+initial residual — an inhomogeneous condition on a direction would make the
+operator affine rather than linear, which the Krylov recurrences do not describe.
 
-The initial residual is built from the same convention, so **warm-starting is
-safe**: a solve begun from the previous step's field converges to the field a
-cold start reaches, and gets there in far fewer iterations. (Before v0.3.0 the
-residual was built from the zero-gradient extension instead, and any non-zero
+Residual and operator therefore agree, so **warm-starting is safe**: a solve begun
+from the previous step's field converges to the field a cold start reaches, and gets
+there in far fewer iterations. (Before v0.3.0 the residual was built from the
+zero-gradient extension while the directions carried a zero halo, so any non-zero
 initial guess converged to a field solving neither system.)
 
-An `apply_bc` hook must prescribe wall values that **do not depend on the
-interior** — a Dirichlet lift. Those values enter the residual and the solve
-returns the interior of the lifted problem, which is the standard way to handle
-inhomogeneous Dirichlet walls. A hook that extended the interior outwards instead
-would not change the operator being inverted and so would be silently ignored.
-The stationary (Jacobi, SOR, Red-Black SOR) and multigrid solvers re-apply the
-hook on every sweep and honour either kind.
+With the default `apply_bc` (NULL) the walls are zero-gradient, which is already
+homogeneous and is applied throughout. That operator is **singular** — the
+constants are its nullspace — so, exactly as for standalone multigrid in
+`MG_BC_NEUMANN` mode, the RHS must be compatible:
 
-Because the walls are held at zero rather than at zero gradient, the Krylov
-operator is nonsingular: unlike standalone multigrid in `MG_BC_NEUMANN` mode, these
-solvers do not require a compatible (zero-mean) RHS, and their solution carries no
-free additive constant.
+```c
+mg_subtract_interior_mean(rhs, nx, ny, nz);   /* what the projection solvers do */
+```
+
+An incompatible RHS has no solution, and the solve stalls on the component lying in
+the nullspace and returns `CFD_ERROR_MAX_ITER`. The solution also carries a free
+additive constant; the iteration keeps every direction mean-free, so the level is
+whatever the initial guess had.
+
+Installing an `apply_bc` hook instead prescribes wall values that **must not depend
+on the interior** — a Dirichlet lift. Those values enter the residual and the solve
+returns the interior of the lifted problem, which is the standard way to handle
+inhomogeneous Dirichlet walls; the operator is then nonsingular and any RHS is
+admissible. The stationary (Jacobi, SOR, Red-Black SOR) and multigrid solvers
+re-apply the hook on every sweep and honour either kind.
 
 #### 5. Preconditioned CG (PCG)
 

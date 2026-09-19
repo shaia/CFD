@@ -205,9 +205,10 @@ static __global__ void lin_gpu_kernel_laplacian(const double* __restrict__ x,
  *
  * The plain Laplacian is negative-definite, so CG operates on A = -Laplacian,
  * which is symmetric positive-definite (on the space orthogonal to constants).
- * This matches the CPU CG convention (A = -nabla^2, b = -rhs). Interior-only;
- * boundary cells of p stay zero (set once by calloc/memset) so no BC pass is
- * needed between matvecs.
+ * This matches the CPU CG convention (A = -nabla^2, b = -rhs). Interior-only, and
+ * it reads p's boundary, so the caller applies the zero-gradient extension to p
+ * before each matvec -- that extension is what makes this the operator the walls
+ * describe, and p is rebuilt from interior-only updates every iteration.
  */
 static __global__ void lin_gpu_kernel_spd_laplacian(const double* __restrict__ x,
                                                     double* __restrict__ out,
@@ -229,38 +230,11 @@ static __global__ void lin_gpu_kernel_spd_laplacian(const double* __restrict__ x
 }
 
 /**
- * Zero every boundary cell of a field, leaving the interior untouched.
- *
- * The Krylov vectors r/p/Ap hold their boundary at zero from the memset above,
- * so the operator lin_gpu_kernel_spd_laplacian applies holds the walls at zero.
- * The initial guess has to match before the residual is formed, or r0 describes
- * a different operator than the one the iteration inverts. One thread per cell,
- * once per solve, which is nothing beside the iteration loop.
- */
-static __global__ void lin_gpu_kernel_zero_halo(double* __restrict__ x,
-                                                size_t nx, size_t ny, size_t nz) {
-    size_t idx = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= nx * ny * nz) {
-        return;
-    }
-
-    size_t plane = nx * ny;
-    size_t k = idx / plane;
-    size_t rem = idx - (k * plane);
-    size_t j = rem / nx;
-    size_t i = rem - (j * nx);
-
-    if (i == 0 || i == nx - 1 || j == 0 || j == ny - 1
-        || (nz > 1 && (k == 0 || k == nz - 1))) {
-        x[idx] = 0.0;
-    }
-}
-
-/**
  * CG initial residual vector: r = b - A*x with A = -Laplacian, b = -rhs, i.e.
  *   r = Laplacian(x) - rhs = (sum_neighbors - factor*x) - rhs.
- * Boundary cells of x must carry the same wall values the matvec assumes -- zero,
- * via lin_gpu_kernel_zero_halo -- before launch; r is written on the interior only.
+ * Boundary cells of x must carry the same wall values the matvec assumes -- the
+ * zero-gradient extension, via bc_apply_scalar_3d_gpu -- before launch; r is
+ * written on the interior only.
  */
 static __global__ void lin_gpu_kernel_residual_vec(const double* __restrict__ x,
                                                    const double* __restrict__ rhs,
@@ -360,6 +334,56 @@ static __global__ void lin_gpu_kernel_dot(const double* __restrict__ a,
     lin_gpu_block_reduce(sdata, tid, blockDim.x * blockDim.y);
     if (tid == 0)
         atomicAdd(out_sum, sdata[0]);
+}
+
+/**
+ * Interior sum: accumulates sum over the interior of f[idx] into out_sum via
+ * block reduction + atomicAdd. out_sum must be zeroed before launch.
+ *
+ * Used with lin_gpu_kernel_subtract_interior for the Neumann compatibility
+ * projection: the zero-gradient operator is singular with the constants as its
+ * nullspace, so the right-hand side must have zero interior mean. Shared mem:
+ * blockDim.x*blockDim.y doubles. The atomicAdd ordering is nondeterministic, as
+ * it already is for lin_gpu_kernel_dot, so the mean is reproducible only to
+ * rounding.
+ */
+static __global__ void lin_gpu_kernel_interior_sum(const double* __restrict__ f,
+                                                   double* __restrict__ out_sum,
+                                                   size_t nx, size_t ny,
+                                                   size_t stride_z, int k_start, int k_end) {
+    extern __shared__ double sdata[];
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
+    int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
+
+    double local = 0.0;
+    if (i < (int)nx - 1 && j < (int)ny - 1) {
+        for (int k = k_start; k <= k_end; k++) {
+            local += f[(size_t)k * stride_z + IDX_2D(i, j, nx)];
+        }
+    }
+    sdata[tid] = local;
+    lin_gpu_block_reduce(sdata, tid, blockDim.x * blockDim.y);
+    if (tid == 0)
+        atomicAdd(out_sum, sdata[0]);
+}
+
+/**
+ * Subtract a constant from every interior cell, leaving the boundary alone.
+ * Paired with lin_gpu_kernel_interior_sum to remove the interior mean.
+ */
+static __global__ void lin_gpu_kernel_subtract_interior(double* __restrict__ f,
+                                                        double value,
+                                                        size_t nx, size_t ny,
+                                                        size_t stride_z,
+                                                        int k_start, int k_end) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
+    int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
+    if (i < (int)nx - 1 && j < (int)ny - 1) {
+        for (int k = k_start; k <= k_end; k++) {
+            f[(size_t)k * stride_z + IDX_2D(i, j, nx)] -= value;
+        }
+    }
 }
 
 /**

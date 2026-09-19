@@ -468,15 +468,30 @@ void test_bicgstab_l2_error(void) {
 }
 
 /**
+ * Hold every wall at zero.
+ *
+ * The manufactured solution below vanishes on the boundary, so this is the
+ * problem it actually poses. Requesting it explicitly also makes the operator
+ * nonsingular: the default zero-gradient walls give a singular Neumann system,
+ * and init_dirichlet_rhs is strictly negative, so its interior mean is nonzero
+ * and that system has no solution at all. The solver zeroes the halo before
+ * calling this hook, so it has nothing left to do.
+ */
+static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
+    (void)solver;
+    (void)x;
+}
+
+/**
  * Test BiCGSTAB with manufactured Dirichlet solution.
  *
  * Uses the manufactured solution p = sin(πx)sin(πy), which:
  * - Is zero on all boundaries of [0,1]² (natural Dirichlet BC)
  * - Has Laplacian ∇²p = -2π²sin(πx)sin(πy)
  *
- * Note: BiCGSTAB applies Neumann BCs internally, so the computed solution
- * may differ from the exact Dirichlet solution by a constant. We compare
- * after removing the mean from both solutions.
+ * Dirichlet walls are requested explicitly via hold_walls_at_zero. The means
+ * are still removed from both fields before comparing, which is now a no-op
+ * but costs nothing.
  *
  * Expected accuracy: O(h²) ≈ (1/32)² ≈ 0.001 for 33x33 grid.
  */
@@ -502,6 +517,7 @@ void test_bicgstab_dirichlet(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(solver);
+    solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = TOLERANCE;

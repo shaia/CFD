@@ -25,6 +25,7 @@
  */
 
 #include "../linear_solver_internal.h"
+#include "../multigrid_internal.h"  /* mg_subtract_interior_mean */
 
 #include "cfd/core/indexing.h"
 #include "cfd/core/logging.h"
@@ -432,7 +433,10 @@ static cfd_status_t cg_scalar_solve(
     double res_norm = initial_res;
 
     for (iter = 0; iter < params->max_iterations; iter++) {
-        /* Compute Ap = A * p */
+        /* Compute Ap = A * p. The halo carries the homogeneous boundary condition,
+         * which is what makes A the operator the walls describe; p is rebuilt from
+         * interior-only updates, so this has to run every iteration. */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, p);
         apply_laplacian(p, Ap, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
         /* alpha = rho / (p, Ap) */

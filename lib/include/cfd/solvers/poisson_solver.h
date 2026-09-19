@@ -283,13 +283,16 @@ struct poisson_solver {
                                                 than writing the walls between iterations. The CUDA SOR and
                                                 Red-Black SOR solvers apply the walls on the device, and their
                                                 init rejects a function here with CFD_ERROR_UNSUPPORTED.
-                                                The Krylov solvers (CG, BiCGSTAB, GMRES) update interior points
-                                                only and their search directions carry a zero halo, so the
-                                                operator they invert holds the walls at zero; a function here
-                                                must therefore prescribe wall values that do not depend on the
-                                                interior, which is what lifting an inhomogeneous Dirichlet
-                                                problem onto a homogeneous one needs. The stationary and
-                                                multigrid solvers honour any hook throughout. */
+                                                A function here must prescribe wall values that do not depend on
+                                                the interior: the Krylov solvers (CG, BiCGSTAB, GMRES) apply only
+                                                its homogeneous part, a zero halo, to their search directions,
+                                                since an inhomogeneous condition there would make the operator
+                                                affine rather than linear. That is exactly what lifting an
+                                                inhomogeneous Dirichlet problem onto a homogeneous one needs, and
+                                                it makes the operator nonsingular. Leaving this NULL gives the
+                                                zero-gradient walls, which are their own homogeneous form and are
+                                                applied throughout; that operator is singular (the constants are
+                                                its nullspace), so the rhs must have zero interior mean. */
 };
 
 /* ============================================================================

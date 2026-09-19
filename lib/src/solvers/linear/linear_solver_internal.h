@@ -81,22 +81,53 @@ poisson_solver_t* create_multigrid_omp_solver(void);
 #endif
 
 /**
- * Prepare x's boundary values for a Krylov solve, before the initial residual.
+ * Boundary values for a Krylov iterate, before a residual is formed from it.
  *
- * The Krylov solvers (CG, BiCGSTAB, GMRES) update interior points only, and their
- * search directions carry a permanent zero halo, so the operator they invert holds
- * the walls at zero. The initial residual has to be formed against that same
- * operator, or the solve converges to a field that solves neither system: what it
- * returns satisfies A_dirichlet*x = b + (A_dirichlet - A_bc)*x0, and the error term
- * is O(x0/h^2) at every wall-adjacent point.
+ * The Krylov solvers (CG, BiCGSTAB, GMRES) update interior points only, so the
+ * operator they invert is whatever their vectors' halos say it is. Residual and
+ * operator have to agree, or the solve converges to a field solving neither
+ * system: it returns an x with A_op*x = b + (A_op - A_residual)*x0, wrong by
+ * O(x0/h^2) at every wall-adjacent point.
  *
- * So the halo must carry only the part of the boundary condition that does not
- * depend on the interior -- the lift. Use this in place of
- * poisson_solver_apply_bc() for the initial residual; the final apply_bc that
- * fills the output halo stays as it is. Between the two, nothing writes the halo,
- * so a residual recomputed mid-solve (GMRES at each restart) stays consistent.
+ * The iterate carries the full boundary condition -- the interior-dependent part
+ * and the lift. Search directions carry only the homogeneous part; see
+ * poisson_solver_krylov_apply_bc_homogeneous(). Call this before the initial
+ * residual and before any residual recomputed mid-solve (GMRES at each restart,
+ * where the iterate has moved and the extension is stale). The final
+ * poisson_solver_apply_bc() that fills the output halo stays as it is.
  */
 void poisson_solver_krylov_apply_bc(poisson_solver_t* solver, double* x);
+
+/**
+ * Boundary values for a Krylov search direction, before every operator apply.
+ *
+ * Only the homogeneous part of the boundary condition: the zero-gradient
+ * extension for the default walls, a zero halo for a custom (Dirichlet) hook,
+ * whose prescribed values belong to the iterate and not to a direction. Applying
+ * an inhomogeneous condition here would make the operator affine rather than
+ * linear, which the Krylov recurrences do not describe.
+ *
+ * Required before each apply: the directions are rebuilt from interior-only
+ * updates, so their halos are stale from the previous iteration otherwise.
+ */
+void poisson_solver_krylov_apply_bc_homogeneous(poisson_solver_t* solver, double* v);
+
+/**
+ * Whether the Krylov operator has a nullspace, i.e. whether the walls are the
+ * default zero-gradient ones.
+ *
+ * The discrete zero-gradient Laplacian is symmetric positive SEMI-definite: the
+ * constants are in its nullspace. CG still converges on it provided the right-hand
+ * side is compatible, which the solvers arrange by subtracting the interior mean
+ * of the initial residual -- equivalent to mean-subtracting b, since every row of
+ * the operator sums to zero and so mean(A*v) = 0 for any v. That also keeps every
+ * search direction mean-free, so the iterate's own mean never moves off the
+ * initial guess and the free constant stays determined.
+ *
+ * A custom hook is taken to prescribe wall values, making the operator Dirichlet
+ * and nonsingular.
+ */
+int poisson_solver_krylov_is_singular(const poisson_solver_t* solver);
 
 /**
  * Reject POISSON_PRECOND_MULTIGRID on backends that don't implement it.

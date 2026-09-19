@@ -15,6 +15,7 @@
  */
 
 #include "../linear_solver_internal.h"
+#include "../multigrid_internal.h"  /* mg_subtract_interior_mean */
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cpu_features.h"
@@ -567,6 +568,10 @@ static cfd_status_t cg_avx2_solve(
 
     for (iter = 0; iter < params->max_iterations; iter++) {
         /* Compute Ap = A * p */
+        /* The halo carries the homogeneous boundary condition, which is what makes
+         * this the operator the walls describe. The direction is rebuilt from
+         * interior-only updates, so it has to be reapplied every iteration. */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, p);
         apply_laplacian_avx2(p, Ap, nx, ny,
                                   ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->dz2_inv_vec,
                                   ctx->two_vec, k_start, k_end, stride_z);

@@ -346,6 +346,20 @@ void test_cg_converges_zero_rhs(void) {
     poisson_solver_destroy(solver);
 }
 
+/**
+ * Hold every wall at zero, making the operator Dirichlet and so nonsingular.
+ *
+ * The default zero-gradient walls give a singular Neumann system whose nullspace
+ * is the constants, and a uniform right-hand side lies entirely inside it, so that
+ * system has no solution. The tests below want the well-posed problem instead:
+ * nabla^2 p = const with p = 0 on the boundary. The solver zeroes the halo before
+ * calling this hook, so it has nothing left to do.
+ */
+static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
+    (void)solver;
+    (void)x;
+}
+
 void test_cg_converges_uniform_rhs(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
@@ -354,6 +368,7 @@ void test_cg_converges_uniform_rhs(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 500;
     params.tolerance = 1e-6;
+    solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
     poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
@@ -394,7 +409,9 @@ void test_cg_scalar_simd_consistency(void) {
     params.max_iterations = 200;
     params.tolerance = 1e-8;
 
+    scalar_solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
     poisson_solver_init(scalar_solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
+    simd_solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
     poisson_solver_init(simd_solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     /* Allocate fields */
@@ -446,6 +463,7 @@ void test_cg_larger_grid(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 2000;
     params.tolerance = 1e-6;
+    solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
     poisson_solver_init(solver, NX, NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(NX, NY, 0.0);
@@ -478,6 +496,7 @@ void test_cg_nonzero_initial_guess(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 500;
     params.tolerance = 1e-6;
+    solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
     poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     /* Start with non-zero initial guess */
@@ -554,6 +573,7 @@ void test_cg_tight_tolerance(void) {
     params.max_iterations = 1000;
     params.tolerance = 1e-10;
     params.absolute_tolerance = 1e-12;
+    solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
     poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
@@ -609,6 +629,11 @@ void test_cg_auto_backend(void) {
 
 /**
  * Test CG reports correct statistics
+ *
+ * Dirichlet walls are requested explicitly. A uniform RHS has no solution under
+ * the default zero-gradient walls: that system is singular with the constants as
+ * its nullspace, and a uniform RHS lies entirely inside it, so there would be no
+ * residual reduction to report statistics about.
  */
 void test_cg_statistics(void) {
     poisson_solver_t* solver = poisson_solver_create(
@@ -618,6 +643,7 @@ void test_cg_statistics(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 500;
     params.tolerance = 1e-6;
+    solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
     poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);
@@ -657,6 +683,7 @@ void test_cg_simd_larger_grid(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 1000;
     params.tolerance = 1e-6;
+    solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
     poisson_solver_init(solver, NX, NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(NX, NY, 0.0);
@@ -1402,6 +1429,7 @@ void test_cg_simd_converges_uniform_rhs(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.max_iterations = 500;
     params.tolerance = 1e-6;
+    solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
     poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
 
     double* x = create_test_field(TEST_NX, TEST_NY, 0.0);

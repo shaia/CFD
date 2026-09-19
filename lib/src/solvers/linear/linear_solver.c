@@ -469,28 +469,9 @@ void poisson_solver_apply_bc(
     }
 }
 
-void poisson_solver_krylov_apply_bc(
-    poisson_solver_t* solver,
-    double* x)
+/** Write 0 into every boundary cell, leaving the interior alone. */
+static void krylov_zero_halo(const poisson_solver_t* solver, double* x)
 {
-    if (!solver || !x) {
-        return;
-    }
-
-    /* Zero the halo first, then let any hook write over it.
-     *
-     * For the default zero-gradient walls that is the whole job: their homogeneous
-     * form is what the Krylov correction space uses, and that space holds the walls
-     * at zero. Zeroed rather than left alone, because callers warm-start from a
-     * field whose walls carry the previous solve's extension.
-     *
-     * A custom hook is assumed to prescribe wall values that do not depend on the
-     * interior -- every one in this tree is a Dirichlet wall-setter. Those values
-     * ARE the lift, so the residual picks the wall contribution up, which is what
-     * lifting an inhomogeneous Dirichlet problem onto a homogeneous one requires.
-     * Zeroing first means a hook that only writes some walls, or that holds them at
-     * zero by writing nothing, still leaves no stale value behind for a warm start
-     * to trip on. */
     size_t nx = solver->nx;
     size_t ny = solver->ny;
     size_t nz = solver->nz;
@@ -514,10 +495,56 @@ void poisson_solver_krylov_apply_bc(
             plane[(j * nx) + (nx - 1)] = 0.0;                  /* i = nx-1 */
         }
     }
+}
 
-    if (solver->apply_bc) {
-        solver->apply_bc(solver, x);
+int poisson_solver_krylov_is_singular(const poisson_solver_t* solver)
+{
+    return solver && solver->apply_bc == NULL;
+}
+
+void poisson_solver_krylov_apply_bc_homogeneous(
+    poisson_solver_t* solver,
+    double* v)
+{
+    if (!solver || !v) {
+        return;
     }
+
+    /* The zero-gradient extension is already homogeneous -- it copies the interior
+     * outwards and adds nothing -- so the default walls need it verbatim. */
+    if (!solver->apply_bc) {
+        poisson_solver_apply_bc(solver, v);
+        return;
+    }
+
+    /* A custom hook prescribes wall values that do not depend on the interior, so
+     * its homogeneous part is a zero halo. Running the hook on a search direction
+     * would add its lift to every one of them, which is not a linear operator and
+     * would leave the Krylov recurrences describing something other than A. */
+    krylov_zero_halo(solver, v);
+}
+
+void poisson_solver_krylov_apply_bc(
+    poisson_solver_t* solver,
+    double* x)
+{
+    if (!solver || !x) {
+        return;
+    }
+
+    /* The iterate, unlike a search direction, carries the lift as well, so the
+     * residual formed from it is the residual of the real system. For the default
+     * walls that is just the extension. */
+    if (!solver->apply_bc) {
+        poisson_solver_apply_bc(solver, x);
+        return;
+    }
+
+    /* Zero first, then let the hook write over it: a hook that writes only some
+     * walls, or that holds them at zero by writing nothing, then still leaves no
+     * stale value behind for a warm start to trip on. */
+    krylov_zero_halo(solver, x);
+    solver->apply_bc(solver, x);
 }
 
 /**

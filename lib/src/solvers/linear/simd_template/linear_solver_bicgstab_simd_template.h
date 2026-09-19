@@ -562,6 +562,10 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         }
 
         /* 4. v = A*p */
+        /* Homogeneous boundary condition on the direction: this is what makes the
+         * apply below the operator the walls describe, and the direction is rebuilt
+         * from interior-only updates, so it is stale otherwise. */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, p);
         SIMD_FUNC(apply_laplacian)(p, v, nx, ny, ctx);
 
         /* 5. alpha = rho_new / (r_hat, v) */
@@ -601,6 +605,7 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
         }
 
         /* 8. t = A*s */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, s);
         SIMD_FUNC(apply_laplacian)(s, t, nx, ny, ctx);
 
         /* 9. omega = (t, s) / (t, t) */

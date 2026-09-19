@@ -17,6 +17,7 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
+#include "../../linear/multigrid_internal.h"
 #include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/turbulence_solver.h"
 #include "../../energy/energy_solver_internal.h"
@@ -388,6 +389,14 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
             }
         }
     }
+
+    /* Neumann compatibility projection. The pressure Poisson system has
+     * zero-gradient walls on every preset here, so it is singular with the
+     * constants as its nullspace: the RHS must have zero interior mean or the
+     * residual stalls on the component that lies in it. Discretely, div(u*)
+     * only nearly integrates to zero, so the remainder is removed here rather
+     * than assumed away. */
+    mg_subtract_interior_mean(rhs, nx, ny, ctx->nz);
 
     // Use SIMD Poisson solver (Conjugate Gradient with SIMD)
     // ctx->u_new is used as temp buffer for the Poisson solver

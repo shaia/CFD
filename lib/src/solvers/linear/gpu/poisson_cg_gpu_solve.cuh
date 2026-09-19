@@ -164,17 +164,11 @@ static cfd_status_t cg_gpu_solve_device(
         || cudaMemsetAsync(d_Ap, 0, bytes, stream) != cudaSuccess)
         return CFD_ERROR;
 
-    /* Halo on the initial guess, then r0 = b - A x0, p0 = r0. Zeroed, not extended:
-     * the matvec below holds the walls at zero (r/p/Ap keep the zero boundary set
-     * above), so a Neumann extension here would make r0 describe a different
-     * operator than the one inverted, and any non-zero initial guess would converge
-     * to a field solving neither system. The final BC still extends the answer. */
-    {
-        size_t total = nx * ny * nz;
-        int halo_threads = 256;
-        int halo_blocks = (int)((total + (size_t)halo_threads - 1) / (size_t)halo_threads);
-        lin_gpu_kernel_zero_halo<<<halo_blocks, halo_threads, 0, stream>>>(d_x, nx, ny, nz);
-    }
+    /* Halo on the initial guess, then r0 = b - A x0, p0 = r0. The zero-gradient
+     * extension is what the matvec applies to p below, so the residual has to be
+     * formed against the same walls or the solve converges to a field solving
+     * neither system for any non-zero initial guess. */
+    bc_apply_scalar_3d_gpu(d_x, nx, ny, nz, BC_TYPE_NEUMANN, stream);
     cg_gpu_detail::residual(d, d_x, d_rhs, d_r, grid, block);
     if (cudaMemcpyAsync(d_p, d_r, bytes, cudaMemcpyDeviceToDevice, stream) != cudaSuccess)
         return CFD_ERROR;
@@ -194,6 +188,10 @@ static cfd_status_t cg_gpu_solve_device(
     int stagnated = 0;
 
     while (!converged && iter < params->max_iterations) {
+        /* The zero-gradient walls are what make this the operator the boundary
+         * condition describes, and p is rebuilt from interior-only updates, so the
+         * extension is reapplied every iteration. */
+        bc_apply_scalar_3d_gpu(d_p, nx, ny, nz, BC_TYPE_NEUMANN, stream);
         cg_gpu_detail::matvec(d, d_p, d_Ap, grid, block);          /* Ap = A p      */
         double p_dot_Ap = 0.0;
         if (!cg_gpu_detail::dot(d, d_p, d_Ap, d_scalar, grid, block, &p_dot_Ap))

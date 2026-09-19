@@ -68,6 +68,7 @@
  */
 
 #include "../linear_solver_internal.h"
+#include "../multigrid_internal.h"  /* mg_subtract_interior_mean */
 
 #include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
@@ -344,6 +345,7 @@ static cfd_status_t GMRES_FUNC(gmres_solve)(
 
     /* Initial residual r_0 = b - A x_0 into V[0] */
     GMRES_RESIDUAL(x, rhs, Vblock, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
+
     double beta = GMRES_FUNC(gmres_norm)(Vblock, nx, ny, k_start, k_end, stride_z);
     double initial_res = beta;
 
@@ -391,11 +393,17 @@ static cfd_status_t GMRES_FUNC(gmres_solve)(
         for (int j = 0; j < m; j++) {
             double* v_j = Vblock + (size_t)j * n;
 
-            /* Arnoldi: w = A M^{-1} v_j  (w = A v_j unpreconditioned) */
+            /* Arnoldi: w = A M^{-1} v_j  (w = A v_j unpreconditioned).
+             * The halo carries the homogeneous boundary condition, which is what
+             * makes the apply the operator the walls describe. Basis vectors are
+             * built from interior-only updates, so it is applied to whichever
+             * vector A actually receives, every time. */
             if (use_precond) {
                 GMRES_PRECOND(v_j, Mv, nx, ny, diag_inv, k_start, k_end, stride_z);
+                poisson_solver_krylov_apply_bc_homogeneous(solver, Mv);
                 GMRES_APPLY_A(Mv, w, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
             } else {
+                poisson_solver_krylov_apply_bc_homogeneous(solver, v_j);
                 GMRES_APPLY_A(v_j, w, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
             }
 
@@ -452,8 +460,10 @@ static cfd_status_t GMRES_FUNC(gmres_solve)(
 
         /* Recompute the TRUE residual and decide convergence on it (prevents the
          * cheap Givens estimate from drifting below the real residual). This is
-         * the residual reported to the caller, measured with the same fixed
-         * boundary values used throughout the solve. */
+         * the residual reported to the caller. x has moved since the last apply_bc,
+         * and with zero-gradient walls the halo follows the interior, so it is
+         * refreshed first. */
+        poisson_solver_krylov_apply_bc(solver, x);
         GMRES_RESIDUAL(x, rhs, Vblock, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
         beta = GMRES_FUNC(gmres_norm)(Vblock, nx, ny, k_start, k_end, stride_z);
         final_res = beta;

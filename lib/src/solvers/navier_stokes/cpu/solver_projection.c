@@ -282,14 +282,13 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
             }
         }
 
-        /* Neumann compatibility projection: standalone multigrid solves the
-         * true singular Neumann system, so the RHS must have zero interior
-         * mean or the residual stalls at the incompatible component. The
-         * CG-based presets are insensitive to it (their interior-only Krylov
-         * updates act as a nonsingular operator) and keep today's behavior. */
-        if (pressure_preset == POISSON_SOLVER_MG_SCALAR) {
-            mg_subtract_interior_mean(rhs, nx, ny, nz);
-        }
+        /* Neumann compatibility projection. The pressure Poisson system has
+         * zero-gradient walls on every preset here, so it is singular with the
+         * constants as its nullspace: the RHS must have zero interior mean or the
+         * residual stalls on the component that lies in it. Discretely, div(u*)
+         * only nearly integrates to zero, so the remainder is removed here rather
+         * than assumed away. */
+        mg_subtract_interior_mean(rhs, nx, ny, nz);
 
         /* Solve Poisson equation using library solver */
         int poisson_iters = poisson_solve_3d(p_new, p_temp, rhs, nx, ny, nz, dx, dy, dz,

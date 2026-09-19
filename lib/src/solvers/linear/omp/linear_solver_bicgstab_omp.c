@@ -14,6 +14,7 @@
  */
 
 #include "../linear_solver_internal.h"
+#include "../multigrid_internal.h"  /* mg_subtract_interior_mean */
 
 #include "cfd/core/indexing.h"
 #include "cfd/core/logging.h"
@@ -333,6 +334,10 @@ static cfd_status_t bicgstab_omp_solve(
         update_p_omp(p, r, v, beta, omega, nx, ny, k_start, k_end, stride_z);
 
         /* v = A * p */
+        /* Homogeneous boundary condition on the direction: this is what makes the
+         * apply below the operator the walls describe, and the direction is rebuilt
+         * from interior-only updates, so it is stale otherwise. */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, p);
         apply_laplacian_omp(p, v, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
         /* alpha = rho_new / (r_hat, v) */
@@ -365,6 +370,7 @@ static cfd_status_t bicgstab_omp_solve(
         }
 
         /* t = A * s */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, s);
         apply_laplacian_omp(s, t, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
         /* omega = (t, s) / (t, t) */

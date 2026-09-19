@@ -722,6 +722,28 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         kernel_scale_rhs<<<grid_dim, block, 0, ctx->stream>>>(
             ctx->d_rhs, nx, ny, stride_z, k_start, k_end, 1.0 / dt);
 
+        // Neumann compatibility projection, matching the CPU projection solvers. The
+        // pressure operator has zero-gradient walls and is therefore singular, the
+        // constants being its nullspace, so the RHS must have zero interior mean or CG
+        // stalls on the component lying in it. Discretely div(u*) only nearly integrates
+        // to zero, so the remainder is removed rather than assumed away.
+        {
+            size_t interior = (nx - 2) * (ny - 2) * (size_t)(k_end - k_start + 1);
+            size_t shmem = (size_t)cfg.block_size_x * cfg.block_size_y * sizeof(double);
+            cudaMemsetAsync(ctx->d_residual, 0, sizeof(double), ctx->stream);
+            lin_gpu_kernel_interior_sum<<<grid_dim, block, shmem, ctx->stream>>>(
+                ctx->d_rhs, ctx->d_residual, nx, ny, stride_z, k_start, k_end);
+            double host_sum = 0.0;
+            cudaMemcpyAsync(&host_sum, ctx->d_residual, sizeof(double),
+                            cudaMemcpyDeviceToHost, ctx->stream);
+            cudaStreamSynchronize(ctx->stream);
+            if (interior > 0) {
+                lin_gpu_kernel_subtract_interior<<<grid_dim, block, 0, ctx->stream>>>(
+                    ctx->d_rhs, host_sum / (double)interior,
+                    nx, ny, stride_z, k_start, k_end);
+            }
+        }
+
         // Step 3: Solve the pressure Poisson equation with Conjugate Gradient via the
         // shared device-resident core (cg_gpu_solve_device) — the same CG used by the
         // standalone GPU Poisson backend, called directly on ctx->d_p/ctx->d_rhs with no
