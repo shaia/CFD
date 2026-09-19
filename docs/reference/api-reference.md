@@ -512,6 +512,7 @@ typedef struct {
     bool verbose;               // Print convergence info (default: false)
     poisson_precond_type_t preconditioner;  // Preconditioner (default: POISSON_PRECOND_NONE)
     int restart;                // GMRES(m) restart length (default: 0 = auto/30)
+    poisson_walls_t walls;      // Per-face walls (zero-init = all zero-gradient)
 
     // Multigrid only (all 0-defaults are backward compatible)
     mg_cycle_type_t mg_cycle;       // MG_CYCLE_V (default) / MG_CYCLE_W / MG_CYCLE_F
@@ -533,6 +534,40 @@ poisson_solver_params_t poisson_solver_params_default(void);
 > (AUTO prefers SIMD, which multigrid lacks), so request `POISSON_BACKEND_OMP`
 > (or the `POISSON_SOLVER_MG_OMP` preset) explicitly; its results are
 > bit-identical to scalar.
+
+### Poisson Walls
+
+```c
+typedef enum {
+    POISSON_WALL_ZERO_GRADIENT = 0,  // Neumann dp/dn = 0 (default)
+    POISSON_WALL_DIRICHLET     = 1   // Prescribed value from poisson_walls_t.values
+} poisson_wall_t;
+
+typedef struct {
+    poisson_wall_t left, right, bottom, top, front, back;
+    bc_dirichlet_values_t values;    // Prescribed value per DIRICHLET face
+} poisson_walls_t;
+
+poisson_walls_t poisson_walls_default(void);                              // all zero-gradient
+poisson_walls_t poisson_walls_uniform(poisson_wall_t type, double value); // every face the same
+bool poisson_walls_are_singular(const poisson_walls_t* walls, size_t nz);
+void poisson_make_rhs_compatible(double* rhs, size_t nx, size_t ny, size_t nz);
+```
+
+> Honoured by CG, BiCGSTAB and GMRES on the scalar, OpenMP and SIMD backends. The
+> stationary and multigrid solvers, and the GPU backend, reject a non-default value
+> at init with `CFD_ERROR_UNSUPPORTED`. A non-default value together with an
+> `apply_bc` hook returns `CFD_ERROR_INVALID` — both prescribe wall values.
+>
+> All-zero-gradient walls make the operator **singular** (the constants are its
+> nullspace), so the RHS must have zero interior mean; call
+> `poisson_make_rhs_compatible()` first. An incompatible RHS is refused with
+> `CFD_ERROR_INVALID` and `stats.status = POISSON_INCOMPATIBLE_RHS`. Prescribing any
+> face makes the operator nonsingular, where any RHS is admissible and
+> mean-subtracting would instead change the answer.
+>
+> The preset convenience API cannot express walls; use `poisson_solve_3d_params()`
+> or the full create/init/solve API.
 
 `poisson_precond_type_t` values: `POISSON_PRECOND_NONE` (0, default),
 `POISSON_PRECOND_JACOBI` (1), `POISSON_PRECOND_MULTIGRID` (2 — one MG V-cycle

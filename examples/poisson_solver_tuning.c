@@ -32,10 +32,19 @@
  * Reference field: p(x,y) = sin(pi*x) * sin(pi*y)
  * RHS:             nabla^2 p = -2*pi^2 * sin(pi*x) * sin(pi*y)
  *
- * Note: p_exact satisfies Dirichlet p=0 on all boundaries, but the Poisson
- * solvers in this library apply homogeneous Neumann BCs by default. The
+ * The solvers apply zero-gradient walls by default, which makes the operator
+ * singular -- the constants are its nullspace -- so the right-hand side has to
+ * have zero interior mean or the system has no solution at all. This RHS is
+ * strictly negative, so its mean is removed below with the public helper. That
+ * is what every caller of the default walls has to do; the projection solvers do
+ * the same to div(u*).
+ *
+ * Note: p_exact satisfies Dirichlet p=0 on all boundaries, while these solves use
+ * zero-gradient walls, and the mean subtraction shifts the problem again. The
  * reported L2 error therefore measures relative agreement between solver
- * methods/backends, not absolute accuracy against this analytical field.
+ * methods/backends, not absolute accuracy against this analytical field. Set
+ * params.walls = poisson_walls_uniform(POISSON_WALL_DIRICHLET, 0.0) to solve the
+ * problem p_exact actually poses -- the Krylov methods honour that.
  */
 static void setup_poisson_problem(double* rhs, double* p_exact,
                                   size_t nx, size_t ny,
@@ -50,6 +59,9 @@ static void setup_poisson_problem(double* rhs, double* p_exact,
             rhs[idx] = -2.0 * M_PI * M_PI * sin(M_PI * x) * sin(M_PI * y);
         }
     }
+
+    /* Make it solvable against the default zero-gradient walls. */
+    poisson_make_rhs_compatible(rhs, nx, ny, 1);
 }
 
 static double compute_l2_error(const double* p, const double* p_exact,
@@ -158,10 +170,8 @@ int main(void) {
                      POISSON_PRECOND_MULTIGRID, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
     benchmark_method("BiCGSTAB", POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR,
                      POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
-    /* Standalone POISSON_METHOD_MULTIGRID is omitted here: this example's RHS
-     * has a nonzero interior mean, which the true Neumann system cannot
-     * converge on (same reason the stationary methods above report max_iter).
-     * See tests/math/test_multigrid_convergence.c for a compatible setup. */
+    benchmark_method("Multigrid", POISSON_METHOD_MULTIGRID, POISSON_BACKEND_SCALAR,
+                     POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
 
     /* Section 2: Backend comparison (CG method) */
     printf("\n--- Backend Comparison (CG Method) ---\n");

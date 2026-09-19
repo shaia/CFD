@@ -187,6 +187,16 @@ static inline pois3d_result_t pois3d_run_simulation(void) {
         .pressure_coupling = 0.1
     };
 
+    /* Pressure-driven channel, as in the 2D case: the streamwise faces carry the
+     * analytical pressure and drive the flow, while the solid walls stay
+     * zero-gradient. The z-faces stay zero-gradient too -- the solution is
+     * z-uniform, so that is exactly right there. See test_poiseuille_flow.c for
+     * why zero-gradient on the streamwise faces cannot sustain the profile. */
+    params.pressure_bc.left = POISSON_WALL_DIRICHLET;
+    params.pressure_bc.right = POISSON_WALL_DIRICHLET;
+    params.pressure_bc.values.left = 0.0;
+    params.pressure_bc.values.right = dpdx_analytical * POIS3D_DOMAIN_LENGTH;
+
     cfd_status_t init_status = solver_init(solver, g, &params);
     if (init_status != CFD_SUCCESS) {
         snprintf(result.error_msg, sizeof(result.error_msg),

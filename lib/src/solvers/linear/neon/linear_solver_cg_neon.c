@@ -15,7 +15,6 @@
  */
 
 #include "../linear_solver_internal.h"
-#include "../multigrid_internal.h"  /* mg_subtract_interior_mean */
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cpu_features.h"

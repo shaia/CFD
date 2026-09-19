@@ -94,6 +94,10 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         return scheme_status;
     }
 
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 1);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
     if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
             "Multigrid pressure solver is only supported by the scalar and OpenMP projection solvers");
@@ -395,13 +399,18 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
      * constants as its nullspace: the RHS must have zero interior mean or the
      * residual stalls on the component that lies in it. Discretely, div(u*)
      * only nearly integrates to zero, so the remainder is removed here rather
-     * than assumed away. */
-    mg_subtract_interior_mean(rhs, nx, ny, ctx->nz);
+     * than assumed away. With a face prescribed the operator is nonsingular and
+     * shifting the RHS would change the answer instead of making it exist. */
+    if (poisson_walls_are_singular(&params->pressure_bc, ctx->nz)) {
+        mg_subtract_interior_mean(rhs, nx, ny, ctx->nz);
+    }
 
     // Use SIMD Poisson solver (Conjugate Gradient with SIMD)
     // ctx->u_new is used as temp buffer for the Poisson solver
-    int poisson_iters = poisson_solve_3d(p_new, ctx->u_new, rhs, nx, ny, ctx->nz,
-                                         dx, dy, dz, POISSON_SOLVER_CG_SIMD);
+    poisson_solver_params_t pp = poisson_solver_params_default();
+    pp.walls = params->pressure_bc;
+    int poisson_iters = poisson_solve_3d_params(p_new, ctx->u_new, rhs, nx, ny, ctx->nz,
+                                                dx, dy, dz, POISSON_SOLVER_CG_SIMD, &pp);
 
     if (poisson_iters < 0) {
         return CFD_ERROR_MAX_ITER;

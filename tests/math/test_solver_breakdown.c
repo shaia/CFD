@@ -37,9 +37,12 @@ void tearDown(void) {}
  * budget and tight absolute tolerance, CG must exhaust the budget or
  * report stagnation — it must not crash or return success in 0 iterations.
  *
- * Note: CG may still "converge" via relative tolerance, so we only assert
- * that it runs the full budget without crashing and uses a non-trivial
- * number of iterations.
+ * The solver now refuses it up front rather than iterating on a system with no
+ * solution. With zero-gradient walls the constants are the operator's nullspace,
+ * so a constant interior rhs lies entirely outside its range: no x solves it, and
+ * iterating either stalls on that component or drives the rest of the field away
+ * chasing it. Refusing is the honest answer, and it names the two ways out --
+ * poisson_make_rhs_compatible(), or prescribing a wall value on one face.
  */
 void test_cg_incompatible_neumann(void) {
     double dx = 1.0 / (NX - 1);
@@ -76,14 +79,17 @@ void test_cg_incompatible_neumann(void) {
     poisson_solver_stats_t stats = poisson_solver_stats_default();
     cfd_status_t status = poisson_solver_solve(solver, x, x_temp, rhs, &stats);
 
-    /* CG may converge via relative tolerance even on an incompatible system.
-     * Accept either CFD_SUCCESS (relative convergence) or CFD_ERROR_MAX_ITER
-     * (exhausted budget). Any other return is a bug. */
-    TEST_ASSERT_TRUE_MESSAGE(
-        status == CFD_SUCCESS || status == CFD_ERROR_MAX_ITER,
-        "CG must return SUCCESS or MAX_ITER on incompatible Neumann system");
-    TEST_ASSERT_TRUE_MESSAGE(stats.iterations > 0,
-        "CG must perform at least one iteration on non-trivial system");
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_INVALID, status,
+        "an incompatible rhs on the singular operator must be refused, not iterated on");
+    TEST_ASSERT_EQUAL_MESSAGE(POISSON_INCOMPATIBLE_RHS, stats.status,
+        "the reported status must say why it was refused");
+
+    /* Mean-subtracting makes the same rhs solvable, which is the documented fix. */
+    poisson_make_rhs_compatible(rhs, NX, NY, 1);
+    poisson_solver_stats_t fixed_stats = poisson_solver_stats_default();
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS,
+        poisson_solver_solve(solver, x, x_temp, rhs, &fixed_stats),
+        "the same rhs must solve once its interior mean is removed");
 
     poisson_solver_destroy(solver);
     cfd_free(x);

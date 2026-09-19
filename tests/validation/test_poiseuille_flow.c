@@ -178,6 +178,26 @@ static pois_result_t run_poiseuille(void) {
         .pressure_coupling = 0.1
     };
 
+    /* Pressure-driven channel: the flow has to be driven by something. The solid
+     * walls stay zero-gradient, but the streamwise faces carry the analytical
+     * pressure, matching the p = dpdx*x the field is initialised with above.
+     *
+     * With zero-gradient on all four faces the pressure solve supplies almost no
+     * streamwise gradient: the only source is the divergence of the boundary
+     * velocities, a dipole at the first and last interior column worth half the
+     * momentum balance, so the profile decays instead of being sustained. That
+     * measures dp/dx = -0.89 against the analytical -1.60.
+     *
+     * Prescribing the two faces makes test_pressure_gradient partly a consistency
+     * check, since the gradient is imposed and then measured. The independent
+     * content is in test_velocity_profile_accuracy and test_mass_conservation: the
+     * parabola is only sustained under this dp if the momentum balance and the
+     * projection are right, and under zero-gradient walls it is not. */
+    params.pressure_bc.left = POISSON_WALL_DIRICHLET;
+    params.pressure_bc.right = POISSON_WALL_DIRICHLET;
+    params.pressure_bc.values.left = 0.0;
+    params.pressure_bc.values.right = dpdx_analytical * POIS_DOMAIN_LENGTH;
+
     solver_init(solver, g, &params);
     ns_solver_stats_t stats = ns_solver_stats_default();
 

@@ -33,6 +33,7 @@
 #ifndef CFD_POISSON_SOLVER_H
 #define CFD_POISSON_SOLVER_H
 
+#include "cfd/boundary/boundary_conditions.h"
 #include "cfd/cfd_export.h"
 #include "cfd/core/cfd_status.h"
 
@@ -80,6 +81,8 @@ typedef enum {
     POISSON_MAX_ITER = 1,    /**< Reached max iterations without converging */
     POISSON_DIVERGED = 2,    /**< Solution diverged (the residual is no longer finite) */
     POISSON_STAGNATED = 3,   /**< Residual stagnated (no progress) */
+    POISSON_INCOMPATIBLE_RHS = 4, /**< Singular walls, but the rhs has a nonzero interior mean,
+                                       so the system has no solution (see poisson_walls_are_singular) */
     POISSON_ERROR = -1       /**< Error occurred */
 } poisson_solver_status_t;
 
@@ -126,6 +129,76 @@ typedef enum {
 } mg_bc_type_t;
 
 /* ============================================================================
+ * WALLS
+ * ============================================================================ */
+
+/**
+ * Boundary condition on one face of the Poisson domain.
+ *
+ * POISSON_WALL_ZERO_GRADIENT (0) is the operator every solver here has always
+ * inverted by default, so zero-initialization is fully backward compatible.
+ *
+ * Deliberately not bc_type_t: that enum's zero value is BC_TYPE_PERIODIC, a
+ * condition the Poisson solvers do not implement, so a zero-initialized config
+ * would name walls that cannot be honoured.
+ */
+typedef enum {
+    POISSON_WALL_ZERO_GRADIENT = 0, /**< Neumann dp/dn = 0 (default) */
+    POISSON_WALL_DIRICHLET     = 1  /**< Prescribed value from poisson_walls_t.values */
+} poisson_wall_t;
+
+/**
+ * Per-face walls for the Poisson operator.
+ *
+ * Zero-initialization is all-zero-gradient. Face names mirror
+ * ns_thermal_bc_config_t: front is the z = nz-1 plane and back the z = 0 plane,
+ * and both are ignored when nz == 1.
+ *
+ * A face marked POISSON_WALL_DIRICHLET takes its value from the matching member
+ * of `values`; 0 there is the homogeneous Dirichlet wall. Spatially varying wall
+ * data is what the apply_bc hook is for, and the two cannot be combined --
+ * poisson_solver_init() rejects that with CFD_ERROR_INVALID.
+ */
+typedef struct {
+    poisson_wall_t left;   /**< x = 0 face */
+    poisson_wall_t right;  /**< x = Lx face */
+    poisson_wall_t bottom; /**< y = 0 face */
+    poisson_wall_t top;    /**< y = Ly face */
+    poisson_wall_t front;  /**< z = Lz face (3D only) */
+    poisson_wall_t back;   /**< z = 0 face (3D only) */
+    bc_dirichlet_values_t values; /**< Prescribed value per DIRICHLET face */
+} poisson_walls_t;
+
+/**
+ * Subtract the interior mean of a right-hand side, in place.
+ *
+ * Makes it compatible with the singular all-zero-gradient operator, which is what
+ * poisson_solver_solve() requires there. Do NOT call this when any face is
+ * prescribed: that operator is nonsingular, and shifting the rhs then changes the
+ * answer rather than making it exist.
+ */
+CFD_LIBRARY_EXPORT void poisson_make_rhs_compatible(double* rhs, size_t nx, size_t ny, size_t nz);
+
+/** All faces zero-gradient: the default operator. */
+CFD_LIBRARY_EXPORT poisson_walls_t poisson_walls_default(void);
+
+/** Every face the same type, Dirichlet faces all at `value`. */
+CFD_LIBRARY_EXPORT poisson_walls_t poisson_walls_uniform(poisson_wall_t type, double value);
+
+/**
+ * Whether the operator these walls describe has the constants as a nullspace.
+ *
+ * True only when every face that exists on this grid is zero-gradient, in which
+ * case the system is solvable only for a right-hand side of zero interior mean;
+ * poisson_solver_solve() rejects an incompatible one with CFD_ERROR_INVALID.
+ * A single Dirichlet face makes the operator nonsingular and admits any rhs --
+ * and means a caller must NOT mean-subtract, which would change the answer.
+ *
+ * nz is required because the z-faces do not exist on a 2D grid.
+ */
+CFD_LIBRARY_EXPORT bool poisson_walls_are_singular(const poisson_walls_t* walls, size_t nz);
+
+/* ============================================================================
  * PARAMETERS AND STATISTICS
  * ============================================================================ */
 
@@ -141,6 +214,7 @@ typedef struct {
     bool verbose;              /**< Print iteration progress (default: false) */
     poisson_precond_type_t preconditioner; /**< Preconditioner type (default: NONE) */
     int restart;               /**< GMRES restart length m (default: 0 = auto/30); ignored by other methods */
+    poisson_walls_t walls;     /**< Per-face walls (zero-init = all zero-gradient); Krylov methods only */
 
     /* Multigrid parameters (POISSON_METHOD_MULTIGRID only; 0 = backward-compatible default) */
     mg_cycle_type_t mg_cycle;       /**< Cycle type (default: MG_CYCLE_V) */
@@ -173,6 +247,7 @@ typedef struct {
  * - omega: 0.0 (automatic, at or just below the optimum for the grid and the walls in use)
  * - check_interval: 1
  * - verbose: false
+ * - walls: all faces POISSON_WALL_ZERO_GRADIENT
  * - mg_cycle: MG_CYCLE_V, mg_smoother: MG_SMOOTHER_REDBLACK_GS, mg_bc: MG_BC_NEUMANN
  * - mg_pre_smooth/mg_post_smooth: 0 (= 2), mg_coarse_max_iter: 0 (= 50), mg_max_levels: 0 (= auto)
  */
@@ -540,6 +615,29 @@ CFD_LIBRARY_EXPORT int poisson_solve_3d(
     size_t nx, size_t ny, size_t nz,
     double dx, double dy, double dz,
     poisson_solver_type solver_type);
+
+/**
+ * poisson_solve_3d() with solver parameters.
+ *
+ * The preset still selects the method and backend and still names the cache slot;
+ * `params` supplies everything else, including params.walls, which the preset form
+ * cannot express. NULL means poisson_solver_params_default(). The preconditioner
+ * of the PCG_MG presets is theirs by definition and is set here regardless.
+ *
+ * The cached instance is rebuilt whenever the parameters differ from the ones it
+ * was built with, so a caller that varies them per call pays a rebuild per call.
+ * Build the struct from poisson_solver_params_default() rather than zeroing it
+ * by hand: the comparison includes padding, so a hand-rolled struct may miss the
+ * fast path even when its fields match.
+ *
+ * @return Number of iterations if converged, -1 otherwise
+ */
+CFD_LIBRARY_EXPORT int poisson_solve_3d_params(
+    double* p, double* p_temp, const double* rhs,
+    size_t nx, size_t ny, size_t nz,
+    double dx, double dy, double dz,
+    poisson_solver_type solver_type,
+    const poisson_solver_params_t* params);
 
 /**
  * Direct solver functions

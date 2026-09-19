@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-face walls on the Poisson solver** — new `poisson_solver_params_t.walls`
+  (`poisson_walls_t`; zero-init = all zero-gradient, the operator these solvers have always
+  used, so zero-initialization is fully backward compatible). Each face is independently
+  `POISSON_WALL_ZERO_GRADIENT` or `POISSON_WALL_DIRICHLET` with a prescribed value, which
+  states explicitly what was previously inferred from whether an `apply_bc` hook happened to
+  be NULL.
+  Krylov solvers apply only the **homogeneous** part of the walls to their search directions
+  — a zero halo on a prescribed face — and the full condition to the iterate. Applying a
+  prescribed value to a direction would make the operator affine rather than linear, which
+  the Krylov recurrences do not describe; `test_dirichlet_lift_is_linear` asserts the split
+  holds by checking that raising one face by V shifts the solution by exactly the ramp
+  `V*x/Lx` (measured 1.1e-14).
+  Honoured by CG, BiCGSTAB and GMRES on the scalar, OpenMP and SIMD backends. The stationary
+  and multigrid solvers apply whole-domain walls inside their sweeps and the GPU backend
+  applies them on the device, so all of those return `CFD_ERROR_UNSUPPORTED` at init rather
+  than silently solving a different problem; walls together with an `apply_bc` hook return
+  `CFD_ERROR_INVALID`, since both prescribe wall values. A linear field `a*x + b` is
+  reproduced to 2e-15 across the supported methods and backends.
+  Reaching it needed a convenience entry point that can carry parameters, since
+  `poisson_solve_3d()` takes only a preset: `poisson_solve_3d_params()` adds one, and the
+  preset cache is now keyed on the parameters as well as the grid. That also retires the
+  special case which forced the preconditioner for the `PCG_MG` presets.
+  At the NS layer, `ns_solver_params_t.pressure_bc` carries the configuration to the scalar,
+  OpenMP and AVX2 projection solvers, following `ns_thermal_bc_config_t`. The projection's
+  Neumann compatibility projection is now conditional: with a face prescribed the operator is
+  nonsingular and mean-subtracting would change the answer rather than make it exist. The
+  field is serialized, so `CFD_CHECKPOINT_FORMAT_VERSION` goes 2 -> 3
+  (`lib/include/cfd/solvers/poisson_solver.h`, `lib/src/solvers/linear/linear_solver.c`,
+  `lib/include/cfd/solvers/navier_stokes_solver.h`,
+  `lib/src/solvers/navier_stokes/{cpu,omp,avx2}/solver_projection*.c`,
+  `lib/src/api/solver_registry.c`, `lib/src/io/checkpoint.c`,
+  `tests/math/test_poisson_walls.c`, `tests/validation/test_poiseuille_flow.c`).
+- **Pressure-driven channels are driven.** `PoiseuilleFlowTest` and `Poiseuille3DTest` now
+  prescribe the pressure on the streamwise faces, which is what a pressure-driven channel
+  needs: with zero-gradient everywhere the only streamwise forcing is the divergence of the
+  boundary velocities, a dipole at the first and last interior column worth half the momentum
+  balance, so the profile decays. Measured `dp/dx` goes from -0.891 to **-1.604** against an
+  analytical -1.600 (0.23% error), profile RMS from 0.121 to **0.00079**, and the mass-flux
+  imbalance from 22.6% to **0.02%**. Note that prescribing the gradient makes
+  `test_pressure_gradient` partly a consistency check; the independent content is in the
+  profile-RMS and mass-conservation assertions, which only pass if the momentum balance
+  sustains the parabola under that pressure difference.
+
 - **First-order upwind convection** — new `ns_solver_params_t.convection_scheme` field
   (`ns_convection_scheme_t`; 0 = existing central differencing, unchanged).
   `NS_CONVECTION_SCHEME_UPWIND` takes each convective first derivative from the side the
@@ -181,14 +224,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/math/test_krylov_warm_start.c`, `tests/math/test_bicgstab.c`,
   `tests/math/test_gmres.c`, `tests/solvers/test_linear_solver.c`,
   `tests/solvers/navier_stokes/cpu/test_ns_solver_3d.c`).
-  STILL OPEN — pressure-driven channels need mixed walls, which this does not add.
-  `PoiseuilleFlowTest`, `Poiseuille3DTest` and `TurbulentChannelTest` want zero-gradient
-  walls at the solid boundaries and the inlet but a prescribed pressure at the outlet, and
-  the solver takes one condition for the whole domain. With zero-gradient everywhere,
-  dp/dx cannot develop where the test measures it, just downstream of the outlet:
-  it reads -0.891 against an analytical -1.600 (it was -1.275 on master, where the
-  inconsistent residual let the initialised pressure field leak through instead of being
-  recomputed). Per-face boundary conditions on the Poisson solver are the follow-up.
+  An incompatible RHS is now refused up front with `CFD_ERROR_INVALID` and
+  `stats.status = POISSON_INCOMPATIBLE_RHS`, instead of being iterated on: such a system
+  has no solution, and iterating either stalls on the component in the nullspace or drives
+  the rest of the field away chasing it. `test_laplacian_accuracy` had been reaching a
+  residual of 1e21 that way. `poisson_make_rhs_compatible()` is the supported way to
+  comply, and is exported — the helper the docs previously pointed at was not.
 - **`explicit_euler_optimized` updates every interior column.** The AVX2 row loop processed
   4-wide groups with no scalar remainder, so when `(nx-2) % 4 != 0` the last 1-3 interior
   columns of each row kept their old values (3 per row at 33×33 and 129×129). The remainder

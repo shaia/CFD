@@ -81,6 +81,17 @@ poisson_solver_t* create_multigrid_omp_solver(void);
 #endif
 
 /**
+ * Validate solver->params.walls against the method, backend and apply_bc hook.
+ *
+ * Default (all zero-gradient) walls always pass. Otherwise: CFD_ERROR_INVALID if
+ * a hook is also installed, since both prescribe wall values and two sources for
+ * one thing is ambiguous; CFD_ERROR_UNSUPPORTED on the methods and backends whose
+ * halo routines do not honour per-face walls, rather than silently solving the
+ * zero-gradient problem instead of the caller's.
+ */
+cfd_status_t poisson_solver_check_walls(const poisson_solver_t* solver);
+
+/**
  * Boundary values for a Krylov iterate, before a residual is formed from it.
  *
  * The Krylov solvers (CG, BiCGSTAB, GMRES) update interior points only, so the
@@ -113,19 +124,18 @@ void poisson_solver_krylov_apply_bc(poisson_solver_t* solver, double* x);
 void poisson_solver_krylov_apply_bc_homogeneous(poisson_solver_t* solver, double* v);
 
 /**
- * Whether the Krylov operator has a nullspace, i.e. whether the walls are the
- * default zero-gradient ones.
+ * Whether the Krylov operator has a nullspace.
  *
- * The discrete zero-gradient Laplacian is symmetric positive SEMI-definite: the
- * constants are in its nullspace. CG still converges on it provided the right-hand
- * side is compatible, which the solvers arrange by subtracting the interior mean
- * of the initial residual -- equivalent to mean-subtracting b, since every row of
- * the operator sums to zero and so mean(A*v) = 0 for any v. That also keeps every
- * search direction mean-free, so the iterate's own mean never moves off the
- * initial guess and the free constant stays determined.
+ * True when every face is zero-gradient and no apply_bc hook is installed: the
+ * discrete zero-gradient Laplacian is symmetric positive SEMI-definite, with the
+ * constants in its nullspace. The system is then solvable only for a right-hand
+ * side of zero interior mean, which poisson_solver_solve() checks and refuses
+ * otherwise -- the solvers do NOT quietly project the rhs onto the compatible
+ * subspace, because that solves a different problem than the caller asked for.
+ * poisson_make_rhs_compatible() is the caller's way to comply.
  *
- * A custom hook is taken to prescribe wall values, making the operator Dirichlet
- * and nonsingular.
+ * A prescribed face, or a hook, pins the level and makes the operator
+ * nonsingular, where any rhs is admissible and mean-subtracting would be wrong.
  */
 int poisson_solver_krylov_is_singular(const poisson_solver_t* solver);
 

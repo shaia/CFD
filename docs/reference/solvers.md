@@ -299,26 +299,51 @@ there in far fewer iterations. (Before v0.3.0 the residual was built from the
 zero-gradient extension while the directions carried a zero halo, so any non-zero
 initial guess converged to a field solving neither system.)
 
-With the default `apply_bc` (NULL) the walls are zero-gradient, which is already
-homogeneous and is applied throughout. That operator is **singular** — the
-constants are its nullspace — so, exactly as for standalone multigrid in
-`MG_BC_NEUMANN` mode, the RHS must be compatible:
+**Per-face walls.** `params.walls` states each face independently:
 
 ```c
-mg_subtract_interior_mean(rhs, nx, ny, nz);   /* what the projection solvers do */
+poisson_solver_params_t params = poisson_solver_params_default();
+params.walls.left  = POISSON_WALL_DIRICHLET;   /* inlet  */
+params.walls.right = POISSON_WALL_DIRICHLET;   /* outlet */
+params.walls.values.left  = 0.0;
+params.walls.values.right = -6.4;              /* the rest stay zero-gradient */
 ```
 
-An incompatible RHS has no solution, and the solve stalls on the component lying in
-the nullspace and returns `CFD_ERROR_MAX_ITER`. The solution also carries a free
-additive constant; the iteration keeps every direction mean-free, so the level is
-whatever the initial guess had.
+Zero-initialisation is all-zero-gradient, the operator these solvers have always
+used. `poisson_walls_uniform(POISSON_WALL_DIRICHLET, 0.0)` gives the whole-domain
+homogeneous Dirichlet operator in one call.
 
-Installing an `apply_bc` hook instead prescribes wall values that **must not depend
-on the interior** — a Dirichlet lift. Those values enter the residual and the solve
-returns the interior of the lifted problem, which is the standard way to handle
-inhomogeneous Dirichlet walls; the operator is then nonsingular and any RHS is
-admissible. The stationary (Jacobi, SOR, Red-Black SOR) and multigrid solvers
-re-apply the hook on every sweep and honour either kind.
+Per-face walls are honoured by **CG, BiCGSTAB and GMRES** on the scalar, OpenMP and
+SIMD backends. The stationary (Jacobi, SOR, Red-Black SOR) and multigrid solvers
+apply whole-domain walls inside their sweeps, and the GPU backend applies them on
+the device, so all of those reject a non-default `params.walls` at init with
+`CFD_ERROR_UNSUPPORTED` rather than silently solving a different problem.
+
+**The all-zero-gradient operator is singular** — the constants are its nullspace —
+so, exactly as for standalone multigrid in `MG_BC_NEUMANN` mode, the RHS must have
+zero interior mean:
+
+```c
+poisson_make_rhs_compatible(rhs, nx, ny, nz);   /* what the projection solvers do */
+```
+
+An incompatible RHS describes a system with **no solution**. The solve refuses it
+up front, returning `CFD_ERROR_INVALID` with `stats.status = POISSON_INCOMPATIBLE_RHS`,
+rather than iterating on it — the solvers do not quietly project the RHS onto the
+compatible subspace, because that answers a different question than the one asked.
+The solution also carries a free additive constant; the iteration keeps every
+direction mean-free, so the level is whatever the initial guess had.
+
+**Prescribing any face removes all of that**: the operator becomes nonsingular, any
+RHS is admissible, and the level is pinned. Do **not** mean-subtract then — it would
+change the answer rather than make it exist.
+
+An `apply_bc` hook remains the way to prescribe **spatially varying** wall values.
+It supplies the lift while the homogeneous part stays a zero halo, which is the
+standard way to handle inhomogeneous Dirichlet walls. A hook and a non-default
+`params.walls` both prescribe wall values, so installing both is rejected with
+`CFD_ERROR_INVALID`. The stationary and multigrid solvers re-apply a hook on every
+sweep and honour either kind.
 
 #### 5. Preconditioned CG (PCG)
 

@@ -68,7 +68,6 @@
  */
 
 #include "../linear_solver_internal.h"
-#include "../multigrid_internal.h"  /* mg_subtract_interior_mean */
 
 #include "cfd/core/logging.h"
 #include "cfd/core/memory.h"

@@ -564,6 +564,11 @@ static cfd_status_t explicit_euler_init(ns_solver_t* solver, const grid* grid,
         return scheme_status;
     }
 
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
+
     explicit_euler_context* ctx =
         (explicit_euler_context*)cfd_malloc(sizeof(explicit_euler_context));
     if (!ctx) {
@@ -999,6 +1004,10 @@ static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const
     if (scheme_status != CFD_SUCCESS) {
         return scheme_status;
     }
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 1);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
     cfd_status_t pressure_status = check_mg_pressure_solver(grid, params, POISSON_BACKEND_SCALAR);
     if (pressure_status != CFD_SUCCESS) {
         return pressure_status;
@@ -1159,7 +1168,11 @@ static cfd_status_t gpu_explicit_init(ns_solver_t* solver, const grid* grid,
                                       const ns_solver_params_t* params) {
     (void)solver;
     (void)grid;
-    return ns_check_convection_scheme(params, 0);
+    cfd_status_t scheme_status = ns_check_convection_scheme(params, 0);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
+    }
+    return ns_check_pressure_bc(params, 0);
 }
 
 /**
@@ -1240,6 +1253,10 @@ static cfd_status_t gpu_projection_init(ns_solver_t* solver, const grid* grid,
     cfd_status_t scheme_status = ns_check_convection_scheme(params, 0);
     if (scheme_status != CFD_SUCCESS) {
         return scheme_status;
+    }
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
     }
     if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
@@ -1656,6 +1673,10 @@ static cfd_status_t projection_omp_init(ns_solver_t* solver, const grid* grid,
         return scheme_status;
     }
 
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 1);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
     /* The MG pressure modes run on OMP multigrid, never on the scalar one */
     cfd_status_t pressure_status = check_mg_pressure_solver(grid, params, POISSON_BACKEND_OMP);
     if (pressure_status != CFD_SUCCESS) {
