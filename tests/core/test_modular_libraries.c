@@ -209,16 +209,18 @@ void test_simd_solver_creation(void) {
 }
 
 void test_simd_backend_availability(void) {
-    // SIMD availability should match CPU features
+    // Availability requires compiled-in kernels AND CPU support, so it implies
+    // cfd_has_simd() but is not implied by it (AVX2 is off by default).
     int simd_available = cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD);
-    int has_simd = cfd_has_simd();
 
-    TEST_ASSERT_EQUAL(has_simd, simd_available);
+    if (simd_available) {
+        TEST_ASSERT_TRUE(cfd_has_simd());
+    }
     printf("SIMD backend available: %s\n", simd_available ? "yes" : "no");
 }
 
 void test_simd_solver_step_conditional(void) {
-    if (!cfd_has_simd()) {
+    if (!cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
         printf("SIMD not available on this CPU - skipping step test\n");
         TEST_PASS();
         return;

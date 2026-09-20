@@ -142,6 +142,35 @@ typedef struct {
     poisson_precond_type_t preconditioner; /**< Preconditioner type (default: NONE) */
     int restart;               /**< GMRES restart length m (default: 0 = auto/30); ignored by other methods */
 
+    /**
+     * Helmholtz shift sigma (default: 0 = pure Poisson, bit-identical to prior
+     * releases). The solved equation is
+     *
+     *     nabla^2 x - sigma*x = rhs
+     *
+     * For implicit diffusion, (I - nu*dt*nabla^2)u = b rearranges to sigma =
+     * 1/(nu*dt) with rhs[i] = -b[i]/(nu*dt). Note the minus sign on the rhs.
+     * The caller must ensure nu*dt > 0; sigma = 1/(nu*dt) is otherwise infinite
+     * and rejected below.
+     *
+     * sigma > 0 makes the operator strictly diagonally dominant, so it is better
+     * conditioned than the pure Poisson problem: cond = 1 + 8d with d = nu*dt/h^2,
+     * and CG iterations go as sqrt(1 + 8d).
+     *
+     * It also removes the Neumann nullspace, so a shifted solve has a unique
+     * solution and does NOT require a compatible (zero-mean) rhs. Callers that
+     * mean-subtract the rhs for the pure-Neumann pressure solve must not do so
+     * here.
+     *
+     * Negative or non-finite values are rejected with CFD_ERROR_INVALID at init:
+     * a negative shift is the indefinite Helmholtz operator, which breaks CG's
+     * SPD requirement and standard geometric multigrid.
+     *
+     * Note that absolute_tolerance is not invariant under the 1/(nu*dt) rhs
+     * scaling; the relative tolerance is.
+     */
+    double helmholtz_shift;
+
     /* Multigrid parameters (POISSON_METHOD_MULTIGRID only; 0 = backward-compatible default) */
     mg_cycle_type_t mg_cycle;       /**< Cycle type (default: MG_CYCLE_V) */
     mg_smoother_type_t mg_smoother; /**< Smoother (default: MG_SMOOTHER_REDBLACK_GS) */

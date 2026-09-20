@@ -79,7 +79,16 @@ static const bc_backend_impl_t* get_backend_impl(bc_backend_t backend) {
              * but the underlying SIMD backend may not be available */
             return bc_simd_backend_available() ? &bc_impl_simd : NULL;
         case BC_BACKEND_CUDA:
-            /* CUDA not yet implemented for boundary conditions */
+            /* Unavailable here by design, not for want of an implementation.
+             * The GPU boundary kernels exist and are in production use, but they
+             * take device pointers and a CUDA stream, while bc_backend_impl_t is
+             * a host-pointer table with no stream. Routing them through it would
+             * mean either a host round-trip per call -- which is exactly what the
+             * GPU solvers are built to avoid -- or reinterpreting host pointers
+             * as device pointers, which is undefined behavior.
+             *
+             * Call them directly from device code via
+             * cfd/boundary/boundary_conditions_gpu.cuh. */
             return NULL;
         case BC_BACKEND_AUTO:
         default:
@@ -222,13 +231,18 @@ static cfd_status_t apply_scalar_field_bc(double* field, size_t nx, size_t ny,
             cfd_warning("BC_TYPE_NOSLIP requires bc_apply_noslip() for velocity fields");
             return CFD_ERROR_INVALID;
 
+        /* Both are implemented on every backend, but they carry a config struct
+         * that this type-enum path has nowhere to put -- the same reason
+         * DIRICHLET and NOSLIP above route to their own entry points. INVALID,
+         * not UNSUPPORTED: the capability exists, the call is using the wrong
+         * door, and UNSUPPORTED is what tests key on to skip a missing backend. */
         case BC_TYPE_INLET:
-            cfd_warning("BC_TYPE_INLET not implemented");
-            return CFD_ERROR_UNSUPPORTED;
+            cfd_warning("BC_TYPE_INLET requires bc_apply_inlet() with a bc_inlet_config_t");
+            return CFD_ERROR_INVALID;
 
         case BC_TYPE_OUTLET:
-            cfd_warning("BC_TYPE_OUTLET not implemented");
-            return CFD_ERROR_UNSUPPORTED;
+            cfd_warning("BC_TYPE_OUTLET requires bc_apply_outlet() with a bc_outlet_config_t");
+            return CFD_ERROR_INVALID;
 
         default:
             cfd_warning("Unknown BC type requested");

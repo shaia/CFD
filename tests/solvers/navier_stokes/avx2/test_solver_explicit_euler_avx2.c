@@ -68,6 +68,10 @@ void test_simd_scalar_consistency(void) {
            result.error_l2, result.relative_error);
     printf("L2 difference in v: %.6e\n", result.error_l2_secondary);
 
+    if (result.solver_unavailable) {
+        TEST_IGNORE_MESSAGE("SIMD Euler solver not available (AVX2 not compiled)");
+    }
+
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("PASSED\n");
 }
@@ -94,6 +98,10 @@ void test_simd_row_tail_matches_scalar(void) {
 
     printf("Relative L2 difference: %.2e\n", result.relative_error);
 
+    if (result.solver_unavailable) {
+        TEST_IGNORE_MESSAGE("SIMD Euler solver not available (AVX2 not compiled)");
+    }
+
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("PASSED\n");
 }
@@ -112,6 +120,10 @@ void test_simd_stability(void) {
     params.cfl = 0.2;
 
     test_result result = test_run_stability(NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, 64, 64, &params, 200);
+
+    if (result.solver_unavailable) {
+        TEST_IGNORE_MESSAGE("SIMD Euler solver not available (AVX2 not compiled)");
+    }
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("SIMD solver remained stable for 200 steps\n");
@@ -132,6 +144,10 @@ void test_simd_non_aligned_grid_size(void) {
 
     // Use grid size that's not a multiple of 4 (typical SIMD width)
     test_result result = test_run_stability(NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, 33, 35, &params, 10);
+
+    if (result.solver_unavailable) {
+        TEST_IGNORE_MESSAGE("SIMD Euler solver not available (AVX2 not compiled)");
+    }
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("SIMD handles 33x35 grid correctly\n");
@@ -155,6 +171,10 @@ void test_simd_energy_decay(void) {
     printf("Initial kinetic energy: %.6e\n", result.initial_energy);
     printf("Final kinetic energy: %.6e\n", result.final_energy);
     printf("Energy ratio: %.4f\n", result.final_energy / result.initial_energy);
+
+    if (result.solver_unavailable) {
+        TEST_IGNORE_MESSAGE("SIMD Euler solver not available (AVX2 not compiled)");
+    }
 
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message);
     printf("PASSED\n");

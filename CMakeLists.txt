@@ -358,6 +358,7 @@ if(BUILD_TESTS)
     add_executable(test_pcg_convergence tests/math/test_pcg_convergence.c)
     add_executable(test_mg_pcg_convergence tests/math/test_mg_pcg_convergence.c)
     add_executable(test_residual_computation tests/math/test_residual_computation.c)
+    add_executable(test_helmholtz_shift tests/math/test_helmholtz_shift.c)
     add_executable(test_cg_scaling tests/math/test_cg_scaling.c)
     add_executable(test_nonuniform_grid tests/math/test_nonuniform_grid.c)
     # mg_* transfer operators are not exported from the shared library, so the
@@ -494,6 +495,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_pcg_convergence PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_mg_pcg_convergence PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_residual_computation PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
+    target_link_libraries(test_helmholtz_shift PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_cg_scaling PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_nonuniform_grid PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_multigrid_operators PRIVATE CFD::Library unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
@@ -562,14 +564,17 @@ if(BUILD_TESTS)
     add_test(NAME CavityReferenceTest COMMAND test_cavity_reference)
     if(CAVITY_FULL_VALIDATION)
         # Split into parallel tests for full validation (ctest -j runs them concurrently)
-        # Re=100 — optimized backends only (AVX2/OMP/GPU projection, AVX2/OMP
-        # Euler). CPU-scalar is excluded from 129x129 validation per the scalar
-        # testing policy; it runs in CI mode (33x33) via the else() branch below.
+        # Re=100 — projection only (AVX2/OMP/GPU). CPU-scalar is excluded from
+        # 129x129 validation per the scalar testing policy; it runs in CI mode
+        # (33x33) via the else() branch below, as does Explicit Euler.
         add_test(NAME CavityBackend_ProjectionAvx2 COMMAND test_cavity_backends projection_avx2)
         add_test(NAME CavityBackend_ProjectionOmp COMMAND test_cavity_backends projection_omp)
         add_test(NAME CavityBackend_ProjectionGpu COMMAND test_cavity_backends projection_gpu)
-        add_test(NAME CavityBackend_EulerAvx2 COMMAND test_cavity_backends euler_avx2)
-        add_test(NAME CavityBackend_EulerOmp COMMAND test_cavity_backends euler_omp)
+        # Explicit Euler is deliberately absent at 129x129. Both solvers cap dt at
+        # 1e-4, so a 250,000-step budget buys t = 25 of a run held to a relaxed
+        # RMS target that every projection case clears with >3x margin -- about an
+        # hour of validation for the non-production solver. It is validated at
+        # 33x33 in the else() branch instead (ROADMAP 6.1).
         add_test(NAME CavityBackend_Consistency COMMAND test_cavity_backends consistency)
 
         # Re=400 / Re=1000 — projection backends only (production solver), 129x129
@@ -582,8 +587,7 @@ if(BUILD_TESTS)
 
         set_tests_properties(
             CavityBackend_ProjectionAvx2 CavityBackend_ProjectionOmp
-            CavityBackend_ProjectionGpu CavityBackend_EulerAvx2
-            CavityBackend_EulerOmp CavityBackend_Consistency
+            CavityBackend_ProjectionGpu CavityBackend_Consistency
             CavityBackend_ProjectionAvx2_Re400 CavityBackend_ProjectionOmp_Re400
             CavityBackend_ProjectionGpu_Re400 CavityBackend_ProjectionAvx2_Re1000
             CavityBackend_ProjectionOmp_Re1000 CavityBackend_ProjectionGpu_Re1000
@@ -591,7 +595,7 @@ if(BUILD_TESTS)
         )
         # Consistency waits for all backends to finish
         set_tests_properties(CavityBackend_Consistency PROPERTIES
-            DEPENDS "CavityBackend_ProjectionAvx2;CavityBackend_ProjectionOmp;CavityBackend_ProjectionGpu;CavityBackend_EulerAvx2;CavityBackend_EulerOmp"
+            DEPENDS "CavityBackend_ProjectionAvx2;CavityBackend_ProjectionOmp;CavityBackend_ProjectionGpu"
         )
     else()
         # CI mode: run all sequentially (fast enough at 33x33)
@@ -672,6 +676,7 @@ if(BUILD_TESTS)
     add_test(NAME PCGConvergenceTest COMMAND test_pcg_convergence)
     add_test(NAME MgPcgConvergenceTest COMMAND test_mg_pcg_convergence)
     add_test(NAME ResidualComputationTest COMMAND test_residual_computation)
+    add_test(NAME HelmholtzShiftTest COMMAND test_helmholtz_shift)
     add_test(NAME CgScalingTest COMMAND test_cg_scaling)
     add_test(NAME NonuniformGridTest COMMAND test_nonuniform_grid)
     add_test(NAME MultigridOperatorsTest COMMAND test_multigrid_operators)

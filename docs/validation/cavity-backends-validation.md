@@ -27,7 +27,7 @@ This document describes the comprehensive backend validation system for the lid-
 - Verifies projection backends (CPU, AVX2, OMP) produce consistent results (within 0.1%)
 
 ### Reynolds Number Coverage
-- **Re=100** — projection + Explicit Euler backends. CI 33×33 runs every backend including CPU-scalar; full 129×129 runs the optimized backends only (AVX2/OMP/GPU projection, AVX2/OMP Euler) — CPU-scalar is excluded per the long-validation scalar policy.
+- **Re=100** — CI 33×33 runs every backend, projection and Explicit Euler, including CPU-scalar. Full 129×129 runs the optimized **projection** backends only (AVX2/OMP/GPU): CPU-scalar is excluded per the long-validation scalar policy, and Explicit Euler is excluded for the reason given under [Explicit Euler coverage](#explicit-euler-coverage) below.
 - **Re=400** — projection backends only (AVX2, OMP, GPU), full 129×129 validation
 - **Re=1000** — projection backends only (AVX2, OMP, GPU), full 129×129 validation
 
@@ -86,14 +86,21 @@ dt: 0.0005
 Enabled with the CMake option `-DCAVITY_FULL_VALIDATION=ON`:
 
 ```text
-Re=100:   Grid 129×129, 50000 steps  (250000 for Explicit Euler), dt 0.0002
+Re=100:   Grid 129×129, 50000 steps  (projection only),            dt 0.0002
 Re=400:   Grid 129×129, 60000 steps  (projection only),           dt 0.0005
 Re=1000:  Grid 129×129, 100000 steps (projection only),           dt 0.0005
 ```
 
-Step counts are budgets: the harness stops a run early once the relative change in kinetic
-energy per step drops below 1e-8 (after step 100), and each backend prints a `Steps run:` line
-with the steps it actually ran.
+Step counts are budgets: the harness stops a run early once the kinetic energy settles, and
+each backend prints a `Steps run:` line with the steps it actually ran and the physical
+time reached.
+
+The settling test is a **rate**, `|d(ln KE)/dt| < 1e-6` in units of 1/time, evaluated only
+after `t > 1.0`. It previously compared the relative change in kinetic energy **per step**
+against 1e-8, which scales with dt and so measured the step size as much as the flow; that
+is what ended the Explicit Euler runs at t ≈ 1.2. The rate is computed from the step the
+solver actually took (`ns_solver_stats_t.dt_used`), not from `params.dt`, because the
+Explicit Euler solvers clamp their own step to `NS_EULER_DT_LIMIT`.
 
 Higher-Reynolds cases run the **projection backends only** (the production solver)
 and require the finer 129×129 grid to resolve the stronger primary vortex and the
@@ -123,9 +130,15 @@ Projection (OpenMP):       RMS_u=0.0382  RMS_v=0.0440  < 0.10 ✅
 
 ### ✅ Explicit Euler (PASS with relaxed target)
 ```
-Explicit Euler (CPU):      RMS_u=0.0957  RMS_v=0.1284  < 0.15 ✅
-Explicit Euler (OpenMP):   RMS_u=0.0957  RMS_v=0.1284  < 0.15 ✅
+Explicit Euler (CPU):      RMS_u=0.0777  RMS_v=0.0334  < 0.15 ✅
+Explicit Euler (OpenMP):   RMS_u=0.0777  RMS_v=0.0334  < 0.15 ✅
 ```
+
+Both now run their full 25,000-step budget (t = 2.5). Under the old per-step
+settling test they stopped at 11,300 steps (t ≈ 1.13) and scored RMS_u 0.0957,
+RMS_v 0.1284 — the solver was being judged on an undeveloped flow, and RMS_v is
+nearly 4x better once it is not. Measured on a local Windows MSVC Debug build;
+scalar and OpenMP agree to four decimals.
 
 ### ⏭️ Skipped (Not Compiled)
 ```
@@ -142,7 +155,7 @@ All available backends produce consistent results (within 0.1%)
 ## Key Findings
 
 1. **Projection method meets scientific target** (RMS < 0.10) ✅ — at 33×33, and at 129×129 for Re=100, 400 and 1000
-2. **Explicit Euler meets relaxed target** (RMS < 0.15) ✅ — but its 129×129 runs stop early (see Known Issue below)
+2. **Explicit Euler meets relaxed target** (RMS < 0.15) ✅ at 33×33, the only grid it is validated on (see [Explicit Euler coverage](#explicit-euler-coverage))
 3. **CPU and OpenMP backends are consistent** ✅
 4. **Test correctly fails when RMS >= target** ✅
 
@@ -217,34 +230,29 @@ workflow run reports the steps each case ran.
 > If a later change pushes a case above RMS 0.10, increase its step budget (more physical
 > time) before relaxing the tolerance — the target is a scientific standard, not a tunable.
 
-### Known Issue: Explicit Euler at 129×129
+### Explicit Euler coverage
 
-The Explicit Euler cases are not evidence of 129×129 accuracy. Both solvers cap dt at 1e-4, and
-the harness's kinetic-energy exit (relative change per step below 1e-8) ends the runs long before
-their 250,000-step budget:
+Explicit Euler is validated at **33×33 only**. The 129×129 cases were removed.
 
-| Backend   | Steps run | Simulated time | KE residual | RMS_u  | RMS_v  |
-|-----------|-----------|----------------|-------------|--------|--------|
-| AVX2/SIMD | 11,775    | ≈ 1.2          | 9.8e-9      | 0.0957 | 0.1277 |
-| OpenMP    | 11,775    | ≈ 1.2          | 9.8e-9      | 0.0957 | 0.1277 |
+They were never evidence of 129×129 accuracy. Both solvers cap dt at 1e-4, so even the
+full 250,000-step budget reaches only t ≈ 25, and the broken per-step settling test ended
+them at t ≈ 1.2 (11,775 steps) with the flow still developing — they passed the RMS
+target without a developed solution. Fixing the criterion makes them run the whole
+budget, which costs roughly an hour of EC2 per validation run to hold a non-production
+solver to a relaxed target (RMS < 0.15) that every projection case clears with more than
+3× margin against the stricter one (RMS < 0.10).
 
-Measured on a local Windows (MSVC Release) build with 4 OpenMP threads. The AVX2 row was
-re-measured after the fix for the AVX2 solver's unprocessed row-tail columns (127 interior
-columns left 3 per row stale), which had produced 11,323 steps and RMS_v 0.1293; it now matches
-OpenMP. The 33×33 CI case stops the same way: the scalar Euler solver ends at 11,300 of 25,000
-steps with RMS_u 0.0957 and RMS_v 0.1284. The flow needs about 10–20 time units to reach steady
-state at Re=100 (see [lid-driven-cavity.md](lid-driven-cavity.md)), so these runs pass the 0.15
-target without a developed solution on either grid. The test logic is unchanged; the follow-up is
-tracked in ROADMAP §6.1.
+ROADMAP §6.1 offered both options — "make them run to a developed flow **or** drop them
+from Ghia validation". This is the second, with the 33×33 cases kept as the stability and
+ballpark-accuracy check they actually are. The `euler_avx2` and `euler_omp` selectors
+still exist in `test_cavity_backends` and can be run by hand.
 
 ## Next Steps
 
 ### Immediate (for v1.0)
-1. ROADMAP §6.1 cross-architecture consistency stays open: `CavityBackend_Consistency` compares
-   CPU, AVX2 and OpenMP center values at 33×33 without the GPU, and matching RMS values at
-   129×129 are not a field-level 0.1% comparison.
-2. Make the Explicit Euler 129×129 cases run to a developed flow, or drop them from full
-   validation (see Known Issue above).
+1. ROADMAP §6.1 cross-architecture consistency stays open: `CavityBackend_Consistency`
+   compares CPU, AVX2 and OpenMP center values at 33×33 without the GPU, and matching RMS
+   values at 129×129 are not a field-level 0.1% comparison.
 
 ### Future Enhancements
 1. Add grid convergence study (33→65→129→257)

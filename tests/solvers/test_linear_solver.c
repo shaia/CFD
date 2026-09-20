@@ -89,6 +89,9 @@ void test_params_default(void) {
     TEST_ASSERT_EQUAL_INT(1, params.check_interval);
     TEST_ASSERT_FALSE(params.verbose);
     TEST_ASSERT_EQUAL_INT(POISSON_PRECOND_NONE, params.preconditioner);
+    /* params_default() assigns field by field into an uninitialized local, so a
+     * field it forgets carries garbage into every solver in the library. */
+    TEST_ASSERT_EQUAL_DOUBLE(0.0, params.helmholtz_shift);
 }
 
 void test_stats_default(void) {
