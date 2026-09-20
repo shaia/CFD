@@ -22,6 +22,7 @@
 
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
+#include "../test_poisson_helpers.h"
 #include "cfd/core/memory.h"
 #include "cfd/core/indexing.h"
 #include <limits.h>
@@ -448,21 +449,6 @@ void test_gmres_vs_cg_l2(void) {
 }
 
 /** Manufactured Dirichlet solution p = sin(πx)sin(πy): O(h²) accuracy */
-/**
- * Hold every wall at zero.
- *
- * The manufactured solution below vanishes on the boundary, so this is the
- * problem it actually poses. Requesting it explicitly also makes the operator
- * nonsingular: the default zero-gradient walls give a singular Neumann system,
- * and init_dirichlet_rhs is strictly negative, so its interior mean is nonzero
- * and that system has no solution at all. The solver zeroes the halo before
- * calling this hook, so it has nothing left to do.
- */
-static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
-    (void)solver;
-    (void)x;
-}
-
 void test_gmres_dirichlet(void) {
     size_t nx = NX_MEDIUM, ny = NY_MEDIUM;
     double dx = (DOMAIN_XMAX - DOMAIN_XMIN) / (nx - 1);

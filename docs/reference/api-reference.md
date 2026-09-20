@@ -551,7 +551,8 @@ poisson_solver_params_t poisson_solver_params_default(void);
 > `tolerance`, `max_iterations` and `check_interval` are common to every method.
 >
 > Within an owned group there are named exceptions, also refused at init:
-> `krylov.restart` outside GMRES, a preconditioner on BiCGSTAB, a multigrid
+> `krylov.restart` outside GMRES, any preconditioner on BiCGSTAB or on a GPU
+> backend (no GPU solver implements one), a multigrid
 > preconditioner outside scalar and OpenMP CG, and — when `multigrid` is serving
 > as a preconditioner — its `cycle`, `smoother`, `bc`, or an unequal pre/post
 > sweep count, each of which would cost the inner cycle its symmetry. The rest of

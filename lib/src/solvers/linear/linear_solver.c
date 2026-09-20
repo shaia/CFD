@@ -115,22 +115,35 @@ static unsigned method_owned_groups(const poisson_solver_t* solver) {
     }
 }
 
-/** Whether a parameter group is entirely zero, i.e. untouched by the caller. */
-static int group_untouched(const void* group, size_t size) {
-    const unsigned char* bytes = (const unsigned char*)group;
-    for (size_t i = 0; i < size; i++) {
-        if (bytes[i] != 0) {
-            return 0;
-        }
-    }
-    return 1;
+/*
+ * Whether a group is entirely at its defaults, i.e. untouched by the caller.
+ *
+ * Field by field, not a memcmp or a byte scan over the struct. Padding bytes
+ * are not required to be zero in a caller's `poisson_solver_params_t p = {0};`
+ * -- C11 6.7.9 leaves them unspecified -- so a byte scan can read garbage and
+ * report a group the caller never touched as set. It also silently depends on
+ * these three structs having no padding, which is true today and is not
+ * something a future field can be trusted to preserve.
+ */
+static int sor_untouched(const poisson_sor_params_t* g) {
+    return g->omega == 0.0;
+}
+
+static int krylov_untouched(const poisson_krylov_params_t* g) {
+    return g->preconditioner == POISSON_PRECOND_NONE && g->restart == 0;
+}
+
+static int multigrid_untouched(const poisson_multigrid_params_t* g) {
+    return g->cycle == 0 && g->smoother == 0 && g->bc == 0
+        && g->pre_smooth == 0 && g->post_smooth == 0
+        && g->coarse_max_iter == 0 && g->max_levels == 0;
 }
 
 static cfd_status_t reject_unowned_group(const poisson_solver_t* solver,
                                          unsigned owned, unsigned group,
-                                         const void* data, size_t size,
+                                         int untouched,
                                          const char* name) {
-    if ((owned & group) || group_untouched(data, size)) {
+    if ((owned & group) || untouched) {
         return CFD_SUCCESS;
     }
     char msg[192];
@@ -209,17 +222,17 @@ cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
         cfd_status_t status;
 
         status = reject_unowned_group(solver, owned, PARAM_GROUP_SOR,
-                                      &p->sor, sizeof p->sor, "sor");
+                                      sor_untouched(&p->sor), "sor");
         if (status != CFD_SUCCESS) {
             return status;
         }
         status = reject_unowned_group(solver, owned, PARAM_GROUP_KRYLOV,
-                                      &p->krylov, sizeof p->krylov, "krylov");
+                                      krylov_untouched(&p->krylov), "krylov");
         if (status != CFD_SUCCESS) {
             return status;
         }
         status = reject_unowned_group(solver, owned, PARAM_GROUP_MULTIGRID,
-                                      &p->multigrid, sizeof p->multigrid, "multigrid");
+                                      multigrid_untouched(&p->multigrid), "multigrid");
         if (status != CFD_SUCCESS) {
             return status;
         }
@@ -233,6 +246,17 @@ cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
         && p->krylov.preconditioner != POISSON_PRECOND_NONE) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
             "BiCGSTAB has no preconditioner implementation on any backend");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+
+    /* No GPU solver implements a preconditioner -- there is no M^-1 apply
+     * anywhere under linear/gpu/ -- so one configured here would be accepted and
+     * then never used, which is what BiCGSTAB did on every backend for years. */
+    if (p->krylov.preconditioner != POISSON_PRECOND_NONE
+        && solver->backend == POISSON_BACKEND_GPU) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "the GPU Krylov solvers have no preconditioner implementation; "
+            "run preconditioned on a CPU backend, or unpreconditioned here");
         return CFD_ERROR_UNSUPPORTED;
     }
 
@@ -302,9 +326,11 @@ bool poisson_walls_are_singular(const poisson_walls_t* walls, size_t nz) {
 }
 
 poisson_solver_params_t poisson_solver_params_default(void) {
-    /* Zeroed first: the assignments below cover every named field, but the struct
-     * is also compared with memcmp as the convenience-API cache key, so padding
-     * has to be deterministic too. */
+    /* Zeroed first: the assignments below cover every named field, but a
+     * projection solver compares whole params structs with memcmp to decide
+     * whether its pressure solver needs rebuilding (ns_pressure_ensure), so
+     * padding has to be deterministic too. Without this, that comparison could
+     * differ on padding alone and rebuild the solver on every step. */
     poisson_solver_params_t params;
     memset(&params, 0, sizeof params);
     params.tolerance = 1e-6;
@@ -1091,9 +1117,14 @@ cfd_status_t poisson_solver_solve_common(
 }
 
 void poisson_make_rhs_compatible(double* rhs, size_t nx, size_t ny, size_t nz) {
-    if (rhs) {
-        mg_subtract_interior_mean(rhs, nx, ny, nz);
+    /* A grid with no interior has no interior mean to remove, and the loops
+     * below it count down from nx - 1 in size_t, so nx == 0 would wrap to
+     * SIZE_MAX and run off the buffer. Every other public entry point screens
+     * this; as an exported helper taking raw dimensions, so must this one. */
+    if (!rhs || nx < 3 || ny < 3 || (nz > 1 && nz < 3)) {
+        return;
     }
+    mg_subtract_interior_mean(rhs, nx, ny, nz);
 }
 
 /**

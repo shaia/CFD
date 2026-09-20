@@ -248,6 +248,18 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
         if (pressure_status != CFD_SUCCESS) {
             return pressure_status;
         }
+        /* ns_pressure_ensure sizes the solver from the grid, while p_new, rhs and
+         * u_new below were allocated at init and are sized from the grid this
+         * context was built for. A caller stepping with a larger grid would have
+         * the solver rebuilt for it and then sweep past the end of all three.
+         * The same guard the scalar and OpenMP projections carry. */
+        if (ctx->pressure->nx != ctx->nx || ctx->pressure->ny != ctx->ny
+            || ctx->pressure->nz != ctx->nz) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                "The pressure solver was rebuilt for a different grid than this "
+                "solver's buffers were allocated for; re-init for the new grid.");
+            return CFD_ERROR_INVALID;
+        }
     }
 
     size_t nx = field->nx;

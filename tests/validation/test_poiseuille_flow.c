@@ -198,7 +198,20 @@ static pois_result_t run_poiseuille(void) {
     params.pressure_bc.values.left = 0.0;
     params.pressure_bc.values.right = dpdx_analytical * POIS_DOMAIN_LENGTH;
 
-    solver_init(solver, g, &params);
+    /* Checked, because this configuration can now be refused: the projection
+     * validates pressure_bc and builds its pressure solver at init. A discarded
+     * refusal leaves solver->context NULL, every step returns INVALID, and the
+     * run then fails on profile accuracy with nothing pointing at the cause. */
+    cfd_status_t init_status = solver_init(solver, g, &params);
+    if (init_status != CFD_SUCCESS) {
+        snprintf(result.error_msg, sizeof(result.error_msg),
+                 "solver_init refused this configuration: %s", cfd_get_last_error());
+        solver_destroy(solver);
+        cfd_registry_destroy(registry);
+        grid_destroy(g);
+        flow_field_destroy(field);
+        return result;
+    }
     ns_solver_stats_t stats = ns_solver_stats_default();
 
     /* Time-stepping loop */
@@ -207,7 +220,16 @@ static pois_result_t run_poiseuille(void) {
         bc_apply_inlet(field->u, field->v, POIS_NX, POIS_NY, &inlet);
         bc_apply_outlet_velocity(field->u, field->v, POIS_NX, POIS_NY, &outlet);
 
-        solver_step(solver, field, g, &params, &stats);
+        cfd_status_t step_status = solver_step(solver, field, g, &params, &stats);
+        if (step_status != CFD_SUCCESS) {
+            snprintf(result.error_msg, sizeof(result.error_msg),
+                     "solver_step failed at step %d: %s", step, cfd_get_last_error());
+            solver_destroy(solver);
+            cfd_registry_destroy(registry);
+            grid_destroy(g);
+            flow_field_destroy(field);
+            return result;
+        }
 
         if (!isfinite(field->u[POIS_NX / 2 + (POIS_NY / 2) * POIS_NX])) {
             snprintf(result.error_msg, sizeof(result.error_msg),

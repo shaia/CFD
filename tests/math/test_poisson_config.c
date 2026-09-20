@@ -601,6 +601,91 @@ void test_refused_solve_resets_the_stats(void) {
 }
 
 /* ============================================================================
+ * NO GPU SOLVER IMPLEMENTS A PRECONDITIONER
+ * ============================================================================ */
+
+/**
+ * There is no M^-1 apply anywhere under lib/src/solvers/linear/gpu/. The
+ * multigrid rule already refused POISSON_PRECOND_MULTIGRID there, but
+ * POISSON_PRECOND_JACOBI was accepted and then never used -- the same silent
+ * ignore BiCGSTAB had on every backend, one enum value over.
+ */
+void test_gpu_refuses_any_preconditioner(void) {
+    int created;
+    const poisson_precond_type_t precond[] = {
+        POISSON_PRECOND_JACOBI, POISSON_PRECOND_MULTIGRID
+    };
+    const poisson_solver_method_t methods[] = {
+        POISSON_METHOD_CG, POISSON_METHOD_BICGSTAB
+    };
+
+    int checked = 0;
+    for (size_t m = 0; m < sizeof(methods) / sizeof(methods[0]); m++) {
+        for (size_t c = 0; c < sizeof(precond) / sizeof(precond[0]); c++) {
+            poisson_solver_params_t p = poisson_solver_params_default();
+            p.krylov.preconditioner = precond[c];
+            cfd_status_t status =
+                init_with(methods[m], POISSON_BACKEND_GPU, &p, NULL, &created);
+            if (!created) {
+                continue;  /* no CUDA in this build */
+            }
+            TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_UNSUPPORTED, status,
+                "a GPU solver must refuse a preconditioner it does not implement");
+            checked++;
+        }
+    }
+    printf("GPU preconditioner rejection covered %d combinations\n", checked);
+
+    /* The same preconditioner on a CPU CG is implemented and stays accepted. */
+    poisson_solver_params_t cpu = poisson_solver_params_default();
+    cpu.krylov.preconditioner = POISSON_PRECOND_JACOBI;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &cpu, NULL, &created));
+}
+
+/* ============================================================================
+ * A PUBLIC HELPER TAKING RAW DIMENSIONS
+ * ============================================================================ */
+
+/**
+ * poisson_make_rhs_compatible forwards nx/ny/nz into loops that count from 1 to
+ * n - 1 in size_t. A degenerate dimension wrapped that to SIZE_MAX and ran off
+ * the buffer; there is no interior to take a mean over anyway.
+ */
+void test_make_rhs_compatible_survives_degenerate_dims(void) {
+    double guard[16];
+    for (int i = 0; i < 16; i++) {
+        guard[i] = 7.0;
+    }
+
+    poisson_make_rhs_compatible(guard, 0, 4, 1);
+    poisson_make_rhs_compatible(guard, 4, 0, 1);
+    poisson_make_rhs_compatible(guard, 1, 1, 1);
+    poisson_make_rhs_compatible(guard, 2, 2, 1);
+    poisson_make_rhs_compatible(NULL, 4, 4, 1);
+
+    for (int i = 0; i < 16; i++) {
+        TEST_ASSERT_EQUAL_DOUBLE_MESSAGE(7.0, guard[i],
+            "a grid with no interior must leave the buffer alone");
+    }
+
+    /* A real grid still has its interior mean removed. */
+    double f[25];
+    for (int i = 0; i < 25; i++) {
+        f[i] = 1.0;
+    }
+    poisson_make_rhs_compatible(f, 5, 5, 1);
+    double sum = 0.0;
+    for (int j = 1; j < 4; j++) {
+        for (int i = 1; i < 4; i++) {
+            sum += f[j * 5 + i];
+        }
+    }
+    TEST_ASSERT_DOUBLE_WITHIN_MESSAGE(1e-14, 0.0, sum,
+        "the interior mean must actually be removed on a real grid");
+}
+
+/* ============================================================================
  * STATUS NAMES
  * ============================================================================ */
 
@@ -656,5 +741,7 @@ int main(void) {
     RUN_TEST(test_z_face_on_a_2d_grid_is_refused);
     RUN_TEST(test_z_face_on_a_3d_grid_is_accepted);
     RUN_TEST(test_refused_solve_resets_the_stats);
+    RUN_TEST(test_gpu_refuses_any_preconditioner);
+    RUN_TEST(test_make_rhs_compatible_survives_degenerate_dims);
     return UNITY_END();
 }

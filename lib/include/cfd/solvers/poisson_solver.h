@@ -240,9 +240,11 @@ typedef struct {
  * Parameters owned by the Krylov family: CG, BiCGSTAB, GMRES.
  */
 typedef struct {
-    poisson_precond_type_t preconditioner; /**< 0 = NONE. Honoured by CG and GMRES;
-                                                BiCGSTAB has no preconditioner on any
-                                                backend and refuses a non-NONE value. */
+    poisson_precond_type_t preconditioner; /**< 0 = NONE. Honoured by CG and GMRES on
+                                                the CPU backends. BiCGSTAB implements no
+                                                preconditioner on any backend, and no GPU
+                                                solver implements one at all; both refuse
+                                                a non-NONE value rather than ignore it. */
     int restart;                           /**< GMRES(m) restart length; 0 = auto (30).
                                                 Must stay 0 for CG and BiCGSTAB. */
 } poisson_krylov_params_t;
@@ -606,10 +608,11 @@ CFD_LIBRARY_EXPORT poisson_solver_t* poisson_solver_create(
  *   max_levels are yours), if check_interval is below 1, or if params.walls
  *   collides with a custom apply_bc.
  * - CFD_ERROR_UNSUPPORTED if this method or backend cannot implement what was
- *   asked: a preconditioner on BiCGSTAB, a multigrid preconditioner outside
- *   scalar and OpenMP CG, prescribed faces outside the CPU Krylov solvers, or a
- *   caller's apply_bc on multigrid or on any GPU solver (both apply their walls
- *   themselves and never call it).
+ *   asked: any preconditioner on BiCGSTAB or on a GPU backend (neither
+ *   implements one), a multigrid preconditioner outside scalar and OpenMP CG,
+ *   prescribed faces outside the CPU Krylov solvers, or a caller's apply_bc on
+ *   multigrid or on any GPU solver (both apply their walls themselves and never
+ *   call it).
  *
  * Install a custom apply_bc before calling this, not after: omega resolution
  * reads it. cfd_get_last_error() carries the sentence naming the fix.

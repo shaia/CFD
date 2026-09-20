@@ -228,7 +228,6 @@ static cfd_status_t GMRES_FUNC(gmres_init)(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-
     /* Resolve restart length m (0 = auto) */
     int m = (params && params->krylov.restart > 0) ? params->krylov.restart : GMRES_DEFAULT_RESTART;
 

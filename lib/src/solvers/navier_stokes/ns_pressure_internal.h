@@ -19,6 +19,8 @@
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
 
+#include "../linear/multigrid_internal.h"  /* mg_is_pow2_plus1 */
+
 #include <string.h>
 
 /**
@@ -126,22 +128,29 @@ static inline cfd_status_t ns_pressure_ensure(poisson_solver_t** slot,
         return reason;
     }
 
+    /* A multigrid hierarchy needs 2^k+1 points per active dimension. Tested here
+     * rather than inferred from the init status: that grid shape is the caller's
+     * to fix by choosing another pressure mode, so it is reported as UNSUPPORTED
+     * rather than INVALID, but poisson_solver_init returns INVALID for a dozen
+     * unrelated reasons now -- a prescribed z-face on a 2D grid, a non-finite
+     * wall value, a parameter group the method does not read. Mapping all of
+     * them to this message sent callers to resize a grid that was never the
+     * problem. Everything else passes through with the message init set. */
+    int uses_hierarchy = cfg->method == POISSON_METHOD_MULTIGRID
+                      || cfg->params.krylov.preconditioner == POISSON_PRECOND_MULTIGRID;
+    if (uses_hierarchy
+        && (!mg_is_pow2_plus1(nx) || !mg_is_pow2_plus1(ny)
+            || (nz > 1 && !mg_is_pow2_plus1(nz)))) {
+        poisson_solver_destroy(solver);
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "The multigrid pressure modes require 2^k+1 points per active dimension");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+
     cfd_status_t status =
         poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &cfg->params);
     if (status != CFD_SUCCESS) {
         poisson_solver_destroy(solver);
-
-        /* A multigrid hierarchy needs 2^k+1 points per active dimension. The grid
-         * was screened above, so INVALID from here can only be that rejection, and
-         * it is reported as UNSUPPORTED: the caller's grid is fine, this pressure
-         * mode just cannot run on it, and picking another one is the way out. */
-        int uses_hierarchy = cfg->method == POISSON_METHOD_MULTIGRID
-                          || cfg->params.krylov.preconditioner == POISSON_PRECOND_MULTIGRID;
-        if (uses_hierarchy && status == CFD_ERROR_INVALID) {
-            cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                "The multigrid pressure modes require 2^k+1 points per active dimension");
-            return CFD_ERROR_UNSUPPORTED;
-        }
         return status;
     }
 

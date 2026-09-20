@@ -502,13 +502,14 @@ Smoothers: Red-Black Gauss-Seidel (default) or weighted Jacobi (ω=2/3).
 - `MG_CYCLE_F` runs one full-multigrid pass (coarsest-first nested iteration)
   on the first cycle — reaching discretization accuracy immediately — then
   continues with V-cycles
-- Parameters: `mg_cycle`, `mg_smoother`, `mg_bc`, `mg_pre_smooth`/`mg_post_smooth`
-  (default 2/2), `mg_coarse_max_iter` (default 50), `mg_max_levels` (0 = auto)
+- Parameters, all under `params.multigrid`: `cycle`, `smoother`, `bc`,
+  `pre_smooth`/`post_smooth` (default 2/2), `coarse_max_iter` (default 50),
+  `max_levels` (0 = auto)
 
 **Backends:** scalar (`multigrid_scalar`) and OpenMP (`POISSON_BACKEND_OMP`,
-`multigrid_omp`). `POISSON_PRESET_MULTIGRID` leaves the backend at AUTO, which
-resolves to scalar here — AUTO prefers SIMD, which multigrid lacks — so set
-`cfg.backend = POISSON_BACKEND_OMP` for the threaded one.
+`multigrid_omp`). `POISSON_PRESET_MULTIGRID` names `POISSON_BACKEND_SCALAR`
+rather than leaving AUTO, which would resolve to SIMD — a backend multigrid
+lacks — so set `cfg.backend = POISSON_BACKEND_OMP` for the threaded one.
 Both share one algorithm template
 (`lib/src/solvers/linear/multigrid_template/linear_solver_multigrid_template.h`);
 the OpenMP backend parallelizes the smoother, residual, grid-transfer and

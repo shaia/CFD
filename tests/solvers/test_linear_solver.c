@@ -15,6 +15,7 @@
  */
 
 #include "cfd/solvers/poisson_solver.h"
+#include "../test_poisson_helpers.h"
 #include "cfd/core/memory.h"
 #include "unity.h"
 
@@ -344,20 +345,6 @@ void test_cg_converges_zero_rhs(void) {
     cfd_free(x);
     cfd_free(rhs);
     poisson_solver_destroy(solver);
-}
-
-/**
- * Hold every wall at zero, making the operator Dirichlet and so nonsingular.
- *
- * The default zero-gradient walls give a singular Neumann system whose nullspace
- * is the constants, and a uniform right-hand side lies entirely inside it, so that
- * system has no solution. The tests below want the well-posed problem instead:
- * nabla^2 p = const with p = 0 on the boundary. The solver zeroes the halo before
- * calling this hook, so it has nothing left to do.
- */
-static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
-    (void)solver;
-    (void)x;
 }
 
 void test_cg_converges_uniform_rhs(void) {

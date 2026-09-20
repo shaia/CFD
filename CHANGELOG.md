@@ -109,6 +109,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     than calling every NULL an unsupported backend. A refused solve resets the whole
     stats struct, so a reused one cannot show the previous solve's residual beside
     `POISSON_INCOMPATIBLE_RHS`.
+  - **Second review pass.** No GPU solver implements a preconditioner -- there is no
+    `M^-1` apply anywhere under `linear/gpu/` -- so `POISSON_PRECOND_JACOBI` on GPU CG
+    was accepted and then never used; only the multigrid preconditioner had been
+    refused there. The AVX2 projection now checks that a pressure solver rebuilt
+    mid-run still matches the buffers allocated at init, the guard the scalar and
+    OpenMP paths carry: without it, stepping with a larger grid rebuilt the solver for
+    it and swept past the end of `p_new`, `rhs` and `u_new`. `ns_pressure_ensure` tests
+    the 2^k+1 grid shape itself instead of assuming every `CFD_ERROR_INVALID` from init
+    was that rejection -- with the validator in place, INVALID now means a dozen other
+    things, and all of them were being reported as "resize your grid".
+    `poisson_make_rhs_compatible()` screens degenerate dimensions, which used to wrap
+    `nx - 1` to `SIZE_MAX`. The group-emptiness test is field-by-field rather than a
+    raw byte scan, which depended on three structs having no padding and on a caller's
+    `= {0}` zeroing padding that C11 leaves unspecified. `test_poiseuille_flow` checks
+    the init and step statuses it was discarding, so a refused configuration says so
+    instead of failing later on profile accuracy. `hold_walls_at_zero` and the halo
+    contract it documents live in one header rather than three test files.
   - `poisson_solver_status_string()` is new: `POISSON_INCOMPATIBLE_RHS` had no name and printed
     as a generic "error" in both examples, each of which hand-rolled its own ternary chain.
   (`lib/include/cfd/solvers/poisson_solver.h`, `lib/src/solvers/linear/linear_solver.c`,
