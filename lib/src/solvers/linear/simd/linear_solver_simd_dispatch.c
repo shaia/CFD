@@ -22,17 +22,33 @@
 #include "cfd/core/cpu_features.h"
 #include "cfd/core/logging.h"
 
+#include <stdio.h>
+
 /* ============================================================================
  * LOGGING
  * ============================================================================ */
 
 /**
- * Log when SIMD backend is unavailable.
- * Callers should handle the NULL return and fall back to scalar if needed.
+ * Record why a SIMD factory is about to return NULL.
+ *
+ * The error state, not just the log: a caller that gets NULL from
+ * poisson_solver_create has to be able to say what went wrong, and a DEBUG line
+ * is not available to it. Without this the refusal travels as a bare
+ * CFD_ERROR_UNSUPPORTED with cfd_get_last_error() reading (null) -- which is
+ * what the AVX2 projection reported on a CFD_ENABLE_AVX2=OFF build.
+ *
+ * Callers must not fall back to scalar on NULL; that is the cross-backend
+ * fallback the library forbids. They return CFD_ERROR_UNSUPPORTED and let the
+ * caller pick another backend.
  */
 static void log_no_simd_available(const char* solver_type) {
-    CFD_LOG_DEBUG("simd", "SIMD %s solver not available (detected arch: %s). "
-                  "Returning NULL for fallback.", solver_type, cfd_get_simd_name());
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "No SIMD %s solver in this build (detected arch: %s); "
+             "build with -DCFD_ENABLE_AVX2=ON or request another backend",
+             solver_type, cfd_get_simd_name());
+    cfd_set_error(CFD_ERROR_UNSUPPORTED, msg);
+    CFD_LOG_DEBUG("simd", "%s", msg);
 }
 
 /* ============================================================================

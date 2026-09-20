@@ -68,6 +68,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Krylov space depends on that. `test_pcg_mg_reads_the_multigrid_group` pins the
     forwarding by measurement: a V(1,1) inner cycle needs strictly more CG iterations
     than V(4,4) (33 vs 25 at 33², 65 vs 49 at 129²).
+  - **A SIMD factory that returns NULL now says why.** `log_no_simd_available` only
+    logged at DEBUG and set no error state, so `poisson_solver_create(..., SIMD)` on a
+    build without AVX2 handed back NULL with `cfd_get_last_error()` reading `(null)` --
+    visible as a bare `CFD_ERROR_UNSUPPORTED` from the AVX2 projection's init on a
+    `CFD_ENABLE_AVX2=OFF` build. It now sets an error naming the fix. Its doc comment
+    also told callers to "fall back to scalar if needed", which is the cross-backend
+    fallback the library forbids.
   - `poisson_solver_status_string()` is new: `POISSON_INCOMPATIBLE_RHS` had no name and printed
     as a generic "error" in both examples, each of which hand-rolled its own ternary chain.
   (`lib/include/cfd/solvers/poisson_solver.h`, `lib/src/solvers/linear/linear_solver.c`,

@@ -697,6 +697,7 @@ void test_cpu_accepts_turbulence(void) {
         NS_SOLVER_TYPE_PROJECTION_OMP, NS_SOLVER_TYPE_EXPLICIT_EULER,
         NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK4,
     };
+    int checked = 0;
     for (size_t s = 0; s < sizeof(cpu_solvers) / sizeof(cpu_solvers[0]); s++) {
         ns_solver_t* slv = cfd_solver_create(registry, cpu_solvers[s]);
         if (!slv) {
@@ -704,10 +705,37 @@ void test_cpu_accepts_turbulence(void) {
         }
         ns_solver_params_t params = make_params(NS_PRESSURE_SOLVER_DEFAULT);
         params.turb_model = TURB_MODEL_K_EPSILON;
-        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, solver_init(slv, g, &params),
-            "a solver that implements RANS must accept a turbulence model");
+        /* Baseline: the same solver, same everything, no turbulence model.
+         *
+         * Asserting CFD_SUCCESS outright would be wrong: a solver can be
+         * registered and still refuse this build for reasons that have nothing
+         * to do with turbulence. projection_optimized does exactly that when
+         * CFD_ENABLE_AVX2 is OFF -- its pressure solve wants the SIMD CG, which
+         * is not compiled in, and routing it to the scalar one would be the
+         * silent cross-backend fallback the library forbids. Comparing against
+         * the laminar baseline isolates the one variable this test is about. */
+        ns_solver_params_t plain = make_params(NS_PRESSURE_SOLVER_DEFAULT);
+        ns_solver_t* base = cfd_solver_create(registry, cpu_solvers[s]);
+        TEST_ASSERT_NOT_NULL(base);
+        cfd_status_t laminar = solver_init(base, g, &plain);
+        solver_destroy(base);
+        if (laminar != CFD_SUCCESS) {
+            printf("      %s: unavailable in this build (%d, skipping)\n",
+                   cpu_solvers[s], (int)laminar);
+            solver_destroy(slv);
+            continue;
+        }
+
+        cfd_status_t turbulent = solver_init(slv, g, &params);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(laminar, turbulent,
+            "a solver that implements RANS must accept a turbulence model; if this "
+            "differs from the laminar init, the model is what was refused");
+        checked++;
         solver_destroy(slv);
     }
+    printf("      accepted on %d solvers\n", checked);
+    TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, checked,
+        "no solver was available to check, which makes this test vacuous");
 
     cfd_registry_destroy(registry);
     grid_destroy(g);
