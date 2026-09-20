@@ -41,7 +41,8 @@ typedef struct {
     double dx2;        /* dx^2 */
     double dy2;        /* dy^2 */
     double inv_dz2;    /* 1/dz^2 (0 for 2D) */
-    double diag_inv;   /* Jacobi preconditioner: 1/(2/dx2 + 2/dy2 + 2*inv_dz2) */
+    double diag_inv;   /* Jacobi preconditioner: 1/(2/dx2 + 2/dy2 + 2*inv_dz2 + sigma) */
+    double sigma;      /* Helmholtz shift; 0 = pure Poisson */
 
     size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
     size_t k_start;    /* first interior k index */
@@ -247,8 +248,13 @@ static cfd_status_t cg_scalar_init(
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
-    /* Compute Jacobi preconditioner diagonal inverse */
-    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
+    ctx->sigma = params ? params->helmholtz_shift : 0.0;
+
+    /* Jacobi preconditioner diagonal inverse. The shift is a diagonal term, so it
+     * folds in here; adding 0.0 to a finite positive sum is exact, leaving the
+     * unshifted value bit-identical. */
+    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2
+                           + ctx->sigma);
 
     /* Check if preconditioner is enabled */
     ctx->precond_type = params ? params->krylov.preconditioner : POISSON_PRECOND_NONE;
@@ -364,6 +370,7 @@ static cfd_status_t cg_scalar_solve(
     double* Ap = ctx->Ap;
     int use_precond = ctx->use_precond;
     double diag_inv = ctx->diag_inv;
+    double sigma = ctx->sigma;
 
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
@@ -374,6 +381,14 @@ static cfd_status_t cg_scalar_solve(
 
     /* Compute initial residual: r_0 = b - A*x_0 */
     compute_residual(x, rhs, r, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
+    /* A = -lap, so the shifted operator is A_h = -lap + sigma*I and
+     * r = b - A_h x = (-rhs + lap x) - sigma*x. Applied through the existing
+     * axpy rather than fused into the kernel: at sigma = 0 the branch is not
+     * taken, so the unshifted path executes exactly the instructions it did
+     * before -- bit-identity by construction, and no 0.0*inf = NaN. */
+    if (sigma != 0.0) {
+        axpy(-sigma, x, r, nx, ny, k_start, k_end, stride_z);
+    }
 
     size_t n_total = nx * ny * solver->nz;
     double initial_res = sqrt(dot_product(r, r, nx, ny, k_start, k_end, stride_z));
@@ -438,6 +453,9 @@ static cfd_status_t cg_scalar_solve(
          * interior-only updates, so this has to run every iteration. */
         poisson_solver_krylov_apply_bc_homogeneous(solver, p);
         apply_laplacian(p, Ap, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
+        if (sigma != 0.0) {
+            axpy(sigma, p, Ap, nx, ny, k_start, k_end, stride_z);
+        }
 
         /* alpha = rho / (p, Ap) */
         double p_dot_Ap = dot_product(p, Ap, nx, ny, k_start, k_end, stride_z);

@@ -529,6 +529,7 @@ typedef struct {
 
 typedef struct {
     poisson_walls_t walls;      // Per-face walls (zero-init = all zero-gradient)
+    double helmholtz_shift;     // sigma in nabla^2 x - sigma*x = rhs (0 = pure Poisson)
     double tolerance;           // Relative tolerance (default: 1e-6)
     double absolute_tolerance;  // Absolute tolerance (default: 1e-10)
     int max_iterations;         // Max iterations (default: 5000)
@@ -558,6 +559,13 @@ poisson_solver_params_t poisson_solver_params_default(void);
 > sweep count, each of which would cost the inner cycle its symmetry. The rest of
 > that group (`pre_smooth`/`post_smooth`, `coarse_max_iter`, `max_levels`) is
 > forwarded to the preconditioner and is yours to tune.
+>
+> `helmholtz_shift` is common to every method like `walls`, because it describes
+> the operator rather than the algorithm — but only scalar CG implements it, and
+> not with the multigrid preconditioner, so anything else refuses a nonzero shift
+> with `CFD_ERROR_UNSUPPORTED`. A negative or non-finite shift is
+> `CFD_ERROR_INVALID`. A shift removes the Neumann nullspace, so a shifted solve
+> takes any RHS and must **not** be mean-subtracted.
 
 > Multigrid requires 2^k+1 grid points per active dimension (e.g. 33, 65, 129);
 > `poisson_solver_init` returns `CFD_ERROR_INVALID` otherwise. In the default

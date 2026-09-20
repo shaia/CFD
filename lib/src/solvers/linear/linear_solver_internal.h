@@ -81,6 +81,31 @@ poisson_solver_t* create_multigrid_omp_solver(void);
 #endif
 
 /**
+ * Whether a (method, backend) pair implements params.helmholtz_shift.
+ *
+ * Default-deny. Currently: scalar CG only, and not with the multigrid
+ * preconditioner, whose inner V-cycle is built from default params and would
+ * precondition with the unshifted operator. POISSON_PRECOND_JACOBI is fine --
+ * it is one diagonal term.
+ *
+ * poisson_solver_check_config is what calls this; a backend that has not been
+ * taught the shift fails loudly at init rather than silently solving the
+ * unshifted equation, which is a wrong answer rather than a slow one.
+ */
+static inline int poisson_solver_shift_supported(
+    poisson_solver_method_t method,
+    poisson_solver_backend_t backend,
+    const poisson_solver_params_t* params) {
+    if (method != POISSON_METHOD_CG || backend != POISSON_BACKEND_SCALAR) {
+        return 0;
+    }
+    if (params && params->krylov.preconditioner == POISSON_PRECOND_MULTIGRID) {
+        return 0;
+    }
+    return 1;
+}
+
+/**
  * Validate the whole configuration against the resolved method and backend.
  *
  * Called once from poisson_solver_init, and the only place that decides what a
@@ -91,8 +116,9 @@ poisson_solver_t* create_multigrid_omp_solver(void);
  *
  * Central rather than per-init because the alternative -- a check inside each of
  * the twenty-odd solver inits -- is what let BiCGSTAB ignore
- * params.krylov.preconditioner on every backend, and three GPU solvers ignore a
- * caller's apply_bc, for as long as they have existed.
+ * params.krylov.preconditioner on every backend, three GPU solvers ignore a
+ * caller's apply_bc, and would have let any of ~20 inits ignore a Helmholtz
+ * shift, for as long as they have existed.
  */
 cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver);
 

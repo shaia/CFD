@@ -326,6 +326,13 @@ typedef enum {
 /**
  * NSSolver statistics - filled after each solve step
  */
+/**
+ * Time-step ceiling the explicit Euler solvers impose on themselves, regardless
+ * of params.dt. Exposed so callers can reason about simulated time; the actual
+ * step of any solve is reported in ns_solver_stats_t.dt_used.
+ */
+#define NS_EULER_DT_LIMIT 0.0001
+
 typedef struct {
     int iterations;          /**< Number of iterations performed */
     double residual;         /**< Final residual norm */
@@ -335,6 +342,11 @@ typedef struct {
     double max_nu_t;         /**< Maximum eddy viscosity (when turbulence model active) */
     double cfl_number;       /**< Actual CFL number used */
     double elapsed_time_ms;  /**< Wall clock time for solve */
+    double dt_used;          /**< Time step the solver actually advanced by.
+                              *   Defaults to params->dt; the explicit Euler
+                              *   solvers clamp it to NS_EULER_DT_LIMIT, so a
+                              *   caller measuring simulated time must read this
+                              *   rather than assume params->dt. */
     cfd_status_t status;     /**< Status of the solve */
 } ns_solver_stats_t;
 
@@ -536,6 +548,7 @@ static inline ns_solver_stats_t ns_solver_stats_default(void) {
     stats.max_nu_t = 0.0;
     stats.cfl_number = 0.0;
     stats.elapsed_time_ms = 0.0;
+    stats.dt_used = 0.0;
     stats.status = CFD_SUCCESS;
     return stats;
 }

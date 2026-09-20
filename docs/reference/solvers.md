@@ -39,7 +39,7 @@ dt ≤ min(dx²/(4ν), dx/u_max)
 | Solver | Backend | Description |
 |--------|---------|-------------|
 | `explicit_euler` | Scalar | Basic implementation |
-| `explicit_euler_optimized` | SIMD | SIMD-optimized (auto-detects AVX2/NEON) |
+| `explicit_euler_optimized` | SIMD | AVX2 (requires `-DCFD_ENABLE_AVX2=ON`; no NEON kernels) |
 | `explicit_euler_omp` | OpenMP | Multi-threaded |
 | `explicit_euler_gpu` | CUDA | GPU-accelerated |
 
@@ -75,7 +75,7 @@ Chorin's projection method - properly enforces incompressibility constraint.
 | Solver | Backend | Description |
 |--------|---------|-------------|
 | `projection` | Scalar | Basic implementation |
-| `projection_optimized` | SIMD | SIMD-optimized (runtime detection: AVX2/NEON) |
+| `projection_optimized` | SIMD | AVX2 + OpenMP (requires `-DCFD_ENABLE_AVX2=ON`; no NEON kernels) |
 | `projection_omp` | OpenMP | Multi-threaded |
 | `projection_gpu` | GPU | CUDA-accelerated (CG pressure solve) |
 
@@ -145,9 +145,20 @@ diffusion limit; the numerical diffusion of upwind relaxes neither.
 | AVX2 (`*_optimized`) | Yes (blend-mask vectorized) |
 | CUDA (`*_gpu`) | No: `CFD_ERROR_UNSUPPORTED` at init and at step |
 
-On builds without AVX2, `explicit_euler_optimized` and `projection_optimized` run
-their scalar paths, which implement upwind as well. Values other than the two
-above are rejected with `CFD_ERROR_INVALID` at init.
+The `*_optimized` solvers require a build configured with `-DCFD_ENABLE_AVX2=ON`
+(off by default) **and** a CPU that supports AVX2. Where either is missing they
+return `CFD_ERROR_UNSUPPORTED` at init rather than running scalar kernels -- a
+silent fallback would turn a configuration mistake into a performance mystery.
+Use the scalar names (`explicit_euler`, `projection`, `rk2`, `rk4`) for a
+guaranteed scalar path, and `cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)`
+to test for the SIMD backend before selecting it.
+
+`projection_optimized` is stricter still: its SIMD Poisson sub-solver is
+threaded, so it also needs OpenMP and reports `CFD_ERROR_UNSUPPORTED` without it
+even when the other three `*_optimized` solvers are available.
+
+Convection-scheme values other than the two above are rejected with
+`CFD_ERROR_INVALID` at init.
 
 ```c
 ns_solver_params_t params = ns_solver_params_default();

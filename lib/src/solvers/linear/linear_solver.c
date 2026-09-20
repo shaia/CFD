@@ -185,18 +185,39 @@ cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
             cfd_set_error(CFD_ERROR_INVALID, "params.walls.values must be finite");
             return CFD_ERROR_INVALID;
         }
-        /* A 2D grid has no z-faces to prescribe. poisson_apply_walls skips them
-         * and poisson_walls_are_singular ignores them, so without this the face
-         * would be configured, accepted, and have no effect -- the silent ignore
-         * this whole function exists to prevent. */
+        /* A 2D grid has no z-faces, so poisson_apply_walls skips .front/.back and
+         * poisson_walls_are_singular ignores them. Prescribing one is refused
+         * only when it was the caller's only prescribed face: they meant to pin
+         * the level, nothing pinned it, and the operator is still singular -- so
+         * the solve either refuses their rhs or drifts, with the cause two steps
+         * away. Alongside a prescribed x or y face the z-faces are simply inert,
+         * which is what poisson_walls_uniform() produces on a 2D grid and is not
+         * worth refusing. */
         if (solver->nz <= 1
             && (p->walls.front != POISSON_WALL_ZERO_GRADIENT
-                || p->walls.back != POISSON_WALL_ZERO_GRADIENT)) {
+                || p->walls.back != POISSON_WALL_ZERO_GRADIENT)
+            && poisson_walls_are_singular(&p->walls, solver->nz)) {
             cfd_set_error(CFD_ERROR_INVALID,
                 "params.walls.front and .back describe z-faces, which a 2D grid "
-                "(nz == 1) does not have; they would have no effect on this solve");
+                "(nz == 1) does not have, so nothing here pins the pressure level; "
+                "prescribe an x or y face instead");
             return CFD_ERROR_INVALID;
         }
+    }
+
+    /* ---- the Helmholtz shift ------------------------------------------ */
+    if (!isfinite(p->helmholtz_shift) || p->helmholtz_shift < 0.0) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "params.helmholtz_shift must be finite and >= 0 (a negative shift is the "
+            "indefinite Helmholtz operator, which is not SPD)");
+        return CFD_ERROR_INVALID;
+    }
+    if (p->helmholtz_shift != 0.0
+        && !poisson_solver_shift_supported(solver->method, solver->backend, p)) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "params.helmholtz_shift is implemented by the scalar CG solver only, and "
+            "not with the multigrid preconditioner");
+        return CFD_ERROR_UNSUPPORTED;
     }
 
     /* ---- a caller's apply_bc ------------------------------------------ */
@@ -349,6 +370,7 @@ poisson_solver_params_t poisson_solver_params_default(void) {
     params.multigrid.coarse_max_iter = 0; /* 0 = default (50) */
     params.multigrid.max_levels = 0;      /* 0 = auto */
     params.walls = poisson_walls_default();
+    params.helmholtz_shift = 0.0;  /* 0 = pure Poisson */
     return params;
 }
 
@@ -760,6 +782,7 @@ double poisson_solver_compute_residual(
     double dx2 = solver->dx * solver->dx;
     double dy2 = solver->dy * solver->dy;
     double inv_dz2 = poisson_solver_compute_inv_dz2(solver->dz);
+    double sigma = solver->params.helmholtz_shift;
 
     size_t stride_z, k_start, k_end;
     poisson_solver_compute_3d_bounds(solver->nz, nx, ny,
@@ -779,7 +802,12 @@ double poisson_solver_compute_residual(
                   + (x[idx + stride_z] + x[idx - stride_z]
                      - 2.0 * x[idx]) * inv_dz2;
 
-                double residual = fabs(laplacian - rhs[idx]);
+                /* Operator is nabla^2 - sigma*I; sigma = 0 leaves this exact. */
+                double diff = laplacian - rhs[idx];
+                if (sigma != 0.0) {
+                    diff -= sigma * x[idx];
+                }
+                double residual = fabs(diff);
                 /* A NaN compares false against everything, so without the
                  * isnan() a diverged field would read as a zero residual */
                 if (residual > max_residual || isnan(residual)) {
@@ -938,10 +966,19 @@ static void krylov_zero_halo(const poisson_solver_t* solver, double* x)
 
 int poisson_solver_krylov_is_singular(const poisson_solver_t* solver)
 {
+    if (!solver) {
+        return 0;
+    }
+    /* A Helmholtz shift adds sigma*I, so the constants stop being a nullspace and
+     * the operator is nonsingular whatever the walls say. Checked here rather
+     * than at the one call site, so that every future caller of a predicate
+     * named "is singular" gets a true answer. */
+    if (solver->params.helmholtz_shift > 0.0) {
+        return 0;
+    }
     /* A hook prescribes wall values, which pins the level and makes the operator
      * nonsingular, exactly as a Dirichlet face does. */
-    return solver
-        && solver->apply_bc == NULL
+    return solver->apply_bc == NULL
         && poisson_walls_are_singular(&solver->params.walls, solver->nz);
 }
 
@@ -1154,7 +1191,9 @@ static cfd_status_t check_rhs_compatible(const poisson_solver_t* solver, const d
     }
 
     if (!poisson_solver_krylov_is_singular(solver)) {
-        return CFD_SUCCESS;  /* a prescribed face pins the level; any rhs is fine */
+        /* A prescribed face pins the level, and a Helmholtz shift removes the
+         * nullspace outright; either way any rhs is solvable. */
+        return CFD_SUCCESS;
     }
 
     /* Solve before init leaves the dimensions at 0, where the interior loops below

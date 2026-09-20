@@ -400,6 +400,10 @@ void test_consistency_with_optimized(void) {
         32, 32, &params, 20, 0.05
     );
 
+    if (result.solver_unavailable) {
+        TEST_IGNORE_MESSAGE("SIMD Euler solver not available (AVX2 not compiled)");
+    }
+
     printf("Relative error: %.2e\n", result.relative_error);
     printf("%s\n", result.message);
 

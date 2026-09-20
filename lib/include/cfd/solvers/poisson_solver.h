@@ -296,6 +296,42 @@ typedef struct {
                                     reach iter % 0. Default 1. */
     bool verbose;              /**< Print iteration progress (default: false) */
 
+    /**
+     * Helmholtz shift sigma (default: 0 = pure Poisson, bit-identical to prior
+     * releases). The solved equation is
+     *
+     *     nabla^2 x - sigma*x = rhs
+     *
+     * Common to every method, like walls above, because it describes the
+     * operator rather than the algorithm used to invert it -- even though only
+     * the scalar CG solver implements it today, which poisson_solver_init()
+     * refuses rather than ignores.
+     *
+     * For implicit diffusion, (I - nu*dt*nabla^2)u = b rearranges to sigma =
+     * 1/(nu*dt) with rhs[i] = -b[i]/(nu*dt). Note the minus sign on the rhs.
+     * The caller must ensure nu*dt > 0; sigma = 1/(nu*dt) is otherwise infinite
+     * and rejected below.
+     *
+     * sigma > 0 makes the operator strictly diagonally dominant, so it is better
+     * conditioned than the pure Poisson problem: cond = 1 + 8d with d = nu*dt/h^2,
+     * and CG iterations go as sqrt(1 + 8d).
+     *
+     * It also removes the Neumann nullspace, so a shifted solve has a unique
+     * solution and does NOT require a compatible (zero-mean) rhs -- the
+     * zero-interior-mean rule that zero-gradient walls otherwise impose does not
+     * apply, and poisson_solver_solve() does not enforce it here. Callers that
+     * mean-subtract for the pure-Neumann pressure solve must not do so with a
+     * shift set; poisson_walls_are_singular() reports the same thing for walls.
+     *
+     * Negative or non-finite values are rejected with CFD_ERROR_INVALID at init:
+     * a negative shift is the indefinite Helmholtz operator, which breaks CG's
+     * SPD requirement and standard geometric multigrid.
+     *
+     * Note that absolute_tolerance is not invariant under the 1/(nu*dt) rhs
+     * scaling; the relative tolerance is.
+     */
+    double helmholtz_shift;
+
     /* Owned by exactly one method family each. */
     poisson_sor_params_t       sor;
     poisson_krylov_params_t    krylov;
@@ -605,14 +641,17 @@ CFD_LIBRARY_EXPORT poisson_solver_t* poisson_solver_create(
  *   anything but GMRES, if a multigrid preconditioner is given a cycle, smoother,
  *   boundary mode or unequal pre/post sweep count of its own (each would cost the
  *   inner cycle the symmetry CG depends on; its sweep counts, coarse_max_iter and
- *   max_levels are yours), if check_interval is below 1, or if params.walls
- *   collides with a custom apply_bc.
+ *   max_levels are yours), if check_interval is below 1, if params.walls
+ *   collides with a custom apply_bc, or if helmholtz_shift is negative or
+ *   non-finite (a negative shift is the indefinite Helmholtz operator, which is
+ *   not SPD).
  * - CFD_ERROR_UNSUPPORTED if this method or backend cannot implement what was
  *   asked: any preconditioner on BiCGSTAB or on a GPU backend (neither
  *   implements one), a multigrid preconditioner outside scalar and OpenMP CG,
- *   prescribed faces outside the CPU Krylov solvers, or a caller's apply_bc on
- *   multigrid or on any GPU solver (both apply their walls themselves and never
- *   call it).
+ *   prescribed faces outside the CPU Krylov solvers, a nonzero helmholtz_shift
+ *   outside scalar CG (or on scalar CG with a multigrid preconditioner), or a
+ *   caller's apply_bc on multigrid or on any GPU solver (both apply their walls
+ *   themselves and never call it).
  *
  * Install a custom apply_bc before calling this, not after: omega resolution
  * reads it. cfd_get_last_error() carries the sentence naming the fix.

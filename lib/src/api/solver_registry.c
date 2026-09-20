@@ -10,6 +10,7 @@
 
 #include "../solvers/navier_stokes/ns_convection_internal.h"
 #include "../solvers/navier_stokes/ns_pressure_internal.h"
+#include "../solvers/navier_stokes/ns_simd_backend_internal.h"
 
 
 #ifdef _WIN32
@@ -459,6 +460,11 @@ cfd_status_t solver_step(ns_solver_t* solver, flow_field* field, const grid* gri
         return CFD_ERROR;
     }
 
+    /* Default; a solver that advances by a different step overrides it. */
+    if (stats) {
+        stats->dt_used = params->dt;
+    }
+
     double start_time = get_time_ms();
 
     cfd_status_t status = solver->step(solver, field, grid, params, stats);
@@ -480,6 +486,11 @@ cfd_status_t solver_solve(ns_solver_t* solver, flow_field* field, const grid* gr
     }
     if (!solver->solve) {
         return CFD_ERROR;
+    }
+
+    /* Default; a solver that advances by a different step overrides it. */
+    if (stats) {
+        stats->dt_used = params->dt;
     }
 
     double start_time = get_time_ms();
@@ -602,6 +613,11 @@ static void explicit_euler_destroy(ns_solver_t* solver) {
 
 static cfd_status_t explicit_euler_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -635,6 +651,11 @@ static cfd_status_t explicit_euler_step(ns_solver_t* solver, flow_field* field, 
 
 static cfd_status_t explicit_euler_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -893,6 +914,11 @@ static cfd_status_t explicit_euler_simd_step_guarded(ns_solver_t* solver, flow_f
 
 static cfd_status_t explicit_euler_simd_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                               const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     if (!solver || !field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }
@@ -1487,6 +1513,11 @@ static ns_solver_t* create_rk4_gpu_solver(void) {
 
 static cfd_status_t explicit_euler_omp_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                             const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
@@ -1513,6 +1544,11 @@ static cfd_status_t explicit_euler_omp_step(ns_solver_t* solver, flow_field* fie
 
 static cfd_status_t explicit_euler_omp_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                              const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
@@ -1845,7 +1881,9 @@ int cfd_backend_is_available(ns_solver_backend_t backend) {
             return 1;  // Always available
 
         case NS_SOLVER_BACKEND_SIMD:
-            return cfd_has_simd();
+            /* Compiled-in AND supported at runtime. cfd_has_simd() alone reports a
+             * backend this build may not contain (AVX2 is off by default). */
+            return ns_simd_backend_available() ? 1 : 0;
 
         case NS_SOLVER_BACKEND_OMP:
 #ifdef CFD_ENABLE_OPENMP

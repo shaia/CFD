@@ -26,6 +26,7 @@
 #include "../boundary_copy_utils.h"
 #include "../ns_convection_internal.h"
 #include "../ns_pressure_internal.h"
+#include "../ns_simd_backend_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -99,6 +100,13 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
     if (turb_status != CFD_SUCCESS) {
         return turb_status;
+    }
+
+    /* Same guard as the other SIMD solvers, so one build configuration gives one
+     * error rather than three. */
+    cfd_status_t simd_status = ns_check_simd_backend();
+    if (simd_status != CFD_SUCCESS) {
+        return simd_status;
     }
 
     cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 1);

@@ -90,6 +90,10 @@ void test_params_default(void) {
     TEST_ASSERT_EQUAL_INT(1, params.check_interval);
     TEST_ASSERT_FALSE(params.verbose);
     TEST_ASSERT_EQUAL_INT(POISSON_PRECOND_NONE, params.krylov.preconditioner);
+    /* params_default() memsets and then assigns field by field, so a field it
+     * forgets reads as 0 rather than carrying garbage into every solver in the
+     * library -- but it should still be defaulted deliberately. */
+    TEST_ASSERT_EQUAL_DOUBLE(0.0, params.helmholtz_shift);
 }
 
 void test_stats_default(void) {

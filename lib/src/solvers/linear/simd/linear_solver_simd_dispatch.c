@@ -44,8 +44,9 @@
 static void log_no_simd_available(const char* solver_type) {
     char msg[160];
     snprintf(msg, sizeof(msg),
-             "No SIMD %s solver in this build (detected arch: %s); "
-             "build with -DCFD_ENABLE_AVX2=ON or request another backend",
+             "No SIMD %s solver in this build (detected arch: %s); the SIMD "
+             "Poisson backends need both AVX2/NEON and OpenMP compiled in "
+             "(-DCFD_ENABLE_AVX2=ON), or request another backend",
              solver_type, cfd_get_simd_name());
     cfd_set_error(CFD_ERROR_UNSUPPORTED, msg);
     CFD_LOG_DEBUG("simd", "%s", msg);
