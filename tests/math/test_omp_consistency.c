@@ -1102,23 +1102,33 @@ void test_multigrid_omp_convenience_preset(void) {
 
     init_sinusoidal_rhs(rhs, NX, NY, 1, dx, dy, 0.0);
 
+    poisson_solver_config_t omp_cfg = poisson_solver_config_preset(POISSON_PRESET_MULTIGRID);
+    omp_cfg.backend = POISSON_BACKEND_OMP;
+    poisson_solver_config_t scalar_cfg = poisson_solver_config_preset(POISSON_PRESET_MULTIGRID);
+    scalar_cfg.backend = POISSON_BACKEND_SCALAR;
+
     if (!poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
-        int iters = poisson_solve_3d(p_omp, NULL, rhs, NX, NY, 1, dx, dy, 0.0,
-                                     POISSON_SOLVER_MG_OMP);
+        cfd_status_t st = poisson_solve(p_omp, NULL, rhs, NX, NY, 1, dx, dy, 0.0,
+                                        &omp_cfg, NULL);
         cfd_free(rhs);
         cfd_free(p_scalar);
         cfd_free(p_omp);
         cfd_free(rhs_bad);
         cfd_free(p_bad);
-        TEST_ASSERT_EQUAL_INT(-1, iters);
+        TEST_ASSERT_NOT_EQUAL(CFD_SUCCESS, st);
         TEST_IGNORE_MESSAGE("OMP backend not available on this platform");
         return;
     }
 
-    int iters_omp = poisson_solve_3d(p_omp, NULL, rhs, NX, NY, 1, dx, dy, 0.0,
-                                     POISSON_SOLVER_MG_OMP);
-    int iters_scalar = poisson_solve_3d(p_scalar, NULL, rhs, NX, NY, 1, dx, dy, 0.0,
-                                        POISSON_SOLVER_MG_SCALAR);
+    poisson_solver_stats_t s_omp = poisson_solver_stats_default();
+    poisson_solver_stats_t s_scalar = poisson_solver_stats_default();
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        poisson_solve(p_omp, NULL, rhs, NX, NY, 1, dx, dy, 0.0, &omp_cfg, &s_omp));
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        poisson_solve(p_scalar, NULL, rhs, NX, NY, 1, dx, dy, 0.0, &scalar_cfg, &s_scalar));
+
+    int iters_omp = s_omp.iterations;
+    int iters_scalar = s_scalar.iterations;
     double l2_diff = interior_rms_diff(p_scalar, p_omp, NX, NY, 1);
 
     printf("preset %dx%dx1 threads=%d l2=%.3e iters_ref=%d iters_target=%d\n",
@@ -1129,21 +1139,25 @@ void test_multigrid_omp_convenience_preset(void) {
     TEST_ASSERT_LESS_OR_EQUAL(MG_ITER_TOL, abs(iters_scalar - iters_omp));
     TEST_ASSERT_DOUBLE_WITHIN(MG_L2_TOL, 0.0, l2_diff);
 
-    /* Same inputs through the cached OMP instance reproduce the first solve */
+    /* Repeating the solve reproduces it exactly. This once proved that the
+     * cached solver instance was reused safely; the cache is gone, so what it
+     * now pins is plain determinism. */
     memset(p_omp, 0, n * sizeof(double));
-    int iters_cached = poisson_solve_3d(p_omp, NULL, rhs, NX, NY, 1, dx, dy, 0.0,
-                                        POISSON_SOLVER_MG_OMP);
-    TEST_ASSERT_EQUAL_INT(iters_omp, iters_cached);
+    poisson_solver_stats_t s_again = poisson_solver_stats_default();
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        poisson_solve(p_omp, NULL, rhs, NX, NY, 1, dx, dy, 0.0, &omp_cfg, &s_again));
+    TEST_ASSERT_EQUAL_INT(iters_omp, s_again.iterations);
 
-    /* 32x32 is not 2^k+1: init fails and the call returns -1 ... */
-    TEST_ASSERT_EQUAL_INT(-1, poisson_solve_3d(p_bad, NULL, rhs_bad, 32, 32, 1,
-                                               dx_bad, dx_bad, 0.0, POISSON_SOLVER_MG_OMP));
+    /* 32x32 is not 2^k+1, so the multigrid hierarchy cannot be built. */
+    TEST_ASSERT_NOT_EQUAL(CFD_SUCCESS,
+        poisson_solve(p_bad, NULL, rhs_bad, 32, 32, 1, dx_bad, dx_bad, 0.0, &omp_cfg, NULL));
 
-    /* ... without leaving a broken solver in the cache */
+    /* And a valid solve afterwards is unaffected. */
     memset(p_omp, 0, n * sizeof(double));
-    int iters_after = poisson_solve_3d(p_omp, NULL, rhs, NX, NY, 1, dx, dy, 0.0,
-                                       POISSON_SOLVER_MG_OMP);
-    TEST_ASSERT_GREATER_THAN_INT(0, iters_after);
+    poisson_solver_stats_t s_after = poisson_solver_stats_default();
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        poisson_solve(p_omp, NULL, rhs, NX, NY, 1, dx, dy, 0.0, &omp_cfg, &s_after));
+    TEST_ASSERT_GREATER_THAN_INT(0, s_after.iterations);
 
     cfd_free(rhs);
     cfd_free(p_scalar);

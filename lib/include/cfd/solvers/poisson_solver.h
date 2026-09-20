@@ -299,13 +299,17 @@ typedef enum {
     POISSON_PRESET_NONSYMMETRIC,
 
     /**
-     * Red-Black SOR as a smoother: a fixed number of sweeps, with no
-     * convergence requirement.
+     * Red-Black SOR: the stationary option.
      *
      * The one preset exempt from the compatibility rule below, because the
      * stationary methods relax towards a solution modulo a drifting constant
-     * rather than chasing the nullspace component. Running a fixed sweep count
-     * on an arbitrary rhs is a reasonable thing to ask of them.
+     * rather than chasing the nullspace component. That makes it the right
+     * choice for an rhs you cannot make compatible, and for use as a smoother.
+     *
+     * For a fixed number of sweeps rather than a convergence request, set
+     * params.tolerance = 0 and params.max_iterations yourself; the solve then
+     * runs the budget out and reports CFD_ERROR_MAX_ITER, which is the honest
+     * answer to "did it converge?" when you never asked it to.
      */
     POISSON_PRESET_SMOOTHER,
 
@@ -667,119 +671,37 @@ CFD_LIBRARY_EXPORT bool poisson_solver_backend_available(poisson_solver_backend_
  * ============================================================================ */
 
 /**
- * Poisson solver type presets
+ * Solve a Poisson problem in one call: create, init, solve, destroy.
  *
- * Convenience enum for common solver configurations.
- * All SIMD backends use runtime CPU detection (AVX2/NEON).
+ * 2D is nz = 1 and dz = 0.0. `config` NULL means
+ * poisson_solver_config_preset(POISSON_PRESET_DEFAULT).
+ *
+ * Builds a solver per call, so in a loop own a poisson_solver_t instead and
+ * call poisson_solver_solve() on it -- that is what the projection solvers do,
+ * and it matters most for the multigrid modes, whose hierarchy would otherwise
+ * be rebuilt every time.
+ *
+ * Remember that the default walls are zero-gradient, which makes the operator
+ * singular for every preset but POISSON_PRESET_SMOOTHER: the rhs must then have
+ * zero interior mean, or this returns CFD_ERROR_INVALID with
+ * stats->status == POISSON_INCOMPATIBLE_RHS. poisson_make_rhs_compatible() is
+ * the fix; prescribing a wall value on one face through config->params.walls is
+ * the other.
+ *
+ * @param x       Solution field (in/out; the initial guess on entry)
+ * @param x_temp  Scratch of the same size, or NULL where the method allows it
+ * @param rhs     Right-hand side
+ * @param stats   Optional; receives iterations, residuals and the solve status
+ * @return CFD_SUCCESS, or CFD_ERROR_MAX_ITER / CFD_ERROR_DIVERGED /
+ *         CFD_ERROR_INVALID / CFD_ERROR_UNSUPPORTED / CFD_ERROR_NOMEM.
+ *         cfd_get_last_error() carries the detail.
  */
-typedef enum {
-    POISSON_SOLVER_SOR_SCALAR = 0,     /**< SOR method with scalar backend */
-    POISSON_SOLVER_JACOBI_SIMD = 1,    /**< Jacobi method with SIMD backend (runtime detection) */
-    POISSON_SOLVER_REDBLACK_SIMD = 2,  /**< Red-Black SOR with SIMD backend (runtime detection) */
-    POISSON_SOLVER_REDBLACK_OMP = 3,   /**< Red-Black SOR with OpenMP backend */
-    POISSON_SOLVER_REDBLACK_SCALAR = 4, /**< Red-Black SOR with scalar backend (always available) */
-    POISSON_SOLVER_CG_SCALAR = 5,      /**< Conjugate Gradient with scalar backend (always available) */
-    POISSON_SOLVER_CG_SIMD = 6,        /**< Conjugate Gradient with SIMD backend (runtime detection) */
-    POISSON_SOLVER_CG_OMP = 7,         /**< Conjugate Gradient with OpenMP backend */
-    POISSON_SOLVER_SOR_SIMD = 8,       /**< SOR with SIMD backend (vectorized stencil terms, runtime detection) */
-    POISSON_SOLVER_MG_SCALAR = 9,      /**< Geometric multigrid with scalar backend (grid dims must be 2^k+1) */
-    POISSON_SOLVER_PCG_MG_SCALAR = 10, /**< CG with multigrid V-cycle preconditioner, scalar backend
-                                            (grid dims must be 2^k+1) */
-    POISSON_SOLVER_MG_OMP = 11,        /**< Geometric multigrid with OpenMP backend (grid dims must be 2^k+1) */
-    POISSON_SOLVER_PCG_MG_OMP = 12     /**< CG with multigrid V-cycle preconditioner, OpenMP backend
-                                            (grid dims must be 2^k+1) */
-} poisson_solver_type;
-
-/** Default Poisson solver - uses runtime SIMD detection */
-#define DEFAULT_POISSON_SOLVER POISSON_SOLVER_REDBLACK_SIMD
-
-/**
- * Unified Poisson solver function
- *
- * Convenience function that internally uses the poisson_solver interface.
- * Each preset caches one solver instance, created on first use and rebuilt
- * when the grid dimensions or spacing change.
- *
- * Thread-safe: concurrent calls never share a solver instance. A call that
- * finds the cached instance in use by another thread creates its own.
- *
- * @param p Pressure field (in/out)
- * @param p_temp Temporary buffer
- * @param rhs Right-hand side (divergence)
- * @param nx Grid points in x
- * @param ny Grid points in y
- * @param dx Grid spacing in x
- * @param dy Grid spacing in y
- * @param solver_type Solver type preset
- * @return Number of iterations if converged, -1 if not converged
- */
-CFD_LIBRARY_EXPORT int poisson_solve(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy,
-    poisson_solver_type solver_type);
-
-/**
- * Convenience Poisson solver with 3D support
- *
- * Same caching and thread-safety behavior as poisson_solve(), but accepts nz/dz
- * for 3D grids.
- * When nz=1 and dz=0.0, behavior is identical to poisson_solve().
- *
- * @param nz    Number of grid points in z (1 for 2D)
- * @param dz    Grid spacing in z (0.0 for 2D)
- * @return Number of iterations on success, -1 on failure
- */
-CFD_LIBRARY_EXPORT int poisson_solve_3d(
-    double* p, double* p_temp, const double* rhs,
+CFD_LIBRARY_EXPORT cfd_status_t poisson_solve(
+    double* x, double* x_temp, const double* rhs,
     size_t nx, size_t ny, size_t nz,
     double dx, double dy, double dz,
-    poisson_solver_type solver_type);
-
-/**
- * poisson_solve_3d() with solver parameters.
- *
- * The preset still selects the method and backend and still names the cache slot;
- * `params` supplies everything else, including params.walls, which the preset form
- * cannot express. NULL means poisson_solver_params_default(). The preconditioner
- * of the PCG_MG presets is theirs by definition and is set here regardless.
- *
- * The cached instance is rebuilt whenever the parameters differ from the ones it
- * was built with, so a caller that varies them per call pays a rebuild per call.
- * Build the struct from poisson_solver_params_default() rather than zeroing it
- * by hand: the comparison includes padding, so a hand-rolled struct may miss the
- * fast path even when its fields match.
- *
- * @return Number of iterations if converged, -1 otherwise
- */
-CFD_LIBRARY_EXPORT int poisson_solve_3d_params(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, size_t nz,
-    double dx, double dy, double dz,
-    poisson_solver_type solver_type,
-    const poisson_solver_params_t* params);
-
-/**
- * Direct solver functions
- *
- * These provide direct access to specific solver implementations.
- */
-CFD_LIBRARY_EXPORT int poisson_solve_sor_scalar(
-    double* p, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy);
-
-/**
- * SIMD solver functions with runtime CPU detection (AVX2/NEON)
- *
- * These functions automatically select the best SIMD implementation
- * (AVX2 on x86-64, NEON on ARM64) at runtime.
- */
-CFD_LIBRARY_EXPORT int poisson_solve_jacobi_simd(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy);
-
-CFD_LIBRARY_EXPORT int poisson_solve_redblack_simd(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy);
+    const poisson_solver_config_t* config,
+    poisson_solver_stats_t* stats);
 
 /**
  * Check if SIMD backend is available at runtime

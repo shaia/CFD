@@ -177,13 +177,13 @@ poisson_solver_config_t poisson_solver_config_preset(poisson_preset_t preset) {
             break;
 
         case POISSON_PRESET_SMOOTHER:
-            /* A fixed number of sweeps, deliberately not a convergence request:
-             * the tolerances are 0 so the loop runs its budget out. This is the
-             * one preset whose operator tolerates an incompatible rhs. */
+            /* The stationary option, and the one operator that tolerates an
+             * incompatible rhs. It keeps the ordinary tolerances so an ordinary
+             * solve reports success; a caller who wants a fixed sweep count
+             * instead sets tolerance = 0 and max_iterations themselves, and then
+             * CFD_ERROR_MAX_ITER is their own explicit choice rather than
+             * something this preset returns on every call. */
             cfg.method = POISSON_METHOD_REDBLACK_SOR;
-            cfg.params.tolerance = 0.0;
-            cfg.params.absolute_tolerance = 0.0;
-            cfg.params.max_iterations = 20;
             break;
 
         case POISSON_PRESET_MULTIGRID:
@@ -1043,249 +1043,39 @@ cfd_status_t poisson_solver_iterate(
 }
 
 /* ============================================================================
- * CACHED SOLVER INSTANCES
+ * CONVENIENCE API
  * ============================================================================ */
 
-/*
- * Cached solver instances for the poisson_solve() convenience API, one slot per
- * preset, so repeated calls skip solver creation.
- *
- * A call takes the instance out of its slot and puts it back when it returns.
- * A concurrent call for the same preset finds the slot empty and builds its own
- * instance, so two threads never share one, and an instance left in a slot is
- * always idle.
- */
-static cfd_atomic_ptr g_cached_jacobi_simd;
-static cfd_atomic_ptr g_cached_sor;
-static cfd_atomic_ptr g_cached_sor_simd;
-static cfd_atomic_ptr g_cached_redblack_simd;
-static cfd_atomic_ptr g_cached_redblack_omp;
-static cfd_atomic_ptr g_cached_redblack_scalar;
-static cfd_atomic_ptr g_cached_cg_scalar;
-static cfd_atomic_ptr g_cached_cg_omp;
-static cfd_atomic_ptr g_cached_cg_simd;
-static cfd_atomic_ptr g_cached_mg_scalar;
-static cfd_atomic_ptr g_cached_mg_omp;
-static cfd_atomic_ptr g_cached_pcg_mg_scalar;
-static cfd_atomic_ptr g_cached_pcg_mg_omp;
-
-/* Set to 1 once cleanup_cached_solvers is registered with atexit */
-static cfd_atomic_int g_cleanup_registered = 0;
-
-/** Empty a cache slot, returning the instance it held (NULL if none) */
-static poisson_solver_t* take_cached_solver(cfd_atomic_ptr* slot) {
-    return (poisson_solver_t*)cfd_atomic_ptr_exchange(slot, NULL);
-}
-
-/**
- * Cleanup cached solvers (called at program exit)
- */
-static void cleanup_cached_solvers(void) {
-    poisson_solver_destroy(take_cached_solver(&g_cached_jacobi_simd));
-    poisson_solver_destroy(take_cached_solver(&g_cached_sor));
-    poisson_solver_destroy(take_cached_solver(&g_cached_sor_simd));
-    poisson_solver_destroy(take_cached_solver(&g_cached_redblack_simd));
-    poisson_solver_destroy(take_cached_solver(&g_cached_redblack_omp));
-    poisson_solver_destroy(take_cached_solver(&g_cached_redblack_scalar));
-    poisson_solver_destroy(take_cached_solver(&g_cached_cg_scalar));
-    poisson_solver_destroy(take_cached_solver(&g_cached_cg_omp));
-    poisson_solver_destroy(take_cached_solver(&g_cached_cg_simd));
-    poisson_solver_destroy(take_cached_solver(&g_cached_mg_scalar));
-    poisson_solver_destroy(take_cached_solver(&g_cached_mg_omp));
-    poisson_solver_destroy(take_cached_solver(&g_cached_pcg_mg_scalar));
-    poisson_solver_destroy(take_cached_solver(&g_cached_pcg_mg_omp));
-}
-
-int poisson_solve_3d(
-    double* p, double* p_temp, const double* rhs,
+cfd_status_t poisson_solve(
+    double* x, double* x_temp, const double* rhs,
     size_t nx, size_t ny, size_t nz,
     double dx, double dy, double dz,
-    poisson_solver_type solver_type)
+    const poisson_solver_config_t* config,
+    poisson_solver_stats_t* stats)
 {
-    return poisson_solve_3d_params(p, p_temp, rhs, nx, ny, nz, dx, dy, dz,
-                                   solver_type, NULL);
-}
-
-int poisson_solve_3d_params(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, size_t nz,
-    double dx, double dy, double dz,
-    poisson_solver_type solver_type,
-    const poisson_solver_params_t* params)
-{
-    cfd_atomic_ptr* slot;
-    poisson_solver_method_t method;
-    poisson_solver_backend_t backend;
-
-    switch (solver_type) {
-        case POISSON_SOLVER_JACOBI_SIMD:
-            slot = &g_cached_jacobi_simd;
-            method = POISSON_METHOD_JACOBI;
-            backend = POISSON_BACKEND_SIMD;
-            break;
-
-        case POISSON_SOLVER_REDBLACK_SIMD:
-            slot = &g_cached_redblack_simd;
-            method = POISSON_METHOD_REDBLACK_SOR;
-            backend = POISSON_BACKEND_SIMD;
-            break;
-
-        case POISSON_SOLVER_REDBLACK_OMP:
-            slot = &g_cached_redblack_omp;
-            method = POISSON_METHOD_REDBLACK_SOR;
-            backend = POISSON_BACKEND_OMP;
-            break;
-
-        case POISSON_SOLVER_SOR_SCALAR:
-            slot = &g_cached_sor;
-            method = POISSON_METHOD_SOR;
-            backend = POISSON_BACKEND_SCALAR;
-            break;
-
-        case POISSON_SOLVER_REDBLACK_SCALAR:
-            slot = &g_cached_redblack_scalar;
-            method = POISSON_METHOD_REDBLACK_SOR;
-            backend = POISSON_BACKEND_SCALAR;
-            break;
-
-        case POISSON_SOLVER_CG_SCALAR:
-            slot = &g_cached_cg_scalar;
-            method = POISSON_METHOD_CG;
-            backend = POISSON_BACKEND_SCALAR;
-            break;
-
-        case POISSON_SOLVER_CG_SIMD:
-            slot = &g_cached_cg_simd;
-            method = POISSON_METHOD_CG;
-            backend = POISSON_BACKEND_SIMD;
-            break;
-
-        case POISSON_SOLVER_CG_OMP:
-            slot = &g_cached_cg_omp;
-            method = POISSON_METHOD_CG;
-            backend = POISSON_BACKEND_OMP;
-            break;
-
-        case POISSON_SOLVER_SOR_SIMD:
-            slot = &g_cached_sor_simd;
-            method = POISSON_METHOD_SOR;
-            backend = POISSON_BACKEND_SIMD;
-            break;
-
-        case POISSON_SOLVER_MG_SCALAR:
-            slot = &g_cached_mg_scalar;
-            method = POISSON_METHOD_MULTIGRID;
-            backend = POISSON_BACKEND_SCALAR;
-            break;
-
-        case POISSON_SOLVER_MG_OMP:
-            slot = &g_cached_mg_omp;
-            method = POISSON_METHOD_MULTIGRID;
-            backend = POISSON_BACKEND_OMP;
-            break;
-
-        case POISSON_SOLVER_PCG_MG_SCALAR:
-            slot = &g_cached_pcg_mg_scalar;
-            method = POISSON_METHOD_CG;
-            backend = POISSON_BACKEND_SCALAR;
-            break;
-
-        case POISSON_SOLVER_PCG_MG_OMP:
-            slot = &g_cached_pcg_mg_omp;
-            method = POISSON_METHOD_CG;
-            backend = POISSON_BACKEND_OMP;
-            break;
-
-        default:
-            CFD_LOG_ERROR("poisson", "poisson_solve_3d: Unknown solver type %d", solver_type);
-            return -1;
+    if (!x || !rhs) {
+        cfd_set_error(CFD_ERROR_INVALID, "poisson_solve: x and rhs are required");
+        return CFD_ERROR_INVALID;
     }
 
-    /* The parameters this call wants. The two PCG_MG presets ARE the choice of
-     * preconditioner, so it is forced here rather than left to the caller. */
-    poisson_solver_params_t effective =
-        params ? *params : poisson_solver_params_default();
-    if (solver_type == POISSON_SOLVER_PCG_MG_SCALAR ||
-        solver_type == POISSON_SOLVER_PCG_MG_OMP) {
-        effective.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
-    }
+    poisson_solver_config_t cfg =
+        config ? *config : poisson_solver_config_preset(POISSON_PRESET_DEFAULT);
 
-    /* This call owns the cached instance until it puts it back */
-    poisson_solver_t* solver = take_cached_solver(slot);
-
-    /* Recreate the solver if the grid or the parameters changed. memcmp is safe
-     * as a cache key in the only direction that matters: padding can make two
-     * equal configurations compare different, costing a rebuild, but never makes
-     * two different ones compare equal. poisson_solver_params_default() zeroes
-     * the struct so well-formed callers stay on the fast path. A caller that
-     * varies parameters per call rebuilds per call. */
-    if (solver
-        && (solver->nx != nx || solver->ny != ny || solver->nz != nz
-            || solver->dx != dx || solver->dy != dy || solver->dz != dz
-            || memcmp(&solver->params, &effective, sizeof effective) != 0)) {
-        poisson_solver_destroy(solver);
-        solver = NULL;
-    }
-
+    poisson_solver_t* solver = poisson_solver_create(cfg.method, cfg.backend);
     if (!solver) {
-        /* Register cleanup on first use */
-        if (cfd_atomic_cas(&g_cleanup_registered, 0, 1)) {
-            atexit(cleanup_cached_solvers);
-        }
-
-        solver = poisson_solver_create(method, backend);
-        if (!solver) {
-            return -1;
-        }
-
-        /* A failed init (e.g. multigrid on non-2^k+1 dims, or per-face walls on a
-         * method that does not honour them) must not leave a broken solver in the
-         * cache. */
-        if (poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &effective) != CFD_SUCCESS) {
-            poisson_solver_destroy(solver);
-            return -1;
-        }
+        /* The factory set the specific last-status; do not overwrite it. */
+        return cfd_get_last_status();
     }
 
-    poisson_solver_stats_t stats = poisson_solver_stats_default();
-    cfd_status_t status = poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+    cfd_status_t status =
+        poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &cfg.params);
+    if (status != CFD_SUCCESS) {
+        poisson_solver_destroy(solver);
+        return status;
+    }
 
-    /* Put the instance back. Anything it displaces was put back by a concurrent
-     * call and is idle. */
-    poisson_solver_destroy((poisson_solver_t*)cfd_atomic_ptr_exchange(slot, solver));
-
-    return (status == CFD_SUCCESS && stats.status == POISSON_CONVERGED)
-        ? stats.iterations : -1;
-}
-
-int poisson_solve(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy,
-    poisson_solver_type solver_type)
-{
-    return poisson_solve_3d(p, p_temp, rhs, nx, ny, 1, dx, dy, 0.0, solver_type);
-}
-
-/* Direct solver functions - delegate to unified interface */
-int poisson_solve_sor_scalar(
-    double* p, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy)
-{
-    /* SOR doesn't need temp buffer, pass NULL */
-    return poisson_solve(p, NULL, rhs, nx, ny, dx, dy, POISSON_SOLVER_SOR_SCALAR);
-}
-
-/* SIMD functions with runtime CPU detection */
-int poisson_solve_jacobi_simd(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy)
-{
-    return poisson_solve(p, p_temp, rhs, nx, ny, dx, dy, POISSON_SOLVER_JACOBI_SIMD);
-}
-
-int poisson_solve_redblack_simd(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy)
-{
-    return poisson_solve(p, p_temp, rhs, nx, ny, dx, dy, POISSON_SOLVER_REDBLACK_SIMD);
+    poisson_solver_stats_t local = poisson_solver_stats_default();
+    status = poisson_solver_solve(solver, x, x_temp, rhs, stats ? stats : &local);
+    poisson_solver_destroy(solver);
+    return status;
 }

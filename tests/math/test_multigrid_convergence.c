@@ -732,32 +732,34 @@ void test_mg_convenience_api(void) {
     double* rhs = create_field(NX * NX);
     init_neumann_rhs_2d(rhs, NX, NX, DX, DX);
 
-    int iters = poisson_solve_3d(p, p_temp, rhs, NX, NX, 1, DX, DX, 0.0,
-                                 POISSON_SOLVER_MG_SCALAR);
-    TEST_ASSERT_TRUE_MESSAGE(iters > 0, "convenience MG solve failed");
+    poisson_solver_config_t cfg = poisson_solver_config_preset(POISSON_PRESET_MULTIGRID);
+    cfg.backend = POISSON_BACKEND_SCALAR;
 
-    /* Second call with same dims exercises the cached-solver path */
-    for (size_t n = 0; n < NX * NX; n++) {
-        p[n] = 0.0;
-    }
-    iters = poisson_solve_3d(p, p_temp, rhs, NX, NX, 1, DX, DX, 0.0,
-                             POISSON_SOLVER_MG_SCALAR);
-    TEST_ASSERT_TRUE_MESSAGE(iters > 0, "cached convenience MG solve failed");
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS,
+        poisson_solve(p, p_temp, rhs, NX, NX, 1, DX, DX, 0.0, &cfg, &stats),
+        "convenience MG solve failed");
+    TEST_ASSERT_TRUE_MESSAGE(stats.iterations > 0, "MG solve reported no iterations");
 
-    /* Invalid dims: init fails, cache slot must not keep a broken solver */
+    /* A 32x32 grid has no multigrid hierarchy. The dimension rejection reaches
+     * the caller as a status rather than a bare -1, so it is distinguishable
+     * from a solve that ran and did not converge. */
     double* p32 = create_field(32 * 32);
     double* rhs32 = create_field(32 * 32);
-    iters = poisson_solve_3d(p32, NULL, rhs32, 32, 32, 1,
-                             1.0 / 31.0, 1.0 / 31.0, 0.0,
-                             POISSON_SOLVER_MG_SCALAR);
-    TEST_ASSERT_EQUAL(-1, iters);
-    /* And a valid solve afterwards still works (cache not poisoned) */
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(CFD_SUCCESS,
+        poisson_solve(p32, NULL, rhs32, 32, 32, 1, 1.0 / 31.0, 1.0 / 31.0, 0.0, &cfg, NULL),
+        "MG must refuse a grid that is not 2^k+1");
+
+    /* The earlier solve is repeated to show the refusal above left nothing
+     * behind. This used to guard a cached solver slot against being poisoned by
+     * a failed init; the cache is gone and each call now builds its own solver,
+     * so it is kept only as a cheap regression guard. */
     for (size_t n = 0; n < NX * NX; n++) {
         p[n] = 0.0;
     }
-    iters = poisson_solve_3d(p, p_temp, rhs, NX, NX, 1, DX, DX, 0.0,
-                             POISSON_SOLVER_MG_SCALAR);
-    TEST_ASSERT_TRUE_MESSAGE(iters > 0, "MG solve after failed init broke");
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS,
+        poisson_solve(p, p_temp, rhs, NX, NX, 1, DX, DX, 0.0, &cfg, &stats),
+        "MG solve after a refused one failed");
 
     cfd_free(p);
     cfd_free(p_temp);

@@ -40,7 +40,7 @@
 #define FINE_DT         0.0005
 #else
 /* Fast mode for CI - uses fewer iterations
- * At Re=100 with 33x33 grid using POISSON_SOLVER_CG_SCALAR:
+ * At Re=100 with 33x33 grid using scalar CG for the pressure solve:
  *   - 5000 steps achieves RMS < 0.10
  * Using SIMD backends achieves RMS < 0.05.
  * Using dt=0.0005 for stability. */

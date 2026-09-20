@@ -185,14 +185,24 @@ int main(void) {
     /* Section 3: Convenience API */
     printf("\n--- Convenience API ---\n");
     memset(p, 0, n * sizeof(double));
-    int iters = poisson_solve(p, p_temp, rhs, nx, ny, dx, dy, POISSON_SOLVER_CG_SCALAR);
-    if (iters < 0) {
-        printf("  poisson_solve(CG_SCALAR): FAILED (non-converged or error)\n");
-        printf("    Status: \"%s\"\n", cfd_get_error_string(cfd_get_last_status()));
+
+    /* A preset is a starting point: take one, adjust it, pass it in. */
+    poisson_solver_config_t cfg = poisson_solver_config_preset(POISSON_PRESET_DEFAULT);
+    cfg.backend = POISSON_BACKEND_SCALAR;
+
+    poisson_solver_stats_t cstats = poisson_solver_stats_default();
+    cfd_status_t cstatus =
+        poisson_solve(p, p_temp, rhs, nx, ny, 1, dx, dy, 0.0, &cfg, &cstats);
+    if (cstatus != CFD_SUCCESS) {
+        /* cfd_get_last_error() carries the sentence naming the fix;
+         * cfd_get_error_string() only names the category. Print both. */
+        printf("  poisson_solve(DEFAULT): FAILED -- %s\n", cfd_get_error_string(cstatus));
+        printf("    %s\n", cfd_get_last_error());
         cfd_clear_error();
     } else {
         double err = compute_l2_error(p, p_exact, nx, ny);
-        printf("  poisson_solve(CG_SCALAR): %d iterations, L2 error = %.2e\n", iters, err);
+        printf("  poisson_solve(DEFAULT): %d iterations, L2 error = %.2e\n",
+               cstats.iterations, err);
     }
 
     /* Section 4: Error handling for unavailable solver.

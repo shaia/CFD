@@ -724,47 +724,67 @@ void test_compute_residual_zero_rhs(void) {
 }
 
 /* ============================================================================
- * LEGACY API BACKWARD COMPATIBILITY TESTS
+ * CONVENIENCE API
  * ============================================================================ */
 
-void test_legacy_poisson_solve_sor(void) {
+/**
+ * The one-shot solve reports a real status.
+ *
+ * These cases used to assert `iterations >= 0 || iterations == -1`, which is
+ * every possible value, so they could not fail. A zero right-hand side from a
+ * zero initial guess has the zero field as its exact solution -- compatible with
+ * the singular zero-gradient operator too -- so each of these must converge, and
+ * saying so is an assertion with teeth.
+ */
+static void assert_convenience_solve_converges(poisson_preset_t preset,
+                                               poisson_solver_backend_t backend,
+                                               int needs_temp) {
     double* p = create_test_field(TEST_NX, TEST_NY, 0.0);
+    double* p_temp = needs_temp ? create_test_field(TEST_NX, TEST_NY, 0.0) : NULL;
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
 
-    int iterations = poisson_solve(p, NULL, rhs, TEST_NX, TEST_NY, TEST_DX, TEST_DY,
-                                   POISSON_SOLVER_SOR_SCALAR);
+    poisson_solver_config_t cfg = poisson_solver_config_preset(preset);
+    cfg.backend = backend;
 
-    /* Should converge quickly for zero RHS */
-    TEST_ASSERT_TRUE(iterations >= 0 || iterations == -1);  /* -1 if not converged */
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solve(p, p_temp, rhs, TEST_NX, TEST_NY, 1,
+                                        TEST_DX, TEST_DY, 0.0, &cfg, &stats);
 
-    cfd_free(p);
-    cfd_free(rhs);
-}
-
-void test_legacy_poisson_solve_jacobi(void) {
-    double* p = create_test_field(TEST_NX, TEST_NY, 0.0);
-    double* p_temp = create_test_field(TEST_NX, TEST_NY, 0.0);
-    double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
-
-    int iterations = poisson_solve(p, p_temp, rhs, TEST_NX, TEST_NY, TEST_DX, TEST_DY,
-                                   POISSON_SOLVER_JACOBI_SIMD);
-
-    TEST_ASSERT_TRUE(iterations >= 0 || iterations == -1);
+    if (status == CFD_ERROR_UNSUPPORTED) {
+        cfd_free(p);
+        cfd_free(p_temp);
+        cfd_free(rhs);
+        TEST_IGNORE_MESSAGE("backend unavailable");
+        return;
+    }
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, status, "zero rhs must solve");
+    TEST_ASSERT_EQUAL_MESSAGE(POISSON_CONVERGED, stats.status, "zero rhs must converge");
 
     cfd_free(p);
     cfd_free(p_temp);
     cfd_free(rhs);
 }
 
-void test_legacy_poisson_solve_redblack(void) {
+void test_convenience_solve_smoother(void) {
+    assert_convenience_solve_converges(POISSON_PRESET_SMOOTHER, POISSON_BACKEND_SCALAR, 0);
+}
+
+void test_convenience_solve_default(void) {
+    assert_convenience_solve_converges(POISSON_PRESET_DEFAULT, POISSON_BACKEND_SCALAR, 1);
+}
+
+void test_convenience_solve_accurate_simd(void) {
+    assert_convenience_solve_converges(POISSON_PRESET_ACCURATE, POISSON_BACKEND_SIMD, 1);
+}
+
+/** NULL config means the default preset. */
+void test_convenience_solve_null_config(void) {
     double* p = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* p_temp = create_test_field(TEST_NX, TEST_NY, 0.0);
     double* rhs = create_zero_rhs(TEST_NX, TEST_NY);
 
-    int iterations = poisson_solve(p, p_temp, rhs, TEST_NX, TEST_NY, TEST_DX, TEST_DY,
-                                   POISSON_SOLVER_REDBLACK_SIMD);
-
-    TEST_ASSERT_TRUE(iterations >= 0 || iterations == -1);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        poisson_solve(p, p_temp, rhs, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, NULL, NULL));
 
     cfd_free(p);
     cfd_free(p_temp);
@@ -988,10 +1008,14 @@ void test_gauss_seidel_is_sor_at_omega_one(void) {
  * ============================================================================ */
 
 /**
- * poisson_solve() caches one solver per preset; concurrent callers must never
- * share it, so every caller must reproduce a lone call exactly. Callers alternate
- * between two grid sizes, so the cached instance is also rebuilt while other
- * calls are running.
+ * Concurrent callers of the one-shot solve must each reproduce a lone call.
+ *
+ * This once guarded a cache of one solver instance per preset, which concurrent
+ * callers could have shared. That cache is gone and each call now builds its own
+ * solver, so what remains under test is that nothing else in the library holds
+ * mutable state across a solve -- which is worth pinning, since the alternative
+ * fails only under load and only sometimes. Callers alternate between two grid
+ * sizes so solvers of different shapes are being built and destroyed at once.
  */
 void test_poisson_solve_concurrent_callers(void) {
 #ifndef _OPENMP
@@ -999,6 +1023,9 @@ void test_poisson_solve_concurrent_callers(void) {
 #else
     enum { SIZES = 2, CALLERS = 4, ROUNDS = 25 };
     static const size_t sizes[SIZES] = { 33, 17 };
+
+    poisson_solver_config_t cfg = poisson_solver_config_preset(POISSON_PRESET_DEFAULT);
+    cfg.backend = POISSON_BACKEND_SCALAR;
 
     double* rhs[SIZES];
     double* p_ref[SIZES];
@@ -1011,8 +1038,10 @@ void test_poisson_solve_concurrent_callers(void) {
         TEST_ASSERT_NOT_NULL(rhs[s]);
         TEST_ASSERT_NOT_NULL(p_ref[s]);
         fill_compatible_rhs(rhs[s], n, h);
-        iters_ref[s] = poisson_solve(p_ref[s], NULL, rhs[s], n, n, h, h,
-                                     POISSON_SOLVER_CG_SCALAR);
+        poisson_solver_stats_t ref_stats = poisson_solver_stats_default();
+        TEST_ASSERT_EQUAL(CFD_SUCCESS,
+            poisson_solve(p_ref[s], NULL, rhs[s], n, n, 1, h, h, 0.0, &cfg, &ref_stats));
+        iters_ref[s] = ref_stats.iterations;
         TEST_ASSERT_GREATER_THAN_INT(0, iters_ref[s]);
     }
 
@@ -1031,9 +1060,11 @@ void test_poisson_solve_concurrent_callers(void) {
             size_t n = sizes[s];
             double h = 1.0 / (double)(n - 1);
             memset(p[c], 0, n * n * sizeof(double));
-            int iters = poisson_solve(p[c], NULL, rhs[s], n, n, h, h,
-                                      POISSON_SOLVER_CG_SCALAR);
-            if (iters != iters_ref[s] || memcmp(p[c], p_ref[s], n * n * sizeof(double)) != 0) {
+            poisson_solver_stats_t st = poisson_solver_stats_default();
+            cfd_status_t rc =
+                poisson_solve(p[c], NULL, rhs[s], n, n, 1, h, h, 0.0, &cfg, &st);
+            if (rc != CFD_SUCCESS || st.iterations != iters_ref[s]
+                || memcmp(p[c], p_ref[s], n * n * sizeof(double)) != 0) {
                 mismatches++;
             }
         }
@@ -1731,9 +1762,10 @@ int main(void) {
     RUN_TEST(test_residual_of_nan_field_is_nan);
 
     /* Legacy API tests */
-    RUN_TEST(test_legacy_poisson_solve_sor);
-    RUN_TEST(test_legacy_poisson_solve_jacobi);
-    RUN_TEST(test_legacy_poisson_solve_redblack);
+    RUN_TEST(test_convenience_solve_smoother);
+    RUN_TEST(test_convenience_solve_default);
+    RUN_TEST(test_convenience_solve_accurate_simd);
+    RUN_TEST(test_convenience_solve_null_config);
     RUN_TEST(test_poisson_solve_concurrent_callers);
 
     /* SIMD tests */
