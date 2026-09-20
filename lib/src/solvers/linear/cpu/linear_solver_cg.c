@@ -284,7 +284,8 @@ static cfd_status_t cg_scalar_init(
 
     if (ctx->precond_type == POISSON_PRECOND_MULTIGRID) {
         cfd_status_t mg_status = poisson_solver_create_mg_precond(
-            create_multigrid_scalar_solver, nx, ny, nz, dx, dy, dz, &ctx->mg_precond);
+            create_multigrid_scalar_solver, nx, ny, nz, dx, dy, dz,
+            &solver->params.multigrid, &ctx->mg_precond);
         if (mg_status != CFD_SUCCESS) {
             cfd_free(ctx->r);
             cfd_free(ctx->z);

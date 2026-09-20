@@ -96,16 +96,23 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         return scheme_status;
     }
 
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
+
     cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 1);
     if (pressure_bc_status != CFD_SUCCESS) {
         return pressure_bc_status;
     }
-    if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "Multigrid pressure solver is only supported by the scalar and OpenMP projection solvers");
-        return CFD_ERROR_UNSUPPORTED;
-    }
 
+    /* 0, not 1: this projection honours per-face walls but not the multigrid
+     * pressure modes -- multigrid has no SIMD backend, and routing them to the
+     * scalar one would be the silent cross-backend fallback the library forbids. */
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 0);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
+    }
     projection_simd_context* ctx =
         (projection_simd_context*)cfd_calloc(1, sizeof(projection_simd_context));
     if (!ctx) {

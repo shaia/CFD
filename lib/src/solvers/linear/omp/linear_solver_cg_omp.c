@@ -159,7 +159,8 @@ static cfd_status_t cg_omp_init(
     /* OpenMP multigrid only: a scalar inner cycle would serialize every apply */
     if (ctx->precond_type == POISSON_PRECOND_MULTIGRID) {
         cfd_status_t mg_status = poisson_solver_create_mg_precond(
-            create_multigrid_omp_solver, nx, ny, nz, dx, dy, dz, &ctx->mg_precond);
+            create_multigrid_omp_solver, nx, ny, nz, dx, dy, dz,
+            &solver->params.multigrid, &ctx->mg_precond);
         if (mg_status != CFD_SUCCESS) {
             cg_omp_destroy(solver);
             return mg_status;  /* CFD_ERROR_INVALID for non-2^k+1 dims */

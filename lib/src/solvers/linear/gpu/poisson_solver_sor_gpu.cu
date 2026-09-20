@@ -106,10 +106,6 @@ static cfd_status_t sor_gpu_init(poisson_solver_t* solver,
                                  size_t nx, size_t ny, size_t nz,
                                  double dx, double dy, double dz,
                                  const poisson_solver_params_t* params) {
-    cfd_status_t bc_status = poisson_solver_reject_custom_bc(solver);
-    if (bc_status != CFD_SUCCESS) {
-        return bc_status;
-    }
 
     if (!gpu_is_available()) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED, "CUDA GPU not available at runtime");

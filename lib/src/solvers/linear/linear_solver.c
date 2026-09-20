@@ -73,46 +73,204 @@ static int method_honours_walls(poisson_solver_method_t method) {
         || method == POISSON_METHOD_GMRES;
 }
 
-cfd_status_t poisson_solver_check_walls(const poisson_solver_t* solver) {
-    const poisson_walls_t* walls = &solver->params.walls;
+/* ============================================================================
+ * CONFIGURATION VALIDATION
+ *
+ * One place decides what a given (method, backend) can honour, so a parameter it
+ * cannot is refused at init rather than quietly ignored. The alternative -- a
+ * check inside each of the twenty-odd solver inits -- is what let BiCGSTAB ignore
+ * params.krylov.preconditioner on every backend, and three GPU solvers ignore a
+ * caller's apply_bc, for as long as they have existed.
+ * ============================================================================ */
 
-    /* Checked over every face, the z-faces on a 2D grid included: a Dirichlet face
-     * that does not exist changes no answer, but it does mean the caller believes
-     * something about this solve that is not true, so say so rather than ignore it. */
-    if (walls_are_all_zero_gradient(walls)) {
-        return CFD_SUCCESS;  /* what every solver and backend already does */
+/** Parameter groups, for the ownership table below. */
+enum {
+    PARAM_GROUP_SOR       = 1u << 0,
+    PARAM_GROUP_KRYLOV    = 1u << 1,
+    PARAM_GROUP_MULTIGRID = 1u << 2
+};
+
+/**
+ * The groups this method reads. Anything else it is handed, it ignores -- which
+ * is exactly what must be refused.
+ */
+static unsigned method_owned_groups(const poisson_solver_t* solver) {
+    switch (solver->method) {
+        case POISSON_METHOD_JACOBI:
+            return 0;
+        case POISSON_METHOD_SOR:
+        case POISSON_METHOD_GAUSS_SEIDEL:
+        case POISSON_METHOD_REDBLACK_SOR:
+            return PARAM_GROUP_SOR;
+        case POISSON_METHOD_CG:
+            /* CG reads the multigrid group only when it is preconditioned by
+             * one, where those parameters shape the inner V-cycle. */
+            return PARAM_GROUP_KRYLOV
+                 | (solver->params.krylov.preconditioner == POISSON_PRECOND_MULTIGRID
+                        ? PARAM_GROUP_MULTIGRID : 0u);
+        case POISSON_METHOD_BICGSTAB:
+        case POISSON_METHOD_GMRES:
+            return PARAM_GROUP_KRYLOV;
+        case POISSON_METHOD_MULTIGRID:
+            return PARAM_GROUP_MULTIGRID;
+        default:
+            return 0;
+    }
+}
+
+/** Whether a parameter group is entirely zero, i.e. untouched by the caller. */
+static int group_untouched(const void* group, size_t size) {
+    const unsigned char* bytes = (const unsigned char*)group;
+    for (size_t i = 0; i < size; i++) {
+        if (bytes[i] != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static cfd_status_t reject_unowned_group(const poisson_solver_t* solver,
+                                         unsigned owned, unsigned group,
+                                         const void* data, size_t size,
+                                         const char* name) {
+    if ((owned & group) || group_untouched(data, size)) {
+        return CFD_SUCCESS;
+    }
+    char msg[192];
+    snprintf(msg, sizeof(msg),
+             "params.%s is set, but the %s method does not read it; "
+             "it would have no effect on this solve",
+             name, solver->name ? solver->name : "selected");
+    cfd_set_error(CFD_ERROR_INVALID, msg);
+    return CFD_ERROR_INVALID;
+}
+
+cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
+    const poisson_solver_params_t* p = &solver->params;
+
+    /* ---- walls -------------------------------------------------------- */
+    if (!walls_are_all_zero_gradient(&p->walls)) {
+        /* Support first, then the hook conflict: an unsupported method should say
+         * so rather than report a caller error. */
+        if (!method_honours_walls(solver->method)) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "per-face walls are implemented for the CG, BiCGSTAB and GMRES methods only; "
+                "the stationary and multigrid solvers apply whole-domain walls inside their sweeps");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+        if (solver->backend == POISSON_BACKEND_GPU) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "per-face walls are not implemented on the GPU backend, which applies the "
+                "zero-gradient walls on the device");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+        if (solver->apply_bc) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                "params.walls and a custom apply_bc both prescribe wall values; use one or the other");
+            return CFD_ERROR_INVALID;
+        }
+        if (!isfinite(p->walls.values.left) || !isfinite(p->walls.values.right)
+            || !isfinite(p->walls.values.bottom) || !isfinite(p->walls.values.top)
+            || !isfinite(p->walls.values.front) || !isfinite(p->walls.values.back)) {
+            cfd_set_error(CFD_ERROR_INVALID, "params.walls.values must be finite");
+            return CFD_ERROR_INVALID;
+        }
     }
 
-    /* Support first, then the hook conflict: an unsupported method should say so
-     * rather than report a caller error. A solver's own walls live in
-     * internal_apply_bc, so apply_bc below is the caller's and nothing else. */
-    if (!method_honours_walls(solver->method)) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "per-face walls are implemented for the CG, BiCGSTAB and GMRES methods only; "
-            "the stationary and multigrid solvers apply whole-domain walls inside their sweeps");
-        return CFD_ERROR_UNSUPPORTED;
-    }
-
-    if (solver->backend == POISSON_BACKEND_GPU) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "per-face walls are not implemented on the GPU backend, which applies the "
-            "zero-gradient walls on the device");
-        return CFD_ERROR_UNSUPPORTED;
-    }
-
-    /* Past here the method is a Krylov one, which never installs a hook of its
-     * own, so a hook here is the caller's. It and params.walls both prescribe wall
-     * values; two sources for one thing is ambiguous, so take neither. */
+    /* ---- a caller's apply_bc ------------------------------------------ */
+    /* solver->internal_apply_bc is a solver's own walls and is not a caller's
+     * business; this is only about a function the caller installed. */
     if (solver->apply_bc) {
+        if (solver->backend == POISSON_BACKEND_GPU) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "the GPU solvers apply their walls on the device and never call apply_bc");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+        if (solver->method == POISSON_METHOD_MULTIGRID) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "multigrid applies its walls inside the cycle and never calls apply_bc; "
+                "use params.multigrid.bc to choose between zero-gradient and fixed walls");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+    }
+
+    /* ---- parameter groups the method does not read --------------------- */
+    {
+        unsigned owned = method_owned_groups(solver);
+        cfd_status_t status;
+
+        status = reject_unowned_group(solver, owned, PARAM_GROUP_SOR,
+                                      &p->sor, sizeof p->sor, "sor");
+        if (status != CFD_SUCCESS) {
+            return status;
+        }
+        status = reject_unowned_group(solver, owned, PARAM_GROUP_KRYLOV,
+                                      &p->krylov, sizeof p->krylov, "krylov");
+        if (status != CFD_SUCCESS) {
+            return status;
+        }
+        status = reject_unowned_group(solver, owned, PARAM_GROUP_MULTIGRID,
+                                      &p->multigrid, sizeof p->multigrid, "multigrid");
+        if (status != CFD_SUCCESS) {
+            return status;
+        }
+    }
+
+    /* ---- exceptions within a group the method does own ----------------- */
+
+    /* BiCGSTAB reads params.krylov, but has no preconditioner implementation on
+     * any backend. It ignored one silently for as long as it has existed. */
+    if (solver->method == POISSON_METHOD_BICGSTAB
+        && p->krylov.preconditioner != POISSON_PRECOND_NONE) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "BiCGSTAB has no preconditioner implementation on any backend");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+
+    /* The multigrid preconditioner is implemented by the scalar and OpenMP CG
+     * solvers only. Every other Krylov backend would quietly run unpreconditioned. */
+    if (p->krylov.preconditioner == POISSON_PRECOND_MULTIGRID
+        && !(solver->method == POISSON_METHOD_CG
+             && (solver->backend == POISSON_BACKEND_SCALAR
+                 || solver->backend == POISSON_BACKEND_OMP))) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "POISSON_PRECOND_MULTIGRID is implemented by the scalar and OpenMP CG solvers only");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+
+    /* restart is the GMRES(m) basis size and means nothing to the others. */
+    if (p->krylov.restart != 0 && solver->method != POISSON_METHOD_GMRES) {
         cfd_set_error(CFD_ERROR_INVALID,
-            "params.walls and a custom apply_bc both prescribe wall values; use one or the other");
+            "params.krylov.restart is the GMRES restart length; no other method reads it");
         return CFD_ERROR_INVALID;
     }
 
-    if (!isfinite(walls->values.left) || !isfinite(walls->values.right)
-        || !isfinite(walls->values.bottom) || !isfinite(walls->values.top)
-        || !isfinite(walls->values.front) || !isfinite(walls->values.back)) {
-        cfd_set_error(CFD_ERROR_INVALID, "params.walls.values must be finite");
+    /* Deliberately not rejected here: POISSON_METHOD_GAUSS_SEIDEL overriding
+     * params.sor.omega to 1. That is what the method IS, it is documented on the
+     * enum member, and test_gauss_seidel_is_sor_at_omega_one pins it. Refusing an
+     * omega there would turn documented behaviour into an error, which is not the
+     * class of problem this validator exists for.
+     */
+
+    /* The inner V-cycle of a preconditioner must stay symmetric and nonsingular,
+     * or CG is no longer minimising over a Krylov space. These four are what
+     * guarantee it, so they are not the caller's to change here; the rest of the
+     * group is forwarded to the hierarchy by poisson_solver_create_mg_precond. */
+    if (p->krylov.preconditioner == POISSON_PRECOND_MULTIGRID
+        && (p->multigrid.cycle != 0 || p->multigrid.smoother != 0 || p->multigrid.bc != 0
+            || p->multigrid.pre_smooth != p->multigrid.post_smooth)) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "a multigrid preconditioner fixes its cycle, smoother, boundary mode and an "
+            "equal pre/post sweep count, which is what keeps it symmetric for CG; "
+            "params.multigrid.{pre_smooth, post_smooth, coarse_max_iter, max_levels} "
+            "are yours to set");
+        return CFD_ERROR_INVALID;
+    }
+
+    /* iter % check_interval, with check_interval == 0, is undefined behaviour in
+     * the common loop and in the CG and BiCGSTAB loops. */
+    if (p->check_interval <= 0) {
+        cfd_set_error(CFD_ERROR_INVALID, "params.check_interval must be at least 1");
         return CFD_ERROR_INVALID;
     }
 
@@ -496,7 +654,7 @@ cfd_status_t poisson_solver_init(
     }
 
     {
-        cfd_status_t wall_status = poisson_solver_check_walls(solver);
+        cfd_status_t wall_status = poisson_solver_check_config(solver);
         if (wall_status != CFD_SUCCESS) {
             return wall_status;
         }

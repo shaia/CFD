@@ -567,9 +567,19 @@ static cfd_status_t explicit_euler_init(ns_solver_t* solver, const grid* grid,
         return scheme_status;
     }
 
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
+
     cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
     if (pressure_bc_status != CFD_SUCCESS) {
         return pressure_bc_status;
+    }
+
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 0);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
     }
 
     explicit_euler_context* ctx =
@@ -947,9 +957,19 @@ static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const
     if (scheme_status != CFD_SUCCESS) {
         return scheme_status;
     }
+
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
     cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 1);
     if (pressure_bc_status != CFD_SUCCESS) {
         return pressure_bc_status;
+    }
+
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 1);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
     }
     projection_context* ctx = (projection_context*)cfd_calloc(1, sizeof(projection_context));
     if (!ctx) {
@@ -1173,7 +1193,16 @@ static cfd_status_t gpu_explicit_init(ns_solver_t* solver, const grid* grid,
     if (scheme_status != CFD_SUCCESS) {
         return scheme_status;
     }
-    return ns_check_pressure_bc(params, 0);
+
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 0);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
+    return ns_check_pressure_solver(params, 0);
 }
 
 /**
@@ -1255,14 +1284,19 @@ static cfd_status_t gpu_projection_init(ns_solver_t* solver, const grid* grid,
     if (scheme_status != CFD_SUCCESS) {
         return scheme_status;
     }
+
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 0);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
     cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
     if (pressure_bc_status != CFD_SUCCESS) {
         return pressure_bc_status;
     }
-    if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "Multigrid pressure solver is only supported by the scalar and OpenMP projection solvers");
-        return CFD_ERROR_UNSUPPORTED;
+
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 0);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
     }
     return CFD_SUCCESS;
 }
@@ -1674,9 +1708,19 @@ static cfd_status_t projection_omp_init(ns_solver_t* solver, const grid* grid,
         return scheme_status;
     }
 
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
+
     cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 1);
     if (pressure_bc_status != CFD_SUCCESS) {
         return pressure_bc_status;
+    }
+
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 1);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
     }
     projection_context* ctx = (projection_context*)cfd_calloc(1, sizeof(projection_context));
     if (!ctx) {

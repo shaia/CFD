@@ -1203,7 +1203,13 @@ void test_solver_comparison(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-10;
         params.max_iterations = 10000;
-        params.sor.omega = 1.7;
+        /* Only the SOR family reads a relaxation factor. This used to be set for
+         * the Jacobi entry too, where it has never had any effect; init now says
+         * so rather than accepting it. */
+        if (solvers[i].method == POISSON_METHOD_SOR
+            || solvers[i].method == POISSON_METHOD_REDBLACK_SOR) {
+            params.sor.omega = 1.7;
+        }
 
         cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);

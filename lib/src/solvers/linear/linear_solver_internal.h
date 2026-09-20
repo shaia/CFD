@@ -81,15 +81,20 @@ poisson_solver_t* create_multigrid_omp_solver(void);
 #endif
 
 /**
- * Validate solver->params.walls against the method, backend and apply_bc hook.
+ * Validate the whole configuration against the resolved method and backend.
  *
- * Default (all zero-gradient) walls always pass. Otherwise: CFD_ERROR_INVALID if
- * a hook is also installed, since both prescribe wall values and two sources for
- * one thing is ambiguous; CFD_ERROR_UNSUPPORTED on the methods and backends whose
- * halo routines do not honour per-face walls, rather than silently solving the
- * zero-gradient problem instead of the caller's.
+ * Called once from poisson_solver_init, and the only place that decides what a
+ * given solver can honour. A parameter it cannot is refused here rather than
+ * ignored: CFD_ERROR_UNSUPPORTED where the solver would have to implement
+ * something it does not, CFD_ERROR_INVALID where the caller has asked for two
+ * contradictory things or for something that could not take effect.
+ *
+ * Central rather than per-init because the alternative -- a check inside each of
+ * the twenty-odd solver inits -- is what let BiCGSTAB ignore
+ * params.krylov.preconditioner on every backend, and three GPU solvers ignore a
+ * caller's apply_bc, for as long as they have existed.
  */
-cfd_status_t poisson_solver_check_walls(const poisson_solver_t* solver);
+cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver);
 
 /**
  * Boundary values for a Krylov iterate, before a residual is formed from it.
@@ -140,21 +145,6 @@ void poisson_solver_krylov_apply_bc_homogeneous(poisson_solver_t* solver, double
 int poisson_solver_krylov_is_singular(const poisson_solver_t* solver);
 
 /**
- * Reject POISSON_PRECOND_MULTIGRID on backends that don't implement it.
- * Only the scalar and OpenMP CG solvers support the MG preconditioner;
- * silently ignoring it would be a forbidden silent fallback.
- */
-static inline cfd_status_t poisson_solver_reject_mg_precond(
-    const poisson_solver_params_t* params) {
-    if (params && params->krylov.preconditioner == POISSON_PRECOND_MULTIGRID) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "POISSON_PRECOND_MULTIGRID is only supported by the scalar and OpenMP CG solvers");
-        return CFD_ERROR_UNSUPPORTED;
-    }
-    return CFD_SUCCESS;
-}
-
-/**
  * Create and initialize the inner solver of POISSON_PRECOND_MULTIGRID: one
  * multigrid V-cycle per preconditioner apply. Every CG backend that supports
  * the preconditioner builds it here, so all of them apply the same M.
@@ -172,6 +162,7 @@ static inline cfd_status_t poisson_solver_create_mg_precond(
     poisson_solver_t* (*factory)(void),
     size_t nx, size_t ny, size_t nz,
     double dx, double dy, double dz,
+    const poisson_multigrid_params_t* requested,
     poisson_solver_t** out) {
     poisson_solver_t* mg = factory();
     if (!mg) {
@@ -179,9 +170,27 @@ static inline cfd_status_t poisson_solver_create_mg_precond(
     }
 
     poisson_solver_params_t mg_params = poisson_solver_params_default();
+    if (requested) {
+        mg_params.multigrid = *requested;
+    }
+
+    /* Four fields are the preconditioner's, not the caller's. A V-cycle with
+     * weighted-Jacobi smoothing, Dirichlet coarse corrections and an equal
+     * pre/post sweep count applies a symmetric operator; without that, M is not
+     * symmetric and CG is no longer minimising over a Krylov space. W and F
+     * cycles are not V applied harder -- whether they stay symmetric depends on
+     * how the recursion composes, which is not something to assume here.
+     *
+     * poisson_solver_check_config refuses a caller who sets any of the four, so
+     * these assignments overwrite nothing that was asked for; they resolve
+     * fields the caller was required to leave at zero. The rest of the group --
+     * pre_smooth/post_smooth, coarse_max_iter, max_levels -- is the caller's and
+     * is forwarded above, which is what makes those tunable for PCG-MG at all.
+     */
     mg_params.multigrid.cycle = MG_CYCLE_V;
     mg_params.multigrid.smoother = MG_SMOOTHER_JACOBI;
     mg_params.multigrid.bc = MG_BC_DIRICHLET;
+    mg_params.multigrid.post_smooth = mg_params.multigrid.pre_smooth;
 
     cfd_status_t status = poisson_solver_init(mg, nx, ny, nz, dx, dy, dz, &mg_params);
     if (status != CFD_SUCCESS) {
@@ -190,20 +199,6 @@ static inline cfd_status_t poisson_solver_create_mg_precond(
     }
 
     *out = mg;
-    return CFD_SUCCESS;
-}
-
-/**
- * Reject a caller-supplied apply_bc on solvers that apply the zero-gradient walls
- * on the GPU. They never call the host hook, so accepting one would silently solve
- * the zero-gradient problem instead of the caller's.
- */
-static inline cfd_status_t poisson_solver_reject_custom_bc(const poisson_solver_t* solver) {
-    if (solver->apply_bc) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "A custom apply_bc is not supported by solvers that apply the walls on the GPU");
-        return CFD_ERROR_UNSUPPORTED;
-    }
     return CFD_SUCCESS;
 }
 

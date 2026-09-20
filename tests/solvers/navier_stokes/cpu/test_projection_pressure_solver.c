@@ -553,6 +553,191 @@ void test_projection_zero_init_backward_compat(void) {
 }
 
 //=============================================================================
+// TEST: A SOLVER THAT RUNS NO PRESSURE SOLVE REFUSES A PRESSURE-SOLVER CHOICE
+//=============================================================================
+
+/**
+ * ns_solver_params_t.pressure_solver was validated by no time integrator at
+ * all: rk4 or explicit_euler accepted NS_PRESSURE_SOLVER_MULTIGRID and then
+ * ignored it, because those solvers run no Poisson solve for it to select.
+ */
+void test_time_integrators_reject_a_pressure_solver_choice(void) {
+    printf("\n    Testing the time integrators refuse a pressure-solver choice...\n");
+
+    grid* g = grid_create(GRID_N, GRID_N, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    /* Every registered solver that integrates in time without projecting. */
+    const char* integrators[] = {
+        NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU,
+        NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK2_OPTIMIZED,
+        NS_SOLVER_TYPE_RK2_OMP, NS_SOLVER_TYPE_RK2_GPU,
+        NS_SOLVER_TYPE_RK4, NS_SOLVER_TYPE_RK4_OPTIMIZED,
+        NS_SOLVER_TYPE_RK4_OMP, NS_SOLVER_TYPE_RK4_GPU,
+    };
+
+    int checked = 0;
+    for (size_t i = 0; i < sizeof(integrators) / sizeof(integrators[0]); i++) {
+        for (size_t m = 0; m < NUM_MG_MODES; m++) {
+            ns_solver_t* slv = cfd_solver_create(registry, integrators[i]);
+            if (!slv) {
+                break;  /* backend absent in this build */
+            }
+            ns_solver_params_t params = make_params(MG_MODES[m]);
+            cfd_status_t status = solver_init(slv, g, &params);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_ERROR_UNSUPPORTED, status,
+                "a solver that runs no pressure solve must refuse a pressure-solver choice");
+            solver_destroy(slv);
+            checked++;
+        }
+    }
+    printf("      refused on %d (solver, mode) pairs\n", checked);
+    TEST_ASSERT_GREATER_THAN_INT(0, checked);
+
+    cfd_registry_destroy(registry);
+    grid_destroy(g);
+}
+
+/** A value outside the enum is a caller error, not an unsupported backend. */
+void test_unknown_pressure_solver_is_invalid(void) {
+    printf("\n    Testing an out-of-range pressure_solver is INVALID...\n");
+
+    grid* g = grid_create(GRID_N, GRID_N, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
+    TEST_ASSERT_NOT_NULL(slv);
+
+    ns_solver_params_t params = make_params((ns_pressure_solver_t)99);
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, solver_init(slv, g, &params));
+
+    solver_destroy(slv);
+    cfd_registry_destroy(registry);
+    grid_destroy(g);
+}
+
+//=============================================================================
+// TEST: THE GPU BACKENDS REFUSE A TURBULENCE MODEL AT INIT
+//=============================================================================
+
+/**
+ * The GPU backends have no RANS kernels. They used to report that per step,
+ * from inside solve_projection_method_gpu -- after init had already returned
+ * success, which is the one moment a caller could still pick another backend.
+ * The entry points keep their own check: they are exported, so a direct caller
+ * reaches them without passing through any init.
+ */
+void test_gpu_rejects_turbulence_at_init(void) {
+    printf("\n    Testing the GPU backends refuse a turbulence model at init...\n");
+
+    grid* g = grid_create(GRID_N, GRID_N, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    const char* gpu_solvers[] = {
+        NS_SOLVER_TYPE_PROJECTION_GPU, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU,
+        NS_SOLVER_TYPE_RK2_GPU, NS_SOLVER_TYPE_RK4_GPU,
+    };
+    const turbulence_model_t models[] = {
+        TURB_MODEL_K_EPSILON, TURB_MODEL_SPALART_ALLMARAS,
+    };
+
+    int checked = 0;
+    for (size_t s = 0; s < sizeof(gpu_solvers) / sizeof(gpu_solvers[0]); s++) {
+        for (size_t m = 0; m < sizeof(models) / sizeof(models[0]); m++) {
+            ns_solver_t* slv = cfd_solver_create(registry, gpu_solvers[s]);
+            if (!slv) {
+                printf("      %s: not available (skipping)\n", gpu_solvers[s]);
+                break;  /* no CUDA in this build */
+            }
+            ns_solver_params_t params = make_params(NS_PRESSURE_SOLVER_DEFAULT);
+            params.turb_model = models[m];
+            cfd_status_t status = solver_init(slv, g, &params);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_ERROR_UNSUPPORTED, status,
+                "a GPU solver must refuse a turbulence model at init, not at step time");
+            solver_destroy(slv);
+            checked++;
+        }
+    }
+    printf("      refused on %d (solver, model) pairs\n", checked);
+
+    cfd_registry_destroy(registry);
+    grid_destroy(g);
+}
+
+/** The CPU solvers do implement RANS and still accept a model. */
+void test_cpu_accepts_turbulence(void) {
+    printf("\n    Testing the CPU solvers still accept a turbulence model...\n");
+
+    grid* g = grid_create(GRID_N, GRID_N, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    const char* cpu_solvers[] = {
+        NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
+        NS_SOLVER_TYPE_PROJECTION_OMP, NS_SOLVER_TYPE_EXPLICIT_EULER,
+        NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK4,
+    };
+    for (size_t s = 0; s < sizeof(cpu_solvers) / sizeof(cpu_solvers[0]); s++) {
+        ns_solver_t* slv = cfd_solver_create(registry, cpu_solvers[s]);
+        if (!slv) {
+            continue;
+        }
+        ns_solver_params_t params = make_params(NS_PRESSURE_SOLVER_DEFAULT);
+        params.turb_model = TURB_MODEL_K_EPSILON;
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, solver_init(slv, g, &params),
+            "a solver that implements RANS must accept a turbulence model");
+        solver_destroy(slv);
+    }
+
+    cfd_registry_destroy(registry);
+    grid_destroy(g);
+}
+
+/** An out-of-range turb_model is a caller error on every backend. */
+void test_unknown_turbulence_model_is_invalid(void) {
+    printf("\n    Testing an out-of-range turb_model is INVALID...\n");
+
+    grid* g = grid_create(GRID_N, GRID_N, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+
+    ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
+    TEST_ASSERT_NOT_NULL(slv);
+
+    ns_solver_params_t params = make_params(NS_PRESSURE_SOLVER_DEFAULT);
+    params.turb_model = (turbulence_model_t)77;
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, solver_init(slv, g, &params));
+
+    solver_destroy(slv);
+    cfd_registry_destroy(registry);
+    grid_destroy(g);
+}
+
+//=============================================================================
 // MAIN
 //=============================================================================
 
@@ -571,6 +756,11 @@ int main(void) {
     RUN_TEST(test_projection_mg_rejects_non_pow2_grid);
     RUN_TEST(test_projection_backends_reject_mg);
     RUN_TEST(test_projection_zero_init_backward_compat);
+    RUN_TEST(test_time_integrators_reject_a_pressure_solver_choice);
+    RUN_TEST(test_unknown_pressure_solver_is_invalid);
+    RUN_TEST(test_gpu_rejects_turbulence_at_init);
+    RUN_TEST(test_cpu_accepts_turbulence);
+    RUN_TEST(test_unknown_turbulence_model_is_invalid);
 
     printf("\n========================================\n");
     return UNITY_END();
