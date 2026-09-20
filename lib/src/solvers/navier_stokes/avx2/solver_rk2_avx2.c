@@ -87,6 +87,7 @@ typedef struct {
  * constants. */
 #define RHS_CTX_T rk2_avx2_context_t
 #include "../momentum_rhs/ns_momentum_rhs_avx2.h"
+#include "../ns_simd_backend_internal.h"
 #undef RHS_CTX_T
 
 /* ============================================================================
@@ -263,10 +264,18 @@ cfd_status_t rk2_avx2_init(ns_solver_t* solver, const grid* g,
         return scheme_status;
     }
 
+    /* Requires both the compiled-in kernels and a CPU that supports them.
+     * The runtime half matters even in an AVX2 build: without it this init
+     * succeeds on a pre-AVX2 CPU and the kernels then fault. */
+    cfd_status_t simd_status = ns_check_simd_backend();
+    if (simd_status != CFD_SUCCESS) {
+        return simd_status;
+    }
+
 #if !USE_AVX2
+    /* Unreachable: ns_check_simd_backend() fails in a build without AVX2. */
     (void)solver;
     (void)g;
-    cfd_set_error(CFD_ERROR_UNSUPPORTED, "AVX2 not available in this build");
     return CFD_ERROR_UNSUPPORTED;
 #else
     if (!solver || !g) {

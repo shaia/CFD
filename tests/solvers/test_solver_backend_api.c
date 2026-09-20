@@ -17,6 +17,7 @@
 #include "cfd/core/cfd_status.h"
 #include "cfd/core/cpu_features.h"
 #include "cfd/core/gpu_device.h"
+#include "cfd/core/grid.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "unity.h"
 
@@ -51,11 +52,44 @@ void test_backend_scalar_always_available(void) {
     TEST_ASSERT_TRUE(cfd_backend_is_available(NS_SOLVER_BACKEND_SCALAR));
 }
 
-void test_backend_simd_matches_cpu_features(void) {
-    // SIMD availability should match cpu_features detection
-    int expected = cfd_has_simd() ? 1 : 0;
-    int actual = cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD);
-    TEST_ASSERT_EQUAL_INT(expected, actual);
+void test_backend_simd_requires_compiled_and_runtime(void) {
+    // SIMD availability needs BOTH compiled-in kernels and CPU support, so it
+    // implies cfd_has_simd() without being implied by it: the default build has
+    // AVX2 off, where the CPU reports SIMD and no SIMD solver exists.
+    if (cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
+        TEST_ASSERT_TRUE(cfd_has_simd());
+    }
+}
+
+void test_backend_simd_agrees_with_optimized_solver_init(void) {
+    // The availability flag must agree with the solvers it describes. Without
+    // this, a build can advertise SIMD and then fail every _optimized init.
+    // projection_optimized is excluded: its SIMD Poisson sub-solver also needs
+    // OpenMP, so it may legitimately be unsupported while SIMD is available.
+    const int available = cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD);
+    const char* names[] = {
+        NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+        NS_SOLVER_TYPE_RK2_OPTIMIZED,
+        NS_SOLVER_TYPE_RK4_OPTIMIZED,
+    };
+
+    grid* g = grid_create(17, 17, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+    ns_solver_params_t params = ns_solver_params_default();
+
+    for (size_t n = 0; n < sizeof(names) / sizeof(names[0]); n++) {
+        ns_solver_t* solver = cfd_solver_create(registry, names[n]);
+        TEST_ASSERT_NOT_NULL_MESSAGE(solver, names[n]);
+        cfd_status_t status = solver_init(solver, g, &params);
+        if (available) {
+            TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, status, names[n]);
+        } else {
+            TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_UNSUPPORTED, status, names[n]);
+        }
+        solver_destroy(solver);
+    }
+    grid_destroy(g);
 }
 
 void test_backend_cuda_matches_gpu_available(void) {
@@ -239,7 +273,7 @@ void test_create_checked_scalar_succeeds(void) {
 void test_create_checked_simd_conditional(void) {
     ns_solver_t* solver = cfd_solver_create_checked(registry, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
 
-    if (cfd_has_simd()) {
+    if (cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
         TEST_ASSERT_NOT_NULL(solver);
         TEST_ASSERT_EQUAL_INT(NS_SOLVER_BACKEND_SIMD, solver->backend);
         solver_destroy(solver);
@@ -397,7 +431,8 @@ int main(void) {
 
     // cfd_backend_is_available() tests
     RUN_TEST(test_backend_scalar_always_available);
-    RUN_TEST(test_backend_simd_matches_cpu_features);
+    RUN_TEST(test_backend_simd_requires_compiled_and_runtime);
+    RUN_TEST(test_backend_simd_agrees_with_optimized_solver_init);
     RUN_TEST(test_backend_cuda_matches_gpu_available);
     RUN_TEST(test_backend_invalid_returns_false);
 

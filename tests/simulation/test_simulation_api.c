@@ -96,11 +96,18 @@ void test_init_simulation_with_invalid_solver_returns_null(void) {
 }
 
 void test_init_simulation_with_failing_solver_init_returns_null(void) {
-    /* explicit_euler_optimized rejects grids narrower than 3 points at init */
+    /* A failing solver init must yield NULL and propagate its status. Which
+     * failure comes first depends on the build: explicit_euler_optimized
+     * rejects the 2-wide grid with INVALID where SIMD is available, and
+     * reports UNSUPPORTED before looking at the grid where it is not. */
     simulation_data* sim = init_simulation_with_solver(2, 5, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0,
                                                        NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED);
     TEST_ASSERT_NULL(sim);
-    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+    if (cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_get_last_status());
+    } else {
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_UNSUPPORTED, cfd_get_last_status());
+    }
 }
 
 //=============================================================================
