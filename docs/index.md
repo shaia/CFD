@@ -34,6 +34,7 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 | Document | Description | Audience |
 |----------|-------------|----------|
 | [Validation](validation/) | Benchmark results and validation | Researchers |
+| [Turbulent Channel DNS](validation/turbulent-channel-dns.md) | RANS closure validation against Moser-Kim-Mansour DNS | Researchers |
 | [SIMD Optimization](technical-notes/simd-optimization-analysis.md) | AVX2/NEON implementation details | Performance engineers |
 
 ## Documentation by Role
