@@ -25,6 +25,7 @@
 
 #include "../boundary_copy_utils.h"
 #include "../ns_convection_internal.h"
+#include "../ns_pressure_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -71,6 +72,7 @@ typedef struct {
     double inv_dz2;
     int initialized;
     int iter_count;
+    poisson_solver_t* pressure; /**< Owned across the solver's life; see ns_pressure_internal.h */
 } projection_simd_context;
 
 // Public API
@@ -104,19 +106,29 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         return CFD_ERROR_UNSUPPORTED;
     }
 
-    /* Verify SIMD CG Poisson solver is available before allocating resources */
-    poisson_solver_t* test_solver = poisson_solver_create(
-        POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
-    if (!test_solver) {
-        CFD_LOG_WARNING("projection", "SIMD CG Poisson solver not available");
-        return CFD_ERROR_UNSUPPORTED;
-    }
-    poisson_solver_destroy(test_solver);
-
     projection_simd_context* ctx =
         (projection_simd_context*)cfd_calloc(1, sizeof(projection_simd_context));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
+    }
+
+    /* Build the pressure solver here rather than probing for one and throwing it
+     * away: the probe answered the same question and discarded the answer. An
+     * unavailable SIMD backend, or a grid a mode cannot take, now fails at init
+     * where the caller can still pick something else. */
+    {
+        poisson_solver_config_t cfg;
+        cfd_status_t cfg_status = ns_pressure_config(params, POISSON_BACKEND_SIMD, &cfg);
+        if (cfg_status != CFD_SUCCESS) {
+            cfd_free(ctx);
+            return cfg_status;
+        }
+        cfd_status_t pressure_status =
+            ns_pressure_ensure(&ctx->pressure, &cfg, grid);
+        if (pressure_status != CFD_SUCCESS) {
+            cfd_free(ctx);
+            return pressure_status;
+        }
     }
 
     ctx->nx = grid->nx;
@@ -174,6 +186,7 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
 void projection_simd_destroy(struct NSSolver* solver) {
     if (solver && solver->context) {
         projection_simd_context* ctx = (projection_simd_context*)solver->context;
+        ns_pressure_release(&ctx->pressure);
         if (ctx->initialized) {
             cfd_aligned_free(ctx->u_star);
             cfd_aligned_free(ctx->v_star);
@@ -405,15 +418,15 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
         mg_subtract_interior_mean(rhs, nx, ny, ctx->nz);
     }
 
-    // Use SIMD Poisson solver (Conjugate Gradient with SIMD)
-    // ctx->u_new is used as temp buffer for the Poisson solver
-    poisson_solver_params_t pp = poisson_solver_params_default();
-    pp.walls = params->pressure_bc;
-    int poisson_iters = poisson_solve_3d_params(p_new, ctx->u_new, rhs, nx, ny, ctx->nz,
-                                                dx, dy, dz, POISSON_SOLVER_CG_SIMD, &pp);
+    // Solve with the solver this projection owns; ctx->u_new is the temp buffer.
+    // The status passes through rather than flattening to MAX_ITER: divergence and
+    // an unsolvable right-hand side are different problems with different fixes.
+    poisson_solver_stats_t pstats = poisson_solver_stats_default();
+    cfd_status_t poisson_status =
+        poisson_solver_solve(ctx->pressure, p_new, ctx->u_new, rhs, &pstats);
 
-    if (poisson_iters < 0) {
-        return CFD_ERROR_MAX_ITER;
+    if (poisson_status != CFD_SUCCESS) {
+        return poisson_status;
     }
 
     // ============================================================
