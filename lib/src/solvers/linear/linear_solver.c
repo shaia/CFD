@@ -7,7 +7,8 @@
  * - Backend selection
  * - Solver lifecycle (create, init, destroy)
  * - Common solve loop
- * - Legacy poisson_solve() wrapper
+ * - Configuration validation
+ * - The poisson_solve() convenience entry point
  */
 
 #include "cfd/solvers/poisson_solver.h"
@@ -21,7 +22,6 @@
 
 #include <math.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -30,9 +30,6 @@
 #else
     #include <sys/time.h>
 #endif
-
-/* After <windows.h>: this header includes it without WIN32_LEAN_AND_MEAN */
-#include "../../core/cfd_threading_internal.h"
 
 /* ============================================================================
  * DEFAULT PARAMETERS
@@ -173,6 +170,18 @@ cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
             || !isfinite(p->walls.values.bottom) || !isfinite(p->walls.values.top)
             || !isfinite(p->walls.values.front) || !isfinite(p->walls.values.back)) {
             cfd_set_error(CFD_ERROR_INVALID, "params.walls.values must be finite");
+            return CFD_ERROR_INVALID;
+        }
+        /* A 2D grid has no z-faces to prescribe. poisson_apply_walls skips them
+         * and poisson_walls_are_singular ignores them, so without this the face
+         * would be configured, accepted, and have no effect -- the silent ignore
+         * this whole function exists to prevent. */
+        if (solver->nz <= 1
+            && (p->walls.front != POISSON_WALL_ZERO_GRADIENT
+                || p->walls.back != POISSON_WALL_ZERO_GRADIENT)) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                "params.walls.front and .back describe z-faces, which a 2D grid "
+                "(nz == 1) does not have; they would have no effect on this solve");
             return CFD_ERROR_INVALID;
         }
     }
@@ -320,7 +329,9 @@ poisson_solver_params_t poisson_solver_params_default(void) {
 poisson_solver_config_t poisson_solver_config_preset(poisson_preset_t preset) {
     poisson_solver_config_t cfg;
     cfg.method = POISSON_METHOD_CG;
-    cfg.backend = POISSON_BACKEND_AUTO;  /* never named by a preset */
+    /* AUTO unless the preset needs a backend that AUTO would not choose; see
+     * the two multigrid cases below. */
+    cfg.backend = POISSON_BACKEND_AUTO;
     cfg.params = poisson_solver_params_default();
 
     switch (preset) {
@@ -346,12 +357,20 @@ poisson_solver_config_t poisson_solver_config_preset(poisson_preset_t preset) {
 
         case POISSON_PRESET_MULTIGRID:
             cfg.method = POISSON_METHOD_MULTIGRID;
+            cfg.backend = POISSON_BACKEND_SCALAR;
             break;
 
         case POISSON_PRESET_MULTIGRID_PCG:
-            /* An ordinary CG config: the preconditioner is a parameter, not a
-             * property of the preset, so nothing downstream needs a special case. */
+            /* The preconditioner is an ordinary parameter, so nothing downstream
+             * needs a special case for it -- but the backend does need naming.
+             * AUTO resolves to SIMD wherever AVX2 or NEON is present, and neither
+             * multigrid nor the multigrid preconditioner has a SIMD backend, so
+             * this preset would otherwise be refused at init on the very machines
+             * it is most likely to run on. Scalar is the one backend AUTO could
+             * have reached that implements it; POISSON_BACKEND_OMP is a single
+             * assignment away for a caller who wants the threaded hierarchy. */
             cfg.params.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
+            cfg.backend = POISSON_BACKEND_SCALAR;
             break;
 
         case POISSON_PRESET_DEFAULT:
@@ -850,22 +869,16 @@ void poisson_solver_apply_bc(
                plane_size * sizeof(double));
     }
 
-    /* Apply 2D Neumann BCs on each z-plane using solver's own backend.
-     * This avoids BC_BACKEND_AUTO selecting a different backend (e.g. OMP)
-     * than the solver itself, which could spawn unexpected threads. */
+    /* Serial on every backend, deliberately.
+     *
+     * A Neumann face is a copy from the adjacent interior line, so all three
+     * backends produce identical values -- but this runs once per Krylov
+     * iteration, and an OpenMP region costs ~12 us to enter at 4 threads on
+     * MSVC while the work here is O(nx + ny): about 130 writes on a 33x33
+     * plane, less than the 31x31 Laplacian sweep it accompanies. Threading it
+     * cost more than the solve. BiCGSTAB pays this twice per iteration. */
     for (size_t k = 0; k < nz; k++) {
-        double* plane = x + k * plane_size;
-        switch (solver->backend) {
-            case POISSON_BACKEND_OMP:
-                bc_apply_scalar_omp(plane, nx, ny, BC_TYPE_NEUMANN);
-                break;
-            case POISSON_BACKEND_SIMD:
-                bc_apply_scalar_simd(plane, nx, ny, BC_TYPE_NEUMANN);
-                break;
-            default:
-                bc_apply_scalar_cpu(plane, nx, ny, BC_TYPE_NEUMANN);
-                break;
-        }
+        bc_apply_scalar_cpu(x + k * plane_size, nx, ny, BC_TYPE_NEUMANN);
     }
 }
 
@@ -1174,6 +1187,10 @@ cfd_status_t poisson_solver_solve(
         cfd_status_t compat = check_rhs_compatible(solver, rhs);
         if (compat != CFD_SUCCESS) {
             if (stats) {
+                /* Reset first: a caller reusing one stats struct across solves
+                 * would otherwise read the previous solve's residual and timing
+                 * next to this refusal, which looks like a converged result. */
+                *stats = poisson_solver_stats_default();
                 stats->status = POISSON_INCOMPATIBLE_RHS;
                 stats->iterations = 0;
             }

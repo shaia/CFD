@@ -75,6 +75,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `CFD_ENABLE_AVX2=OFF` build. It now sets an error naming the fix. Its doc comment
     also told callers to "fall back to scalar if needed", which is the cross-backend
     fallback the library forbids.
+  - **The GPU projection's compatibility projection stays on the device.** It computed
+    the RHS interior mean on the GPU, copied it back, and `cudaStreamSynchronize`d before
+    dividing -- one full pipeline drain per inner iteration, in the loop whose pressure
+    solve is device-resident specifically to avoid host round-trips. The subtract kernel
+    now reads the device-side sum and the interior count and divides itself, and the
+    discarded `cudaMemsetAsync` status is checked. Measured A/B on an RTX 4090,
+    `GhiaProjectionGpuTest`: 135.7 s before, 129.0-136.1 s after -- no measurable change,
+    because `cg_gpu_solve_device` synchronizes for its own dot products anyway and one
+    more drain per projection iteration is lost beside them. Kept as a correctness and
+    clarity fix, not a speedup.
+  - **The Krylov halo refresh no longer opens an OpenMP region per iteration.** A Neumann
+    face is a copy from the adjacent interior line -- O(nx + ny), about 130 writes on a
+    33x33 plane -- and it runs once per Krylov iteration (twice for BiCGSTAB). An MSVC
+    parallel region costs ~12 us to enter at 4 threads, more than the Laplacian sweep it
+    accompanied. It is serial on every backend now; all three produced identical values.
+    Measured A/B, `GhiaProjectionAvx2Test` run alone: 53.7 s before, 47.6-50.1 s after.
+  - **Fixes from review of the above.** `POISSON_PRESET_MULTIGRID_PCG` left `backend` at
+    AUTO, which resolves to SIMD wherever AVX2 or NEON is present, and no SIMD CG
+    implements the multigrid preconditioner -- so the preset was refused at init on the
+    machines it was for. Both multigrid presets now name `POISSON_BACKEND_SCALAR`, and
+    `test_every_preset_runs_at_its_own_backend` solves with every preset as shipped.
+    A prescribed `walls.front`/`.back` on a 2D grid was accepted and then skipped, a
+    silent ignore reached through the validator's own per-face branch; it is now
+    `CFD_ERROR_INVALID`. The scalar and OpenMP projections check that the field they were
+    handed matches the grid their pressure solver was built for -- the buffers are sized
+    from the field and the Poisson kernels sweep to the solver's dimensions, which could
+    not diverge while the solve took its size from the field. The AVX2 projection
+    re-derives its pressure configuration each step as the other two do, instead of
+    reading `params->pressure_bc` fresh for the mean subtraction while solving with a
+    solver frozen at init, and releases that solver on the two init failure paths that
+    ran after it was built. `ns_pressure_ensure` reports what the factory reported rather
+    than calling every NULL an unsupported backend. A refused solve resets the whole
+    stats struct, so a reused one cannot show the previous solve's residual beside
+    `POISSON_INCOMPATIBLE_RHS`.
   - `poisson_solver_status_string()` is new: `POISSON_INCOMPATIBLE_RHS` had no name and printed
     as a generic "error" in both examples, each of which hand-rolled its own ternary chain.
   (`lib/include/cfd/solvers/poisson_solver.h`, `lib/src/solvers/linear/linear_solver.c`,
@@ -281,11 +315,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and needs no reference to halos).
   **Behaviour change:** with the default walls the operator is singular, the constants
   being its nullspace, so the RHS must now have zero interior mean — the same requirement
-  standalone multigrid already has in `MG_BC_NEUMANN` mode. An incompatible RHS has no
-  solution and the solve returns `CFD_ERROR_MAX_ITER` rather than silently solving a
-  projected problem. The projection solvers subtract the interior mean of `div(u*)` on
-  every preset; callers who relied on a uniform RHS converging should install an `apply_bc`
-  hook to request Dirichlet walls, which is nonsingular and admits any RHS.
+  standalone multigrid already has in `MG_BC_NEUMANN` mode. The projection solvers
+  subtract the interior mean of `div(u*)` on every preset; callers who relied on a uniform
+  RHS converging should either call `poisson_make_rhs_compatible()` or prescribe a face
+  through `params.walls`, which makes the operator nonsingular and admits any RHS. (Both
+  are better than the `apply_bc` hook an earlier draft of this entry suggested: walls and
+  a hook together are now refused, since both prescribe wall values.)
   The 3D projection goldens were re-pinned: `L2(p)` now stays ~1.0, since a constant is in
   the nullspace and the iteration keeps every direction mean-free, so the caller's pressure
   level is carried rather than driven to zero walls; `L2(u)`/`L2(v)` move by ~3e-7 relative

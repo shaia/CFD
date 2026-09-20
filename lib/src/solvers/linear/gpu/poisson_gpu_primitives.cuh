@@ -369,14 +369,30 @@ static __global__ void lin_gpu_kernel_interior_sum(const double* __restrict__ f,
 }
 
 /**
- * Subtract a constant from every interior cell, leaving the boundary alone.
- * Paired with lin_gpu_kernel_interior_sum to remove the interior mean.
+ * Subtract the interior mean from every interior cell, leaving the boundary
+ * alone. Paired with lin_gpu_kernel_interior_sum, whose device-side total this
+ * reads directly.
+ *
+ * The sum stays on the device deliberately. Taking it to the host to divide
+ * would cost a copy and a full stream synchronize per call -- and this is
+ * called once per projection iteration, so that is one pipeline drain per
+ * iteration in a loop whose whole point is to stay device-resident. Every
+ * thread reloading one double and dividing is cheaper than the sync by orders
+ * of magnitude.
+ *
+ * interior_count is the number of interior cells the sum was taken over; 0
+ * makes this a no-op, matching the host-side guard it replaces.
  */
 static __global__ void lin_gpu_kernel_subtract_interior(double* __restrict__ f,
-                                                        double value,
+                                                        const double* __restrict__ sum,
+                                                        size_t interior_count,
                                                         size_t nx, size_t ny,
                                                         size_t stride_z,
                                                         int k_start, int k_end) {
+    if (interior_count == 0) {
+        return;
+    }
+    const double value = *sum / (double)interior_count;
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < (int)nx - 1 && j < (int)ny - 1) {

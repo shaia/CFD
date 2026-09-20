@@ -229,8 +229,11 @@ CFD_LIBRARY_EXPORT bool poisson_walls_are_singular(const poisson_walls_t* walls,
  */
 typedef struct {
     double omega; /**< Relaxation factor. 0 = automatic, at or just below the optimum
-                       for the grid and the walls in use. Must stay 0 for
-                       POISSON_METHOD_GAUSS_SEIDEL, which is SOR at omega = 1. */
+                       for the grid and the walls in use.
+                       POISSON_METHOD_GAUSS_SEIDEL is the one documented exception to
+                       the rule that a parameter is either honoured or refused: it IS
+                       SOR at omega = 1, so it accepts a value here and relaxes with 1
+                       regardless. Use POISSON_METHOD_SOR to choose omega yourself. */
 } poisson_sor_params_t;
 
 /**
@@ -285,8 +288,10 @@ typedef struct {
     double tolerance;          /**< Relative convergence tolerance (default: 1e-6) */
     double absolute_tolerance; /**< Absolute tolerance (default: 1e-10) */
     int max_iterations;        /**< Maximum iterations (default: 5000) */
-    int check_interval;        /**< Check convergence every N iterations (0 = this
-                                    method and backend's own interval) */
+    int check_interval;        /**< Check convergence every N iterations. Must be at
+                                    least 1: poisson_solver_init() returns
+                                    CFD_ERROR_INVALID for 0, which would otherwise
+                                    reach iter % 0. Default 1. */
     bool verbose;              /**< Print iteration progress (default: false) */
 
     /* Owned by exactly one method family each. */
@@ -313,10 +318,12 @@ typedef struct {
 /**
  * Named starting points, by intent.
  *
- * None of these names a backend: every preset leaves backend at
- * POISSON_BACKEND_AUTO, and choosing one is a single assignment on the config.
- * Nor does any name a method it does not need to -- GMRES and the GPU need no
- * enumerator here, just cfg.method and cfg.backend.
+ * A preset names a backend only where AUTO would pick one that cannot run it:
+ * AUTO resolves to SIMD wherever AVX2 or NEON is present, and the two multigrid
+ * presets have no SIMD backend, so those name POISSON_BACKEND_SCALAR and the
+ * rest leave POISSON_BACKEND_AUTO. Choosing another is a single assignment on
+ * the config either way. Nor does any preset name a method it does not need to
+ * -- GMRES and the GPU need no enumerator here, just cfg.method and cfg.backend.
  */
 typedef enum {
     /** Conjugate Gradient at 1e-6. Works on any grid with an interior. */

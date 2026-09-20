@@ -147,6 +147,7 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     if (grid->nz > 1 && grid->dz) {
         for (size_t kk = 1; kk < grid->nz - 1; kk++) {
             if (fabs(grid->dz[kk] - grid->dz[0]) > 1e-14) {
+                ns_pressure_release(&ctx->pressure);
                 cfd_free(ctx);
                 return CFD_ERROR_INVALID;
             }
@@ -181,6 +182,10 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         if (ctx->u_new)    { cfd_aligned_free(ctx->u_new); }
         if (ctx->T_ws)     { cfd_aligned_free(ctx->T_ws); }
         if (ctx->turb_ws)  { cfd_free(ctx->turb_ws); }
+        /* solver->context is still NULL, so projection_simd_destroy will never
+         * run for this ctx and the pressure solver -- a full CG workspace of
+         * grid-sized vectors -- has to be released here. */
+        ns_pressure_release(&ctx->pressure);
         cfd_free(ctx);
         return CFD_ERROR_NOMEM;
     }
@@ -223,6 +228,26 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     // Verify context matches current grid
     if (ctx->nx != field->nx || ctx->ny != field->ny || ctx->nz != field->nz) {
         return CFD_ERROR_INVALID;
+    }
+
+    /* Re-derive the pressure configuration from the params of THIS step, as the
+     * scalar and OpenMP projections do. pressure_bc and pressure_solver are read
+     * from params on every step -- the compatibility projection below reads
+     * params->pressure_bc directly -- so a solver frozen at init would let the
+     * two disagree: the mean subtraction would be skipped for a prescribed face
+     * while the solver still carried the singular zero-gradient operator, and
+     * the solve would then refuse the un-subtracted RHS. ns_pressure_ensure
+     * rebuilds only when the configuration or the grid actually changed. */
+    {
+        poisson_solver_config_t cfg;
+        cfd_status_t cfg_status = ns_pressure_config(params, POISSON_BACKEND_SIMD, &cfg);
+        if (cfg_status != CFD_SUCCESS) {
+            return cfg_status;
+        }
+        cfd_status_t pressure_status = ns_pressure_ensure(&ctx->pressure, &cfg, grid);
+        if (pressure_status != CFD_SUCCESS) {
+            return pressure_status;
+        }
     }
 
     size_t nx = field->nx;

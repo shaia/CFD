@@ -112,7 +112,18 @@ static inline cfd_status_t ns_pressure_ensure(poisson_solver_t** slot,
 
     poisson_solver_t* solver = poisson_solver_create(cfg->method, cfg->backend);
     if (!solver) {
-        return CFD_ERROR_UNSUPPORTED;  /* factory set the specific last-status */
+        /* Report what the factory reported. Collapsing everything to
+         * UNSUPPORTED would tell a caller to try another backend when the real
+         * problem was an allocation failure, and the next backend would fail
+         * the same way. A factory that set nothing still must not read back as
+         * success. */
+        cfd_status_t reason = cfd_get_last_status();
+        if (reason == CFD_SUCCESS) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "The pressure solver could not be created for this method and backend");
+            reason = CFD_ERROR_UNSUPPORTED;
+        }
+        return reason;
     }
 
     cfd_status_t status =

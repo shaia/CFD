@@ -181,8 +181,9 @@ static inline cfd_status_t poisson_solver_create_mg_precond(
      * cycles are not V applied harder -- whether they stay symmetric depends on
      * how the recursion composes, which is not something to assume here.
      *
-     * poisson_solver_check_config refuses a caller who sets any of the four, so
-     * these assignments overwrite nothing that was asked for; they resolve
+     * poisson_solver_check_config resolves the sweep count by refusing an
+     * unequal pair outright, and refuses a caller who names the other three, so
+     * the assignments below overwrite nothing that was asked for: they fill in
      * fields the caller was required to leave at zero. The rest of the group --
      * pre_smooth/post_smooth, coarse_max_iter, max_levels -- is the caller's and
      * is forwarded above, which is what makes those tunable for PCG-MG at all.
@@ -190,7 +191,6 @@ static inline cfd_status_t poisson_solver_create_mg_precond(
     mg_params.multigrid.cycle = MG_CYCLE_V;
     mg_params.multigrid.smoother = MG_SMOOTHER_JACOBI;
     mg_params.multigrid.bc = MG_BC_DIRICHLET;
-    mg_params.multigrid.post_smooth = mg_params.multigrid.pre_smooth;
 
     cfd_status_t status = poisson_solver_init(mg, nx, ny, nz, dx, dy, dz, &mg_params);
     if (status != CFD_SUCCESS) {

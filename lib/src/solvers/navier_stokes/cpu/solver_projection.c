@@ -56,6 +56,19 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
         return CFD_ERROR_INVALID;
     }
+    /* Every buffer below is sized from the field, while the pressure solver was
+     * built for the grid. Its kernels sweep to solver->nx-1 etc., so a field
+     * smaller than the grid would have them run off the end of rhs and p_new.
+     * The two are separate caller-owned objects and nothing upstream ties them
+     * together; before the projection owned its solver the Poisson dimensions
+     * came from the field, so they could not diverge. */
+    if (pressure->nx != field->nx || pressure->ny != field->ny
+        || pressure->nz != field->nz) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "The pressure solver was built for the grid dimensions; this field has "
+            "different ones. Re-init the solver for the grid the field belongs to.");
+        return CFD_ERROR_INVALID;
+    }
 
     size_t nx = field->nx;
     size_t ny = field->ny;

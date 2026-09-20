@@ -727,21 +727,29 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
         // constants being its nullspace, so the RHS must have zero interior mean or CG
         // stalls on the component lying in it. Discretely div(u*) only nearly integrates
         // to zero, so the remainder is removed rather than assumed away.
+        //
+        // The sum never leaves the device. Bringing it to the host to divide
+        // would mean a copy and a full cudaStreamSynchronize on every one of
+        // the max_iter inner iterations -- a pipeline drain per iteration, in
+        // the loop whose pressure solve is device-resident precisely to avoid
+        // host round-trips. The subtract kernel reads the sum and the interior
+        // count and does the division itself.
         {
             size_t interior = (nx - 2) * (ny - 2) * (size_t)(k_end - k_start + 1);
             size_t shmem = (size_t)cfg.block_size_x * cfg.block_size_y * sizeof(double);
-            cudaMemsetAsync(ctx->d_residual, 0, sizeof(double), ctx->stream);
+            cudaError_t cerr = cudaMemsetAsync(ctx->d_residual, 0, sizeof(double), ctx->stream);
+            if (cerr != cudaSuccess) {
+                cfd_set_error(CFD_ERROR, cudaGetErrorString(cerr));
+                cudaFree(d_cg_r);
+                cudaFree(d_cg_Ap);
+                gpu_solver_destroy(ctx_void);
+                return CFD_ERROR;
+            }
             lin_gpu_kernel_interior_sum<<<grid_dim, block, shmem, ctx->stream>>>(
                 ctx->d_rhs, ctx->d_residual, nx, ny, stride_z, k_start, k_end);
-            double host_sum = 0.0;
-            cudaMemcpyAsync(&host_sum, ctx->d_residual, sizeof(double),
-                            cudaMemcpyDeviceToHost, ctx->stream);
-            cudaStreamSynchronize(ctx->stream);
-            if (interior > 0) {
-                lin_gpu_kernel_subtract_interior<<<grid_dim, block, 0, ctx->stream>>>(
-                    ctx->d_rhs, host_sum / (double)interior,
-                    nx, ny, stride_z, k_start, k_end);
-            }
+            lin_gpu_kernel_subtract_interior<<<grid_dim, block, 0, ctx->stream>>>(
+                ctx->d_rhs, ctx->d_residual, interior,
+                nx, ny, stride_z, k_start, k_end);
         }
 
         // Step 3: Solve the pressure Poisson equation with Conjugate Gradient via the

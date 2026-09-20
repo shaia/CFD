@@ -419,6 +419,188 @@ void test_pcg_mg_reads_the_multigrid_group(void) {
 }
 
 /* ============================================================================
+ * EVERY PRESET WORKS AT THE BACKEND IT SHIPS WITH
+ * ============================================================================ */
+
+/**
+ * A preset that refuses its own default backend is worse than no preset.
+ *
+ * POISSON_PRESET_MULTIGRID_PCG did exactly that: it left backend at AUTO,
+ * which resolves to SIMD wherever AVX2 or NEON is present, and no SIMD CG
+ * implements the multigrid preconditioner -- so the one preset whose whole
+ * purpose is "give me the fast preconditioned solve" was refused at init on
+ * precisely the machines it was for. POISSON_METHOD_MULTIGRID had a matching
+ * special case inside poisson_solver_create; the preconditioned form had none,
+ * and every existing test passed POISSON_BACKEND_SCALAR explicitly, so nothing
+ * exercised the default.
+ */
+void test_every_preset_runs_at_its_own_backend(void) {
+    const size_t N = 33;  /* 2^5+1, so the multigrid presets can build a hierarchy */
+    const double h = 1.0 / (double)(N - 1);
+    const size_t n = N * N;
+
+    double* x = (double*)cfd_calloc(n, sizeof(double));
+    double* x_temp = (double*)cfd_calloc(n, sizeof(double));
+    double* rhs = (double*)cfd_calloc(n, sizeof(double));
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(x_temp);
+    TEST_ASSERT_NOT_NULL(rhs);
+
+    for (size_t j = 1; j < N - 1; j++) {
+        for (size_t i = 1; i < N - 1; i++) {
+            double xf = (double)i / (double)(N - 1);
+            double yf = (double)j / (double)(N - 1);
+            rhs[j * N + i] = sin(2.0 * 3.14159265358979323846 * xf)
+                           * sin(2.0 * 3.14159265358979323846 * yf);
+        }
+    }
+    poisson_make_rhs_compatible(rhs, N, N, 1);
+
+    const poisson_preset_t presets[] = {
+        POISSON_PRESET_DEFAULT, POISSON_PRESET_ACCURATE, POISSON_PRESET_NONSYMMETRIC,
+        POISSON_PRESET_SMOOTHER, POISSON_PRESET_MULTIGRID, POISSON_PRESET_MULTIGRID_PCG
+    };
+    const char* names[] = {
+        "DEFAULT", "ACCURATE", "NONSYMMETRIC", "SMOOTHER", "MULTIGRID", "MULTIGRID_PCG"
+    };
+
+    for (size_t p = 0; p < sizeof(presets) / sizeof(presets[0]); p++) {
+        poisson_solver_config_t cfg = poisson_solver_config_preset(presets[p]);
+        poisson_solver_stats_t stats = poisson_solver_stats_default();
+        memset(x, 0, n * sizeof(double));
+        cfd_clear_error();
+
+        cfd_status_t status =
+            poisson_solve(x, x_temp, rhs, N, N, 1, h, h, 0.0, &cfg, &stats);
+
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "preset %s must solve at the backend it ships with; got %d (%s)",
+                 names[p], (int)status,
+                 status == CFD_SUCCESS ? "ok" : cfd_get_last_error());
+        TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, status, msg);
+    }
+
+    cfd_free(x);
+    cfd_free(x_temp);
+    cfd_free(rhs);
+}
+
+/* ============================================================================
+ * A FACE THAT CANNOT TAKE EFFECT
+ * ============================================================================ */
+
+/**
+ * A 2D grid has no z-faces. poisson_apply_walls skips them and
+ * poisson_walls_are_singular ignores them, so prescribing one used to be
+ * accepted and then do nothing -- the silent ignore the validator exists to
+ * prevent, reached through the validator's own per-face branch.
+ */
+void test_z_face_on_a_2d_grid_is_refused(void) {
+    int created;
+
+    poisson_solver_params_t front = poisson_solver_params_default();
+    front.walls.front = POISSON_WALL_DIRICHLET;
+    front.walls.values.front = 5.0;
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_INVALID,
+        init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &front, NULL, &created),
+        "a prescribed front face cannot take effect on a 2D grid");
+
+    poisson_solver_params_t back = poisson_solver_params_default();
+    back.walls.back = POISSON_WALL_DIRICHLET;
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_INVALID,
+        init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &back, NULL, &created),
+        "a prescribed back face cannot take effect on a 2D grid");
+
+    /* The x and y faces of the same 2D grid are honoured and stay accepted. */
+    poisson_solver_params_t left = poisson_solver_params_default();
+    left.walls.left = POISSON_WALL_DIRICHLET;
+    left.walls.values.left = 5.0;
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS,
+        init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &left, NULL, &created),
+        "an x-face is honoured in 2D and must still be accepted");
+}
+
+/** In 3D the same z-face is honoured, so it must be accepted there. */
+void test_z_face_on_a_3d_grid_is_accepted(void) {
+    poisson_solver_t* solver =
+        poisson_solver_create(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+
+    poisson_solver_params_t p = poisson_solver_params_default();
+    p.walls.front = POISSON_WALL_DIRICHLET;
+    p.walls.values.front = 5.0;
+
+    cfd_status_t status = poisson_solver_init(solver, 9, 9, 9,
+                                              CFG_H, CFG_H, CFG_H, &p);
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, status,
+        "a z-face is a real face in 3D");
+    poisson_solver_destroy(solver);
+}
+
+/* ============================================================================
+ * A REFUSED SOLVE LEAVES NO STALE NUMBERS
+ * ============================================================================ */
+
+/**
+ * The refusal used to set status and iterations and leave the other four
+ * fields alone, so a caller reusing one stats struct read the previous solve's
+ * residual and timing next to POISSON_INCOMPATIBLE_RHS -- which looks like a
+ * converged result.
+ */
+void test_refused_solve_resets_the_stats(void) {
+    const size_t n = CFG_N * CFG_N;
+    double* x = (double*)cfd_calloc(n, sizeof(double));
+    double* x_temp = (double*)cfd_calloc(n, sizeof(double));
+    double* rhs = (double*)cfd_calloc(n, sizeof(double));
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(x_temp);
+    TEST_ASSERT_NOT_NULL(rhs);
+
+    poisson_solver_t* solver =
+        poisson_solver_create(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+    poisson_solver_params_t p = poisson_solver_params_default();
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        poisson_solver_init(solver, CFG_N, CFG_N, 1, CFG_H, CFG_H, 0.0, &p));
+
+    /* A solvable problem first, so the stats struct carries real numbers. */
+    for (size_t j = 1; j < CFG_N - 1; j++) {
+        for (size_t i = 1; i < CFG_N - 1; i++) {
+            rhs[j * CFG_N + i] = (double)((i + j) % 3) - 1.0;
+        }
+    }
+    poisson_make_rhs_compatible(rhs, CFG_N, CFG_N, 1);
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        poisson_solver_solve(solver, x, x_temp, rhs, &stats));
+    TEST_ASSERT_EQUAL(POISSON_CONVERGED, stats.status);
+    double converged_residual = stats.final_residual;
+
+    /* Now an incompatible one, into the same struct. */
+    for (size_t k = 0; k < n; k++) {
+        rhs[k] = 1.0;  /* strictly positive: nonzero interior mean */
+    }
+    memset(x, 0, n * sizeof(double));
+    cfd_clear_error();
+    cfd_status_t status = poisson_solver_solve(solver, x, x_temp, rhs, &stats);
+
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, status);
+    TEST_ASSERT_EQUAL(POISSON_INCOMPATIBLE_RHS, stats.status);
+    TEST_ASSERT_EQUAL_INT(0, stats.iterations);
+    TEST_ASSERT_FALSE_MESSAGE(stats.final_residual == converged_residual,
+        "final_residual must not still hold the previous solve's value");
+    TEST_ASSERT_EQUAL_DOUBLE_MESSAGE(0.0, stats.elapsed_time_ms,
+        "elapsed_time_ms must not hold the previous solve's timing");
+
+    poisson_solver_destroy(solver);
+    cfd_free(x);
+    cfd_free(x_temp);
+    cfd_free(rhs);
+}
+
+/* ============================================================================
  * STATUS NAMES
  * ============================================================================ */
 
@@ -470,5 +652,9 @@ int main(void) {
     RUN_TEST(test_gauss_seidel_omega_is_still_accepted);
     RUN_TEST(test_pcg_mg_reads_the_multigrid_group);
     RUN_TEST(test_every_status_has_a_distinct_name);
+    RUN_TEST(test_every_preset_runs_at_its_own_backend);
+    RUN_TEST(test_z_face_on_a_2d_grid_is_refused);
+    RUN_TEST(test_z_face_on_a_3d_grid_is_accepted);
+    RUN_TEST(test_refused_solve_resets_the_stats);
     return UNITY_END();
 }
