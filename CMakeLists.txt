@@ -564,14 +564,17 @@ if(BUILD_TESTS)
     add_test(NAME CavityReferenceTest COMMAND test_cavity_reference)
     if(CAVITY_FULL_VALIDATION)
         # Split into parallel tests for full validation (ctest -j runs them concurrently)
-        # Re=100 — optimized backends only (AVX2/OMP/GPU projection, AVX2/OMP
-        # Euler). CPU-scalar is excluded from 129x129 validation per the scalar
-        # testing policy; it runs in CI mode (33x33) via the else() branch below.
+        # Re=100 — projection only (AVX2/OMP/GPU). CPU-scalar is excluded from
+        # 129x129 validation per the scalar testing policy; it runs in CI mode
+        # (33x33) via the else() branch below, as does Explicit Euler.
         add_test(NAME CavityBackend_ProjectionAvx2 COMMAND test_cavity_backends projection_avx2)
         add_test(NAME CavityBackend_ProjectionOmp COMMAND test_cavity_backends projection_omp)
         add_test(NAME CavityBackend_ProjectionGpu COMMAND test_cavity_backends projection_gpu)
-        add_test(NAME CavityBackend_EulerAvx2 COMMAND test_cavity_backends euler_avx2)
-        add_test(NAME CavityBackend_EulerOmp COMMAND test_cavity_backends euler_omp)
+        # Explicit Euler is deliberately absent at 129x129. Both solvers cap dt at
+        # 1e-4, so a 250,000-step budget buys t = 25 of a run held to a relaxed
+        # RMS target that every projection case clears with >3x margin -- about an
+        # hour of validation for the non-production solver. It is validated at
+        # 33x33 in the else() branch instead (ROADMAP 6.1).
         add_test(NAME CavityBackend_Consistency COMMAND test_cavity_backends consistency)
 
         # Re=400 / Re=1000 — projection backends only (production solver), 129x129
@@ -584,8 +587,7 @@ if(BUILD_TESTS)
 
         set_tests_properties(
             CavityBackend_ProjectionAvx2 CavityBackend_ProjectionOmp
-            CavityBackend_ProjectionGpu CavityBackend_EulerAvx2
-            CavityBackend_EulerOmp CavityBackend_Consistency
+            CavityBackend_ProjectionGpu CavityBackend_Consistency
             CavityBackend_ProjectionAvx2_Re400 CavityBackend_ProjectionOmp_Re400
             CavityBackend_ProjectionGpu_Re400 CavityBackend_ProjectionAvx2_Re1000
             CavityBackend_ProjectionOmp_Re1000 CavityBackend_ProjectionGpu_Re1000
@@ -593,7 +595,7 @@ if(BUILD_TESTS)
         )
         # Consistency waits for all backends to finish
         set_tests_properties(CavityBackend_Consistency PROPERTIES
-            DEPENDS "CavityBackend_ProjectionAvx2;CavityBackend_ProjectionOmp;CavityBackend_ProjectionGpu;CavityBackend_EulerAvx2;CavityBackend_EulerOmp"
+            DEPENDS "CavityBackend_ProjectionAvx2;CavityBackend_ProjectionOmp;CavityBackend_ProjectionGpu"
         )
     else()
         # CI mode: run all sequentially (fast enough at 33x33)

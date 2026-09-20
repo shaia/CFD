@@ -37,6 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `lib/src/solvers/linear/linear_solver_internal.h`,
   `lib/src/solvers/linear/cpu/linear_solver_cg.c`, `tests/math/test_helmholtz_shift.c`,
   `tests/solvers/test_linear_solver.c`).
+- **`ns_solver_stats_t.dt_used`** reports the time step a solve actually advanced by.
+  The explicit Euler solvers clamp their own step to the new public `NS_EULER_DT_LIMIT`
+  regardless of `params.dt`, so a caller measuring simulated time could not get it right
+  from the parameters alone. `solver_step()` and `solver_solve()` default the field to
+  `params.dt` and the Euler wrappers override it, so every solver reports a usable value;
+  the clamp itself now has one definition instead of four
+  (`lib/include/cfd/solvers/navier_stokes_solver.h`, `lib/src/api/solver_registry.c`,
+  the explicit Euler kernels under `lib/src/solvers/navier_stokes/`).
 - **First-order upwind convection** — new `ns_solver_params_t.convection_scheme` field
   (`ns_convection_scheme_t`; 0 = existing central differencing, unchanged).
   `NS_CONVECTION_SCHEME_UPWIND` takes each convective first derivative from the side the
@@ -166,8 +174,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   format-version header that rejects unknown versions
   (`lib/src/io/checkpoint.c`, `lib/include/cfd/io/checkpoint.h`, `tests/io/test_checkpoint.c`).
 
+- **RANS turbulence models: standard k-ε and Spalart-Allmaras with log-law wall
+  functions.** The v0.4.0 turbulence milestone (PR #199), mirroring the energy-equation
+  module architecture: per-backend kernels, workspace-aware step, in-module BCs. Upwind
+  advection, conservative face-averaged diffusion, semi-implicit Patankar sinks for
+  positivity, a production limiter and nu_t realizability clipping. Wall functions on
+  `BC_TYPE_NOSLIP` faces derive the friction velocity from the log law, set equilibrium
+  k/epsilon (or nu_tilde) at the first interior node, and set the wall-face viscosity so
+  the discrete wall shear equals u_tau^2 exactly. Eddy viscosity couples into every
+  projection/Euler/RK momentum path through a conservative `nu_eff = nu + nu_t`, leaving
+  the laminar path bitwise identical. New public API in `turbulence_solver.h`,
+  `turb_model`/`turb_bc` in params, and `k`/`eps`/`nu_tilde`/`nu_t` on `flow_field` and in
+  VTK/CSV output. Validated against turbulent channel flow at Re_tau = 395 (k-ε u_tau
+  error 2.9%, SA 3.1%; u+ within a few percent of the log law), with unit tests for decay,
+  wall functions, SA closures, laminar regression and cross-backend consistency, plus a
+  `turbulent_channel` example.
+  Scalar, OpenMP and AVX2 backends; **2D uniform grids only**, and the GPU paths return
+  `CFD_ERROR_UNSUPPORTED` when turbulence is enabled
+  (`lib/src/solvers/turbulence/`, `lib/include/cfd/solvers/turbulence_solver.h`,
+  `tests/solvers/turbulence/`, `examples/turbulent_channel.c`).
+
 ### Fixed
 
+- **Cavity validation now measures steady state as a rate, not a per-step change.** The
+  harness stopped a run once the relative change in kinetic energy **per step** fell below
+  1e-8. That quantity scales with dt, so it registered a slow transient as convergence:
+  the Explicit Euler cases ended at ~11,300 of 25,000 steps (t ≈ 1.13) on a flow that needs
+  t ≈ 10-20 to develop, and passed their RMS target without a developed solution. The test
+  is now `|d(ln KE)/dt| < 1e-6`, in units of 1/time, evaluated after t > 1.0, and computed
+  from the step the solver actually took rather than `params.dt`. Running to the real
+  budget improves the 33x33 Euler result from RMS_u 0.0957 / RMS_v 0.1284 to 0.0777 /
+  0.0334, scalar and OpenMP agreeing to four decimals; the projection results are
+  unchanged at 0.0382 / 0.0440. The 129x129 Explicit Euler cases are dropped: they cost
+  about an hour of EC2 per run to hold a non-production solver to a relaxed target that
+  every projection case clears with over 3x margin, and were never evidence of 129x129
+  accuracy (ROADMAP §6.1)
+  (`tests/validation/lid_driven_cavity_common.h`, `CMakeLists.txt`,
+  `docs/validation/cavity-backends-validation.md`, `ROADMAP.md`).
+- **Boundary-condition availability messages say what is actually true.**
+  `BC_BACKEND_CUDA` reported "CUDA not yet implemented" while the GPU boundary kernels
+  existed and were already driving the GPU solvers. They are device-side -- device
+  pointers plus a CUDA stream -- and so cannot be reached through `bc_backend_impl_t`,
+  a host-pointer table; routing them through it would force a host round-trip per call
+  or reinterpret host pointers as device pointers. The host API still reports the
+  backend unavailable, now saying why and pointing at
+  `cfd/boundary/boundary_conditions_gpu.cuh`. Likewise `BC_TYPE_INLET`/`BC_TYPE_OUTLET`
+  warned "not implemented" from `apply_scalar_field_bc()` though both are implemented on
+  every backend; what they cannot do is travel through the config-free type-enum path,
+  exactly like `BC_TYPE_DIRICHLET` and `BC_TYPE_NOSLIP`. They now name
+  `bc_apply_inlet()`/`bc_apply_outlet()` and return `CFD_ERROR_INVALID` rather than
+  `CFD_ERROR_UNSUPPORTED`, which tests key on to skip a genuinely missing backend
+  (`lib/src/boundary/boundary_conditions.c`, `lib/include/cfd/boundary/boundary_conditions.h`).
+- **The laminar viscous stability limit is now applied.** `compute_time_step()` gated the
+  viscous constraint `dt < h^2 / (2*nu_eff*ndim)` behind `turb_model != TURB_MODEL_NONE`,
+  so for laminar flow it never ran and `compute_dt` could return an unstable step. The
+  limit scales as `h^2` against the convective limit's `h`, so it binds as grids refine:
+  on a 129x129 unit cavity at Re=100 (nu=1e-2, cfl=0.5) it is 7.6e-4 against a CFL limit
+  of 3.3e-3. It now applies to the molecular viscosity unconditionally, still adding any
+  eddy viscosity when a turbulence model is active. `compute_time_step()` is also
+  decomposed into `ns_dt_convective` / `ns_dt_viscous` / `ns_dt_thermal`, each returning
+  INFINITY where its process imposes no limit, so a solver that treats a term implicitly
+  can leave that constraint out. `tests/core/test_cfl.c` had no viscous case at all and
+  gains five; three existing sound-speed tests now set `mu = 0` to keep isolating the
+  acoustic branch
+  (`lib/src/solvers/navier_stokes/cpu/solver_explicit_euler.c`,
+  `lib/src/solvers/navier_stokes/ns_dt_internal.h`, `tests/core/test_cfl.c`).
+- **SIMD backend availability now requires the compiled-in kernels, not just the CPU.**
+  `cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)` returned `cfd_has_simd()`, a pure
+  runtime CPUID query, while `CFD_ENABLE_AVX2` defaults to `OFF`. The default build on any
+  AVX2-capable machine therefore advertised a SIMD backend it did not contain, and
+  `cfd_solver_create_checked()` handed back `*_optimized` solvers that could not run. The
+  check is now compile-time AND runtime, through one shared predicate
+  (`ns_simd_backend_available()`) that the registry and all four SIMD solvers share, so
+  they cannot disagree. There are no NEON Navier-Stokes kernels, so NEON CPUs correctly
+  report the SIMD backend unavailable
+  (`lib/src/solvers/navier_stokes/simd/ns_simd_backend.c`,
+  `lib/src/solvers/navier_stokes/ns_simd_backend_internal.h`, `lib/src/api/solver_registry.c`,
+  `tests/solvers/test_solver_backend_api.c`, `tests/core/test_modular_libraries.c`,
+  `tests/core/test_modular_core_simd.c`).
+- **One failure mode for a build without SIMD.** The same configuration produced three
+  different outcomes: `explicit_euler_optimized` silently ran scalar loops and returned
+  `CFD_SUCCESS` -- the cross-backend fallback the error-handling rules forbid --
+  `rk2_optimized`/`rk4_optimized` returned `CFD_ERROR_UNSUPPORTED`, and
+  `projection_optimized` returned it indirectly via a NULL sub-solver probe whose message
+  named the wrong cause. All four now fail at init with `CFD_ERROR_UNSUPPORTED` and a
+  message that says whether the build or the CPU is missing AVX2; the dead scalar
+  fallback kernel in the AVX2 Euler solver is deleted. `rk2`/`rk4` additionally gained the
+  runtime half of the check, which they lacked -- an AVX2 build on a pre-AVX2 CPU
+  previously initialized successfully and then executed unsupported instructions
+  (`lib/src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c`,
+  `solver_projection_avx2.c`, `solver_rk2_avx2.c`, `solver_rk4_avx2.c`,
+  `tests/solvers/navier_stokes/avx2/test_solver_explicit_euler_avx2.c`,
+  `tests/solvers/navier_stokes/cpu/test_solver_explicit_euler.c`,
+  `tests/simulation/test_simulation_api.c`, `docs/reference/solvers.md`).
 - **`explicit_euler_optimized` updates every interior column.** The AVX2 row loop processed
   4-wide groups with no scalar remainder, so when `(nx-2) % 4 != 0` the last 1-3 interior
   columns of each row kept their old values (3 per row at 33×33 and 129×129). The remainder
