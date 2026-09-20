@@ -240,7 +240,7 @@ static int run_cg_solve(poisson_solver_backend_t backend,
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = TOLERANCE;
     params.max_iterations = MAX_ITERATIONS;
-    params.preconditioner = precond;
+    params.krylov.preconditioner = precond;
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -422,7 +422,7 @@ void test_mg_pcg_rejects_invalid_dims(void) {
         TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Could not create CG solver");
 
         poisson_solver_params_t params = poisson_solver_params_default();
-        params.preconditioner = POISSON_PRECOND_MULTIGRID;
+        params.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params);
         printf("      %s: init status %d\n", backend_label(backend), (int)status);
@@ -447,7 +447,7 @@ static void assert_backend_rejects_mg_precond(poisson_solver_method_t method,
     }
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.preconditioner = POISSON_PRECOND_MULTIGRID;
+    params.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
 
     cfd_status_t status = poisson_solver_init(solver, 33, 33, 1,
                                               1.0 / 32.0, 1.0 / 32.0, 0.0, &params);

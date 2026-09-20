@@ -530,7 +530,7 @@ void test_gmres_restart_no_stall(void) {
     poisson_solver_params_t params_small = poisson_solver_params_default();
     params_small.tolerance = TOLERANCE;
     params_small.max_iterations = MAX_ITERATIONS;
-    params_small.restart = 5;
+    params_small.krylov.restart = 5;
 
     poisson_solver_t* g_small = poisson_solver_create(
         POISSON_METHOD_GMRES, POISSON_BACKEND_SCALAR);
@@ -545,7 +545,7 @@ void test_gmres_restart_no_stall(void) {
     poisson_solver_params_t params_big = poisson_solver_params_default();
     params_big.tolerance = TOLERANCE;
     params_big.max_iterations = MAX_ITERATIONS;
-    params_big.restart = 0;  /* auto -> 30 */
+    params_big.krylov.restart = 0;  /* auto -> 30 */
 
     poisson_solver_t* g_big = poisson_solver_create(
         POISSON_METHOD_GMRES, POISSON_BACKEND_SCALAR);
@@ -592,7 +592,7 @@ void test_gmres_jacobi_precond(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = TOLERANCE;
     params.max_iterations = MAX_ITERATIONS;
-    params.preconditioner = POISSON_PRECOND_JACOBI;
+    params.krylov.preconditioner = POISSON_PRECOND_JACOBI;
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
@@ -636,7 +636,7 @@ void test_gmres_max_iter_exhaustion(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = TOLERANCE;
     params.max_iterations = 10;
-    params.restart = 1;
+    params.krylov.restart = 1;
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
@@ -682,7 +682,7 @@ void test_gmres_rejects_oversized_restart(void) {
         TEST_ASSERT_NOT_NULL(solver);
 
         poisson_solver_params_t params = poisson_solver_params_default();
-        params.restart = restarts[r];
+        params.krylov.restart = restarts[r];
 
         cfd_status_t status = poisson_solver_init(solver, NX_SMALL, NY_SMALL, 1,
                                                   h, h, 0.0, &params);
@@ -719,7 +719,7 @@ void test_gmres_rejects_oversized_grid(void) {
                                          "Backend available but GMRES solver creation failed");
 
             poisson_solver_params_t params = poisson_solver_params_default();
-            params.restart = 30;
+            params.krylov.restart = 30;
 
             cfd_status_t status = poisson_solver_init(solver, 3, 3, nz_values[z],
                                                       h, h, h, &params);

@@ -977,7 +977,7 @@ static cfd_status_t check_mg_pressure_solver(const grid* grid,
      * allocating the coarse-grid hierarchy that the real pressure solve
      * would rebuild anyway, avoiding an O(N) transient spike at init. */
     poisson_solver_params_t probe_params = poisson_solver_params_default();
-    probe_params.mg_max_levels = 1;
+    probe_params.multigrid.max_levels = 1;
 
     cfd_status_t probe_status = poisson_solver_init(
         probe, grid->nx, grid->ny, grid->nz,

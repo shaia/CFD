@@ -454,8 +454,8 @@ static poisson_solver_stats_t solve_gmres(poisson_solver_backend_t backend,
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance      = TOLERANCE;
     params.max_iterations = cfg->max_iterations;
-    params.restart        = cfg->restart;
-    params.preconditioner = cfg->precond;
+    params.krylov.restart        = cfg->restart;
+    params.krylov.preconditioner = cfg->precond;
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
     cfd_status_t solve_status = CFD_ERROR;
@@ -850,13 +850,13 @@ static poisson_solver_stats_t solve_mg(poisson_solver_backend_t backend,
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance          = TOLERANCE;
     params.max_iterations     = cfg->max_iterations;
-    params.mg_cycle           = cfg->cycle;
-    params.mg_smoother        = cfg->smoother;
-    params.mg_bc              = cfg->bc;
-    params.mg_pre_smooth      = cfg->pre_smooth;
-    params.mg_post_smooth     = cfg->post_smooth;
-    params.mg_coarse_max_iter = cfg->coarse_max_iter;
-    params.mg_max_levels      = cfg->max_levels;
+    params.multigrid.cycle           = cfg->cycle;
+    params.multigrid.smoother        = cfg->smoother;
+    params.multigrid.bc              = cfg->bc;
+    params.multigrid.pre_smooth      = cfg->pre_smooth;
+    params.multigrid.post_smooth     = cfg->post_smooth;
+    params.multigrid.coarse_max_iter = cfg->coarse_max_iter;
+    params.multigrid.max_levels      = cfg->max_levels;
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
     cfd_status_t solve_status = CFD_ERROR;
@@ -1027,7 +1027,7 @@ void test_multigrid_omp_apply_bc_matches_scalar(void) {
             memcpy(x_omp, field, n * sizeof(double));
 
             poisson_solver_params_t params = poisson_solver_params_default();
-            params.mg_bc = modes[m];
+            params.multigrid.bc = modes[m];
 
             poisson_solver_t* solver_scalar = poisson_solver_create(
                 POISSON_METHOD_MULTIGRID, POISSON_BACKEND_SCALAR);
@@ -1187,7 +1187,7 @@ static void solve_pcg_mg(poisson_solver_backend_t backend, const pcg_mg_config_t
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = PCG_MG_TOLERANCE;
-    params.preconditioner = POISSON_PRECOND_MULTIGRID;
+    params.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
 
     cfd_status_t status = poisson_solver_init(solver, cfg->nx, cfg->ny, cfg->nz,
                                               dx, dy, dz, &params);

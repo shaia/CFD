@@ -234,7 +234,7 @@ static cfd_status_t GMRES_FUNC(gmres_init)(
     }
 
     /* Resolve restart length m (0 = auto) */
-    int m = (params && params->restart > 0) ? params->restart : GMRES_DEFAULT_RESTART;
+    int m = (params && params->krylov.restart > 0) ? params->krylov.restart : GMRES_DEFAULT_RESTART;
 
     /* H is indexed in int as i + j*(m+1), so (m+1)*m must fit in int. */
     if (m >= INT_MAX / m) {
@@ -262,7 +262,7 @@ static cfd_status_t GMRES_FUNC(gmres_init)(
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
     ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
-    ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
+    ctx->use_precond = (params && params->krylov.preconditioner == POISSON_PRECOND_JACOBI);
 
     ctx->m = m;
     ctx->n = n;

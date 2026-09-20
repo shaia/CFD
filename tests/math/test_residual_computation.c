@@ -54,7 +54,7 @@ static poisson_solver_t* make_cg_solver(size_t n, double dx, double dy) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance       = 1e-10;
     params.max_iterations  = 2000;
-    params.preconditioner  = POISSON_PRECOND_NONE;
+    params.krylov.preconditioner  = POISSON_PRECOND_NONE;
 
     cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
     if (status != CFD_SUCCESS) {

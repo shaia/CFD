@@ -203,28 +203,129 @@ CFD_LIBRARY_EXPORT bool poisson_walls_are_singular(const poisson_walls_t* walls,
  * ============================================================================ */
 
 /**
- * Parameters for Poisson solver configuration
+ * Parameters owned by the SOR family: SOR, Gauss-Seidel, Red-Black SOR.
  */
 typedef struct {
+    double omega; /**< Relaxation factor. 0 = automatic, at or just below the optimum
+                       for the grid and the walls in use. Must stay 0 for
+                       POISSON_METHOD_GAUSS_SEIDEL, which is SOR at omega = 1. */
+} poisson_sor_params_t;
+
+/**
+ * Parameters owned by the Krylov family: CG, BiCGSTAB, GMRES.
+ */
+typedef struct {
+    poisson_precond_type_t preconditioner; /**< 0 = NONE. Honoured by CG and GMRES;
+                                                BiCGSTAB has no preconditioner on any
+                                                backend and refuses a non-NONE value. */
+    int restart;                           /**< GMRES(m) restart length; 0 = auto (30).
+                                                Must stay 0 for CG and BiCGSTAB. */
+} poisson_krylov_params_t;
+
+/**
+ * Parameters owned by a multigrid hierarchy: the POISSON_METHOD_MULTIGRID solver,
+ * and the hierarchy built for krylov.preconditioner == POISSON_PRECOND_MULTIGRID.
+ */
+typedef struct {
+    mg_cycle_type_t cycle;       /**< 0 = MG_CYCLE_V */
+    mg_smoother_type_t smoother; /**< 0 = whatever this context requires */
+    mg_bc_type_t bc;             /**< 0 = whatever this context requires */
+    int pre_smooth;              /**< Pre-smoothing sweeps per level (0 = 2) */
+    int post_smooth;             /**< Post-smoothing sweeps per level (0 = 2) */
+    int coarse_max_iter;         /**< Smoother sweeps on the coarsest grid (0 = 50) */
+    int max_levels;              /**< Max grid levels (0 = coarsen as far as possible) */
+} poisson_multigrid_params_t;
+
+/**
+ * Parameters for Poisson solver configuration.
+ *
+ * The first block applies to every method. The three groups below it are owned by
+ * one method family each: a group that is not all-zero and is not owned by the
+ * method being initialized is a configuration error, not a no-op, and
+ * poisson_solver_init() says so. That is the whole point of the grouping -- a flat
+ * struct cannot tell "the caller set an SOR knob on a CG solve" from "the caller
+ * left it alone".
+ */
+typedef struct {
+    /* The operator being inverted. Not an algorithm choice: every method either
+     * honours these walls or refuses the configuration at init. */
+    poisson_walls_t walls;     /**< Per-face walls (zero-init = all zero-gradient) */
+
+    /* Convergence control, every method. */
     double tolerance;          /**< Relative convergence tolerance (default: 1e-6) */
     double absolute_tolerance; /**< Absolute tolerance (default: 1e-10) */
     int max_iterations;        /**< Maximum iterations (default: 5000) */
-    double omega;              /**< SOR relaxation (default: 0 = automatic, at or just below the optimum for the grid and the walls in use; set > 0 to override) */
-    int check_interval;        /**< Check convergence every N iterations (default: 1) */
+    int check_interval;        /**< Check convergence every N iterations (0 = this
+                                    method and backend's own interval) */
     bool verbose;              /**< Print iteration progress (default: false) */
-    poisson_precond_type_t preconditioner; /**< Preconditioner type (default: NONE) */
-    int restart;               /**< GMRES restart length m (default: 0 = auto/30); ignored by other methods */
-    poisson_walls_t walls;     /**< Per-face walls (zero-init = all zero-gradient); Krylov methods only */
 
-    /* Multigrid parameters (POISSON_METHOD_MULTIGRID only; 0 = backward-compatible default) */
-    mg_cycle_type_t mg_cycle;       /**< Cycle type (default: MG_CYCLE_V) */
-    mg_smoother_type_t mg_smoother; /**< Smoother (default: MG_SMOOTHER_REDBLACK_GS) */
-    mg_bc_type_t mg_bc;             /**< Boundary-condition mode (default: MG_BC_NEUMANN) */
-    int mg_pre_smooth;              /**< Pre-smoothing sweeps per level (0 = default 2) */
-    int mg_post_smooth;             /**< Post-smoothing sweeps per level (0 = default 2) */
-    int mg_coarse_max_iter;         /**< Smoother sweeps on coarsest grid (0 = default 50) */
-    int mg_max_levels;              /**< Max grid levels (0 = auto: coarsen as far as possible) */
+    /* Owned by exactly one method family each. */
+    poisson_sor_params_t       sor;
+    poisson_krylov_params_t    krylov;
+    poisson_multigrid_params_t multigrid;
 } poisson_solver_params_t;
+
+/**
+ * Everything needed to describe a Poisson solve: what to run, where, and how.
+ *
+ * Obtain one from poisson_solver_config_preset() and edit it. That is the whole
+ * point of a preset here -- it is a starting point, not a terminal selector, so
+ * "the accurate settings, but on OpenMP, with a prescribed outlet" is three
+ * assignments rather than a combination somebody has to have enumerated in
+ * advance.
+ */
+typedef struct {
+    poisson_solver_method_t  method;
+    poisson_solver_backend_t backend;
+    poisson_solver_params_t  params;
+} poisson_solver_config_t;
+
+/**
+ * Named starting points, by intent.
+ *
+ * None of these names a backend: every preset leaves backend at
+ * POISSON_BACKEND_AUTO, and choosing one is a single assignment on the config.
+ * Nor does any name a method it does not need to -- GMRES and the GPU need no
+ * enumerator here, just cfg.method and cfg.backend.
+ */
+typedef enum {
+    /** Conjugate Gradient at 1e-6. Works on any grid with an interior. */
+    POISSON_PRESET_DEFAULT = 0,
+
+    /** Conjugate Gradient at 1e-10, with the iteration budget to reach it. */
+    POISSON_PRESET_ACCURATE,
+
+    /** BiCGSTAB, for an operator CG cannot invert. */
+    POISSON_PRESET_NONSYMMETRIC,
+
+    /**
+     * Red-Black SOR as a smoother: a fixed number of sweeps, with no
+     * convergence requirement.
+     *
+     * The one preset exempt from the compatibility rule below, because the
+     * stationary methods relax towards a solution modulo a drifting constant
+     * rather than chasing the nullspace component. Running a fixed sweep count
+     * on an arbitrary rhs is a reasonable thing to ask of them.
+     */
+    POISSON_PRESET_SMOOTHER,
+
+    /** Geometric multigrid. Requires 2^k+1 points per active dimension. */
+    POISSON_PRESET_MULTIGRID,
+
+    /** CG preconditioned by one multigrid V-cycle. Requires 2^k+1 dimensions. */
+    POISSON_PRESET_MULTIGRID_PCG
+} poisson_preset_t;
+
+/**
+ * The config a preset stands for.
+ *
+ * Note which presets are subject to the zero-interior-mean rule: every one of
+ * them except POISSON_PRESET_SMOOTHER, because the rest are Krylov methods. With
+ * the default zero-gradient walls those operators are singular, so a right-hand
+ * side with a nonzero interior mean describes a system with no solution and
+ * poisson_solver_solve() refuses it -- see poisson_make_rhs_compatible().
+ */
+CFD_LIBRARY_EXPORT poisson_solver_config_t poisson_solver_config_preset(poisson_preset_t preset);
 
 /**
  * Statistics from a Poisson solve operation
@@ -368,6 +469,24 @@ struct poisson_solver {
                                                 zero-gradient walls, which are their own homogeneous form and are
                                                 applied throughout; that operator is singular (the constants are
                                                 its nullspace), so the rhs must have zero interior mean. */
+
+    /**
+     * Walls a solver installs for itself. Library-internal: do not assign to it.
+     *
+     * Multigrid needs its own boundary routine, because the default here is
+     * zero-gradient and would corrupt a field held in MG_BC_DIRICHLET mode. It
+     * used to install that routine into apply_bc above, which meant a caller
+     * following the documented workflow -- create, assign apply_bc, init --
+     * silently overwrote it, and since the cycle applies its boundaries
+     * internally the caller's function then had no effect on the solve at all.
+     *
+     * Keeping the two apart means apply_bc above is the caller's and nothing
+     * else, so everything that asks "did the caller prescribe walls?" gets an
+     * honest answer. poisson_solver_apply_bc() prefers the caller's function and
+     * falls back to this one; a solver that sets this rejects a caller function
+     * at init rather than choosing between them.
+     */
+    poisson_solver_apply_bc_func internal_apply_bc;
 };
 
 /* ============================================================================

@@ -251,7 +251,7 @@ static cfd_status_t cg_scalar_init(
     ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
 
     /* Check if preconditioner is enabled */
-    ctx->precond_type = params ? params->preconditioner : POISSON_PRECOND_NONE;
+    ctx->precond_type = params ? params->krylov.preconditioner : POISSON_PRECOND_NONE;
     ctx->use_precond = (ctx->precond_type == POISSON_PRECOND_JACOBI ||
                         ctx->precond_type == POISSON_PRECOND_MULTIGRID);
 

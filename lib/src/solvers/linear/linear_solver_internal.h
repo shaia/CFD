@@ -146,7 +146,7 @@ int poisson_solver_krylov_is_singular(const poisson_solver_t* solver);
  */
 static inline cfd_status_t poisson_solver_reject_mg_precond(
     const poisson_solver_params_t* params) {
-    if (params && params->preconditioner == POISSON_PRECOND_MULTIGRID) {
+    if (params && params->krylov.preconditioner == POISSON_PRECOND_MULTIGRID) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
             "POISSON_PRECOND_MULTIGRID is only supported by the scalar and OpenMP CG solvers");
         return CFD_ERROR_UNSUPPORTED;
@@ -179,9 +179,9 @@ static inline cfd_status_t poisson_solver_create_mg_precond(
     }
 
     poisson_solver_params_t mg_params = poisson_solver_params_default();
-    mg_params.mg_cycle = MG_CYCLE_V;
-    mg_params.mg_smoother = MG_SMOOTHER_JACOBI;
-    mg_params.mg_bc = MG_BC_DIRICHLET;
+    mg_params.multigrid.cycle = MG_CYCLE_V;
+    mg_params.multigrid.smoother = MG_SMOOTHER_JACOBI;
+    mg_params.multigrid.bc = MG_BC_DIRICHLET;
 
     cfd_status_t status = poisson_solver_init(mg, nx, ny, nz, dx, dy, dz, &mg_params);
     if (status != CFD_SUCCESS) {
@@ -256,7 +256,7 @@ static inline cfd_status_t poisson_solver_reject_custom_bc(const poisson_solver_
  * ============================================================================ */
 
 /**
- * Default restart length m for GMRES(m) when params.restart <= 0.
+ * Default restart length m for GMRES(m) when params.krylov.restart <= 0.
  * The Krylov basis holds m+1 grid-sized vectors, so this bounds memory.
  */
 #define GMRES_DEFAULT_RESTART 30
@@ -559,7 +559,7 @@ static inline void poisson_solver_row_omegas(
 /**
  * The omega a SOR or Red-Black SOR solver relaxes with.
  *
- * Gauss-Seidel is SOR at omega = 1, whatever params.omega says. Otherwise an
+ * Gauss-Seidel is SOR at omega = 1, whatever params.sor.omega says. Otherwise an
  * explicit omega > 0 is used as given, and omega <= 0, the default, asks for the
  * optimum: the Neumann formula for the default wall copy, and the Dirichlet
  * formula above when the caller supplies its own apply_bc. poisson_solver_init()

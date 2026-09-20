@@ -217,7 +217,7 @@ void test_mg_vcycle_convergence_factor_dirichlet(void) {
     const int NUM_CYCLES = 8;
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
+    params.multigrid.bc = MG_BC_DIRICHLET;
 
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_MULTIGRID, POISSON_BACKEND_SCALAR);
@@ -259,7 +259,7 @@ void test_mg_grid_independence_dirichlet(void) {
         double dx = 1.0 / (double)(nx - 1);
 
         poisson_solver_params_t params = poisson_solver_params_default();
-        params.mg_bc = MG_BC_DIRICHLET;
+        params.multigrid.bc = MG_BC_DIRICHLET;
         params.tolerance = 1e-6;
 
         double* x = create_field(nx * nx);
@@ -390,7 +390,7 @@ void test_mg_wcycle_converges(void) {
     init_dirichlet_rhs_2d(rhs, NX, NX, DX, DX);
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
+    params.multigrid.bc = MG_BC_DIRICHLET;
     params.tolerance = 1e-6;
 
     /* V-cycle baseline */
@@ -402,7 +402,7 @@ void test_mg_wcycle_converges(void) {
     cfd_free(x);
 
     /* W-cycle: at least as strong per cycle */
-    params.mg_cycle = MG_CYCLE_W;
+    params.multigrid.cycle = MG_CYCLE_W;
     x = create_field(NX * NX);
     poisson_solver_stats_t w_stats = poisson_solver_stats_default();
     TEST_ASSERT_EQUAL(CFD_SUCCESS, solve_mg_2d(
@@ -424,7 +424,7 @@ void test_mg_fmg_discretization_accuracy(void) {
 
     /* Reference: fully converged V-cycle solve -> discretization error */
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
+    params.multigrid.bc = MG_BC_DIRICHLET;
     params.tolerance = 1e-10;
     params.absolute_tolerance = 1e-12;
 
@@ -447,7 +447,7 @@ void test_mg_fmg_discretization_accuracy(void) {
 
     /* One FMG pass (a single iterate on a fresh F-cycle solver) must land
      * within a small factor of the discretization error */
-    params.mg_cycle = MG_CYCLE_F;
+    params.multigrid.cycle = MG_CYCLE_F;
 
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_MULTIGRID, POISSON_BACKEND_SCALAR);
@@ -496,8 +496,8 @@ void test_mg_jacobi_smoother_converges(void) {
     init_dirichlet_rhs_2d(rhs, NX, NX, DX, DX);
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
-    params.mg_smoother = MG_SMOOTHER_JACOBI;
+    params.multigrid.bc = MG_BC_DIRICHLET;
+    params.multigrid.smoother = MG_SMOOTHER_JACOBI;
     params.tolerance = 1e-6;
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -542,7 +542,7 @@ static void run_mg_3d_case(size_t n, mg_bc_type_t bc, int compare_rbsor) {
     }
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = bc;
+    params.multigrid.bc = bc;
     params.tolerance = 1e-6;
 
     poisson_solver_t* solver = poisson_solver_create(
@@ -621,12 +621,12 @@ void test_mg_mixed_dims(void) {
 
         for (int bc = 0; bc < 2; bc++) {
             poisson_solver_params_t params = poisson_solver_params_default();
-            params.mg_bc = (bc == 0) ? MG_BC_NEUMANN : MG_BC_DIRICHLET;
+            params.multigrid.bc = (bc == 0) ? MG_BC_NEUMANN : MG_BC_DIRICHLET;
             params.tolerance = 1e-6;
 
             double* x = create_field(nx * ny);
             double* rhs = create_field(nx * ny);
-            if (params.mg_bc == MG_BC_DIRICHLET) {
+            if (params.multigrid.bc == MG_BC_DIRICHLET) {
                 init_dirichlet_rhs_2d(rhs, nx, ny, dx, dy);
             } else {
                 init_neumann_rhs_2d(rhs, nx, ny, dx, dy);
@@ -671,7 +671,7 @@ void test_mg_dirichlet_inhomogeneous(void) {
     }
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
+    params.multigrid.bc = MG_BC_DIRICHLET;
     params.tolerance = 1e-12;
     params.absolute_tolerance = 1e-12;
 
@@ -706,10 +706,10 @@ void test_mg_max_levels_cap(void) {
     init_dirichlet_rhs_2d(rhs, NX, NX, DX, DX);
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
-    params.mg_max_levels = 2;
+    params.multigrid.bc = MG_BC_DIRICHLET;
+    params.multigrid.max_levels = 2;
     /* Two-grid: the 33x33 "coarsest" level needs a real solve, not 50 sweeps */
-    params.mg_coarse_max_iter = 500;
+    params.multigrid.coarse_max_iter = 500;
     params.tolerance = 1e-6;
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();

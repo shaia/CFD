@@ -414,7 +414,7 @@ static cfd_status_t cg_avx2_init(
     ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
 
     /* Check if preconditioner is enabled */
-    ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
+    ctx->use_precond = (params && params->krylov.preconditioner == POISSON_PRECOND_JACOBI);
 
     /* Precompute SIMD vectors */
     ctx->dx2_inv_vec = _mm256_set1_pd(1.0 / ctx->dx2);

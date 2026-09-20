@@ -140,7 +140,7 @@ static cfd_status_t cg_omp_init(
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
     ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
-    ctx->precond_type = params ? params->preconditioner : POISSON_PRECOND_NONE;
+    ctx->precond_type = params ? params->krylov.preconditioner : POISSON_PRECOND_NONE;
     ctx->use_precond = (ctx->precond_type == POISSON_PRECOND_JACOBI ||
                         ctx->precond_type == POISSON_PRECOND_MULTIGRID);
 

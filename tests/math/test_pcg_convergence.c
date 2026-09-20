@@ -167,7 +167,7 @@ void test_pcg_converges_correctly(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = TOLERANCE;
         params.max_iterations = MAX_ITERATIONS;
-        params.preconditioner = POISSON_PRECOND_NONE;
+        params.krylov.preconditioner = POISSON_PRECOND_NONE;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -193,7 +193,7 @@ void test_pcg_converges_correctly(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = TOLERANCE;
         params.max_iterations = MAX_ITERATIONS;
-        params.preconditioner = POISSON_PRECOND_JACOBI;
+        params.krylov.preconditioner = POISSON_PRECOND_JACOBI;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -282,7 +282,7 @@ void test_pcg_iteration_comparison(void) {
             poisson_solver_params_t params = poisson_solver_params_default();
             params.tolerance = TOLERANCE;
             params.max_iterations = MAX_ITERATIONS;
-            params.preconditioner = POISSON_PRECOND_NONE;
+            params.krylov.preconditioner = POISSON_PRECOND_NONE;
 
             cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
             TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -306,7 +306,7 @@ void test_pcg_iteration_comparison(void) {
             poisson_solver_params_t params = poisson_solver_params_default();
             params.tolerance = TOLERANCE;
             params.max_iterations = MAX_ITERATIONS;
-            params.preconditioner = POISSON_PRECOND_JACOBI;
+            params.krylov.preconditioner = POISSON_PRECOND_JACOBI;
 
             cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
             TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -398,7 +398,7 @@ void test_disabled_precond_equals_cg(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = TOLERANCE;
         params.max_iterations = MAX_ITERATIONS;
-        params.preconditioner = POISSON_PRECOND_NONE;  /* Explicit NONE */
+        params.krylov.preconditioner = POISSON_PRECOND_NONE;  /* Explicit NONE */
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -468,7 +468,7 @@ void test_simd_backend_consistency(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = TOLERANCE;
         params.max_iterations = MAX_ITERATIONS;
-        params.preconditioner = POISSON_PRECOND_JACOBI;
+        params.krylov.preconditioner = POISSON_PRECOND_JACOBI;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -502,7 +502,7 @@ void test_simd_backend_consistency(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = TOLERANCE;
         params.max_iterations = MAX_ITERATIONS;
-        params.preconditioner = POISSON_PRECOND_JACOBI;
+        params.krylov.preconditioner = POISSON_PRECOND_JACOBI;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);

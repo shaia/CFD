@@ -85,10 +85,10 @@ void test_params_default(void) {
     TEST_ASSERT_EQUAL_DOUBLE(1e-6, params.tolerance);
     TEST_ASSERT_EQUAL_DOUBLE(1e-10, params.absolute_tolerance);
     TEST_ASSERT_EQUAL_INT(5000, params.max_iterations);  /* Increased from 1000 for CG on fine grids */
-    TEST_ASSERT_EQUAL_DOUBLE(0.0, params.omega);  /* 0 = auto-compute optimal */
+    TEST_ASSERT_EQUAL_DOUBLE(0.0, params.sor.omega);  /* 0 = auto-compute optimal */
     TEST_ASSERT_EQUAL_INT(1, params.check_interval);
     TEST_ASSERT_FALSE(params.verbose);
-    TEST_ASSERT_EQUAL_INT(POISSON_PRECOND_NONE, params.preconditioner);
+    TEST_ASSERT_EQUAL_INT(POISSON_PRECOND_NONE, params.krylov.preconditioner);
 }
 
 void test_stats_default(void) {
@@ -226,13 +226,13 @@ void test_init_with_custom_params(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-8;
     params.max_iterations = 500;
-    params.omega = 1.7;
+    params.sor.omega = 1.7;
 
     cfd_status_t status = poisson_solver_init(solver, TEST_NX, TEST_NY, 1, TEST_DX, TEST_DY, 0.0, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
     TEST_ASSERT_EQUAL_DOUBLE(1e-8, solver->params.tolerance);
     TEST_ASSERT_EQUAL_INT(500, solver->params.max_iterations);
-    TEST_ASSERT_EQUAL_DOUBLE(1.7, solver->params.omega);
+    TEST_ASSERT_EQUAL_DOUBLE(1.7, solver->params.sor.omega);
 
     poisson_solver_destroy(solver);
 }
@@ -835,7 +835,7 @@ void test_diverging_solve_reports_divergence(void) {
     const double h = 1.0 / 16.0;
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.omega = 2.5;
+    params.sor.omega = 2.5;
     params.max_iterations = 20000;
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
 
@@ -873,7 +873,7 @@ void test_divergence_after_last_scheduled_check_is_reported(void) {
     const double h = 1.0 / 16.0;
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.omega = 2.5;
+    params.sor.omega = 2.5;
     params.max_iterations = 5000;
     params.check_interval = params.max_iterations + 1;
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
@@ -938,7 +938,7 @@ void test_non_finite_initial_residual_reports_divergence(void) {
  * ============================================================================ */
 
 /**
- * Gauss-Seidel is SOR at omega = 1, whatever params.omega says: given 1.8 it takes
+ * Gauss-Seidel is SOR at omega = 1, whatever params.sor.omega says: given 1.8 it takes
  * the same sweeps to the same field as SOR given 1.
  */
 void test_gauss_seidel_is_sor_at_omega_one(void) {
@@ -953,9 +953,9 @@ void test_gauss_seidel_is_sor_at_omega_one(void) {
 
     poisson_solver_params_t gs_params = poisson_solver_params_default();
     gs_params.tolerance = 1e-8;
-    gs_params.omega = 1.8;
+    gs_params.sor.omega = 1.8;
     poisson_solver_params_t sor_params = gs_params;
-    sor_params.omega = 1.0;
+    sor_params.sor.omega = 1.0;
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(gs, n, n, 1, h, h, 0.0, &gs_params));
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, poisson_solver_init(sor, n, n, 1, h, h, 0.0, &sor_params));
 

@@ -4,7 +4,7 @@
  * Counts the sweeps SOR and Red-Black SOR take to reduce the residual a million
  * times for every relaxation factor omega across a range, on one grid. Plotted,
  * the counts form a U whose lowest point is the best omega for that grid; the
- * automatic omega (params.omega = 0) is solved last for comparison.
+ * automatic omega (params.sor.omega = 0) is solved last for comparison.
  *
  * The right-hand side is a fixed-seed pseudo-random field with zero interior
  * mean, so every mode of the error is present and the zero-gradient problem has
@@ -12,7 +12,7 @@
  * zero instead of copying the interior onto it; the CUDA solvers reject it.
  *
  * This example demonstrates:
- *   - Setting params.omega explicitly, and leaving it at 0 for the automatic value
+ *   - Setting params.sor.omega explicitly, and leaving it at 0 for the automatic value
  *   - Replacing the default boundary condition through solver->apply_bc
  *   - Reading iterations and convergence status from poisson_solver_stats_t
  *
@@ -92,7 +92,7 @@ static int solve_once(const sweep_options_t* opt, double omega, double* x,
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-6;
     params.max_iterations = 100000;
-    params.omega = omega;
+    params.sor.omega = omega;
 
     double h = 1.0 / (double)(opt->grid - 1);
     if (poisson_solver_init(solver, opt->grid, opt->grid, 1, h, h, 0.0, &params) != CFD_SUCCESS) {

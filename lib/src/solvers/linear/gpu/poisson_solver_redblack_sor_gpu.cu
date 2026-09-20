@@ -121,7 +121,7 @@ static cfd_status_t redblack_gpu_init(poisson_solver_t* solver,
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     ctx->factor = 2.0 * (ctx->inv_dx2 + ctx->inv_dy2 + ctx->inv_dz2);
     ctx->inv_factor = 1.0 / ctx->factor;
-    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->sor.omega : 0.0);
 
     size_t sz, ks, ke;
     poisson_solver_compute_3d_bounds(nz, nx, ny, &sz, &ks, &ke);

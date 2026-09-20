@@ -83,9 +83,9 @@ cfd_status_t poisson_solver_check_walls(const poisson_solver_t* solver) {
         return CFD_SUCCESS;  /* what every solver and backend already does */
     }
 
-    /* Support first, then the hook conflict. Some solvers install an apply_bc of
-     * their own -- multigrid does -- so testing the hook first would report a
-     * caller-error for what is really an unsupported method. */
+    /* Support first, then the hook conflict: an unsupported method should say so
+     * rather than report a caller error. A solver's own walls live in
+     * internal_apply_bc, so apply_bc below is the caller's and nothing else. */
     if (!method_honours_walls(solver->method)) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
             "per-face walls are implemented for the CG, BiCGSTAB and GMRES methods only; "
@@ -143,20 +143,65 @@ poisson_solver_params_t poisson_solver_params_default(void) {
     params.tolerance = 1e-6;
     params.absolute_tolerance = 1e-10;
     params.max_iterations = 5000;  /* Increased from 1000 for CG on fine grids */
-    params.omega = 0.0;  /* Auto-compute optimal omega for grid dimensions */
+    params.sor.omega = 0.0;  /* Auto-compute optimal omega for grid dimensions */
     params.check_interval = 1;
     params.verbose = false;
-    params.preconditioner = POISSON_PRECOND_NONE;
-    params.restart = 0;  /* 0 = auto (GMRES_DEFAULT_RESTART); ignored by non-GMRES methods */
-    params.mg_cycle = MG_CYCLE_V;
-    params.mg_smoother = MG_SMOOTHER_REDBLACK_GS;
-    params.mg_bc = MG_BC_NEUMANN;
-    params.mg_pre_smooth = 0;      /* 0 = default (2) */
-    params.mg_post_smooth = 0;     /* 0 = default (2) */
-    params.mg_coarse_max_iter = 0; /* 0 = default (50) */
-    params.mg_max_levels = 0;      /* 0 = auto */
+    params.krylov.preconditioner = POISSON_PRECOND_NONE;
+    params.krylov.restart = 0;  /* 0 = auto (GMRES_DEFAULT_RESTART); ignored by non-GMRES methods */
+    params.multigrid.cycle = MG_CYCLE_V;
+    params.multigrid.smoother = MG_SMOOTHER_REDBLACK_GS;
+    params.multigrid.bc = MG_BC_NEUMANN;
+    params.multigrid.pre_smooth = 0;      /* 0 = default (2) */
+    params.multigrid.post_smooth = 0;     /* 0 = default (2) */
+    params.multigrid.coarse_max_iter = 0; /* 0 = default (50) */
+    params.multigrid.max_levels = 0;      /* 0 = auto */
     params.walls = poisson_walls_default();
     return params;
+}
+
+poisson_solver_config_t poisson_solver_config_preset(poisson_preset_t preset) {
+    poisson_solver_config_t cfg;
+    cfg.method = POISSON_METHOD_CG;
+    cfg.backend = POISSON_BACKEND_AUTO;  /* never named by a preset */
+    cfg.params = poisson_solver_params_default();
+
+    switch (preset) {
+        case POISSON_PRESET_ACCURATE:
+            cfg.params.tolerance = 1e-10;
+            cfg.params.absolute_tolerance = 1e-14;
+            cfg.params.max_iterations = 20000;
+            break;
+
+        case POISSON_PRESET_NONSYMMETRIC:
+            cfg.method = POISSON_METHOD_BICGSTAB;
+            break;
+
+        case POISSON_PRESET_SMOOTHER:
+            /* A fixed number of sweeps, deliberately not a convergence request:
+             * the tolerances are 0 so the loop runs its budget out. This is the
+             * one preset whose operator tolerates an incompatible rhs. */
+            cfg.method = POISSON_METHOD_REDBLACK_SOR;
+            cfg.params.tolerance = 0.0;
+            cfg.params.absolute_tolerance = 0.0;
+            cfg.params.max_iterations = 20;
+            break;
+
+        case POISSON_PRESET_MULTIGRID:
+            cfg.method = POISSON_METHOD_MULTIGRID;
+            break;
+
+        case POISSON_PRESET_MULTIGRID_PCG:
+            /* An ordinary CG config: the preconditioner is a parameter, not a
+             * property of the preset, so nothing downstream needs a special case. */
+            cfg.params.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
+            break;
+
+        case POISSON_PRESET_DEFAULT:
+        default:
+            break;
+    }
+
+    return cfg;
 }
 
 poisson_solver_stats_t poisson_solver_stats_default(void) {
@@ -601,8 +646,15 @@ void poisson_solver_apply_bc(
         return;
     }
 
+    /* The caller's function wins; a solver's own is the fallback. Nothing sets
+     * both -- a solver that installs internal_apply_bc rejects a caller function
+     * at init -- so the precedence never actually has to arbitrate. */
     if (solver->apply_bc) {
         solver->apply_bc(solver, x);
+        return;
+    }
+    if (solver->internal_apply_bc) {
+        solver->internal_apply_bc(solver, x);
         return;
     }
 
@@ -1155,7 +1207,7 @@ int poisson_solve_3d_params(
         params ? *params : poisson_solver_params_default();
     if (solver_type == POISSON_SOLVER_PCG_MG_SCALAR ||
         solver_type == POISSON_SOLVER_PCG_MG_OMP) {
-        effective.preconditioner = POISSON_PRECOND_MULTIGRID;
+        effective.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
     }
 
     /* This call owns the cached instance until it puts it back */
