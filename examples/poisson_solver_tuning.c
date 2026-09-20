@@ -111,9 +111,7 @@ static void benchmark_method(const char* label,
     cfd_status_t solve_status = poisson_solver_solve(solver, p, p_temp, rhs, &stats);
 
     double l2_err = (solve_status == CFD_SUCCESS) ? compute_l2_error(p, p_exact, nx, ny) : -1.0;
-    const char* status_str = (stats.status == POISSON_CONVERGED) ? "converged" :
-                             (stats.status == POISSON_MAX_ITER)  ? "max_iter" :
-                             (stats.status == POISSON_DIVERGED)  ? "DIVERGED" : "error";
+    const char* status_str = poisson_solver_status_string(stats.status);
 
     printf("  %-20s  %5d iters  res=%.2e  L2=%.2e  %6.1f ms  %s\n",
            label, stats.iterations, stats.final_residual,
@@ -153,8 +151,9 @@ int main(void) {
 
     /* Section 1: Method comparison (scalar backend) */
     printf("--- Method Comparison (Scalar Backend) ---\n");
-    printf("  %-20s  %5s %5s  %10s  %10s  %8s  %s\n",
-           "Method", "Iters", "", "Residual", "L2 Error", "Time", "Status");
+    /* Column widths chosen to line up with the row format in benchmark_method */
+    printf("  %-20s  %-11s  %-12s  %-11s  %-9s  %s\n",
+           "Method", "Iters", "Residual", "L2 Error", "Time", "Status");
 
     benchmark_method("Jacobi", POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR,
                      POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);

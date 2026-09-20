@@ -372,6 +372,18 @@ poisson_solver_stats_t poisson_solver_stats_default(void) {
     return stats;
 }
 
+const char* poisson_solver_status_string(poisson_solver_status_t status) {
+    switch (status) {
+        case POISSON_CONVERGED:        return "converged";
+        case POISSON_MAX_ITER:         return "max iterations";
+        case POISSON_DIVERGED:         return "diverged";
+        case POISSON_STAGNATED:        return "stagnated";
+        case POISSON_INCOMPATIBLE_RHS: return "incompatible rhs";
+        case POISSON_ERROR:            return "error";
+    }
+    return "unknown";
+}
+
 /* ============================================================================
  * TIMING
  * ============================================================================ */
@@ -1216,13 +1228,26 @@ cfd_status_t poisson_solve(
         return CFD_ERROR_INVALID;
     }
 
+    /* Cleared so that the status read back below is this call's and not whatever
+     * the thread failed at last. */
+    cfd_clear_error();
+
     poisson_solver_config_t cfg =
         config ? *config : poisson_solver_config_preset(POISSON_PRESET_DEFAULT);
 
     poisson_solver_t* solver = poisson_solver_create(cfg.method, cfg.backend);
     if (!solver) {
-        /* The factory set the specific last-status; do not overwrite it. */
-        return cfd_get_last_status();
+        /* The factory named the reason -- an unavailable backend, an unknown
+         * method -- so report that rather than overwriting it. A factory that
+         * returned NULL without setting one (an allocation failure inside a
+         * create_*_solver) must not read back as success. */
+        cfd_status_t reason = cfd_get_last_status();
+        if (reason == CFD_SUCCESS) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "poisson_solve: the requested method and backend could not be created");
+            reason = CFD_ERROR_UNSUPPORTED;
+        }
+        return reason;
     }
 
     cfd_status_t status =

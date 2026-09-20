@@ -85,11 +85,15 @@ Each backend pairs with a CG Poisson preset by default. On the scalar
 `projection` and OpenMP `projection_omp` solvers the pressure solve can be
 switched to geometric multigrid, on the solver's own backend:
 
-| `pressure_solver` value | `projection` | `projection_omp` |
-|-------------------------|--------------|------------------|
-| `NS_PRESSURE_SOLVER_DEFAULT` (0) | `POISSON_SOLVER_CG_SCALAR` | `POISSON_SOLVER_CG_OMP` |
-| `NS_PRESSURE_SOLVER_MULTIGRID` | `POISSON_SOLVER_MG_SCALAR` | `POISSON_SOLVER_MG_OMP` |
-| `NS_PRESSURE_SOLVER_PCG_MG` | `POISSON_SOLVER_PCG_MG_SCALAR` | `POISSON_SOLVER_PCG_MG_OMP` |
+Each projection solver owns one `poisson_solver_t` for its lifetime, built at
+init from the preset below on the projection's own backend — never on another,
+which would be a silent cross-backend fallback.
+
+| `pressure_solver` value | preset | `projection` | `projection_omp` |
+|-------------------------|--------|--------------|------------------|
+| `NS_PRESSURE_SOLVER_DEFAULT` (0) | `POISSON_PRESET_DEFAULT` | CG, scalar | CG, OpenMP |
+| `NS_PRESSURE_SOLVER_MULTIGRID` | `POISSON_PRESET_MULTIGRID` | MG, scalar | MG, OpenMP |
+| `NS_PRESSURE_SOLVER_PCG_MG` | `POISSON_PRESET_MULTIGRID_PCG` | PCG-MG, scalar | PCG-MG, OpenMP |
 
 `NS_PRESSURE_SOLVER_MULTIGRID` runs multigrid V-cycles (the RHS interior mean is
 subtracted first, for Neumann compatibility); `NS_PRESSURE_SOLVER_PCG_MG` runs CG
@@ -192,10 +196,11 @@ poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_JACOBI,
 p_ij^(k+1) = (1-ω)p_ij^k + (ω/4)(p_i-1,j + p_i+1,j + p_i,j-1 + p_i,j+1 - h²f_ij)
 ```
 
-**Relaxation factor:** `params.omega = 0` (the default) chooses ω for the grid and the walls: the
-optimum itself for walls set by `apply_bc`, and an estimate at or just below it for the default
+**Relaxation factor:** `params.sor.omega = 0` (the default) chooses ω for the grid and the walls:
+the optimum itself for walls set by `apply_bc`, and an estimate at or just below it for the default
 zero-gradient walls. Any `omega > 0` is used as given. `POISSON_METHOD_GAUSS_SEIDEL` creates the
-same solvers and always relaxes with ω = 1, whatever `omega` says.
+same solvers and always relaxes with ω = 1, whatever `omega` says — the one documented case where a
+field a method owns is deliberately overridden rather than refused.
 
 - **Default zero-gradient walls.** The walls are copied from the interior after each sweep, so
   during a sweep a point next to a wall reads its own previous value through the copy. Every SOR
@@ -238,7 +243,7 @@ same solvers and always relaxes with ω = 1, whatever `omega` says.
 **Usage:**
 ```c
 poisson_solver_params_t params = poisson_solver_params_default();
-params.omega = 0.0;  // 0 = automatic, at or just below the optimum; > 0 overrides
+params.sor.omega = 0.0;  // 0 = automatic, at or just below the optimum; > 0 overrides
 
 // Scalar (fully sequential, best convergence per iteration)
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_SOR,
@@ -371,26 +376,39 @@ sweep and honour either kind.
 **Usage:**
 ```c
 poisson_solver_params_t params = poisson_solver_params_default();
-params.preconditioner = POISSON_PRECOND_JACOBI;  // Enable preconditioning
+params.krylov.preconditioner = POISSON_PRECOND_JACOBI;  // Enable preconditioning
 
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
                                                  POISSON_BACKEND_SIMD);
-poisson_solver_init(solver, nx, ny, dx, dy, &params);  // Pass params with preconditioner
+poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
 ```
+
+The `krylov` group belongs to CG, BiCGSTAB and GMRES. Setting it on a
+stationary method is refused at init with `CFD_ERROR_INVALID` rather than
+ignored — and BiCGSTAB, which does read the group, refuses a preconditioner
+specifically with `CFD_ERROR_UNSUPPORTED`, because it implements none on any
+backend.
 
 **Multigrid-preconditioned CG (scalar or OpenMP backend, 2^k+1 dims):**
 
 ```c
 poisson_solver_params_t params = poisson_solver_params_default();
-params.preconditioner = POISSON_PRECOND_MULTIGRID;
+params.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
+// With a multigrid preconditioner selected, CG also reads params.multigrid.
+// pre_smooth/post_smooth (equal), coarse_max_iter and max_levels shape the
+// inner cycle and are yours. The cycle type, the smoother and the boundary
+// mode are what make one apply a symmetric operator, so init refuses those
+// with CFD_ERROR_INVALID rather than overriding them.
+params.multigrid.pre_smooth = 3;   // V(3,3) inner cycle: a stronger
+params.multigrid.post_smooth = 3;  // preconditioner, fewer CG iterations
 
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
                                                  POISSON_BACKEND_SCALAR);  // or POISSON_BACKEND_OMP
 poisson_solver_init(solver, 65, 65, 1, dx, dy, 0.0, &params);
 ```
 The convenience API exposes the same configuration as the
-`POISSON_SOLVER_PCG_MG_SCALAR` and `POISSON_SOLVER_PCG_MG_OMP` presets for
-`poisson_solve()`/`poisson_solve_3d()`.
+`POISSON_PRESET_MULTIGRID_PCG` preset, on whichever backend `cfg.backend`
+names.
 
 #### 6. BiCGSTAB
 
@@ -418,7 +436,7 @@ restarting every `m` inner iterations to bound memory.
 
 **Characteristics:**
 - Handles non-symmetric matrices; minimizes the residual norm at every step
-- Restart length `m` set via `params.restart` (0 = auto, default 30); bounds the
+- Restart length `m` set via `params.krylov.restart` (0 = auto, default 30); bounds the
   Krylov basis to `m+1` grid-sized vectors
 - Right-preconditioned Jacobi seam (`POISSON_PRECOND_JACOBI`); like PCG, Jacobi
   preconditioning gives no benefit on a uniform grid (constant diagonal)
@@ -450,12 +468,15 @@ bytes), with `CFD_ERROR_LIMIT_EXCEEDED`.
 **Usage:**
 ```c
 poisson_solver_params_t params = poisson_solver_params_default();
-params.restart = 30;  // GMRES(30); 0 selects the default
+params.krylov.restart = 30;  // GMRES(30); 0 selects the default
 
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_GMRES,
                                                  POISSON_BACKEND_SCALAR);
 poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &params);
 ```
+
+`restart` is the GMRES basis size and no other method reads it, so setting it
+on CG or BiCGSTAB is refused with `CFD_ERROR_INVALID`.
 
 #### 8. Geometric Multigrid
 
@@ -471,7 +492,7 @@ Smoothers: Red-Black Gauss-Seidel (default) or weighted Jacobi (ω=2/3).
   complexity for structured-grid Poisson problems
 - **Grid constraint**: every active dimension must have 2^k+1 points
   (5, 9, 17, 33, 65, 129, ...); other sizes return `CFD_ERROR_INVALID`
-- Two BC modes via `params.mg_bc`:
+- Two BC modes via `params.multigrid.bc`:
   - `MG_BC_NEUMANN` (default) — zero-gradient BCs matching the other Poisson
     solvers. The system is singular (solution defined up to a constant; RHS
     should have zero interior mean). Restriction uses Neumann-folded boundary
@@ -484,8 +505,10 @@ Smoothers: Red-Black Gauss-Seidel (default) or weighted Jacobi (ω=2/3).
 - Parameters: `mg_cycle`, `mg_smoother`, `mg_bc`, `mg_pre_smooth`/`mg_post_smooth`
   (default 2/2), `mg_coarse_max_iter` (default 50), `mg_max_levels` (0 = auto)
 
-**Backends:** scalar (`multigrid_scalar`, preset `POISSON_SOLVER_MG_SCALAR`) and
-OpenMP (`POISSON_BACKEND_OMP`, `multigrid_omp`, preset `POISSON_SOLVER_MG_OMP`).
+**Backends:** scalar (`multigrid_scalar`) and OpenMP (`POISSON_BACKEND_OMP`,
+`multigrid_omp`). `POISSON_PRESET_MULTIGRID` leaves the backend at AUTO, which
+resolves to scalar here — AUTO prefers SIMD, which multigrid lacks — so set
+`cfg.backend = POISSON_BACKEND_OMP` for the threaded one.
 Both share one algorithm template
 (`lib/src/solvers/linear/multigrid_template/linear_solver_multigrid_template.h`);
 the OpenMP backend parallelizes the smoother, residual, grid-transfer and
@@ -506,8 +529,8 @@ the pressure solver of the scalar and OpenMP projection methods
 **Usage:**
 ```c
 poisson_solver_params_t params = poisson_solver_params_default();
-params.mg_cycle = MG_CYCLE_V;        // or MG_CYCLE_W / MG_CYCLE_F
-params.mg_bc = MG_BC_NEUMANN;        // default; matches other solvers
+params.multigrid.cycle = MG_CYCLE_V;  // or MG_CYCLE_W / MG_CYCLE_F
+params.multigrid.bc = MG_BC_NEUMANN;  // default; matches other solvers
 
 poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_MULTIGRID,
                                                  POISSON_BACKEND_SCALAR);  // or POISSON_BACKEND_OMP

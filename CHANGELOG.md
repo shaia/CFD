@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The Poisson API no longer accepts configuration it cannot honour.** An audit found
+  eleven places where a parameter could be set and then silently ignored. `poisson_solver_init`
+  now refuses each of them, with `cfd_get_last_error()` carrying the sentence that names the
+  fix. This is a breaking change throughout; there are no external users yet, so it is made
+  outright rather than behind deprecations.
+  - **Parameters are grouped by the method that reads them**: `params.omega` → `params.sor.omega`,
+    `params.preconditioner` / `params.restart` → `params.krylov.*`, and the seven `params.mg_*`
+    fields → `params.multigrid.{cycle,smoother,bc,pre_smooth,post_smooth,coarse_max_iter,max_levels}`.
+    `walls`, `tolerance`, `absolute_tolerance`, `max_iterations`, `check_interval` and `verbose`
+    stay common. The grouping is what makes the refusal expressible: with a flat struct, "the
+    caller set an SOR knob on a CG solve" and "the caller left it alone" are the same bytes.
+    A non-zero group the resolved method does not read is `CFD_ERROR_INVALID`.
+  - Refused within an owned group: a preconditioner on BiCGSTAB, which implements none on any
+    backend (`CFD_ERROR_UNSUPPORTED`); `krylov.restart` outside GMRES; a multigrid preconditioner
+    outside scalar and OpenMP CG; a `multigrid` group that breaks the inner cycle's symmetry
+    while it serves as a preconditioner; `check_interval` below 1, which reached `iter % 0`.
+    Gauss-Seidel overriding `sor.omega` to 1 stays as it was — documented on the enum member and
+    pinned by `test_gauss_seidel_is_sor_at_omega_one`.
+  - **A caller's `apply_bc` is refused where it would be ignored**: on multigrid, and on every
+    GPU solver. Multigrid used to install its own routine into that same public slot, so a
+    caller following the documented create/assign/init workflow overwrote multigrid's hook and
+    their own boundary condition then had no effect on the solve. Solvers now install their
+    walls in a separate `internal_apply_bc`, which makes `apply_bc != NULL` mean "the caller
+    prescribed walls" everywhere it is asked.
+  - **`poisson_solver_type` is replaced by `poisson_solver_config_t` + `poisson_preset_t`.**
+    The old enum was 13 hand-maintained (method × backend) pairs duplicating two existing enums,
+    omitting GMRES, BiCGSTAB and the GPU entirely, and unable to express `params` at all. A
+    preset now returns an editable config — six intents × any backend × any parameters. Its
+    `DEFAULT` is CG, which *is* subject to the incompatible-RHS refusal; the old
+    `DEFAULT_POISSON_SOLVER` was Red-Black SOR, which is exempt, so switching preset used to
+    change silently whether an RHS was legal. `POISSON_PRESET_SMOOTHER` is the exempt one and
+    says so.
+  - **`poisson_solve()` returns `cfd_status_t`** and takes a config. Every failure — unknown
+    preset, create failure, init rejection, max-iter, divergence, unsolvable RHS — used to
+    collapse to `-1`. `poisson_solve_3d`, `poisson_solve_3d_params` and three never-called
+    wrappers are deleted; the arity and first-parameter type both change, so an old call site
+    is a compile error rather than a silent misinterpretation.
+  - **The 13-slot solver cache is deleted** (~210 lines, with its `atexit` and a `memcmp`
+    cache key over struct padding). It served one caller: each projection solver now owns its
+    pressure solver for its lifetime (`ns_pressure_internal.h`), rebuilding only when the
+    configuration or grid actually changes — which also removes three throwaway solvers that
+    existed purely to probe whether a grid was 2^k+1.
+  - `ns_check_pressure_solver()` joins `ns_check_pressure_bc()` in all nine time-integrator
+    inits. `ns_solver_params_t.pressure_solver` was previously validated by no integrator at
+    all, and the three AVX2 integrators were skipping the pressure-BC check, so
+    `explicit_euler` rejected a pressure BC while `explicit_euler_optimized` accepted and
+    ignored it.
+  - **The multigrid preconditioner now reads the caller's `multigrid` group.** It used
+    to build its inner cycle from hardcoded values and drop the rest on the floor, so
+    `pre_smooth`, `post_smooth`, `coarse_max_iter` and `max_levels` were inert for
+    PCG-MG — the same silent-ignore in miniature, and one the new ownership table would
+    otherwise have blessed by declaring CG the owner of that group. Those four are now
+    forwarded and tunable for the first time; `cycle`, `smoother`, `bc` and an unequal
+    pre/post sweep count are refused with `CFD_ERROR_INVALID` rather than overridden,
+    since a V-cycle with weighted-Jacobi smoothing, Dirichlet coarse corrections and
+    equal sweeps is what makes one apply a symmetric operator, and CG minimising over a
+    Krylov space depends on that. `test_pcg_mg_reads_the_multigrid_group` pins the
+    forwarding by measurement: a V(1,1) inner cycle needs strictly more CG iterations
+    than V(4,4) (33 vs 25 at 33², 65 vs 49 at 129²).
+  - `poisson_solver_status_string()` is new: `POISSON_INCOMPATIBLE_RHS` had no name and printed
+    as a generic "error" in both examples, each of which hand-rolled its own ternary chain.
+  (`lib/include/cfd/solvers/poisson_solver.h`, `lib/src/solvers/linear/linear_solver.c`,
+  `lib/src/solvers/navier_stokes/ns_pressure_internal.h`,
+  `lib/src/solvers/navier_stokes/ns_convection_internal.h`, `lib/src/api/solver_registry.c`,
+  `tests/math/test_poisson_config.c`)
+
 ### Added
 
 - **Per-face walls on the Poisson solver** — new `poisson_solver_params_t.walls`
@@ -27,10 +95,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than silently solving a different problem; walls together with an `apply_bc` hook return
   `CFD_ERROR_INVALID`, since both prescribe wall values. A linear field `a*x + b` is
   reproduced to 2e-15 across the supported methods and backends.
-  Reaching it needed a convenience entry point that can carry parameters, since
-  `poisson_solve_3d()` takes only a preset: `poisson_solve_3d_params()` adds one, and the
-  preset cache is now keyed on the parameters as well as the grid. That also retires the
-  special case which forced the preconditioner for the `PCG_MG` presets.
   At the NS layer, `ns_solver_params_t.pressure_bc` carries the configuration to the scalar,
   OpenMP and AVX2 projection solvers, following `ns_thermal_bc_config_t`. The projection's
   Neumann compatibility projection is now conditional: with a face prescribed the operator is

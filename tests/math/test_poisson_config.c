@@ -21,6 +21,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 void setUp(void) { cfd_init(); }
 void tearDown(void) { cfd_finalize(); }
@@ -417,6 +418,41 @@ void test_pcg_mg_reads_the_multigrid_group(void) {
         "failure this file exists to catch");
 }
 
+/* ============================================================================
+ * STATUS NAMES
+ * ============================================================================ */
+
+/**
+ * POISSON_INCOMPATIBLE_RHS had no name, so both examples printed it as a
+ * generic "error" from a hand-rolled ternary chain that predated it.
+ */
+void test_every_status_has_a_distinct_name(void) {
+    const poisson_solver_status_t all[] = {
+        POISSON_CONVERGED, POISSON_MAX_ITER, POISSON_DIVERGED,
+        POISSON_STAGNATED, POISSON_INCOMPATIBLE_RHS, POISSON_ERROR
+    };
+    const size_t n = sizeof(all) / sizeof(all[0]);
+
+    for (size_t i = 0; i < n; i++) {
+        const char* name = poisson_solver_status_string(all[i]);
+        TEST_ASSERT_NOT_NULL(name);
+        TEST_ASSERT_TRUE_MESSAGE(name[0] != '\0', "a status name must not be empty");
+        for (size_t j = i + 1; j < n; j++) {
+            TEST_ASSERT_FALSE_MESSAGE(
+                strcmp(name, poisson_solver_status_string(all[j])) == 0,
+                "two statuses must not share a name");
+        }
+    }
+
+    /* Specifically: the one that used to read as a generic failure. */
+    TEST_ASSERT_EQUAL_STRING("incompatible rhs",
+        poisson_solver_status_string(POISSON_INCOMPATIBLE_RHS));
+
+    /* A value outside the enum is named, not a NULL deref. */
+    TEST_ASSERT_EQUAL_STRING("unknown",
+        poisson_solver_status_string((poisson_solver_status_t)123));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_group_not_owned_is_refused);
@@ -433,5 +469,6 @@ int main(void) {
     RUN_TEST(test_defaults_are_always_accepted);
     RUN_TEST(test_gauss_seidel_omega_is_still_accepted);
     RUN_TEST(test_pcg_mg_reads_the_multigrid_group);
+    RUN_TEST(test_every_status_has_a_distinct_name);
     return UNITY_END();
 }

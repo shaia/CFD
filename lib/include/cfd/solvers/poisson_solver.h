@@ -7,27 +7,49 @@
  *   nabla^2 p = rhs  (where rhs is typically divergence of intermediate velocity)
  *
  * Features:
- * - Multiple solver methods (Jacobi, SOR, Red-Black SOR)
+ * - Stationary methods (Jacobi, Gauss-Seidel, SOR, Red-Black SOR), Krylov
+ *   methods (CG, BiCGSTAB, GMRES) and geometric multigrid
  * - Multiple backends (Scalar, SIMD, OpenMP, GPU)
- * - Runtime configurable parameters (tolerance, max_iter, omega)
+ * - Parameters grouped by the method that reads them; a group the chosen method
+ *   does not read is refused at init rather than ignored
  * - Statistics reporting (iterations, residual, timing)
  * - Convenience functions for common use cases
+ *
+ * The walls come first. Every solver here defaults to zero-gradient on all
+ * faces, which leaves the constants in the operator's nullspace: the solution is
+ * pinned only up to an additive constant, and the right-hand side must have zero
+ * interior mean or the system has no solution at all. The Krylov methods refuse
+ * one that does not -- see poisson_solver_solve(). Two ways out, and the choice
+ * belongs to the physics: remove the mean (a pressure defined up to a constant,
+ * which is what projection wants), or prescribe a value on a face through
+ * params.walls (a pressure-driven channel, an outlet).
  *
  * Usage:
  * @code
  * poisson_solver_t* solver = poisson_solver_create(
- *     POISSON_METHOD_REDBLACK_SOR, POISSON_BACKEND_AUTO);
+ *     POISSON_METHOD_CG, POISSON_BACKEND_AUTO);
+ * if (!solver) { ... }  // this method has no such backend; no silent fallback
  *
  * poisson_solver_params_t params = poisson_solver_params_default();
  * params.tolerance = 1e-8;
+ * // params.walls stays zero-gradient here, so make the rhs compatible with it:
+ * poisson_make_rhs_compatible(rhs, nx, ny, 1);
  *
- * poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);  // nz = 1, dz = 0 in 2D
+ * // nz = 1, dz = 0 in 2D. Refuses a configuration it cannot honour -- check it.
+ * cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
+ * if (status != CFD_SUCCESS) { puts(cfd_get_last_error()); ... }
  *
  * poisson_solver_stats_t stats = poisson_solver_stats_default();
- * poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+ * status = poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+ * printf("%d iterations, %s
+", stats.iterations,
+ *        poisson_solver_status_string(stats.status));
  *
  * poisson_solver_destroy(solver);
  * @endcode
+ *
+ * For a one-off solve, poisson_solve() does the same in a single call. It builds
+ * a solver per call, so in a loop own one as above.
  */
 
 #ifndef CFD_POISSON_SOLVER_H
@@ -225,13 +247,21 @@ typedef struct {
 /**
  * Parameters owned by a multigrid hierarchy: the POISSON_METHOD_MULTIGRID solver,
  * and the hierarchy built for krylov.preconditioner == POISSON_PRECOND_MULTIGRID.
+ *
+ * As a preconditioner the first three are not the caller's. A V-cycle with
+ * weighted-Jacobi smoothing, Dirichlet coarse corrections and an equal pre/post
+ * sweep count is what makes one apply a symmetric operator, and CG minimising
+ * over a Krylov space depends on that; poisson_solver_init() refuses a value for
+ * any of them there rather than overriding it silently. The last four are yours
+ * in both roles.
  */
 typedef struct {
-    mg_cycle_type_t cycle;       /**< 0 = MG_CYCLE_V */
+    mg_cycle_type_t cycle;       /**< 0 = MG_CYCLE_V; fixed when preconditioning */
     mg_smoother_type_t smoother; /**< 0 = whatever this context requires */
     mg_bc_type_t bc;             /**< 0 = whatever this context requires */
     int pre_smooth;              /**< Pre-smoothing sweeps per level (0 = 2) */
-    int post_smooth;             /**< Post-smoothing sweeps per level (0 = 2) */
+    int post_smooth;             /**< Post-smoothing sweeps per level (0 = 2); must
+                                      equal pre_smooth when preconditioning */
     int coarse_max_iter;         /**< Smoother sweeps on the coarsest grid (0 = 50) */
     int max_levels;              /**< Max grid levels (0 = coarsen as far as possible) */
 } poisson_multigrid_params_t;
@@ -301,10 +331,10 @@ typedef enum {
     /**
      * Red-Black SOR: the stationary option.
      *
-     * The one preset exempt from the compatibility rule below, because the
-     * stationary methods relax towards a solution modulo a drifting constant
-     * rather than chasing the nullspace component. That makes it the right
-     * choice for an rhs you cannot make compatible, and for use as a smoother.
+     * Exempt from the compatibility rule below, because the stationary methods
+     * relax towards a solution modulo a drifting constant rather than chasing
+     * the nullspace component. That makes it the right choice for an rhs you
+     * cannot make compatible, and for use as a smoother.
      *
      * For a fixed number of sweeps rather than a convergence request, set
      * params.tolerance = 0 and params.max_iterations yourself; the solve then
@@ -313,21 +343,36 @@ typedef enum {
      */
     POISSON_PRESET_SMOOTHER,
 
-    /** Geometric multigrid. Requires 2^k+1 points per active dimension. */
+    /**
+     * Geometric multigrid. Requires 2^k+1 points per active dimension.
+     *
+     * Also exempt: the cycle removes the interior mean on each coarse level, so
+     * it too converges modulo a constant rather than being derailed by one.
+     */
     POISSON_PRESET_MULTIGRID,
 
-    /** CG preconditioned by one multigrid V-cycle. Requires 2^k+1 dimensions. */
+    /**
+     * CG preconditioned by one multigrid V-cycle. Requires 2^k+1 dimensions.
+     *
+     * The outer method is CG, so this one IS subject to the compatibility rule.
+     */
     POISSON_PRESET_MULTIGRID_PCG
 } poisson_preset_t;
 
 /**
  * The config a preset stands for.
  *
- * Note which presets are subject to the zero-interior-mean rule: every one of
- * them except POISSON_PRESET_SMOOTHER, because the rest are Krylov methods. With
- * the default zero-gradient walls those operators are singular, so a right-hand
- * side with a nonzero interior mean describes a system with no solution and
- * poisson_solver_solve() refuses it -- see poisson_make_rhs_compatible().
+ * Note which presets are subject to the zero-interior-mean rule: DEFAULT,
+ * ACCURATE, NONSYMMETRIC and MULTIGRID_PCG, whose outer method is Krylov.
+ * SMOOTHER and MULTIGRID are not. With the default zero-gradient walls the
+ * operator is singular, so a right-hand side with a nonzero interior mean
+ * describes a system with no solution; a Krylov solve refuses it with
+ * CFD_ERROR_INVALID and POISSON_INCOMPATIBLE_RHS rather than chasing the
+ * nullspace component -- see poisson_make_rhs_compatible().
+ *
+ * Switching between presets therefore changes whether a given rhs is legal.
+ * That is a difference in the methods, not a policy: it is worth knowing which
+ * side of it a preset falls on before swapping one for another.
  */
 CFD_LIBRARY_EXPORT poisson_solver_config_t poisson_solver_config_preset(poisson_preset_t preset);
 
@@ -345,16 +390,20 @@ typedef struct {
 /**
  * Initialize parameters with default values
  *
- * Default values:
- * - tolerance: 1e-6
- * - absolute_tolerance: 1e-10
- * - max_iterations: 5000
- * - omega: 0.0 (automatic, at or just below the optimum for the grid and the walls in use)
- * - check_interval: 1
+ * Common to every method:
+ * - tolerance: 1e-6, absolute_tolerance: 1e-10
+ * - max_iterations: 5000, check_interval: 1
  * - verbose: false
  * - walls: all faces POISSON_WALL_ZERO_GRADIENT
- * - mg_cycle: MG_CYCLE_V, mg_smoother: MG_SMOOTHER_REDBLACK_GS, mg_bc: MG_BC_NEUMANN
- * - mg_pre_smooth/mg_post_smooth: 0 (= 2), mg_coarse_max_iter: 0 (= 50), mg_max_levels: 0 (= auto)
+ *
+ * Per method group, all zero, which each owning method reads as its own default:
+ * - sor.omega: 0 (automatic, at or just below the optimum for this grid and these walls)
+ * - krylov.preconditioner: POISSON_PRECOND_NONE, krylov.restart: 0 (= 30)
+ * - multigrid: MG_CYCLE_V, MG_SMOOTHER_REDBLACK_GS, MG_BC_NEUMANN,
+ *   pre_smooth/post_smooth 0 (= 2), coarse_max_iter 0 (= 50), max_levels 0 (= auto)
+ *
+ * A group belonging to another method must stay zero: poisson_solver_init()
+ * refuses a group the chosen method does not read, rather than ignoring it.
  */
 CFD_LIBRARY_EXPORT poisson_solver_params_t poisson_solver_params_default(void);
 
@@ -362,6 +411,18 @@ CFD_LIBRARY_EXPORT poisson_solver_params_t poisson_solver_params_default(void);
  * Initialize statistics with default values
  */
 CFD_LIBRARY_EXPORT poisson_solver_stats_t poisson_solver_stats_default(void);
+
+/**
+ * A short, human-readable name for a convergence status.
+ *
+ * For the message on a CFD_ERROR_* return, use cfd_get_last_error() instead --
+ * that is the sentence naming the fix. This one names the outcome a solve
+ * reported in poisson_solver_stats_t.status, for a log line or a table.
+ *
+ * @param status Any poisson_solver_status_t value
+ * @return A static string, never NULL; "unknown" for a value outside the enum
+ */
+CFD_LIBRARY_EXPORT const char* poisson_solver_status_string(poisson_solver_status_t status);
 
 /* ============================================================================
  * POISSON SOLVER INTERFACE
@@ -460,9 +521,10 @@ struct poisson_solver {
                                                 from the interior, for which the SOR solvers relax the points
                                                 beside a wall and choose omega. To hold other wall values,
                                                 install a function here before poisson_solver_init() rather
-                                                than writing the walls between iterations. The CUDA SOR and
-                                                Red-Black SOR solvers apply the walls on the device, and their
-                                                init rejects a function here with CFD_ERROR_UNSUPPORTED.
+                                                than writing the walls between iterations. Multigrid and every
+                                                GPU solver apply their walls themselves and never call this, so
+                                                their init rejects a function here with CFD_ERROR_UNSUPPORTED
+                                                rather than accepting one that would have no effect.
                                                 A function here must prescribe wall values that do not depend on
                                                 the interior: the Krylov solvers (CG, BiCGSTAB, GMRES) apply only
                                                 its homogeneous part, a zero halo, to their search directions,
@@ -523,7 +585,27 @@ CFD_LIBRARY_EXPORT poisson_solver_t* poisson_solver_create(
  * @param dy Grid spacing in y direction
  * @param dz Grid spacing in z direction (0.0 for 2D)
  * @param params Solver parameters (NULL for defaults)
- * @return CFD_SUCCESS on success
+ * @return CFD_SUCCESS, or a refusal -- see below
+ *
+ * This is where a configuration this solver cannot honour is refused, rather
+ * than being accepted and then ignored during the solve:
+ *
+ * - CFD_ERROR_INVALID if a parameter group the method does not read is set
+ *   (params.sor on a Krylov method, params.krylov on SOR, params.multigrid on a
+ *   CG that is not multigrid-preconditioned), if params.krylov.restart is set on
+ *   anything but GMRES, if a multigrid preconditioner is given a cycle, smoother,
+ *   boundary mode or unequal pre/post sweep count of its own (each would cost the
+ *   inner cycle the symmetry CG depends on; its sweep counts, coarse_max_iter and
+ *   max_levels are yours), if check_interval is below 1, or if params.walls
+ *   collides with a custom apply_bc.
+ * - CFD_ERROR_UNSUPPORTED if this method or backend cannot implement what was
+ *   asked: a preconditioner on BiCGSTAB, a multigrid preconditioner outside
+ *   scalar and OpenMP CG, prescribed faces outside the CPU Krylov solvers, or a
+ *   caller's apply_bc on multigrid or on any GPU solver (both apply their walls
+ *   themselves and never call it).
+ *
+ * Install a custom apply_bc before calling this, not after: omega resolution
+ * reads it. cfd_get_last_error() carries the sentence naming the fix.
  */
 CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_init(
     poisson_solver_t* solver,
@@ -557,6 +639,13 @@ CFD_LIBRARY_EXPORT void poisson_solver_destroy(poisson_solver_t* solver);
  *         CFD_ERROR_DIVERGED when the residual is not finite at the start or at a
  *         convergence check; the Krylov solvers (CG, BiCGSTAB, GMRES) do not report
  *         a non-finite residual as divergence.
+ *
+ *         CFD_ERROR_INVALID, with stats->status == POISSON_INCOMPATIBLE_RHS, when
+ *         the walls make the operator singular and rhs has a nonzero interior
+ *         mean -- the system then has no solution, and no number of iterations
+ *         would find one. poisson_make_rhs_compatible() is the fix. Only the
+ *         Krylov methods check this; the stationary ones run a fixed sweep and
+ *         are not asked to converge.
  */
 CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_solve(
     poisson_solver_t* solver,
@@ -571,6 +660,12 @@ CFD_LIBRARY_EXPORT cfd_status_t poisson_solver_solve(
  * Useful for custom iteration control or monitoring. Wall values other than the
  * default zero-gradient copy belong in solver->apply_bc, which every iteration
  * applies after its sweep (see struct poisson_solver).
+ *
+ * Unlike poisson_solver_solve(), this never checks the rhs against singular
+ * walls. Its callers are the stationary solvers, which that check exempts
+ * anyway, and one iteration of anything is a step rather than an answer -- there
+ * is nothing here to refuse. Drive a Krylov method through this and you take on
+ * the compatibility question yourself.
  *
  * @param solver Initialized Poisson solver
  * @param x Solution vector (in/out)
