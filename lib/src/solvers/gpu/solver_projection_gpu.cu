@@ -19,6 +19,7 @@
 #include "cfd/core/memory.h"
 #include "cfd/core/gpu_device.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "../navier_stokes/ns_convection_internal.h"
 
 #include "gpu_shared_kernels.cuh"
 #include "../linear/gpu/poisson_cg_gpu_solve.cuh"
@@ -599,6 +600,22 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
                       "use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
+
+    /* This entry point is exported, so a caller reaches it without passing
+     * through gpu_projection_init and its validation. Checked here rather than
+     * assumed: the solve below unconditionally mean-subtracts for the
+     * zero-gradient operator, so a prescribed face or a different pressure
+     * solver would be accepted and then ignored -- the default-deny contract
+     * broken at the one door that does not check. */
+    cfd_status_t bc_status = ns_check_pressure_bc(params, 0);
+    if (bc_status != CFD_SUCCESS) {
+        return bc_status;
+    }
+    cfd_status_t ps_status = ns_check_pressure_solver(params, 0);
+    if (ps_status != CFD_SUCCESS) {
+        return ps_status;
+    }
+
     gpu_config_t cfg = config ? *config : gpu_config_default();
     if (!gpu_should_use(&cfg, field->nx, field->ny, field->nz, params->max_iter))
         return CFD_ERROR;
@@ -634,6 +651,22 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                       "convection; use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
+
+    /* This entry point is exported, so a caller reaches it without passing
+     * through gpu_projection_init and its validation. Checked here rather than
+     * assumed: the solve below unconditionally mean-subtracts for the
+     * zero-gradient operator, so a prescribed face or a different pressure
+     * solver would be accepted and then ignored -- the default-deny contract
+     * broken at the one door that does not check. */
+    cfd_status_t bc_status = ns_check_pressure_bc(params, 0);
+    if (bc_status != CFD_SUCCESS) {
+        return bc_status;
+    }
+    cfd_status_t ps_status = ns_check_pressure_solver(params, 0);
+    if (ps_status != CFD_SUCCESS) {
+        return ps_status;
+    }
+
     gpu_config_t cfg = config ? *config : gpu_config_default();
     size_t nx = field->nx, ny = field->ny, nz = field->nz;
     if (!gpu_should_use(&cfg, nx, ny, nz, params->max_iter))
