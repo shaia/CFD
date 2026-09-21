@@ -127,10 +127,18 @@ Measured in Release with AVX2, each case driven at its data set's true `Re_tau`:
 
 | Re_tau | model | `u+` RMS | `-uv+` RMS | `k+` RMS | nodes |
 | ------ | ----- | -------- | ---------- | -------- | ----- |
-| 392.24 | k-epsilon | 1.18% | 17.61% | 16.07% | 9 |
-| 392.24 | SA | 2.11% | 28.73% | n/a | 9 |
+| 392.24 | k-epsilon | 1.30% | 15.47% | 14.96% | 9 |
+| 392.24 | SA | 1.76% | 16.41% | n/a | 9 |
 | 587.19 | k-epsilon | 1.24% | 13.06% | 12.80% | 14 |
 | 587.19 | SA | 1.60% | 12.48% | n/a | 14 |
+
+> These figures were re-measured after #218 ("Fix the Krylov pressure operator,
+> and refuse Poisson configuration that cannot be honoured"), which changed the
+> converged velocity field and therefore the turbulence statistics. The effect is
+> confined to Re_tau = 392.24; the 587.19 rows are unchanged. Most striking is
+> Spalart-Allmaras at 392.24, whose shear-stress error fell from 28.73% to
+> 16.41% -- that outlier was a symptom of the pressure-operator defect, not of
+> the closure.
 
 **Reynolds-stress error is roughly ten times the mean-velocity error.** That is the headline
 and it is not a defect in this library — it is the well-known behaviour of linear
