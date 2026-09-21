@@ -63,6 +63,22 @@ static int walls_are_all_zero_gradient(const poisson_walls_t* w)
         && w->back == POISSON_WALL_ZERO_GRADIENT;
 }
 
+/**
+ * Whether a face carries one of the two values the operator can express.
+ *
+ * Worth checking because the two readers of this enum disagree about anything
+ * else: poisson_apply_walls() writes a Dirichlet value only for
+ * POISSON_WALL_DIRICHLET and treats every other value as zero-gradient, while
+ * poisson_walls_are_singular() calls a face prescribed unless it is exactly
+ * POISSON_WALL_ZERO_GRADIENT. A stray 2 therefore builds the singular
+ * zero-gradient operator while reporting the system as nonsingular, which skips
+ * the zero-interior-mean check and lets an unsolvable rhs through to the
+ * iteration -- the 1e21 residual this branch exists to prevent.
+ */
+static int wall_type_is_legal(poisson_wall_t type) {
+    return type == POISSON_WALL_ZERO_GRADIENT || type == POISSON_WALL_DIRICHLET;
+}
+
 /** Whether this method's halo routines honour per-face walls (Krylov only). */
 static int method_honours_walls(poisson_solver_method_t method) {
     return method == POISSON_METHOD_CG
@@ -159,6 +175,17 @@ cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
     const poisson_solver_params_t* p = &solver->params;
 
     /* ---- walls -------------------------------------------------------- */
+    /* Range first: an out-of-range face is neither zero-gradient nor prescribed
+     * to the code that reads it, so nothing below would agree about what the
+     * operator is. */
+    if (!wall_type_is_legal(p->walls.left) || !wall_type_is_legal(p->walls.right)
+        || !wall_type_is_legal(p->walls.bottom) || !wall_type_is_legal(p->walls.top)
+        || !wall_type_is_legal(p->walls.front) || !wall_type_is_legal(p->walls.back)) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "every params.walls face must be POISSON_WALL_ZERO_GRADIENT or "
+            "POISSON_WALL_DIRICHLET");
+        return CFD_ERROR_INVALID;
+    }
     if (!walls_are_all_zero_gradient(&p->walls)) {
         /* Support first, then the hook conflict: an unsupported method should say
          * so rather than report a caller error. */

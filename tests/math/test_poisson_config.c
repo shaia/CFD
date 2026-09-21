@@ -701,6 +701,47 @@ void test_make_rhs_compatible_survives_degenerate_dims(void) {
 }
 
 /* ============================================================================
+ * ENUM RANGE
+ * ============================================================================ */
+
+/**
+ * An out-of-range face value is refused, because the two readers of
+ * poisson_wall_t disagree about everything except the two legal values:
+ * poisson_apply_walls() treats anything but DIRICHLET as zero-gradient, while
+ * poisson_walls_are_singular() treats anything but ZERO_GRADIENT as prescribed.
+ * A stray 2 builds the singular operator and reports it nonsingular, which
+ * skips the zero-interior-mean check and feeds an unsolvable system to the
+ * iteration.
+ */
+void test_out_of_range_wall_type_is_refused(void) {
+    int created;
+    const char* names[] = {"left", "right", "bottom", "top", "front", "back"};
+
+    for (int f = 0; f < 6; f++) {
+        poisson_solver_params_t p = poisson_solver_params_default();
+        poisson_wall_t* faces[] = {
+            &p.walls.left, &p.walls.right, &p.walls.bottom,
+            &p.walls.top, &p.walls.front, &p.walls.back
+        };
+        *faces[f] = (poisson_wall_t)2;
+        TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_INVALID,
+            init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &p, NULL, &created),
+            names[f]);
+    }
+
+    /* Both legal values on the same face still pass. */
+    poisson_solver_params_t z = poisson_solver_params_default();
+    z.walls.left = POISSON_WALL_ZERO_GRADIENT;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &z, NULL, &created));
+    poisson_solver_params_t d = poisson_solver_params_default();
+    d.walls.left = POISSON_WALL_DIRICHLET;
+    d.walls.values.left = 1.0;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &d, NULL, &created));
+}
+
+/* ============================================================================
  * STATUS NAMES
  * ============================================================================ */
 
@@ -751,6 +792,7 @@ int main(void) {
     RUN_TEST(test_defaults_are_always_accepted);
     RUN_TEST(test_gauss_seidel_omega_is_still_accepted);
     RUN_TEST(test_pcg_mg_reads_the_multigrid_group);
+    RUN_TEST(test_out_of_range_wall_type_is_refused);
     RUN_TEST(test_every_status_has_a_distinct_name);
     RUN_TEST(test_every_preset_runs_at_its_own_backend);
     RUN_TEST(test_z_face_on_a_2d_grid_is_refused);
