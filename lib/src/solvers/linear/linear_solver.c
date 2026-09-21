@@ -52,9 +52,11 @@ poisson_walls_t poisson_walls_uniform(poisson_wall_t type, double value) {
     return walls;
 }
 
-/** Whether every face is zero-gradient, i.e. the operator the solvers default to. */
-static int walls_are_all_zero_gradient(const poisson_walls_t* w)
+bool poisson_walls_are_default(const poisson_walls_t* w)
 {
+    if (!w) {
+        return true;  /* No walls configured is the default operator. */
+    }
     return w->left == POISSON_WALL_ZERO_GRADIENT
         && w->right == POISSON_WALL_ZERO_GRADIENT
         && w->bottom == POISSON_WALL_ZERO_GRADIENT
@@ -89,6 +91,16 @@ static int mg_smooth_effective(int requested, int fallback) {
  */
 static int wall_type_is_legal(poisson_wall_t type) {
     return type == POISSON_WALL_ZERO_GRADIENT || type == POISSON_WALL_DIRICHLET;
+}
+
+bool poisson_walls_are_legal(const poisson_walls_t* w)
+{
+    if (!w) {
+        return true;  /* No walls configured is the default operator. */
+    }
+    return wall_type_is_legal(w->left) && wall_type_is_legal(w->right)
+        && wall_type_is_legal(w->bottom) && wall_type_is_legal(w->top)
+        && wall_type_is_legal(w->front) && wall_type_is_legal(w->back);
 }
 
 /** Whether this method's halo routines honour per-face walls (Krylov only). */
@@ -190,15 +202,13 @@ cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
     /* Range first: an out-of-range face is neither zero-gradient nor prescribed
      * to the code that reads it, so nothing below would agree about what the
      * operator is. */
-    if (!wall_type_is_legal(p->walls.left) || !wall_type_is_legal(p->walls.right)
-        || !wall_type_is_legal(p->walls.bottom) || !wall_type_is_legal(p->walls.top)
-        || !wall_type_is_legal(p->walls.front) || !wall_type_is_legal(p->walls.back)) {
+    if (!poisson_walls_are_legal(&p->walls)) {
         cfd_set_error(CFD_ERROR_INVALID,
             "every params.walls face must be POISSON_WALL_ZERO_GRADIENT or "
             "POISSON_WALL_DIRICHLET");
         return CFD_ERROR_INVALID;
     }
-    if (!walls_are_all_zero_gradient(&p->walls)) {
+    if (!poisson_walls_are_default(&p->walls)) {
         /* Support first, then the hook conflict: an unsupported method should say
          * so rather than report a caller error. */
         if (!method_honours_walls(solver->method)) {
@@ -959,7 +969,7 @@ void poisson_solver_apply_bc(
     /* Per-face walls, when the caller configured any. The all-zero-gradient case
      * falls through to the backend BC primitives below, which keeps the default
      * free and lets OMP/SIMD apply their walls in parallel. */
-    if (!walls_are_all_zero_gradient(&solver->params.walls)) {
+    if (!poisson_walls_are_default(&solver->params.walls)) {
         poisson_apply_walls(solver, x, 0);
         return;
     }
@@ -1050,7 +1060,7 @@ void poisson_solver_krylov_apply_bc_homogeneous(
      * With a Dirichlet face configured, the prescribed value belongs to the iterate
      * and the direction gets 0 there instead. */
     if (!solver->apply_bc) {
-        if (walls_are_all_zero_gradient(&solver->params.walls)) {
+        if (poisson_walls_are_default(&solver->params.walls)) {
             poisson_solver_apply_bc(solver, v);
         } else {
             poisson_apply_walls(solver, v, 1);

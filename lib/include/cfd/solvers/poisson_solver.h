@@ -204,6 +204,28 @@ CFD_LIBRARY_EXPORT void poisson_make_rhs_compatible(double* rhs, size_t nx, size
 /** All faces zero-gradient: the default operator. */
 CFD_LIBRARY_EXPORT poisson_walls_t poisson_walls_default(void);
 
+/**
+ * Whether every face is zero-gradient, i.e. the operator the solvers default to.
+ *
+ * Exported beside poisson_walls_are_singular() because the Navier-Stokes side
+ * asks the same question when it decides whether a projection backend can
+ * honour params.pressure_bc, and a second open-coded copy of the six-face
+ * comparison is one more place to forget a face.
+ */
+CFD_LIBRARY_EXPORT bool poisson_walls_are_default(const poisson_walls_t* walls);
+
+/**
+ * Whether every face carries a value this operator can express.
+ *
+ * False for anything outside poisson_wall_t. Worth asking because the readers of
+ * this enum disagree off-enum: the halo routines treat any non-DIRICHLET value
+ * as zero-gradient, while poisson_walls_are_singular() calls a face prescribed
+ * unless it is exactly ZERO_GRADIENT -- so a stray value builds the singular
+ * operator while reporting the system as nonsingular. A caller that accepts
+ * walls from a file or an untrusted struct should check before configuring them.
+ */
+CFD_LIBRARY_EXPORT bool poisson_walls_are_legal(const poisson_walls_t* walls);
+
 /** Every face the same type, Dirichlet faces all at `value`. */
 CFD_LIBRARY_EXPORT poisson_walls_t poisson_walls_uniform(poisson_wall_t type, double value);
 
