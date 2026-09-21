@@ -290,7 +290,12 @@ void test_unsupported_methods_reject_walls(void) {
         checked++;
         poisson_solver_destroy(solver);
     }
-    TEST_ASSERT_GREATER_THAN_INT(3, checked);
+    /* Derived from the list, not a constant: every method here has a scalar
+     * implementation in every build, so all of them must have been reached. A
+     * hand-written number would start lying the moment the list changed, or the
+     * moment an optional backend joined the loop. */
+    TEST_ASSERT_EQUAL_INT_MESSAGE((int)(sizeof(methods) / sizeof(methods[0])), checked,
+        "every listed method must have been exercised");
 }
 
 /** Walls and a hook both prescribe wall values; taking both is ambiguous. */

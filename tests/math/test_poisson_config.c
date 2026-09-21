@@ -307,7 +307,10 @@ void test_defaults_are_always_accepted(void) {
         POISSON_BACKEND_SIMD, POISSON_BACKEND_GPU
     };
 
+    const int n_methods = (int)(sizeof(methods) / sizeof(methods[0]));
+
     int checked = 0;
+    int scalar_checked = 0;
     for (size_t m = 0; m < sizeof(methods) / sizeof(methods[0]); m++) {
         for (size_t b = 0; b < sizeof(backends) / sizeof(backends[0]); b++) {
             cfd_status_t status = init_with(methods[m], backends[b], NULL, NULL, &created);
@@ -317,10 +320,22 @@ void test_defaults_are_always_accepted(void) {
             TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, status,
                 "default parameters must never be refused");
             checked++;
+            if (backends[b] == POISSON_BACKEND_SCALAR) {
+                scalar_checked++;
+            }
         }
     }
-    printf("defaults accepted on %d (method, backend) pairs\n", checked);
-    TEST_ASSERT_GREATER_THAN_INT(8, checked);
+    printf("defaults accepted on %d (method, backend) pairs (%d scalar)\n",
+           checked, scalar_checked);
+
+    /* Guard against the loop skipping everything and passing vacuously. Counted
+     * over the scalar backend only: it is the reference implementation, so every
+     * method has one in every build, while OMP, SIMD and GPU are all optional.
+     * A total across all four would be a number from whichever machine happened
+     * to run it -- which is how this assertion first failed in CI, on a
+     * scalar-only build that was behaving perfectly. */
+    TEST_ASSERT_EQUAL_INT_MESSAGE(n_methods, scalar_checked,
+        "every method must have a scalar implementation that accepts defaults");
 }
 
 /**
