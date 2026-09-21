@@ -906,9 +906,20 @@ static ns_solver_t* create_rk4_optimized_solver(void) {
     return s;
 }
 
-static cfd_status_t explicit_euler_simd_step_guarded(ns_solver_t* solver, flow_field* field,
-                                                      const grid* grid, const ns_solver_params_t* params,
-                                                      ns_solver_stats_t* stats) {
+/* Registry-level stats wrapper for the SIMD Euler step.
+ *
+ * Was named "_guarded" for a compile-time SIMD guard that now lives in
+ * explicit_euler_simd_init(), leaving it a bare passthrough -- which is how it
+ * came to be the one Euler entry point that never reported dt_used, while its
+ * own solve() sibling twenty lines below did. */
+static cfd_status_t explicit_euler_simd_step_with_stats(ns_solver_t* solver, flow_field* field,
+                                                        const grid* grid,
+                                                        const ns_solver_params_t* params,
+                                                        ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
     return explicit_euler_simd_step(solver, field, grid, params, stats);
 }
 
@@ -956,7 +967,7 @@ static ns_solver_t* create_explicit_euler_optimized_solver(void) {
 
     s->init = explicit_euler_simd_init;
     s->destroy = explicit_euler_simd_destroy;
-    s->step = explicit_euler_simd_step_guarded;
+    s->step = explicit_euler_simd_step_with_stats;
     s->solve = explicit_euler_simd_solve;
     s->apply_boundary = NULL;
     s->compute_dt = NULL;
@@ -1242,6 +1253,11 @@ static cfd_status_t gpu_explicit_init(ns_solver_t* solver, const grid* grid,
  */
 static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                    const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
@@ -1250,6 +1266,7 @@ static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const
     cfg.min_steps = 1;
     cfd_status_t rc = solve_explicit_euler_method_gpu(field, grid, &step_params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        stats->iterations = 1;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1258,12 +1275,19 @@ static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const
 
 static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                     const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
     gpu_config_t cfg = gpu_config_default();
     cfg.min_grid_size = 1;
     cfg.min_steps = 1;
     cfd_status_t rc = solve_explicit_euler_method_gpu(field, grid, params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        /* solve_rk_gpu() runs exactly params->max_iter steps. */
+        stats->iterations = params->max_iter;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1409,6 +1433,7 @@ static cfd_status_t gpu_rk2_step(ns_solver_t* solver, flow_field* field, const g
     cfg.min_steps = 1;
     cfd_status_t rc = solve_rk2_method_gpu(field, grid, &step_params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        stats->iterations = 1;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1423,6 +1448,7 @@ static cfd_status_t gpu_rk2_solve(ns_solver_t* solver, flow_field* field, const 
     cfg.min_steps = 1;
     cfd_status_t rc = solve_rk2_method_gpu(field, grid, params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        stats->iterations = params->max_iter;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1439,6 +1465,7 @@ static cfd_status_t gpu_rk4_step(ns_solver_t* solver, flow_field* field, const g
     cfg.min_steps = 1;
     cfd_status_t rc = solve_rk4_method_gpu(field, grid, &step_params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        stats->iterations = 1;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1453,6 +1480,7 @@ static cfd_status_t gpu_rk4_solve(ns_solver_t* solver, flow_field* field, const 
     cfg.min_steps = 1;
     cfd_status_t rc = solve_rk4_method_gpu(field, grid, params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        stats->iterations = params->max_iter;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }

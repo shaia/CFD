@@ -487,13 +487,25 @@ For Re=100, centerline velocities should match Ghia et al. within ~1%.
 
 **Export timeseries:**
 ```c
+#include "cfd/core/derived_fields.h"
 #include "cfd/io/csv_output.h"
 
-// Write timeseries data (step, time, max velocities, etc.)
-ns_solver_stats_t stats = ns_solver_stats_default();
+// The row's statistics come from derived, which must have them computed --
+// write_csv_timeseries() returns without writing if derived is NULL or its
+// statistics are missing.
+derived_fields* derived = derived_fields_create(sim->grid->nx, sim->grid->ny, sim->grid->nz);
+derived_fields_compute_statistics(derived, sim->field);
+
+// Pass the simulation's own last_stats, not a fresh ns_solver_stats_default():
+// the dt column reports stats.dt_used, the step the solver actually took, which
+// the Euler solvers clamp below params.dt. A default-constructed stats leaves
+// dt_used at zero and the column falls back to params.dt -- fine for a direct
+// caller, wrong beside a current_time that accumulated the clamped step.
 write_csv_timeseries("timeseries.csv", step, sim->current_time,
-                     sim->field, NULL, &sim->params, &stats,
+                     sim->field, derived, &sim->params, &sim->last_stats,
                      sim->grid->nx, sim->grid->ny, (step == 0));
+
+derived_fields_destroy(derived);
 ```
 
 **Export centerline:**
