@@ -23,6 +23,8 @@
  * CFD_ERROR_UNSUPPORTED), per the project's optional-backend testing policy.
  */
 
+#include "../test_poisson_helpers.h"
+
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
@@ -255,11 +257,6 @@ void test_sor_gpu_matches_cpu(void) {
     cfd_free(rhs);
     cfd_free(p_gpu);
     cfd_free(p_cpu);
-}
-
-static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
-    (void)solver;
-    (void)x;
 }
 
 /* The GPU SOR and Red-Black SOR solvers apply the zero-gradient walls on the

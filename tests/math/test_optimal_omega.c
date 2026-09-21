@@ -9,6 +9,8 @@
  * every error mode is present, including the slowest.
  */
 
+#include "../test_poisson_helpers.h"
+
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
@@ -158,11 +160,6 @@ static double* create_noise_rhs(const grid_case_t* g) {
         }
     }
     return rhs;
-}
-
-static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
-    (void)solver;
-    (void)x;
 }
 
 /* Sweeps Red-Black SOR takes from a zero start with this omega (0 = automatic) */

@@ -8,6 +8,8 @@
 
 #include "cfd/solvers/poisson_solver.h"
 
+#include <stddef.h>
+
 /**
  * Hold every wall at zero, making the operator Dirichlet and so nonsingular.
  *
@@ -22,20 +24,45 @@
  * admits any RHS. It is also the problem a solution vanishing on the boundary
  * actually poses.
  *
- * Why the body is empty: the Krylov solvers zero the halo before calling this
- * hook, so zero walls are already in place by the time it runs. That is a
- * contract between this function and poisson_solver_krylov_apply_bc, which is
- * the reason it lives in one place rather than three -- it has changed once
- * already.
+ * It writes the zeros itself rather than relying on the caller. Only
+ * poisson_solver_krylov_apply_bc() zeroes the halo before invoking this hook;
+ * poisson_solver_apply_bc(), which is the path the stationary SOR and
+ * Red-Black SOR solvers take, calls it directly. An empty body therefore held
+ * nothing at zero there and left whatever the iterate already carried on the
+ * walls, while its mere presence still flipped poisson_solver_resolve_omega()
+ * to the Dirichlet formula -- correct only for as long as the buffer happened
+ * to arrive from calloc.
  *
  * params.walls = poisson_walls_uniform(POISSON_WALL_DIRICHLET, 0.0) expresses
  * the same thing declaratively and is the better choice in new tests; this hook
- * is what the tests predating that field use, and it exercises the hook path
- * itself, which still has to keep working.
+ * is what the tests predating that field use, what the stationary solvers have
+ * no other way to ask for, and it exercises the hook path itself, which still
+ * has to keep working.
  */
 static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
-    (void)solver;
-    (void)x;
+    size_t nx = solver->nx;
+    size_t ny = solver->ny;
+    size_t nz = solver->nz;
+    size_t plane = nx * ny;
+
+    for (size_t k = 0; k < nz; k++) {
+        double* p = x + k * plane;
+        /* z faces: the whole plane, on a 3D grid. */
+        if (nz > 1 && (k == 0 || k == nz - 1)) {
+            for (size_t idx = 0; idx < plane; idx++) {
+                p[idx] = 0.0;
+            }
+            continue;
+        }
+        for (size_t i = 0; i < nx; i++) {
+            p[i] = 0.0;                       /* bottom */
+            p[(ny - 1) * nx + i] = 0.0;       /* top */
+        }
+        for (size_t j = 0; j < ny; j++) {
+            p[j * nx] = 0.0;                  /* left */
+            p[j * nx + (nx - 1)] = 0.0;       /* right */
+        }
+    }
 }
 
 #endif /* CFD_TEST_POISSON_HELPERS_H */

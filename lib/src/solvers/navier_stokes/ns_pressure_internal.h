@@ -63,11 +63,11 @@ static inline cfd_status_t ns_pressure_config(const ns_solver_params_t* params,
 /**
  * Make *slot a solver matching cfg on this grid, building or rebuilding it.
  *
- * Rebuilds when the configuration or the grid differs from what the existing
- * instance was built for, rather than assuming either is fixed: pressure_solver
- * is read from params on every step today, and a caller may resize between
- * steps. Both are rare, so a rebuild is the right cost, but silently solving
- * with the previous configuration would not be.
+ * Rebuilds when the method, backend, parameters or grid differ from what the
+ * existing instance was built for, rather than assuming any of them is fixed:
+ * pressure_solver is read from params on every step today, and a caller may
+ * resize between steps. All are rare, so a rebuild is the right cost, but
+ * silently solving with the previous configuration would not be.
  *
  * Returns the init status, so an MG mode on a grid that is not 2^k+1 fails at
  * solver init -- where the caller can still choose something else -- rather than
@@ -101,7 +101,16 @@ static inline cfd_status_t ns_pressure_ensure(poisson_solver_t** slot,
     if (existing) {
         int same_grid = existing->nx == nx && existing->ny == ny && existing->nz == nz
                      && existing->dx == dx && existing->dy == dy && existing->dz == dz;
+        /* The backend belongs in this test as much as the method does: reusing a
+         * scalar solver for a request that named OpenMP would serialize the
+         * pressure solve of a parallel projection, which is the cross-backend
+         * fallback the error-handling rules forbid outright. AUTO matches
+         * whatever is cached, because poisson_solver_create resolves it the same
+         * way every time and so would hand back the backend already held. */
+        int same_backend = cfg->backend == POISSON_BACKEND_AUTO
+                        || existing->backend == cfg->backend;
         int same_config = existing->method == cfg->method
+                       && same_backend
                        && memcmp(&existing->params, &cfg->params, sizeof cfg->params) == 0;
         if (same_grid && same_config) {
             return CFD_SUCCESS;
@@ -111,6 +120,14 @@ static inline cfd_status_t ns_pressure_ensure(poisson_solver_t** slot,
         poisson_solver_destroy(existing);
         *slot = NULL;
     }
+
+    /* Cleared so that the status read back below is this call's and not whatever
+     * the thread failed at last -- cfd_get_last_status() is sticky and never
+     * clears itself, so an earlier unrelated failure (a probe for an
+     * unavailable backend, say) would otherwise be reported as this one's
+     * reason. poisson_solve() clears for exactly this reason before the same
+     * read. */
+    cfd_clear_error();
 
     poisson_solver_t* solver = poisson_solver_create(cfg->method, cfg->backend);
     if (!solver) {
@@ -155,6 +172,34 @@ static inline cfd_status_t ns_pressure_ensure(poisson_solver_t** slot,
     }
 
     *slot = solver;
+    return CFD_SUCCESS;
+}
+
+/**
+ * Check that an owned pressure solver matches the buffers about to be swept.
+ *
+ * ns_pressure_ensure() sizes the solver from the grid, while a projection
+ * backend's rhs, p_new and u_new are sized from whatever it was built for --
+ * the field it is stepping, or the grid its context was created for. The two
+ * are separate caller-owned objects and nothing upstream ties them together, so
+ * a caller stepping with a mismatched pair would have the solver's kernels
+ * sweep to solver->nx-1 and run off the end of all three buffers.
+ *
+ * Each backend passes the dimensions its own buffers were sized from, which is
+ * the one part of this check that legitimately differs between them; the rule
+ * and the diagnostic do not, and were copied into three files before this.
+ */
+static inline cfd_status_t ns_pressure_check_shape(const poisson_solver_t* pressure,
+                                                   size_t nx, size_t ny, size_t nz) {
+    if (!pressure) {
+        return CFD_ERROR_INVALID;
+    }
+    if (pressure->nx != nx || pressure->ny != ny || pressure->nz != nz) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "The pressure solver was built for different dimensions than this solver's "
+            "buffers were sized for; re-init the solver for the grid it is stepping.");
+        return CFD_ERROR_INVALID;
+    }
     return CFD_SUCCESS;
 }
 

@@ -12,7 +12,8 @@
  *   - W-cycle, F-cycle (FMG discretization accuracy), Jacobi smoother
  *   - 3D grids, mixed dimensions, inhomogeneous Dirichlet data
  *   - mg_max_levels cap (two-grid method)
- *   - poisson_solve_3d convenience preset incl. invalid-dims caching
+ *   - the MULTIGRID preset through poisson_solve(), including a rejected
+ *     non-2^k+1 grid
  */
 
 #include "unity.h"

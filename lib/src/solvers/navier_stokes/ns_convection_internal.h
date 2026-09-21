@@ -54,7 +54,8 @@ static inline cfd_status_t ns_check_convection_scheme(const ns_solver_params_t* 
  *
  * @param params                      Solver parameters (NULL means defaults)
  * @param backend_supports_per_face   Nonzero if this solver honours params.pressure_bc
- * @return CFD_SUCCESS, or CFD_ERROR_UNSUPPORTED
+ * @return CFD_SUCCESS, CFD_ERROR_INVALID for a value outside poisson_wall_t, or
+ *         CFD_ERROR_UNSUPPORTED
  */
 static inline cfd_status_t ns_check_pressure_bc(const ns_solver_params_t* params,
                                                 int backend_supports_per_face) {
@@ -62,12 +63,16 @@ static inline cfd_status_t ns_check_pressure_bc(const ns_solver_params_t* params
         return CFD_SUCCESS;
     }
     const poisson_walls_t* w = &params->pressure_bc;
-    if (w->left == POISSON_WALL_ZERO_GRADIENT
-        && w->right == POISSON_WALL_ZERO_GRADIENT
-        && w->bottom == POISSON_WALL_ZERO_GRADIENT
-        && w->top == POISSON_WALL_ZERO_GRADIENT
-        && w->front == POISSON_WALL_ZERO_GRADIENT
-        && w->back == POISSON_WALL_ZERO_GRADIENT) {
+    /* Range-checked first, as the two validators beside this one do: an
+     * out-of-enum face is a caller error, not a backend limitation, and
+     * reporting it as UNSUPPORTED sends the caller to try another backend that
+     * will refuse the same garbage. A checkpoint reader casts these straight
+     * from the file, so the value is not always one the compiler chose. */
+    if (!poisson_walls_are_legal(w)) {
+        cfd_set_error(CFD_ERROR_INVALID, "Unknown poisson_wall_t in params.pressure_bc");
+        return CFD_ERROR_INVALID;
+    }
+    if (poisson_walls_are_default(w)) {
         return CFD_SUCCESS;
     }
     if (!backend_supports_per_face) {

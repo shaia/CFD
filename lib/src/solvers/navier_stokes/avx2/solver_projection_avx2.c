@@ -278,17 +278,12 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
         if (pressure_status != CFD_SUCCESS) {
             return pressure_status;
         }
-        /* ns_pressure_ensure sizes the solver from the grid, while p_new, rhs and
-         * u_new below were allocated at init and are sized from the grid this
-         * context was built for. A caller stepping with a larger grid would have
-         * the solver rebuilt for it and then sweep past the end of all three.
-         * The same guard the scalar and OpenMP projections carry. */
-        if (ctx->pressure->nx != ctx->nx || ctx->pressure->ny != ctx->ny
-            || ctx->pressure->nz != ctx->nz) {
-            cfd_set_error(CFD_ERROR_INVALID,
-                "The pressure solver was rebuilt for a different grid than this "
-                "solver's buffers were allocated for; re-init for the new grid.");
-            return CFD_ERROR_INVALID;
+        /* p_new, rhs and u_new were allocated at init from the grid this context
+         * was built for, not from the grid being stepped. */
+        cfd_status_t shape_status =
+            ns_pressure_check_shape(ctx->pressure, ctx->nx, ctx->ny, ctx->nz);
+        if (shape_status != CFD_SUCCESS) {
+            return shape_status;
         }
         /* Same reason, for the other half of the grid: the shape is checked
          * above, and the spacing is taken again here so the cached z terms
