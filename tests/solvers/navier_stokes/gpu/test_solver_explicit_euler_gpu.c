@@ -11,6 +11,7 @@
  */
 
 #include "../test_solver_helpers.h"
+#include "cfd/api/simulation_api.h"
 #include "cfd/core/cfd_init.h"
 #include "cfd/core/gpu_device.h"
 #include "cfd/solvers/navier_stokes_solver.h"
@@ -161,6 +162,52 @@ void test_gpu_energy_decay(void) {
     printf("PASSED\n");
 }
 
+void test_gpu_reports_the_step_it_actually_took(void) {
+    printf("\n=== Test: Explicit Euler GPU Reports dt_used and iterations ===\n");
+
+    if (!gpu_is_available() || !gpu_solver_available()) {
+        printf("Explicit Euler GPU solver not available, skipping\n");
+        TEST_PASS();
+        return;
+    }
+
+    /* run_simulation_step() advances current_time by stats.dt_used, and
+     * run_simulation_solve() by dt_used * iterations. The GPU kernel clamps its
+     * own step to NS_EULER_DT_LIMIT, so a wrapper that leaves dt_used at the
+     * dispatcher's params->dt seed runs current_time 50x ahead of the physical
+     * time simulated, and a zero iteration count freezes it outright. Neither
+     * shows up in a consistency, stability or energy-decay check -- they all
+     * read the field, never the clock -- so assert the reported step directly. */
+    simulation_data* sim = init_simulation_with_solver(
+        32, 32, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU);
+    TEST_ASSERT_NOT_NULL(sim);
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, run_simulation_step(sim));
+    printf("step:  dt_used=%.6g iterations=%d current_time=%.6g\n",
+           sim->last_stats.dt_used, sim->last_stats.iterations, sim->current_time);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, NS_EULER_DT_LIMIT, sim->last_stats.dt_used);
+    TEST_ASSERT_EQUAL_INT(1, sim->last_stats.iterations);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, NS_EULER_DT_LIMIT, sim->current_time);
+    free_simulation(sim);
+
+    /* solve() runs params.max_iter steps, so current_time must accumulate all
+     * of them -- not one, and not none. */
+    sim = init_simulation_with_solver(
+        32, 32, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU);
+    TEST_ASSERT_NOT_NULL(sim);
+    sim->params.max_iter = 5;
+
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, run_simulation_solve(sim));
+    printf("solve: dt_used=%.6g iterations=%d current_time=%.6g\n",
+           sim->last_stats.dt_used, sim->last_stats.iterations, sim->current_time);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, NS_EULER_DT_LIMIT, sim->last_stats.dt_used);
+    TEST_ASSERT_EQUAL_INT(5, sim->last_stats.iterations);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, 5.0 * NS_EULER_DT_LIMIT, sim->current_time);
+    free_simulation(sim);
+
+    printf("PASSED\n");
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -174,6 +221,7 @@ int main(void) {
     RUN_TEST(test_gpu_cpu_consistency_energy);
     RUN_TEST(test_gpu_stability);
     RUN_TEST(test_gpu_energy_decay);
+    RUN_TEST(test_gpu_reports_the_step_it_actually_took);
 
     printf("\n================================================\n");
 
