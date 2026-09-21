@@ -175,6 +175,34 @@ static inline cfd_status_t ns_pressure_ensure(poisson_solver_t** slot,
     return CFD_SUCCESS;
 }
 
+/**
+ * Check that an owned pressure solver matches the buffers about to be swept.
+ *
+ * ns_pressure_ensure() sizes the solver from the grid, while a projection
+ * backend's rhs, p_new and u_new are sized from whatever it was built for --
+ * the field it is stepping, or the grid its context was created for. The two
+ * are separate caller-owned objects and nothing upstream ties them together, so
+ * a caller stepping with a mismatched pair would have the solver's kernels
+ * sweep to solver->nx-1 and run off the end of all three buffers.
+ *
+ * Each backend passes the dimensions its own buffers were sized from, which is
+ * the one part of this check that legitimately differs between them; the rule
+ * and the diagnostic do not, and were copied into three files before this.
+ */
+static inline cfd_status_t ns_pressure_check_shape(const poisson_solver_t* pressure,
+                                                   size_t nx, size_t ny, size_t nz) {
+    if (!pressure) {
+        return CFD_ERROR_INVALID;
+    }
+    if (pressure->nx != nx || pressure->ny != ny || pressure->nz != nz) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "The pressure solver was built for different dimensions than this solver's "
+            "buffers were sized for; re-init the solver for the grid it is stepping.");
+        return CFD_ERROR_INVALID;
+    }
+    return CFD_SUCCESS;
+}
+
 /** Destroy an owned pressure solver and clear the slot. NULL-safe. */
 static inline void ns_pressure_release(poisson_solver_t** slot) {
     if (slot && *slot) {
