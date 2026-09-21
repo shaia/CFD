@@ -207,23 +207,25 @@ double ns_dt_convective(const flow_field* field, const grid* grid,
     double max_speed = 0.0;
     int has_w = (grid->nz > 1 && field->w);
 
-    for (size_t j = 0; j < field->ny; j++) {
-        for (size_t i = 0; i < field->nx; i++) {
-            size_t idx = IDX_2D(i, j, field->nx);
-            double u_speed = fabs(field->u[idx]);
-            double v_speed = fabs(field->v[idx]);
-            double sound_speed = sqrt(params->gamma * field->p[idx] / field->rho[idx]);
+    // Sweep every cell, not just the k = 0 plane: a 3D field whose fastest
+    // flow sits at k > 0 would otherwise set dt from one slice and exceed the
+    // CFL limit everywhere else. Matches ns_dt_viscous(), which already walks
+    // nx*ny*nz.
+    const size_t total = field->nx * field->ny * field->nz;
+    for (size_t n = 0; n < total; n++) {
+        double u_speed = fabs(field->u[n]);
+        double v_speed = fabs(field->v[n]);
+        double sound_speed = sqrt(params->gamma * field->p[n] / field->rho[n]);
 
-            // Optimized velocity magnitude calculation - avoid sqrt when possible
-            double vel_mag_sq = (u_speed * u_speed) + (v_speed * v_speed);
-            if (has_w) {
-                double w_speed = fabs(field->w[idx]);
-                vel_mag_sq += w_speed * w_speed;
-            }
-            double vel_mag = (vel_mag_sq > VELOCITY_EPSILON) ? sqrt(vel_mag_sq) : 0.0;
-            double local_speed = vel_mag + sound_speed;
-            max_speed = max_double(max_speed, local_speed);
+        // Optimized velocity magnitude calculation - avoid sqrt when possible
+        double vel_mag_sq = (u_speed * u_speed) + (v_speed * v_speed);
+        if (has_w) {
+            double w_speed = fabs(field->w[n]);
+            vel_mag_sq += w_speed * w_speed;
         }
+        double vel_mag = (vel_mag_sq > VELOCITY_EPSILON) ? sqrt(vel_mag_sq) : 0.0;
+        double local_speed = vel_mag + sound_speed;
+        max_speed = max_double(max_speed, local_speed);
     }
 
     // Prevent division by zero and ensure reasonable time step

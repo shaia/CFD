@@ -888,9 +888,20 @@ static ns_solver_t* create_rk4_optimized_solver(void) {
     return s;
 }
 
-static cfd_status_t explicit_euler_simd_step_guarded(ns_solver_t* solver, flow_field* field,
-                                                      const grid* grid, const ns_solver_params_t* params,
-                                                      ns_solver_stats_t* stats) {
+/* Registry-level stats wrapper for the SIMD Euler step.
+ *
+ * Was named "_guarded" for a compile-time SIMD guard that now lives in
+ * explicit_euler_simd_init(), leaving it a bare passthrough -- which is how it
+ * came to be the one Euler entry point that never reported dt_used, while its
+ * own solve() sibling twenty lines below did. */
+static cfd_status_t explicit_euler_simd_step_with_stats(ns_solver_t* solver, flow_field* field,
+                                                        const grid* grid,
+                                                        const ns_solver_params_t* params,
+                                                        ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
     return explicit_euler_simd_step(solver, field, grid, params, stats);
 }
 
@@ -938,7 +949,7 @@ static ns_solver_t* create_explicit_euler_optimized_solver(void) {
 
     s->init = explicit_euler_simd_init;
     s->destroy = explicit_euler_simd_destroy;
-    s->step = explicit_euler_simd_step_guarded;
+    s->step = explicit_euler_simd_step_with_stats;
     s->solve = explicit_euler_simd_solve;
     s->apply_boundary = NULL;
     s->compute_dt = NULL;
