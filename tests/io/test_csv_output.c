@@ -401,6 +401,47 @@ void test_csv_timeseries_data_values(void) {
     remove(filename);
 }
 
+void test_csv_timeseries_reports_the_step_the_solver_took(void) {
+    char filename[256];
+    make_output_path(filename, sizeof(filename), "test_timeseries_dt_used.csv");
+    remove(filename);
+
+    /* The time column accumulates stats.dt_used, so the dt column has to report
+     * that same step. The Euler solvers clamp themselves to NS_EULER_DT_LIMIT
+     * well below a requested params.dt, which is exactly when a row would
+     * otherwise contradict itself. test_csv_timeseries_data_values() covers the
+     * other branch: dt_used left at zero falls back to params.dt. */
+    ns_solver_params_t params = ns_solver_params_default();
+    params.dt = 0.005;
+
+    ns_solver_stats_t stats = ns_solver_stats_default();
+    stats.iterations = 1;
+    stats.dt_used = NS_EULER_DT_LIMIT;
+
+    write_csv_timeseries(filename, 1, NS_EULER_DT_LIMIT, test_field, test_derived, &params, &stats,
+                         test_grid->nx, test_grid->ny, 1);
+
+    FILE* fp = fopen(filename, "r");
+    TEST_ASSERT_NOT_NULL(fp);
+
+    char line[1024];
+    fgets(line, sizeof(line), fp);  // Skip header
+    fgets(line, sizeof(line), fp);  // Data line
+    fclose(fp);
+
+    int step;
+    double time, dt;
+    sscanf(line, "%d,%lf,%lf", &step, &time, &dt);
+
+    TEST_ASSERT_EQUAL_INT(1, step);
+    // Use float comparison since Unity double is disabled
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, (float)NS_EULER_DT_LIMIT, (float)dt);
+    // The two columns must describe the same step, not one each.
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, (float)time, (float)dt);
+
+    remove(filename);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -425,6 +466,7 @@ int main(void) {
 
     // Data correctness tests
     RUN_TEST(test_csv_timeseries_data_values);
+    RUN_TEST(test_csv_timeseries_reports_the_step_the_solver_took);
 
     return UNITY_END();
 }
