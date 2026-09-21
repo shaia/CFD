@@ -741,6 +741,38 @@ void test_out_of_range_wall_type_is_refused(void) {
         init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &d, NULL, &created));
 }
 
+/**
+ * Every preconditioner rule below tests for a specific value, so an
+ * out-of-range one satisfies all of them and the backend then runs
+ * unpreconditioned: the caller asked for something and silently got the
+ * default.
+ */
+void test_out_of_range_preconditioner_is_refused(void) {
+    int created;
+    poisson_solver_params_t p = poisson_solver_params_default();
+    p.krylov.preconditioner = (poisson_precond_type_t)99;
+
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_INVALID,
+        init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &p, NULL, &created),
+        "CG must refuse a preconditioner value it cannot name");
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_INVALID,
+        init_with(POISSON_METHOD_GMRES, POISSON_BACKEND_SCALAR, &p, NULL, &created),
+        "GMRES must refuse it too");
+
+    /* The three legal values keep the behaviour their own rules describe:
+     * accepted on scalar CG, and JACOBI still refused by BiCGSTAB. */
+    poisson_solver_params_t none = poisson_solver_params_default();
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &none, NULL, &created));
+    poisson_solver_params_t jac = poisson_solver_params_default();
+    jac.krylov.preconditioner = POISSON_PRECOND_JACOBI;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+        init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &jac, NULL, &created));
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_UNSUPPORTED,
+        init_with(POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR, &jac, NULL, &created),
+        "a legal but unimplemented preconditioner is UNSUPPORTED, not INVALID");
+}
+
 /* ============================================================================
  * STATUS NAMES
  * ============================================================================ */
@@ -793,6 +825,7 @@ int main(void) {
     RUN_TEST(test_gauss_seidel_omega_is_still_accepted);
     RUN_TEST(test_pcg_mg_reads_the_multigrid_group);
     RUN_TEST(test_out_of_range_wall_type_is_refused);
+    RUN_TEST(test_out_of_range_preconditioner_is_refused);
     RUN_TEST(test_every_status_has_a_distinct_name);
     RUN_TEST(test_every_preset_runs_at_its_own_backend);
     RUN_TEST(test_z_face_on_a_2d_grid_is_refused);

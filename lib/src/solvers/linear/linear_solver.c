@@ -288,6 +288,21 @@ cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
 
     /* ---- exceptions within a group the method does own ----------------- */
 
+    /* Range before capability. Every check below tests for a specific value --
+     * "is it MULTIGRID", "is it not NONE" -- so an out-of-range preconditioner
+     * satisfies all of them on CG and GMRES, and their backends then find it is
+     * not POISSON_PRECOND_JACOBI either and run unpreconditioned. The caller
+     * asked for something and got the default, which is the failure this
+     * function exists to make impossible. */
+    if (p->krylov.preconditioner != POISSON_PRECOND_NONE
+        && p->krylov.preconditioner != POISSON_PRECOND_JACOBI
+        && p->krylov.preconditioner != POISSON_PRECOND_MULTIGRID) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "params.krylov.preconditioner must be POISSON_PRECOND_NONE, "
+            "POISSON_PRECOND_JACOBI or POISSON_PRECOND_MULTIGRID");
+        return CFD_ERROR_INVALID;
+    }
+
     /* BiCGSTAB reads params.krylov, but has no preconditioner implementation on
      * any backend. It ignored one silently for as long as it has existed. */
     if (solver->method == POISSON_METHOD_BICGSTAB
