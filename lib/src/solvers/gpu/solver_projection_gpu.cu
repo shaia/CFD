@@ -603,10 +603,13 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
 
     /* This entry point is exported, so a caller reaches it without passing
      * through gpu_projection_init and its validation. Checked here rather than
-     * assumed: the solve below unconditionally mean-subtracts for the
-     * zero-gradient operator, so a prescribed face or a different pressure
-     * solver would be accepted and then ignored -- the default-deny contract
-     * broken at the one door that does not check. */
+     * assumed: the loop below drives gpu_solver_step, whose pressure stage is
+     * kernel_pressure_update -- an explicit relaxation with no Poisson solve to
+     * configure at all. A prescribed face or a chosen pressure solver would be
+     * accepted and then do nothing, the default-deny contract broken at the one
+     * door that does not check. (solve_projection_method_gpu below runs the real
+     * CG and mean-subtracts; this one does not, so do not read the two
+     * refusals as the same refusal.) */
     cfd_status_t bc_status = ns_check_pressure_bc(params, 0);
     if (bc_status != CFD_SUCCESS) {
         return bc_status;

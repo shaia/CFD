@@ -967,8 +967,11 @@ void poisson_solver_apply_bc(
     }
 
     /* Per-face walls, when the caller configured any. The all-zero-gradient case
-     * falls through to the backend BC primitives below, which keeps the default
-     * free and lets OMP/SIMD apply their walls in parallel. */
+     * falls through to the loop below, which computes the same extension by the
+     * shorter route: a whole-plane memcpy for the z faces rather than
+     * write_face's per-cell indexed copy. (It once fell through to reach the
+     * parallel OMP/SIMD BC primitives; that dispatch is gone and the loop below
+     * is now serial on every backend, for the reason stated there.) */
     if (!poisson_walls_are_default(&solver->params.walls)) {
         poisson_apply_walls(solver, x, 0);
         return;
