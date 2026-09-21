@@ -637,7 +637,7 @@ const char* poisson_solver_status_string(poisson_solver_status_t status);
 ```c
 typedef struct {
     poisson_solver_method_t  method;
-    poisson_solver_backend_t backend;   // POISSON_BACKEND_AUTO in every preset
+    poisson_solver_backend_t backend;   // AUTO, except the two multigrid presets
     poisson_solver_params_t  params;
 } poisson_solver_config_t;
 
@@ -646,8 +646,8 @@ typedef enum {
     POISSON_PRESET_ACCURATE,       // CG, tol 1e-10 / abs 1e-14, 20000 iterations
     POISSON_PRESET_NONSYMMETRIC,   // BiCGSTAB
     POISSON_PRESET_SMOOTHER,       // Red-Black SOR
-    POISSON_PRESET_MULTIGRID,      // V-cycle; 2^k+1 dims
-    POISSON_PRESET_MULTIGRID_PCG   // CG + one V-cycle per apply; 2^k+1 dims
+    POISSON_PRESET_MULTIGRID,      // V-cycle; 2^k+1 dims; backend SCALAR
+    POISSON_PRESET_MULTIGRID_PCG   // CG + one V-cycle per apply; 2^k+1 dims; backend SCALAR
 } poisson_preset_t;
 
 poisson_solver_config_t poisson_solver_config_preset(poisson_preset_t preset);
@@ -662,6 +662,14 @@ cfd_status_t poisson_solve(double* x, double* x_temp, const double* rhs,
 A preset is a starting point, not a terminal choice: it returns a config you
 edit. Neither method nor backend needs its own enumerator — GMRES on the GPU is
 `cfg.method` and `cfg.backend`, not a fourteenth preset.
+
+A preset names a backend only where AUTO would pick one that cannot run it.
+AUTO resolves to SIMD wherever AVX2 or NEON is present, and neither multigrid
+nor the multigrid preconditioner has a SIMD backend, so `POISSON_PRESET_MULTIGRID`
+and `POISSON_PRESET_MULTIGRID_PCG` ship `POISSON_BACKEND_SCALAR` — otherwise they
+would be refused at init on the machines they are most likely to run on. Set
+`cfg.backend = POISSON_BACKEND_OMP` for the threaded hierarchy. The other four
+presets leave `POISSON_BACKEND_AUTO`.
 
 ```c
 poisson_solver_config_t cfg = poisson_solver_config_preset(POISSON_PRESET_ACCURATE);
