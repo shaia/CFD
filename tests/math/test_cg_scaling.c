@@ -124,7 +124,7 @@ static int run_cg(size_t n, double dx, double dy,
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance      = SOLVER_TOLERANCE;
     params.max_iterations = MAX_ITERATIONS;
-    params.preconditioner = precond;
+    params.krylov.preconditioner = precond;
 
     cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
     if (status != CFD_SUCCESS) {

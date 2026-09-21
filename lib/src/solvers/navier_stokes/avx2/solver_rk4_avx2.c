@@ -307,6 +307,21 @@ cfd_status_t rk4_avx2_init(ns_solver_t* solver, const grid* g,
         return simd_status;
     }
 
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
+
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
+
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 0);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
+    }
+
 #if !USE_AVX2
     /* Unreachable: ns_check_simd_backend() fails in a build without AVX2. */
     (void)solver;

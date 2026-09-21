@@ -21,6 +21,7 @@
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
+#include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/grid.h"
 #include <stddef.h>
 
@@ -258,6 +259,29 @@ typedef struct {
     /* Pressure Poisson solver for projection solvers ("projection" and
      * "projection_omp"; 0 = existing CG behavior, backward compatible). */
     ns_pressure_solver_t pressure_solver;  /**< Pressure solver selection */
+
+    /**
+     * Walls for the pressure Poisson solve (zero-init = all zero-gradient, which
+     * is what the projection solvers have always used, so zero-initialization is
+     * fully backward compatible).
+     *
+     * A pressure-driven flow needs prescribing: with zero-gradient everywhere the
+     * only streamwise forcing is the divergence of the boundary velocities, which
+     * is worth about half the momentum balance, so a channel profile decays.
+     * Prescribe the inlet and outlet faces to drive it:
+     *
+     *     params.pressure_bc.left = params.pressure_bc.right = POISSON_WALL_DIRICHLET;
+     *     params.pressure_bc.values.left  = 0.0;
+     *     params.pressure_bc.values.right = dpdx * length;
+     *
+     * Any prescribed face also makes the operator nonsingular, so the projection
+     * stops mean-subtracting div(u*) -- doing both would change the answer.
+     *
+     * Honoured by the scalar, OpenMP and AVX2 projection solvers. The GPU
+     * projection and the time integrators that solve no Poisson equation reject a
+     * non-default value at init with CFD_ERROR_UNSUPPORTED.
+     */
+    poisson_walls_t pressure_bc;
 
     /* Convective-term discretization (0 = central differences, backward
      * compatible). */

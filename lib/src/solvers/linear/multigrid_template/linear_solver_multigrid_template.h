@@ -6,7 +6,7 @@
  * smoothing, full-weighting restriction and bilinear/trilinear prolongation.
  * Grid dimensions must be 2^k+1 per active dimension.
  *
- * Boundary-condition modes (params.mg_bc):
+ * Boundary-condition modes (params.multigrid.bc):
  * - MG_BC_NEUMANN (default): zero-gradient BCs matching the other Poisson
  *   solvers. The system is singular (constant nullspace); restricted RHS
  *   vectors are projected to zero interior mean, coarse corrections are
@@ -335,14 +335,14 @@ static cfd_status_t MGT_FUNC(mg_init)(
         return CFD_ERROR_INVALID;
     }
 
-    if ((int)params->mg_cycle < MG_CYCLE_V ||
-        (int)params->mg_cycle > MG_CYCLE_F ||
-        (int)params->mg_smoother < MG_SMOOTHER_REDBLACK_GS ||
-        (int)params->mg_smoother > MG_SMOOTHER_JACOBI ||
-        (int)params->mg_bc < MG_BC_NEUMANN ||
-        (int)params->mg_bc > MG_BC_DIRICHLET ||
-        params->mg_pre_smooth < 0 || params->mg_post_smooth < 0 ||
-        params->mg_coarse_max_iter < 0 || params->mg_max_levels < 0) {
+    if ((int)params->multigrid.cycle < MG_CYCLE_V ||
+        (int)params->multigrid.cycle > MG_CYCLE_F ||
+        (int)params->multigrid.smoother < MG_SMOOTHER_REDBLACK_GS ||
+        (int)params->multigrid.smoother > MG_SMOOTHER_JACOBI ||
+        (int)params->multigrid.bc < MG_BC_NEUMANN ||
+        (int)params->multigrid.bc > MG_BC_DIRICHLET ||
+        params->multigrid.pre_smooth < 0 || params->multigrid.post_smooth < 0 ||
+        params->multigrid.coarse_max_iter < 0 || params->multigrid.max_levels < 0) {
         return CFD_ERROR_INVALID;
     }
 
@@ -354,15 +354,15 @@ static cfd_status_t MGT_FUNC(mg_init)(
         return CFD_ERROR_NOMEM;
     }
 
-    ctx->cycle_type = params->mg_cycle;
-    ctx->smoother_type = params->mg_smoother;
-    ctx->bc_mode = params->mg_bc;
-    ctx->nu1 = (params->mg_pre_smooth > 0)
-        ? params->mg_pre_smooth : MG_DEFAULT_PRE_SMOOTH;
-    ctx->nu2 = (params->mg_post_smooth > 0)
-        ? params->mg_post_smooth : MG_DEFAULT_POST_SMOOTH;
-    ctx->coarse_max_iter = (params->mg_coarse_max_iter > 0)
-        ? params->mg_coarse_max_iter : MG_DEFAULT_COARSE_MAX_ITER;
+    ctx->cycle_type = params->multigrid.cycle;
+    ctx->smoother_type = params->multigrid.smoother;
+    ctx->bc_mode = params->multigrid.bc;
+    ctx->nu1 = (params->multigrid.pre_smooth > 0)
+        ? params->multigrid.pre_smooth : MG_DEFAULT_PRE_SMOOTH;
+    ctx->nu2 = (params->multigrid.post_smooth > 0)
+        ? params->multigrid.post_smooth : MG_DEFAULT_POST_SMOOTH;
+    ctx->coarse_max_iter = (params->multigrid.coarse_max_iter > 0)
+        ? params->multigrid.coarse_max_iter : MG_DEFAULT_COARSE_MAX_ITER;
 
     /* Count levels: coarsen all active dimensions simultaneously while every
      * next dimension stays at or above the BC-mode floor */
@@ -371,8 +371,8 @@ static cfd_status_t MGT_FUNC(mg_init)(
     int num_levels = 1;
     {
         size_t cx = nx, cy = ny, cz = nz;
-        while (params->mg_max_levels == 0 ||
-               num_levels < params->mg_max_levels) {
+        while (params->multigrid.max_levels == 0 ||
+               num_levels < params->multigrid.max_levels) {
             size_t nx2 = (cx - 1) / 2 + 1;
             size_t ny2 = (cy - 1) / 2 + 1;
             size_t nz2 = (nz > 1) ? (cz - 1) / 2 + 1 : 1;
@@ -489,8 +489,16 @@ static cfd_status_t MGT_FUNC(mg_solve)(
 }
 
 /**
- * Non-NULL apply_bc is required: the public poisson_solver_apply_bc() default
- * is Neumann, which would corrupt Dirichlet boundary data.
+ * Installed as internal_apply_bc, not apply_bc: multigrid needs its own routine
+ * because the public default is zero-gradient, which would corrupt a field held
+ * in MG_BC_DIRICHLET mode -- but the caller-facing slot has to stay free, or
+ * assigning to it (the documented way to prescribe walls) silently replaces this
+ * and the cycle, which applies its boundaries internally, ignores the
+ * replacement entirely.
+ *
+ * The cycle never reaches this function; it calls mg_apply_bc_level directly.
+ * This exists so an external poisson_solver_apply_bc() on a multigrid solver
+ * applies the walls that solver actually uses.
  */
 static void MGT_FUNC(mg_apply_bc)(poisson_solver_t* solver, double* x) {
     mg_context_t* ctx = (mg_context_t*)solver->context;
@@ -521,7 +529,7 @@ poisson_solver_t* MGT_FACTORY(MGT_SUFFIX)(void) {
     solver->destroy = MGT_FUNC(mg_destroy);
     solver->solve = MGT_FUNC(mg_solve);      /* Resets FMG state, then common loop */
     solver->iterate = MGT_FUNC(mg_iterate);  /* One V/W cycle (or the FMG pass) */
-    solver->apply_bc = MGT_FUNC(mg_apply_bc);
+    solver->internal_apply_bc = MGT_FUNC(mg_apply_bc);
 
     return solver;
 }

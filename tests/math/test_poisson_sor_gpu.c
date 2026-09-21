@@ -432,7 +432,7 @@ static int solve_gpu_17x17(poisson_solver_method_t method, double omega, int max
         return 0;
     }
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.omega = omega;
+    params.sor.omega = omega;
     params.max_iterations = max_iterations;
     params.check_interval = check_interval;
     cfd_status_t st = poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params);

@@ -547,8 +547,10 @@ void projection_solve_step(flow_field* field, grid_t* grid, double dt) {
     bc_apply_neumann_2d(field->u, grid->nx, grid->ny, BC_BACKEND_AUTO);
     bc_apply_neumann_2d(field->v, grid->nx, grid->ny, BC_BACKEND_AUTO);
 
-    // 3. Solve pressure Poisson equation
-    poisson_solve(field->p, rhs, grid);
+    // 3. Solve pressure Poisson equation. The walls default to zero-gradient,
+    //    which makes the operator singular, so rhs needs zero interior mean.
+    poisson_make_rhs_compatible(rhs, grid->nx, grid->ny, 1);
+    poisson_solver_solve(pressure_solver, field->p, p_temp, rhs, &stats);
 
     // 4. Apply Neumann BC on pressure
     bc_apply_neumann_2d(field->p, grid->nx, grid->ny, BC_BACKEND_AUTO);
@@ -647,9 +649,14 @@ const char* msg = cfd_get_last_error();  // Returns "Thread 2 error"
 
 ### Poisson Convenience API
 
-`poisson_solve()` and `poisson_solve_3d()` cache one solver instance per preset and are
-safe to call concurrently: a call takes the cached instance for its duration, so a
-concurrent call for the same preset builds its own instead of sharing it.
+`poisson_solve()` builds a solver, uses it, and destroys it, sharing nothing
+between calls — so it is safe to call concurrently by construction. It is also
+the wrong shape for a loop: own a `poisson_solver_t` across the iterations
+instead, which is what the projection solvers do (`ns_pressure_internal.h`).
+
+There used to be a cache of one instance per preset here. It served exactly one
+caller — the projection step — and that caller now owns its solver outright, so
+the cache went with it. The error state remains per-thread, as above.
 
 ### OpenMP Safety
 

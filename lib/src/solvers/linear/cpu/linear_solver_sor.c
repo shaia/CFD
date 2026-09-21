@@ -61,7 +61,7 @@ static cfd_status_t sor_scalar_init(
 
     ctx->factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
     ctx->inv_factor = 1.0 / ctx->factor;
-    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->sor.omega : 0.0);
     ctx->initialized = 1;
 
     solver->context = ctx;

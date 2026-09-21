@@ -217,7 +217,7 @@ void test_mg_vcycle_convergence_factor_dirichlet(void) {
     const int NUM_CYCLES = 8;
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
+    params.multigrid.bc = MG_BC_DIRICHLET;
 
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_MULTIGRID, POISSON_BACKEND_SCALAR);
@@ -259,7 +259,7 @@ void test_mg_grid_independence_dirichlet(void) {
         double dx = 1.0 / (double)(nx - 1);
 
         poisson_solver_params_t params = poisson_solver_params_default();
-        params.mg_bc = MG_BC_DIRICHLET;
+        params.multigrid.bc = MG_BC_DIRICHLET;
         params.tolerance = 1e-6;
 
         double* x = create_field(nx * nx);
@@ -390,7 +390,7 @@ void test_mg_wcycle_converges(void) {
     init_dirichlet_rhs_2d(rhs, NX, NX, DX, DX);
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
+    params.multigrid.bc = MG_BC_DIRICHLET;
     params.tolerance = 1e-6;
 
     /* V-cycle baseline */
@@ -402,7 +402,7 @@ void test_mg_wcycle_converges(void) {
     cfd_free(x);
 
     /* W-cycle: at least as strong per cycle */
-    params.mg_cycle = MG_CYCLE_W;
+    params.multigrid.cycle = MG_CYCLE_W;
     x = create_field(NX * NX);
     poisson_solver_stats_t w_stats = poisson_solver_stats_default();
     TEST_ASSERT_EQUAL(CFD_SUCCESS, solve_mg_2d(
@@ -424,7 +424,7 @@ void test_mg_fmg_discretization_accuracy(void) {
 
     /* Reference: fully converged V-cycle solve -> discretization error */
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
+    params.multigrid.bc = MG_BC_DIRICHLET;
     params.tolerance = 1e-10;
     params.absolute_tolerance = 1e-12;
 
@@ -447,7 +447,7 @@ void test_mg_fmg_discretization_accuracy(void) {
 
     /* One FMG pass (a single iterate on a fresh F-cycle solver) must land
      * within a small factor of the discretization error */
-    params.mg_cycle = MG_CYCLE_F;
+    params.multigrid.cycle = MG_CYCLE_F;
 
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_MULTIGRID, POISSON_BACKEND_SCALAR);
@@ -496,8 +496,8 @@ void test_mg_jacobi_smoother_converges(void) {
     init_dirichlet_rhs_2d(rhs, NX, NX, DX, DX);
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
-    params.mg_smoother = MG_SMOOTHER_JACOBI;
+    params.multigrid.bc = MG_BC_DIRICHLET;
+    params.multigrid.smoother = MG_SMOOTHER_JACOBI;
     params.tolerance = 1e-6;
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -542,7 +542,7 @@ static void run_mg_3d_case(size_t n, mg_bc_type_t bc, int compare_rbsor) {
     }
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = bc;
+    params.multigrid.bc = bc;
     params.tolerance = 1e-6;
 
     poisson_solver_t* solver = poisson_solver_create(
@@ -621,12 +621,12 @@ void test_mg_mixed_dims(void) {
 
         for (int bc = 0; bc < 2; bc++) {
             poisson_solver_params_t params = poisson_solver_params_default();
-            params.mg_bc = (bc == 0) ? MG_BC_NEUMANN : MG_BC_DIRICHLET;
+            params.multigrid.bc = (bc == 0) ? MG_BC_NEUMANN : MG_BC_DIRICHLET;
             params.tolerance = 1e-6;
 
             double* x = create_field(nx * ny);
             double* rhs = create_field(nx * ny);
-            if (params.mg_bc == MG_BC_DIRICHLET) {
+            if (params.multigrid.bc == MG_BC_DIRICHLET) {
                 init_dirichlet_rhs_2d(rhs, nx, ny, dx, dy);
             } else {
                 init_neumann_rhs_2d(rhs, nx, ny, dx, dy);
@@ -671,7 +671,7 @@ void test_mg_dirichlet_inhomogeneous(void) {
     }
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
+    params.multigrid.bc = MG_BC_DIRICHLET;
     params.tolerance = 1e-12;
     params.absolute_tolerance = 1e-12;
 
@@ -706,10 +706,10 @@ void test_mg_max_levels_cap(void) {
     init_dirichlet_rhs_2d(rhs, NX, NX, DX, DX);
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.mg_bc = MG_BC_DIRICHLET;
-    params.mg_max_levels = 2;
+    params.multigrid.bc = MG_BC_DIRICHLET;
+    params.multigrid.max_levels = 2;
     /* Two-grid: the 33x33 "coarsest" level needs a real solve, not 50 sweeps */
-    params.mg_coarse_max_iter = 500;
+    params.multigrid.coarse_max_iter = 500;
     params.tolerance = 1e-6;
 
     poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -732,32 +732,34 @@ void test_mg_convenience_api(void) {
     double* rhs = create_field(NX * NX);
     init_neumann_rhs_2d(rhs, NX, NX, DX, DX);
 
-    int iters = poisson_solve_3d(p, p_temp, rhs, NX, NX, 1, DX, DX, 0.0,
-                                 POISSON_SOLVER_MG_SCALAR);
-    TEST_ASSERT_TRUE_MESSAGE(iters > 0, "convenience MG solve failed");
+    poisson_solver_config_t cfg = poisson_solver_config_preset(POISSON_PRESET_MULTIGRID);
+    cfg.backend = POISSON_BACKEND_SCALAR;
 
-    /* Second call with same dims exercises the cached-solver path */
-    for (size_t n = 0; n < NX * NX; n++) {
-        p[n] = 0.0;
-    }
-    iters = poisson_solve_3d(p, p_temp, rhs, NX, NX, 1, DX, DX, 0.0,
-                             POISSON_SOLVER_MG_SCALAR);
-    TEST_ASSERT_TRUE_MESSAGE(iters > 0, "cached convenience MG solve failed");
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS,
+        poisson_solve(p, p_temp, rhs, NX, NX, 1, DX, DX, 0.0, &cfg, &stats),
+        "convenience MG solve failed");
+    TEST_ASSERT_TRUE_MESSAGE(stats.iterations > 0, "MG solve reported no iterations");
 
-    /* Invalid dims: init fails, cache slot must not keep a broken solver */
+    /* A 32x32 grid has no multigrid hierarchy. The dimension rejection reaches
+     * the caller as a status rather than a bare -1, so it is distinguishable
+     * from a solve that ran and did not converge. */
     double* p32 = create_field(32 * 32);
     double* rhs32 = create_field(32 * 32);
-    iters = poisson_solve_3d(p32, NULL, rhs32, 32, 32, 1,
-                             1.0 / 31.0, 1.0 / 31.0, 0.0,
-                             POISSON_SOLVER_MG_SCALAR);
-    TEST_ASSERT_EQUAL(-1, iters);
-    /* And a valid solve afterwards still works (cache not poisoned) */
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(CFD_SUCCESS,
+        poisson_solve(p32, NULL, rhs32, 32, 32, 1, 1.0 / 31.0, 1.0 / 31.0, 0.0, &cfg, NULL),
+        "MG must refuse a grid that is not 2^k+1");
+
+    /* The earlier solve is repeated to show the refusal above left nothing
+     * behind. This used to guard a cached solver slot against being poisoned by
+     * a failed init; the cache is gone and each call now builds its own solver,
+     * so it is kept only as a cheap regression guard. */
     for (size_t n = 0; n < NX * NX; n++) {
         p[n] = 0.0;
     }
-    iters = poisson_solve_3d(p, p_temp, rhs, NX, NX, 1, DX, DX, 0.0,
-                             POISSON_SOLVER_MG_SCALAR);
-    TEST_ASSERT_TRUE_MESSAGE(iters > 0, "MG solve after failed init broke");
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS,
+        poisson_solve(p, p_temp, rhs, NX, NX, 1, DX, DX, 0.0, &cfg, &stats),
+        "MG solve after a refused one failed");
 
     cfd_free(p);
     cfd_free(p_temp);
