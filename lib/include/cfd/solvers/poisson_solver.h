@@ -198,6 +198,13 @@ typedef struct {
  * poisson_solver_solve() requires there. Do NOT call this when any face is
  * prescribed: that operator is nonsingular, and shifting the rhs then changes the
  * answer rather than making it exist.
+ *
+ * Does nothing for a NULL rhs or a grid with no interior (nx or ny below 3, or
+ * nz below 3 in 3D): there is no interior mean to remove. That is silent because
+ * there is nothing to report -- such a grid has no solve to make compatible, and
+ * poisson_solver_solve() rejects it on its own terms. A caller that reaches for
+ * this after POISSON_INCOMPATIBLE_RHS on a degenerate grid should read the
+ * refusal as being about the grid, not the rhs.
  */
 CFD_LIBRARY_EXPORT void poisson_make_rhs_compatible(double* rhs, size_t nx, size_t ny, size_t nz);
 

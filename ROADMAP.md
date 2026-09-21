@@ -150,7 +150,8 @@ non-symmetric operators arrive, e.g. implicit advection-diffusion in §1.5).
       preconditioner (`POISSON_PRECOND_MULTIGRID`, scalar CG). SIMD/GPU variants
       deferred (see `.claude/specs/multigrid-projection-integration.md`).
 - [x] Geometric multigrid OpenMP backend — `POISSON_BACKEND_OMP` (`multigrid_omp`,
-      preset `POISSON_SOLVER_MG_OMP`). One algorithm template shared with scalar; the
+      `POISSON_PRESET_MULTIGRID` with `backend = POISSON_BACKEND_OMP`). One algorithm
+      template shared with scalar; the
       OMP backend supplies row-parallel smoother/residual/transfer/BC primitives with no
       parallel reductions, so results are bit-identical to scalar at 1/2/4 threads.
       AUTO still resolves multigrid to scalar. Deferred: SIMD/GPU multigrid.
@@ -164,8 +165,9 @@ non-symmetric operators arrive, e.g. implicit advection-diffusion in §1.5).
       `lib/CMakeLists.txt`, `tests/math/test_omp_consistency.c`,
       `tests/math/test_multigrid_convergence.c`, `tests/solvers/test_linear_solver.c`.
 - [x] Multigrid pressure solve in `projection_omp` and MG-preconditioned OpenMP CG —
-      `NS_PRESSURE_SOLVER_MULTIGRID` → `POISSON_SOLVER_MG_OMP` and
-      `NS_PRESSURE_SOLVER_PCG_MG` → new `POISSON_SOLVER_PCG_MG_OMP` (OMP CG with an OMP
+      `NS_PRESSURE_SOLVER_MULTIGRID` → `POISSON_PRESET_MULTIGRID` and
+      `NS_PRESSURE_SOLVER_PCG_MG` → `POISSON_PRESET_MULTIGRID_PCG`, both on
+      `POISSON_BACKEND_OMP` (OMP CG with an OMP
       multigrid V-cycle preconditioner), with the scalar projection's init gating and no
       scalar sub-solver on the OMP path. Both CG backends share one preconditioner
       setup (`poisson_solver_create_mg_precond`).

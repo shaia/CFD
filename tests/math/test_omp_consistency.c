@@ -20,7 +20,7 @@
  *   Red-Black GS/Jacobi x Neumann/Dirichlet matrix (2D/3D, non-square, custom
  *   sweeps, level cap + max-iteration exhaustion, inhomogeneous Dirichlet data,
  *   zero RHS), printed one line per configuration; an explicit apply_bc
- *   comparison; and the POISSON_SOLVER_MG_OMP convenience preset. The OMP
+ *   comparison; and the MULTIGRID preset on the OpenMP backend. The OMP
  *   multigrid path has no parallel reductions, so the expected difference is 0.
  * - MG-preconditioned CG OMP vs Scalar: interior RMS difference <= 1e-9 and
  *   |iteration delta| <= 2 on 257x257 (finest multigrid plane above
@@ -1076,11 +1076,11 @@ void test_multigrid_omp_apply_bc_matches_scalar(void) {
 }
 
 /**
- * Test: POISSON_SOLVER_MG_OMP convenience preset
+ * Test: the MULTIGRID preset on the OpenMP backend
  *
- * Without OpenMP the preset has no solver and returns -1. With it, the preset
- * matches POISSON_SOLVER_MG_SCALAR, reuses its cached instance, and a rejected
- * non-2^k+1 grid does not poison the cache for the next valid call.
+ * Without OpenMP the backend has no solver and poisson_solve() returns a
+ * failure status. With it, the OpenMP backend matches the scalar one, and a
+ * rejected non-2^k+1 grid leaves the next valid call unaffected.
  */
 void test_multigrid_omp_convenience_preset(void) {
     double dx, dy, dz;

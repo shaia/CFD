@@ -11,9 +11,8 @@
  *   - Rejects non-2^k+1 grid dimensions at init
  *   - Is explicitly rejected (CFD_ERROR_UNSUPPORTED) by SIMD CG and by GMRES,
  *     instead of being silently ignored
- *   - Is reachable through the MULTIGRID_PCG preset
- *     POISSON_SOLVER_PCG_MG_SCALAR and POISSON_SOLVER_PCG_MG_OMP with the
- *     legacy return contract
+ *   - Is reachable through the MULTIGRID_PCG preset on both the scalar and the
+ *     OpenMP backend, which report convergence as a cfd_status_t
  *
  * The iteration-count, dimension-rejection and preset checks run on both the
  * scalar and the OpenMP CG backends; OpenMP cases are skipped when the build
@@ -472,7 +471,7 @@ void test_mg_precond_unsupported_on_other_backends(void) {
 }
 
 /* ============================================================================
- * TEST: CONVENIENCE PRESETS (POISSON_SOLVER_PCG_MG_SCALAR / _OMP)
+ * TEST: THE MULTIGRID_PCG PRESET (scalar and OpenMP backends)
  * ============================================================================ */
 
 /**
