@@ -76,6 +76,36 @@ typedef struct {
     poisson_solver_t* pressure; /**< Owned across the solver's life; see ns_pressure_internal.h */
 } projection_simd_context;
 
+/**
+ * Take the z-spacing terms from this grid, rejecting a non-uniform one.
+ *
+ * Shared by init and step because they are grid facts, not init-time facts.
+ * The step reads dz straight from the grid but used to take inv_2dz and
+ * inv_dz2 from whatever init cached, so a grid that kept its shape and changed
+ * its spacing made the two disagree inside a single step -- while
+ * ns_pressure_ensure had already rebuilt the pressure solve for the new
+ * spacing. Prediction, divergence and projection would then each use a
+ * different z operator.
+ */
+static cfd_status_t projection_simd_take_z_spacing(projection_simd_context* ctx,
+                                                   const grid* g) {
+    if (g->nz > 1 && g->dz) {
+        for (size_t kk = 1; kk < g->nz - 1; kk++) {
+            if (fabs(g->dz[kk] - g->dz[0]) > 1e-14) {
+                cfd_set_error(CFD_ERROR_INVALID,
+                    "the AVX2 projection uses a constant dz; this grid's z-spacing varies");
+                return CFD_ERROR_INVALID;
+            }
+        }
+        ctx->inv_2dz = 1.0 / (2.0 * g->dz[0]);
+        ctx->inv_dz2 = 1.0 / (g->dz[0] * g->dz[0]);
+    } else {
+        ctx->inv_2dz = 0.0;
+        ctx->inv_dz2 = 0.0;
+    }
+    return CFD_SUCCESS;
+}
+
 // Public API
 cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
                                   const ns_solver_params_t* params);
@@ -151,24 +181,16 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     ctx->nz = grid->nz;
     size_t size = ctx->nx * ctx->ny * grid->nz * sizeof(double);
 
-    /* Reject non-uniform z-spacing (solver uses constant dz) */
-    if (grid->nz > 1 && grid->dz) {
-        for (size_t kk = 1; kk < grid->nz - 1; kk++) {
-            if (fabs(grid->dz[kk] - grid->dz[0]) > 1e-14) {
-                ns_pressure_release(&ctx->pressure);
-                cfd_free(ctx);
-                return CFD_ERROR_INVALID;
-            }
-        }
+    if (projection_simd_take_z_spacing(ctx, grid) != CFD_SUCCESS) {
+        ns_pressure_release(&ctx->pressure);
+        cfd_free(ctx);
+        return CFD_ERROR_INVALID;
     }
 
     size_t plane = ctx->nx * ctx->ny;
     ctx->stride_z = (grid->nz > 1) ? plane : 0;
     ctx->k_start  = (grid->nz > 1) ? 1 : 0;
     ctx->k_end    = (grid->nz > 1) ? (grid->nz - 1) : 1;
-    double dz = (grid->nz > 1 && grid->dz) ? grid->dz[0] : 0.0;
-    ctx->inv_2dz  = (grid->nz > 1 && grid->dz) ? 1.0 / (2.0 * dz) : 0.0;
-    ctx->inv_dz2  = (grid->nz > 1 && grid->dz) ? 1.0 / (dz * dz) : 0.0;
 
     size_t n_total = ctx->nx * ctx->ny * ctx->nz;
     ctx->u_star  = (double*)cfd_aligned_malloc(size);
@@ -267,6 +289,13 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
                 "The pressure solver was rebuilt for a different grid than this "
                 "solver's buffers were allocated for; re-init for the new grid.");
             return CFD_ERROR_INVALID;
+        }
+        /* Same reason, for the other half of the grid: the shape is checked
+         * above, and the spacing is taken again here so the cached z terms
+         * cannot describe an older grid than the pressure solve does. */
+        cfd_status_t spacing_status = projection_simd_take_z_spacing(ctx, grid);
+        if (spacing_status != CFD_SUCCESS) {
+            return spacing_status;
         }
     }
 
