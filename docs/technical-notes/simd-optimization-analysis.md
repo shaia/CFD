@@ -21,7 +21,7 @@ The projection method (Chorin's method) consists of three main steps:
 | **Poisson Solve** | ✅ Yes | Uses CG SIMD solver (Conjugate Gradient) |
 | Corrector | ✅ Yes | Independent gradient subtraction (AVX2) |
 
-> **Note**: As of December 2024, the SIMD projection solver uses the CG SIMD Poisson solver (`POISSON_SOLVER_CG_SIMD`) which provides robust convergence in ~150 iterations.
+> **Note**: As of December 2024, the SIMD projection solver uses CG on the SIMD backend for the pressure solve, which provides robust convergence in ~150 iterations. (That was then spelled `POISSON_SOLVER_CG_SIMD`; the preset enum has since been replaced by `poisson_solver_create(POISSON_METHOD_CG, POISSON_BACKEND_SIMD)`.)
 
 ## Why the Poisson Solver Cannot Be Easily Vectorized
 
@@ -258,7 +258,7 @@ Tests verify:
 ### High Priority
 
 1. ~~**Integrate SIMD Poisson into Projection Solver**~~ ✅ **COMPLETED (December 2024)**
-   - `solver_projection_avx2.c` now uses CG SIMD Poisson solver (`POISSON_SOLVER_CG_SIMD`)
+   - `solver_projection_avx2.c` now uses CG on the SIMD Poisson backend
    - Full projection method implemented with AVX2-optimized corrector step
    - All tests pass with results matching scalar implementation
    - CG provides reliable convergence in ~150 iterations vs. thousands for Jacobi

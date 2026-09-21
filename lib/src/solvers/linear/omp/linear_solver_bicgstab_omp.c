@@ -266,8 +266,9 @@ static cfd_status_t bicgstab_omp_solve(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    /* Apply initial boundary conditions */
-    poisson_solver_apply_bc(solver, x);
+    /* Not poisson_solver_apply_bc: the initial residual has to see the same walls
+     * the iteration below inverts. See poisson_solver_krylov_apply_bc. */
+    poisson_solver_krylov_apply_bc(solver, x);
 
     /* Compute initial residual: r_0 = b - A*x_0 */
     compute_residual_omp(x, rhs, r, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
@@ -332,6 +333,10 @@ static cfd_status_t bicgstab_omp_solve(
         update_p_omp(p, r, v, beta, omega, nx, ny, k_start, k_end, stride_z);
 
         /* v = A * p */
+        /* Homogeneous boundary condition on the direction: this is what makes the
+         * apply below the operator the walls describe, and the direction is rebuilt
+         * from interior-only updates, so it is stale otherwise. */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, p);
         apply_laplacian_omp(p, v, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
         /* alpha = rho_new / (r_hat, v) */
@@ -364,6 +369,7 @@ static cfd_status_t bicgstab_omp_solve(
         }
 
         /* t = A * s */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, s);
         apply_laplacian_omp(s, t, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
 
         /* omega = (t, s) / (t, t) */

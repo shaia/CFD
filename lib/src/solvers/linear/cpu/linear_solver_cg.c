@@ -257,7 +257,7 @@ static cfd_status_t cg_scalar_init(
                            + ctx->sigma);
 
     /* Check if preconditioner is enabled */
-    ctx->precond_type = params ? params->preconditioner : POISSON_PRECOND_NONE;
+    ctx->precond_type = params ? params->krylov.preconditioner : POISSON_PRECOND_NONE;
     ctx->use_precond = (ctx->precond_type == POISSON_PRECOND_JACOBI ||
                         ctx->precond_type == POISSON_PRECOND_MULTIGRID);
 
@@ -290,7 +290,8 @@ static cfd_status_t cg_scalar_init(
 
     if (ctx->precond_type == POISSON_PRECOND_MULTIGRID) {
         cfd_status_t mg_status = poisson_solver_create_mg_precond(
-            create_multigrid_scalar_solver, nx, ny, nz, dx, dy, dz, &ctx->mg_precond);
+            create_multigrid_scalar_solver, nx, ny, nz, dx, dy, dz,
+            &solver->params.multigrid, &ctx->mg_precond);
         if (mg_status != CFD_SUCCESS) {
             cfd_free(ctx->r);
             cfd_free(ctx->z);
@@ -374,8 +375,9 @@ static cfd_status_t cg_scalar_solve(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    /* Apply initial boundary conditions */
-    poisson_solver_apply_bc(solver, x);
+    /* Not poisson_solver_apply_bc: the initial residual has to see the same walls
+     * the iteration below inverts. See poisson_solver_krylov_apply_bc. */
+    poisson_solver_krylov_apply_bc(solver, x);
 
     /* Compute initial residual: r_0 = b - A*x_0 */
     compute_residual(x, rhs, r, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
@@ -446,7 +448,10 @@ static cfd_status_t cg_scalar_solve(
     double res_norm = initial_res;
 
     for (iter = 0; iter < params->max_iterations; iter++) {
-        /* Compute Ap = A * p */
+        /* Compute Ap = A * p. The halo carries the homogeneous boundary condition,
+         * which is what makes A the operator the walls describe; p is rebuilt from
+         * interior-only updates, so this has to run every iteration. */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, p);
         apply_laplacian(p, Ap, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
         if (sigma != 0.0) {
             axpy(sigma, p, Ap, nx, ny, k_start, k_end, stride_z);

@@ -32,10 +32,19 @@
  * Reference field: p(x,y) = sin(pi*x) * sin(pi*y)
  * RHS:             nabla^2 p = -2*pi^2 * sin(pi*x) * sin(pi*y)
  *
- * Note: p_exact satisfies Dirichlet p=0 on all boundaries, but the Poisson
- * solvers in this library apply homogeneous Neumann BCs by default. The
+ * The solvers apply zero-gradient walls by default, which makes the operator
+ * singular -- the constants are its nullspace -- so the right-hand side has to
+ * have zero interior mean or the system has no solution at all. This RHS is
+ * strictly negative, so its mean is removed below with the public helper. That
+ * is what every caller of the default walls has to do; the projection solvers do
+ * the same to div(u*).
+ *
+ * Note: p_exact satisfies Dirichlet p=0 on all boundaries, while these solves use
+ * zero-gradient walls, and the mean subtraction shifts the problem again. The
  * reported L2 error therefore measures relative agreement between solver
- * methods/backends, not absolute accuracy against this analytical field.
+ * methods/backends, not absolute accuracy against this analytical field. Set
+ * params.walls = poisson_walls_uniform(POISSON_WALL_DIRICHLET, 0.0) to solve the
+ * problem p_exact actually poses -- the Krylov methods honour that.
  */
 static void setup_poisson_problem(double* rhs, double* p_exact,
                                   size_t nx, size_t ny,
@@ -50,6 +59,9 @@ static void setup_poisson_problem(double* rhs, double* p_exact,
             rhs[idx] = -2.0 * M_PI * M_PI * sin(M_PI * x) * sin(M_PI * y);
         }
     }
+
+    /* Make it solvable against the default zero-gradient walls. */
+    poisson_make_rhs_compatible(rhs, nx, ny, 1);
 }
 
 static double compute_l2_error(const double* p, const double* p_exact,
@@ -82,7 +94,7 @@ static void benchmark_method(const char* label,
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-8;
     params.max_iterations = 10000;
-    params.preconditioner = precond;
+    params.krylov.preconditioner = precond;
     /* omega stays 0: SOR and Red-Black SOR choose it for the grid and walls */
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
@@ -99,9 +111,7 @@ static void benchmark_method(const char* label,
     cfd_status_t solve_status = poisson_solver_solve(solver, p, p_temp, rhs, &stats);
 
     double l2_err = (solve_status == CFD_SUCCESS) ? compute_l2_error(p, p_exact, nx, ny) : -1.0;
-    const char* status_str = (stats.status == POISSON_CONVERGED) ? "converged" :
-                             (stats.status == POISSON_MAX_ITER)  ? "max_iter" :
-                             (stats.status == POISSON_DIVERGED)  ? "DIVERGED" : "error";
+    const char* status_str = poisson_solver_status_string(stats.status);
 
     printf("  %-20s  %5d iters  res=%.2e  L2=%.2e  %6.1f ms  %s\n",
            label, stats.iterations, stats.final_residual,
@@ -141,8 +151,9 @@ int main(void) {
 
     /* Section 1: Method comparison (scalar backend) */
     printf("--- Method Comparison (Scalar Backend) ---\n");
-    printf("  %-20s  %5s %5s  %10s  %10s  %8s  %s\n",
-           "Method", "Iters", "", "Residual", "L2 Error", "Time", "Status");
+    /* Column widths chosen to line up with the row format in benchmark_method */
+    printf("  %-20s  %-11s  %-12s  %-11s  %-9s  %s\n",
+           "Method", "Iters", "Residual", "L2 Error", "Time", "Status");
 
     benchmark_method("Jacobi", POISSON_METHOD_JACOBI, POISSON_BACKEND_SCALAR,
                      POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
@@ -158,10 +169,8 @@ int main(void) {
                      POISSON_PRECOND_MULTIGRID, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
     benchmark_method("BiCGSTAB", POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR,
                      POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
-    /* Standalone POISSON_METHOD_MULTIGRID is omitted here: this example's RHS
-     * has a nonzero interior mean, which the true Neumann system cannot
-     * converge on (same reason the stationary methods above report max_iter).
-     * See tests/math/test_multigrid_convergence.c for a compatible setup. */
+    benchmark_method("Multigrid", POISSON_METHOD_MULTIGRID, POISSON_BACKEND_SCALAR,
+                     POISSON_PRECOND_NONE, nx, ny, dx, dy, rhs, p, p_temp, p_exact);
 
     /* Section 2: Backend comparison (CG method) */
     printf("\n--- Backend Comparison (CG Method) ---\n");
@@ -175,14 +184,24 @@ int main(void) {
     /* Section 3: Convenience API */
     printf("\n--- Convenience API ---\n");
     memset(p, 0, n * sizeof(double));
-    int iters = poisson_solve(p, p_temp, rhs, nx, ny, dx, dy, POISSON_SOLVER_CG_SCALAR);
-    if (iters < 0) {
-        printf("  poisson_solve(CG_SCALAR): FAILED (non-converged or error)\n");
-        printf("    Status: \"%s\"\n", cfd_get_error_string(cfd_get_last_status()));
+
+    /* A preset is a starting point: take one, adjust it, pass it in. */
+    poisson_solver_config_t cfg = poisson_solver_config_preset(POISSON_PRESET_DEFAULT);
+    cfg.backend = POISSON_BACKEND_SCALAR;
+
+    poisson_solver_stats_t cstats = poisson_solver_stats_default();
+    cfd_status_t cstatus =
+        poisson_solve(p, p_temp, rhs, nx, ny, 1, dx, dy, 0.0, &cfg, &cstats);
+    if (cstatus != CFD_SUCCESS) {
+        /* cfd_get_last_error() carries the sentence naming the fix;
+         * cfd_get_error_string() only names the category. Print both. */
+        printf("  poisson_solve(DEFAULT): FAILED -- %s\n", cfd_get_error_string(cstatus));
+        printf("    %s\n", cfd_get_last_error());
         cfd_clear_error();
     } else {
         double err = compute_l2_error(p, p_exact, nx, ny);
-        printf("  poisson_solve(CG_SCALAR): %d iterations, L2 error = %.2e\n", iters, err);
+        printf("  poisson_solve(DEFAULT): %d iterations, L2 error = %.2e\n",
+               cstats.iterations, err);
     }
 
     /* Section 4: Error handling for unavailable solver.

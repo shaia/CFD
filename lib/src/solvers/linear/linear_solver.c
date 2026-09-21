@@ -7,11 +7,13 @@
  * - Backend selection
  * - Solver lifecycle (create, init, destroy)
  * - Common solve loop
- * - Legacy poisson_solve() wrapper
+ * - Configuration validation
+ * - The poisson_solve() convenience entry point
  */
 
 #include "cfd/solvers/poisson_solver.h"
 #include "linear_solver_internal.h"
+#include "multigrid_internal.h"  /* mg_subtract_interior_mean, MG_DEFAULT_*_SMOOTH */
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/indexing.h"
@@ -20,7 +22,6 @@
 
 #include <math.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -30,32 +31,457 @@
     #include <sys/time.h>
 #endif
 
-/* After <windows.h>: this header includes it without WIN32_LEAN_AND_MEAN */
-#include "../../core/cfd_threading_internal.h"
-
 /* ============================================================================
  * DEFAULT PARAMETERS
  * ============================================================================ */
 
+poisson_walls_t poisson_walls_default(void) {
+    poisson_walls_t walls;
+    memset(&walls, 0, sizeof walls);  /* POISSON_WALL_ZERO_GRADIENT is 0 */
+    return walls;
+}
+
+poisson_walls_t poisson_walls_uniform(poisson_wall_t type, double value) {
+    poisson_walls_t walls = poisson_walls_default();
+    walls.left = walls.right = walls.bottom = walls.top = walls.front = walls.back = type;
+    if (type == POISSON_WALL_DIRICHLET) {
+        walls.values.left = walls.values.right = value;
+        walls.values.bottom = walls.values.top = value;
+        walls.values.front = walls.values.back = value;
+    }
+    return walls;
+}
+
+/** Whether every face is zero-gradient, i.e. the operator the solvers default to. */
+static int walls_are_all_zero_gradient(const poisson_walls_t* w)
+{
+    return w->left == POISSON_WALL_ZERO_GRADIENT
+        && w->right == POISSON_WALL_ZERO_GRADIENT
+        && w->bottom == POISSON_WALL_ZERO_GRADIENT
+        && w->top == POISSON_WALL_ZERO_GRADIENT
+        && w->front == POISSON_WALL_ZERO_GRADIENT
+        && w->back == POISSON_WALL_ZERO_GRADIENT;
+}
+
+/**
+ * A sweep count as the multigrid hierarchy will actually read it.
+ *
+ * 0 means "the default" in this field, and the template resolves it that way
+ * (linear_solver_multigrid_template.h). Comparing the raw values would call
+ * pre_smooth = 0, post_smooth = 2 asymmetric and refuse it, when the cycle it
+ * builds is the symmetric V(2,2) the rule is there to require.
+ */
+static int mg_smooth_effective(int requested, int fallback) {
+    return requested > 0 ? requested : fallback;
+}
+
+/**
+ * Whether a face carries one of the two values the operator can express.
+ *
+ * Worth checking because the two readers of this enum disagree about anything
+ * else: poisson_apply_walls() writes a Dirichlet value only for
+ * POISSON_WALL_DIRICHLET and treats every other value as zero-gradient, while
+ * poisson_walls_are_singular() calls a face prescribed unless it is exactly
+ * POISSON_WALL_ZERO_GRADIENT. A stray 2 therefore builds the singular
+ * zero-gradient operator while reporting the system as nonsingular, which skips
+ * the zero-interior-mean check and lets an unsolvable rhs through to the
+ * iteration -- the 1e21 residual this branch exists to prevent.
+ */
+static int wall_type_is_legal(poisson_wall_t type) {
+    return type == POISSON_WALL_ZERO_GRADIENT || type == POISSON_WALL_DIRICHLET;
+}
+
+/** Whether this method's halo routines honour per-face walls (Krylov only). */
+static int method_honours_walls(poisson_solver_method_t method) {
+    return method == POISSON_METHOD_CG
+        || method == POISSON_METHOD_BICGSTAB
+        || method == POISSON_METHOD_GMRES;
+}
+
+/* ============================================================================
+ * CONFIGURATION VALIDATION
+ *
+ * One place decides what a given (method, backend) can honour, so a parameter it
+ * cannot is refused at init rather than quietly ignored. The alternative -- a
+ * check inside each of the twenty-odd solver inits -- is what let BiCGSTAB ignore
+ * params.krylov.preconditioner on every backend, and three GPU solvers ignore a
+ * caller's apply_bc, for as long as they have existed.
+ * ============================================================================ */
+
+/** Parameter groups, for the ownership table below. */
+enum {
+    PARAM_GROUP_SOR       = 1u << 0,
+    PARAM_GROUP_KRYLOV    = 1u << 1,
+    PARAM_GROUP_MULTIGRID = 1u << 2
+};
+
+/**
+ * The groups this method reads. Anything else it is handed, it ignores -- which
+ * is exactly what must be refused.
+ */
+static unsigned method_owned_groups(const poisson_solver_t* solver) {
+    switch (solver->method) {
+        case POISSON_METHOD_JACOBI:
+            return 0;
+        case POISSON_METHOD_SOR:
+        case POISSON_METHOD_GAUSS_SEIDEL:
+        case POISSON_METHOD_REDBLACK_SOR:
+            return PARAM_GROUP_SOR;
+        case POISSON_METHOD_CG:
+            /* CG reads the multigrid group only when it is preconditioned by
+             * one, where those parameters shape the inner V-cycle. */
+            return PARAM_GROUP_KRYLOV
+                 | (solver->params.krylov.preconditioner == POISSON_PRECOND_MULTIGRID
+                        ? PARAM_GROUP_MULTIGRID : 0u);
+        case POISSON_METHOD_BICGSTAB:
+        case POISSON_METHOD_GMRES:
+            return PARAM_GROUP_KRYLOV;
+        case POISSON_METHOD_MULTIGRID:
+            return PARAM_GROUP_MULTIGRID;
+        default:
+            return 0;
+    }
+}
+
+/*
+ * Whether a group is entirely at its defaults, i.e. untouched by the caller.
+ *
+ * Field by field, not a memcmp or a byte scan over the struct. Padding bytes
+ * are not required to be zero in a caller's `poisson_solver_params_t p = {0};`
+ * -- C11 6.7.9 leaves them unspecified -- so a byte scan can read garbage and
+ * report a group the caller never touched as set. It also silently depends on
+ * these three structs having no padding, which is true today and is not
+ * something a future field can be trusted to preserve.
+ */
+static int sor_untouched(const poisson_sor_params_t* g) {
+    return g->omega == 0.0;
+}
+
+static int krylov_untouched(const poisson_krylov_params_t* g) {
+    return g->preconditioner == POISSON_PRECOND_NONE && g->restart == 0;
+}
+
+static int multigrid_untouched(const poisson_multigrid_params_t* g) {
+    return g->cycle == 0 && g->smoother == 0 && g->bc == 0
+        && g->pre_smooth == 0 && g->post_smooth == 0
+        && g->coarse_max_iter == 0 && g->max_levels == 0;
+}
+
+static cfd_status_t reject_unowned_group(const poisson_solver_t* solver,
+                                         unsigned owned, unsigned group,
+                                         int untouched,
+                                         const char* name) {
+    if ((owned & group) || untouched) {
+        return CFD_SUCCESS;
+    }
+    char msg[192];
+    snprintf(msg, sizeof(msg),
+             "params.%s is set, but the %s method does not read it; "
+             "it would have no effect on this solve",
+             name, solver->name ? solver->name : "selected");
+    cfd_set_error(CFD_ERROR_INVALID, msg);
+    return CFD_ERROR_INVALID;
+}
+
+cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
+    const poisson_solver_params_t* p = &solver->params;
+
+    /* ---- walls -------------------------------------------------------- */
+    /* Range first: an out-of-range face is neither zero-gradient nor prescribed
+     * to the code that reads it, so nothing below would agree about what the
+     * operator is. */
+    if (!wall_type_is_legal(p->walls.left) || !wall_type_is_legal(p->walls.right)
+        || !wall_type_is_legal(p->walls.bottom) || !wall_type_is_legal(p->walls.top)
+        || !wall_type_is_legal(p->walls.front) || !wall_type_is_legal(p->walls.back)) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "every params.walls face must be POISSON_WALL_ZERO_GRADIENT or "
+            "POISSON_WALL_DIRICHLET");
+        return CFD_ERROR_INVALID;
+    }
+    if (!walls_are_all_zero_gradient(&p->walls)) {
+        /* Support first, then the hook conflict: an unsupported method should say
+         * so rather than report a caller error. */
+        if (!method_honours_walls(solver->method)) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "per-face walls are implemented for the CG, BiCGSTAB and GMRES methods only; "
+                "the stationary and multigrid solvers apply whole-domain walls inside their sweeps");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+        if (solver->backend == POISSON_BACKEND_GPU) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "per-face walls are not implemented on the GPU backend, which applies the "
+                "zero-gradient walls on the device");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+        if (solver->apply_bc) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                "params.walls and a custom apply_bc both prescribe wall values; use one or the other");
+            return CFD_ERROR_INVALID;
+        }
+        if (!isfinite(p->walls.values.left) || !isfinite(p->walls.values.right)
+            || !isfinite(p->walls.values.bottom) || !isfinite(p->walls.values.top)
+            || !isfinite(p->walls.values.front) || !isfinite(p->walls.values.back)) {
+            cfd_set_error(CFD_ERROR_INVALID, "params.walls.values must be finite");
+            return CFD_ERROR_INVALID;
+        }
+        /* A 2D grid has no z-faces, so poisson_apply_walls skips .front/.back and
+         * poisson_walls_are_singular ignores them. Prescribing one is refused
+         * only when it was the caller's only prescribed face: they meant to pin
+         * the level, nothing pinned it, and the operator is still singular -- so
+         * the solve either refuses their rhs or drifts, with the cause two steps
+         * away. Alongside a prescribed x or y face the z-faces are simply inert,
+         * which is what poisson_walls_uniform() produces on a 2D grid and is not
+         * worth refusing. */
+        if (solver->nz <= 1
+            && (p->walls.front != POISSON_WALL_ZERO_GRADIENT
+                || p->walls.back != POISSON_WALL_ZERO_GRADIENT)
+            && poisson_walls_are_singular(&p->walls, solver->nz)) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                "params.walls.front and .back describe z-faces, which a 2D grid "
+                "(nz == 1) does not have, so nothing here pins the pressure level; "
+                "prescribe an x or y face instead");
+            return CFD_ERROR_INVALID;
+        }
+    }
+
+    /* ---- the Helmholtz shift ------------------------------------------ */
+    if (!isfinite(p->helmholtz_shift) || p->helmholtz_shift < 0.0) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "params.helmholtz_shift must be finite and >= 0 (a negative shift is the "
+            "indefinite Helmholtz operator, which is not SPD)");
+        return CFD_ERROR_INVALID;
+    }
+    if (p->helmholtz_shift != 0.0
+        && !poisson_solver_shift_supported(solver->method, solver->backend, p)) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "params.helmholtz_shift is implemented by the scalar CG solver only, and "
+            "not with the multigrid preconditioner");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+
+    /* ---- a caller's apply_bc ------------------------------------------ */
+    /* solver->internal_apply_bc is a solver's own walls and is not a caller's
+     * business; this is only about a function the caller installed. */
+    if (solver->apply_bc) {
+        if (solver->backend == POISSON_BACKEND_GPU) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "the GPU solvers apply their walls on the device and never call apply_bc");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+        if (solver->method == POISSON_METHOD_MULTIGRID) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "multigrid applies its walls inside the cycle and never calls apply_bc; "
+                "use params.multigrid.bc to choose between zero-gradient and fixed walls");
+            return CFD_ERROR_UNSUPPORTED;
+        }
+    }
+
+    /* ---- parameter groups the method does not read --------------------- */
+    {
+        unsigned owned = method_owned_groups(solver);
+        cfd_status_t status;
+
+        status = reject_unowned_group(solver, owned, PARAM_GROUP_SOR,
+                                      sor_untouched(&p->sor), "sor");
+        if (status != CFD_SUCCESS) {
+            return status;
+        }
+        status = reject_unowned_group(solver, owned, PARAM_GROUP_KRYLOV,
+                                      krylov_untouched(&p->krylov), "krylov");
+        if (status != CFD_SUCCESS) {
+            return status;
+        }
+        status = reject_unowned_group(solver, owned, PARAM_GROUP_MULTIGRID,
+                                      multigrid_untouched(&p->multigrid), "multigrid");
+        if (status != CFD_SUCCESS) {
+            return status;
+        }
+    }
+
+    /* ---- exceptions within a group the method does own ----------------- */
+
+    /* Range before capability. Every check below tests for a specific value --
+     * "is it MULTIGRID", "is it not NONE" -- so an out-of-range preconditioner
+     * satisfies all of them on CG and GMRES, and their backends then find it is
+     * not POISSON_PRECOND_JACOBI either and run unpreconditioned. The caller
+     * asked for something and got the default, which is the failure this
+     * function exists to make impossible. */
+    if (p->krylov.preconditioner != POISSON_PRECOND_NONE
+        && p->krylov.preconditioner != POISSON_PRECOND_JACOBI
+        && p->krylov.preconditioner != POISSON_PRECOND_MULTIGRID) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "params.krylov.preconditioner must be POISSON_PRECOND_NONE, "
+            "POISSON_PRECOND_JACOBI or POISSON_PRECOND_MULTIGRID");
+        return CFD_ERROR_INVALID;
+    }
+
+    /* BiCGSTAB reads params.krylov, but has no preconditioner implementation on
+     * any backend. It ignored one silently for as long as it has existed. */
+    if (solver->method == POISSON_METHOD_BICGSTAB
+        && p->krylov.preconditioner != POISSON_PRECOND_NONE) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "BiCGSTAB has no preconditioner implementation on any backend");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+
+    /* No GPU solver implements a preconditioner -- there is no M^-1 apply
+     * anywhere under linear/gpu/ -- so one configured here would be accepted and
+     * then never used, which is what BiCGSTAB did on every backend for years. */
+    if (p->krylov.preconditioner != POISSON_PRECOND_NONE
+        && solver->backend == POISSON_BACKEND_GPU) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "the GPU Krylov solvers have no preconditioner implementation; "
+            "run preconditioned on a CPU backend, or unpreconditioned here");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+
+    /* The multigrid preconditioner is implemented by the scalar and OpenMP CG
+     * solvers only. Every other Krylov backend would quietly run unpreconditioned. */
+    if (p->krylov.preconditioner == POISSON_PRECOND_MULTIGRID
+        && !(solver->method == POISSON_METHOD_CG
+             && (solver->backend == POISSON_BACKEND_SCALAR
+                 || solver->backend == POISSON_BACKEND_OMP))) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+            "POISSON_PRECOND_MULTIGRID is implemented by the scalar and OpenMP CG solvers only");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+
+    /* restart is the GMRES(m) basis size and means nothing to the others. */
+    if (p->krylov.restart != 0 && solver->method != POISSON_METHOD_GMRES) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "params.krylov.restart is the GMRES restart length; no other method reads it");
+        return CFD_ERROR_INVALID;
+    }
+
+    /* Deliberately not rejected here: POISSON_METHOD_GAUSS_SEIDEL overriding
+     * params.sor.omega to 1. That is what the method IS, it is documented on the
+     * enum member, and test_gauss_seidel_is_sor_at_omega_one pins it. Refusing an
+     * omega there would turn documented behaviour into an error, which is not the
+     * class of problem this validator exists for.
+     */
+
+    /* The inner V-cycle of a preconditioner must stay symmetric and nonsingular,
+     * or CG is no longer minimising over a Krylov space. These four are what
+     * guarantee it, so they are not the caller's to change here; the rest of the
+     * group is forwarded to the hierarchy by poisson_solver_create_mg_precond. */
+    if (p->krylov.preconditioner == POISSON_PRECOND_MULTIGRID
+        && (p->multigrid.cycle != 0 || p->multigrid.smoother != 0 || p->multigrid.bc != 0
+            || mg_smooth_effective(p->multigrid.pre_smooth, MG_DEFAULT_PRE_SMOOTH)
+                   != mg_smooth_effective(p->multigrid.post_smooth, MG_DEFAULT_POST_SMOOTH))) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "a multigrid preconditioner fixes its cycle, smoother, boundary mode and an "
+            "equal pre/post sweep count, which is what keeps it symmetric for CG; "
+            "params.multigrid.{pre_smooth, post_smooth, coarse_max_iter, max_levels} "
+            "are yours to set");
+        return CFD_ERROR_INVALID;
+    }
+
+    /* iter % check_interval, with check_interval == 0, is undefined behaviour in
+     * the common loop and in the CG and BiCGSTAB loops. */
+    if (p->check_interval <= 0) {
+        cfd_set_error(CFD_ERROR_INVALID, "params.check_interval must be at least 1");
+        return CFD_ERROR_INVALID;
+    }
+
+    return CFD_SUCCESS;
+}
+
+bool poisson_walls_are_singular(const poisson_walls_t* walls, size_t nz) {
+    if (!walls) {
+        return true;  /* no walls given means the defaults, which are singular */
+    }
+    /* The z-faces do not exist on a 2D grid, so whatever they say is irrelevant. */
+    if (nz > 1 && (walls->front != POISSON_WALL_ZERO_GRADIENT
+                   || walls->back != POISSON_WALL_ZERO_GRADIENT)) {
+        return false;
+    }
+    return walls->left == POISSON_WALL_ZERO_GRADIENT
+        && walls->right == POISSON_WALL_ZERO_GRADIENT
+        && walls->bottom == POISSON_WALL_ZERO_GRADIENT
+        && walls->top == POISSON_WALL_ZERO_GRADIENT;
+}
+
 poisson_solver_params_t poisson_solver_params_default(void) {
+    /* Zeroed first: the assignments below cover every named field, but a
+     * projection solver compares whole params structs with memcmp to decide
+     * whether its pressure solver needs rebuilding (ns_pressure_ensure), so
+     * padding has to be deterministic too. Without this, that comparison could
+     * differ on padding alone and rebuild the solver on every step. */
     poisson_solver_params_t params;
+    memset(&params, 0, sizeof params);
     params.tolerance = 1e-6;
     params.absolute_tolerance = 1e-10;
     params.max_iterations = 5000;  /* Increased from 1000 for CG on fine grids */
-    params.omega = 0.0;  /* Auto-compute optimal omega for grid dimensions */
+    params.sor.omega = 0.0;  /* Auto-compute optimal omega for grid dimensions */
     params.check_interval = 1;
     params.verbose = false;
-    params.preconditioner = POISSON_PRECOND_NONE;
-    params.restart = 0;  /* 0 = auto (GMRES_DEFAULT_RESTART); ignored by non-GMRES methods */
+    params.krylov.preconditioner = POISSON_PRECOND_NONE;
+    params.krylov.restart = 0;  /* 0 = auto (GMRES_DEFAULT_RESTART); ignored by non-GMRES methods */
+    params.multigrid.cycle = MG_CYCLE_V;
+    params.multigrid.smoother = MG_SMOOTHER_REDBLACK_GS;
+    params.multigrid.bc = MG_BC_NEUMANN;
+    params.multigrid.pre_smooth = 0;      /* 0 = default (2) */
+    params.multigrid.post_smooth = 0;     /* 0 = default (2) */
+    params.multigrid.coarse_max_iter = 0; /* 0 = default (50) */
+    params.multigrid.max_levels = 0;      /* 0 = auto */
+    params.walls = poisson_walls_default();
     params.helmholtz_shift = 0.0;  /* 0 = pure Poisson */
-    params.mg_cycle = MG_CYCLE_V;
-    params.mg_smoother = MG_SMOOTHER_REDBLACK_GS;
-    params.mg_bc = MG_BC_NEUMANN;
-    params.mg_pre_smooth = 0;      /* 0 = default (2) */
-    params.mg_post_smooth = 0;     /* 0 = default (2) */
-    params.mg_coarse_max_iter = 0; /* 0 = default (50) */
-    params.mg_max_levels = 0;      /* 0 = auto */
     return params;
+}
+
+poisson_solver_config_t poisson_solver_config_preset(poisson_preset_t preset) {
+    poisson_solver_config_t cfg;
+    cfg.method = POISSON_METHOD_CG;
+    /* AUTO unless the preset needs a backend that AUTO would not choose; see
+     * the two multigrid cases below. */
+    cfg.backend = POISSON_BACKEND_AUTO;
+    cfg.params = poisson_solver_params_default();
+
+    switch (preset) {
+        case POISSON_PRESET_ACCURATE:
+            cfg.params.tolerance = 1e-10;
+            cfg.params.absolute_tolerance = 1e-14;
+            cfg.params.max_iterations = 20000;
+            break;
+
+        case POISSON_PRESET_NONSYMMETRIC:
+            cfg.method = POISSON_METHOD_BICGSTAB;
+            break;
+
+        case POISSON_PRESET_SMOOTHER:
+            /* The stationary option, and the one operator that tolerates an
+             * incompatible rhs. It keeps the ordinary tolerances so an ordinary
+             * solve reports success; a caller who wants a fixed sweep count
+             * instead sets tolerance = 0 and max_iterations themselves, and then
+             * CFD_ERROR_MAX_ITER is their own explicit choice rather than
+             * something this preset returns on every call. */
+            cfg.method = POISSON_METHOD_REDBLACK_SOR;
+            break;
+
+        case POISSON_PRESET_MULTIGRID:
+            cfg.method = POISSON_METHOD_MULTIGRID;
+            cfg.backend = POISSON_BACKEND_SCALAR;
+            break;
+
+        case POISSON_PRESET_MULTIGRID_PCG:
+            /* The preconditioner is an ordinary parameter, so nothing downstream
+             * needs a special case for it -- but the backend does need naming.
+             * AUTO resolves to SIMD wherever AVX2 or NEON is present, and neither
+             * multigrid nor the multigrid preconditioner has a SIMD backend, so
+             * this preset would otherwise be refused at init on the very machines
+             * it is most likely to run on. Scalar is the one backend AUTO could
+             * have reached that implements it; POISSON_BACKEND_OMP is a single
+             * assignment away for a caller who wants the threaded hierarchy. */
+            cfg.params.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
+            cfg.backend = POISSON_BACKEND_SCALAR;
+            break;
+
+        case POISSON_PRESET_DEFAULT:
+        default:
+            break;
+    }
+
+    return cfg;
 }
 
 poisson_solver_stats_t poisson_solver_stats_default(void) {
@@ -66,6 +492,18 @@ poisson_solver_stats_t poisson_solver_stats_default(void) {
     stats.final_residual = 0.0;
     stats.elapsed_time_ms = 0.0;
     return stats;
+}
+
+const char* poisson_solver_status_string(poisson_solver_status_t status) {
+    switch (status) {
+        case POISSON_CONVERGED:        return "converged";
+        case POISSON_MAX_ITER:         return "max iterations";
+        case POISSON_DIVERGED:         return "diverged";
+        case POISSON_STAGNATED:        return "stagnated";
+        case POISSON_INCOMPATIBLE_RHS: return "incompatible rhs";
+        case POISSON_ERROR:            return "error";
+    }
+    return "unknown";
 }
 
 /* ============================================================================
@@ -349,24 +787,10 @@ cfd_status_t poisson_solver_init(
         solver->params = poisson_solver_params_default();
     }
 
-    /* Helmholtz shift: validate, then default-deny any backend that has not
-     * been taught it. Ignoring a nonzero shift would silently solve the
-     * unshifted equation. */
     {
-        double shift = solver->params.helmholtz_shift;
-        if (!isfinite(shift) || shift < 0.0) {
-            cfd_set_error(CFD_ERROR_INVALID,
-                "helmholtz_shift must be finite and >= 0 (a negative shift is the "
-                "indefinite Helmholtz operator, which is not SPD)");
-            return CFD_ERROR_INVALID;
-        }
-        if (shift != 0.0 &&
-            !poisson_solver_shift_supported(solver->method, solver->backend,
-                                            &solver->params)) {
-            cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                "helmholtz_shift is currently supported only by the scalar CG solver "
-                "without the multigrid preconditioner");
-            return CFD_ERROR_UNSUPPORTED;
+        cfd_status_t wall_status = poisson_solver_check_config(solver);
+        if (wall_status != CFD_SUCCESS) {
+            return wall_status;
         }
     }
 
@@ -451,6 +875,67 @@ double poisson_solver_compute_residual(
     return max_residual;
 }
 
+/**
+ * Write one face's halo: copy the adjacent interior out for a zero-gradient face,
+ * or write a constant for a Dirichlet one.
+ *
+ * `stride` steps inward from the face, `n_outer`/`n_inner` walk the face itself.
+ */
+static void write_face(double* x, size_t base, ptrdiff_t stride,
+                       size_t n_outer, size_t outer_stride,
+                       size_t n_inner, size_t inner_stride,
+                       poisson_wall_t type, double value)
+{
+    for (size_t a = 0; a < n_outer; a++) {
+        for (size_t b = 0; b < n_inner; b++) {
+            size_t idx = base + (a * outer_stride) + (b * inner_stride);
+            x[idx] = (type == POISSON_WALL_DIRICHLET)
+                   ? value
+                   : x[(size_t)((ptrdiff_t)idx + stride)];
+        }
+    }
+}
+
+/**
+ * Apply per-face walls to x's halo.
+ *
+ * homogeneous != 0 writes 0 on every Dirichlet face: that is the homogeneous part
+ * of the condition, which is what a Krylov search direction must carry. The
+ * zero-gradient extension is already its own homogeneous form, so it is identical
+ * either way.
+ *
+ * Faces run left, right, bottom, top, back, front so the order is deterministic;
+ * a 5/7-point stencil never reads a corner halo cell, so which face owns a shared
+ * corner does not change any answer.
+ */
+static void poisson_apply_walls(const poisson_solver_t* s, double* x, int homogeneous)
+{
+    const poisson_walls_t* w = &s->params.walls;
+    size_t nx = s->nx;
+    size_t ny = s->ny;
+    size_t nz = s->nz;
+    size_t plane = nx * ny;
+
+    #define WALL_VALUE(face) (homogeneous ? 0.0 : w->values.face)
+
+    /* x-faces: whole column of each plane */
+    write_face(x, 0, +1, nz, plane, ny, nx, w->left, WALL_VALUE(left));
+    write_face(x, nx - 1, -1, nz, plane, ny, nx, w->right, WALL_VALUE(right));
+
+    /* y-faces: whole row of each plane */
+    write_face(x, 0, (ptrdiff_t)nx, nz, plane, nx, 1, w->bottom, WALL_VALUE(bottom));
+    write_face(x, (ny - 1) * nx, -(ptrdiff_t)nx, nz, plane, nx, 1, w->top, WALL_VALUE(top));
+
+    /* z-faces: whole plane. Only on a 3D grid. */
+    if (nz > 1) {
+        write_face(x, 0, (ptrdiff_t)plane, 1, 0, plane, 1, w->back, WALL_VALUE(back));
+        write_face(x, (nz - 1) * plane, -(ptrdiff_t)plane, 1, 0, plane, 1,
+                   w->front, WALL_VALUE(front));
+    }
+
+    #undef WALL_VALUE
+}
+
 void poisson_solver_apply_bc(
     poisson_solver_t* solver,
     double* x)
@@ -459,8 +944,23 @@ void poisson_solver_apply_bc(
         return;
     }
 
+    /* The caller's function wins; a solver's own is the fallback. Nothing sets
+     * both -- a solver that installs internal_apply_bc rejects a caller function
+     * at init -- so the precedence never actually has to arbitrate. */
     if (solver->apply_bc) {
         solver->apply_bc(solver, x);
+        return;
+    }
+    if (solver->internal_apply_bc) {
+        solver->internal_apply_bc(solver, x);
+        return;
+    }
+
+    /* Per-face walls, when the caller configured any. The all-zero-gradient case
+     * falls through to the backend BC primitives below, which keeps the default
+     * free and lets OMP/SIMD apply their walls in parallel. */
+    if (!walls_are_all_zero_gradient(&solver->params.walls)) {
+        poisson_apply_walls(solver, x, 0);
         return;
     }
 
@@ -478,23 +978,114 @@ void poisson_solver_apply_bc(
                plane_size * sizeof(double));
     }
 
-    /* Apply 2D Neumann BCs on each z-plane using solver's own backend.
-     * This avoids BC_BACKEND_AUTO selecting a different backend (e.g. OMP)
-     * than the solver itself, which could spawn unexpected threads. */
+    /* Serial on every backend, deliberately.
+     *
+     * A Neumann face is a copy from the adjacent interior line, so all three
+     * backends produce identical values -- but this runs once per Krylov
+     * iteration, and an OpenMP region costs ~12 us to enter at 4 threads on
+     * MSVC while the work here is O(nx + ny): about 130 writes on a 33x33
+     * plane, less than the 31x31 Laplacian sweep it accompanies. Threading it
+     * cost more than the solve. BiCGSTAB pays this twice per iteration. */
     for (size_t k = 0; k < nz; k++) {
+        bc_apply_scalar_cpu(x + k * plane_size, nx, ny, BC_TYPE_NEUMANN);
+    }
+}
+
+/** Write 0 into every boundary cell, leaving the interior alone. */
+static void krylov_zero_halo(const poisson_solver_t* solver, double* x)
+{
+    size_t nx = solver->nx;
+    size_t ny = solver->ny;
+    size_t nz = solver->nz;
+    size_t plane_size = nx * ny;
+
+    size_t k_first = 0;
+    size_t k_last = 1;
+    if (nz > 1) {
+        memset(x, 0, plane_size * sizeof(double));
+        memset(x + (nz - 1) * plane_size, 0, plane_size * sizeof(double));
+        k_first = 1;
+        k_last = nz - 1;
+    }
+
+    for (size_t k = k_first; k < k_last; k++) {
         double* plane = x + k * plane_size;
-        switch (solver->backend) {
-            case POISSON_BACKEND_OMP:
-                bc_apply_scalar_omp(plane, nx, ny, BC_TYPE_NEUMANN);
-                break;
-            case POISSON_BACKEND_SIMD:
-                bc_apply_scalar_simd(plane, nx, ny, BC_TYPE_NEUMANN);
-                break;
-            default:
-                bc_apply_scalar_cpu(plane, nx, ny, BC_TYPE_NEUMANN);
-                break;
+        memset(plane, 0, nx * sizeof(double));                 /* j = 0 */
+        memset(plane + (ny - 1) * nx, 0, nx * sizeof(double)); /* j = ny-1 */
+        for (size_t j = 1; j < ny - 1; j++) {
+            plane[j * nx] = 0.0;                               /* i = 0 */
+            plane[(j * nx) + (nx - 1)] = 0.0;                  /* i = nx-1 */
         }
     }
+}
+
+int poisson_solver_krylov_is_singular(const poisson_solver_t* solver)
+{
+    if (!solver) {
+        return 0;
+    }
+    /* A Helmholtz shift adds sigma*I, so the constants stop being a nullspace and
+     * the operator is nonsingular whatever the walls say. Checked here rather
+     * than at the one call site, so that every future caller of a predicate
+     * named "is singular" gets a true answer. */
+    if (solver->params.helmholtz_shift > 0.0) {
+        return 0;
+    }
+    /* A hook prescribes wall values, which pins the level and makes the operator
+     * nonsingular, exactly as a Dirichlet face does. */
+    return solver->apply_bc == NULL
+        && poisson_walls_are_singular(&solver->params.walls, solver->nz);
+}
+
+void poisson_solver_krylov_apply_bc_homogeneous(
+    poisson_solver_t* solver,
+    double* v)
+{
+    if (!solver || !v) {
+        return;
+    }
+
+    /* The zero-gradient extension is already homogeneous -- it copies the interior
+     * outwards and adds nothing -- so all-zero-gradient walls need it verbatim.
+     * With a Dirichlet face configured, the prescribed value belongs to the iterate
+     * and the direction gets 0 there instead. */
+    if (!solver->apply_bc) {
+        if (walls_are_all_zero_gradient(&solver->params.walls)) {
+            poisson_solver_apply_bc(solver, v);
+        } else {
+            poisson_apply_walls(solver, v, 1);
+        }
+        return;
+    }
+
+    /* A custom hook prescribes wall values that do not depend on the interior, so
+     * its homogeneous part is a zero halo. Running the hook on a search direction
+     * would add its lift to every one of them, which is not a linear operator and
+     * would leave the Krylov recurrences describing something other than A. */
+    krylov_zero_halo(solver, v);
+}
+
+void poisson_solver_krylov_apply_bc(
+    poisson_solver_t* solver,
+    double* x)
+{
+    if (!solver || !x) {
+        return;
+    }
+
+    /* The iterate, unlike a search direction, carries the lift as well, so the
+     * residual formed from it is the residual of the real system. For the default
+     * walls that is just the extension. */
+    if (!solver->apply_bc) {
+        poisson_solver_apply_bc(solver, x);
+        return;
+    }
+
+    /* Zero first, then let the hook write over it: a hook that writes only some
+     * walls, or that holds them at zero by writing nothing, then still leaves no
+     * stale value behind for a warm start to trip on. */
+    krylov_zero_halo(solver, x);
+    solver->apply_bc(solver, x);
 }
 
 /**
@@ -617,6 +1208,95 @@ cfd_status_t poisson_solver_solve_common(
     return diverged ? CFD_ERROR_DIVERGED : CFD_ERROR_MAX_ITER;
 }
 
+void poisson_make_rhs_compatible(double* rhs, size_t nx, size_t ny, size_t nz) {
+    /* A grid with no interior has no interior mean to remove, and the loops
+     * below it count down from nx - 1 in size_t, so nx == 0 would wrap to
+     * SIZE_MAX and run off the buffer. Every other public entry point screens
+     * this; as an exported helper taking raw dimensions, so must this one. */
+    if (!rhs || nx < 3 || ny < 3 || (nz > 1 && nz < 3)) {
+        return;
+    }
+    mg_subtract_interior_mean(rhs, nx, ny, nz);
+}
+
+/**
+ * Reject a right-hand side the singular operator has no solution for.
+ *
+ * With zero-gradient walls the constants are the operator's nullspace, so a rhs
+ * with a nonzero interior mean lies partly outside its range: there is no x that
+ * solves it, and the iteration either stalls on that component or, for Krylov
+ * methods, drives the rest of the field away chasing it.
+ *
+ * The mean is compared against the residual the caller asked for, scaled by the
+ * size of the rhs -- an incompatibility smaller than the target tolerance cannot
+ * affect the answer, and the projection solvers leave one of that size behind
+ * after mean-subtracting in floating point.
+ */
+static cfd_status_t check_rhs_compatible(const poisson_solver_t* solver, const double* rhs)
+{
+    /* Krylov methods only. On a system with no solution they do not merely fail to
+     * converge: the minimisation chases the component in the nullspace and drives
+     * the rest of the field away with it, which is how test_laplacian_accuracy
+     * reached a residual of 1e21. The stationary and multigrid solvers relax
+     * towards a solution modulo a drifting constant instead, which callers use
+     * deliberately -- running a fixed sweep count on an arbitrary rhs is a
+     * reasonable thing to ask of them, so it is left alone. */
+    if (!method_honours_walls(solver->method)) {
+        return CFD_SUCCESS;
+    }
+
+    if (!poisson_solver_krylov_is_singular(solver)) {
+        /* A prescribed face pins the level, and a Helmholtz shift removes the
+         * nullspace outright; either way any rhs is solvable. */
+        return CFD_SUCCESS;
+    }
+
+    /* Solve before init leaves the dimensions at 0, where the interior loops below
+     * would underflow. Let the solver itself report that; there is no rhs to judge
+     * against a grid that does not exist yet. */
+    if (solver->nx < 3 || solver->ny < 3) {
+        return CFD_SUCCESS;
+    }
+
+    size_t nx = solver->nx;
+    size_t ny = solver->ny;
+    size_t nz = solver->nz;
+    size_t stride_z = (nz > 1) ? nx * ny : 0;
+    size_t k_start = (nz > 1) ? 1 : 0;
+    size_t k_end = (nz > 1) ? nz - 1 : 1;
+
+    double sum = 0.0;
+    double sum_abs = 0.0;
+    size_t count = 0;
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                double v = rhs[(k * stride_z) + IDX_2D(i, j, nx)];
+                sum += v;
+                sum_abs += fabs(v);
+                count++;
+            }
+        }
+    }
+    if (count == 0 || sum_abs == 0.0) {
+        return CFD_SUCCESS;
+    }
+
+    /* Relative to the mean magnitude, so the test is scale-free. */
+    double tol = solver->params.tolerance;
+    if (tol <= 0.0) {
+        tol = 1e-6;
+    }
+    if (fabs(sum) > tol * sum_abs) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "zero-gradient walls make this operator singular, so the rhs must have zero "
+            "interior mean; call poisson_make_rhs_compatible() first, or prescribe a "
+            "wall value on one face via params.walls");
+        return CFD_ERROR_INVALID;
+    }
+    return CFD_SUCCESS;
+}
+
 cfd_status_t poisson_solver_solve(
     poisson_solver_t* solver,
     double* x,
@@ -626,6 +1306,21 @@ cfd_status_t poisson_solver_solve(
 {
     if (!solver) {
         return CFD_ERROR_INVALID;
+    }
+
+    if (rhs) {
+        cfd_status_t compat = check_rhs_compatible(solver, rhs);
+        if (compat != CFD_SUCCESS) {
+            if (stats) {
+                /* Reset first: a caller reusing one stats struct across solves
+                 * would otherwise read the previous solve's residual and timing
+                 * next to this refusal, which looks like a converged result. */
+                *stats = poisson_solver_stats_default();
+                stats->status = POISSON_INCOMPATIBLE_RHS;
+                stats->iterations = 0;
+            }
+            return compat;
+        }
     }
 
     /* Use solver-specific solve if provided, otherwise common loop */
@@ -660,233 +1355,52 @@ cfd_status_t poisson_solver_iterate(
 }
 
 /* ============================================================================
- * CACHED SOLVER INSTANCES
+ * CONVENIENCE API
  * ============================================================================ */
 
-/*
- * Cached solver instances for the poisson_solve() convenience API, one slot per
- * preset, so repeated calls skip solver creation.
- *
- * A call takes the instance out of its slot and puts it back when it returns.
- * A concurrent call for the same preset finds the slot empty and builds its own
- * instance, so two threads never share one, and an instance left in a slot is
- * always idle.
- */
-static cfd_atomic_ptr g_cached_jacobi_simd;
-static cfd_atomic_ptr g_cached_sor;
-static cfd_atomic_ptr g_cached_sor_simd;
-static cfd_atomic_ptr g_cached_redblack_simd;
-static cfd_atomic_ptr g_cached_redblack_omp;
-static cfd_atomic_ptr g_cached_redblack_scalar;
-static cfd_atomic_ptr g_cached_cg_scalar;
-static cfd_atomic_ptr g_cached_cg_omp;
-static cfd_atomic_ptr g_cached_cg_simd;
-static cfd_atomic_ptr g_cached_mg_scalar;
-static cfd_atomic_ptr g_cached_mg_omp;
-static cfd_atomic_ptr g_cached_pcg_mg_scalar;
-static cfd_atomic_ptr g_cached_pcg_mg_omp;
-
-/* Set to 1 once cleanup_cached_solvers is registered with atexit */
-static cfd_atomic_int g_cleanup_registered = 0;
-
-/** Empty a cache slot, returning the instance it held (NULL if none) */
-static poisson_solver_t* take_cached_solver(cfd_atomic_ptr* slot) {
-    return (poisson_solver_t*)cfd_atomic_ptr_exchange(slot, NULL);
-}
-
-/**
- * Cleanup cached solvers (called at program exit)
- */
-static void cleanup_cached_solvers(void) {
-    poisson_solver_destroy(take_cached_solver(&g_cached_jacobi_simd));
-    poisson_solver_destroy(take_cached_solver(&g_cached_sor));
-    poisson_solver_destroy(take_cached_solver(&g_cached_sor_simd));
-    poisson_solver_destroy(take_cached_solver(&g_cached_redblack_simd));
-    poisson_solver_destroy(take_cached_solver(&g_cached_redblack_omp));
-    poisson_solver_destroy(take_cached_solver(&g_cached_redblack_scalar));
-    poisson_solver_destroy(take_cached_solver(&g_cached_cg_scalar));
-    poisson_solver_destroy(take_cached_solver(&g_cached_cg_omp));
-    poisson_solver_destroy(take_cached_solver(&g_cached_cg_simd));
-    poisson_solver_destroy(take_cached_solver(&g_cached_mg_scalar));
-    poisson_solver_destroy(take_cached_solver(&g_cached_mg_omp));
-    poisson_solver_destroy(take_cached_solver(&g_cached_pcg_mg_scalar));
-    poisson_solver_destroy(take_cached_solver(&g_cached_pcg_mg_omp));
-}
-
-int poisson_solve_3d(
-    double* p, double* p_temp, const double* rhs,
+cfd_status_t poisson_solve(
+    double* x, double* x_temp, const double* rhs,
     size_t nx, size_t ny, size_t nz,
     double dx, double dy, double dz,
-    poisson_solver_type solver_type)
+    const poisson_solver_config_t* config,
+    poisson_solver_stats_t* stats)
 {
-    cfd_atomic_ptr* slot;
-    poisson_solver_method_t method;
-    poisson_solver_backend_t backend;
-
-    switch (solver_type) {
-        case POISSON_SOLVER_JACOBI_SIMD:
-            slot = &g_cached_jacobi_simd;
-            method = POISSON_METHOD_JACOBI;
-            backend = POISSON_BACKEND_SIMD;
-            break;
-
-        case POISSON_SOLVER_REDBLACK_SIMD:
-            slot = &g_cached_redblack_simd;
-            method = POISSON_METHOD_REDBLACK_SOR;
-            backend = POISSON_BACKEND_SIMD;
-            break;
-
-        case POISSON_SOLVER_REDBLACK_OMP:
-            slot = &g_cached_redblack_omp;
-            method = POISSON_METHOD_REDBLACK_SOR;
-            backend = POISSON_BACKEND_OMP;
-            break;
-
-        case POISSON_SOLVER_SOR_SCALAR:
-            slot = &g_cached_sor;
-            method = POISSON_METHOD_SOR;
-            backend = POISSON_BACKEND_SCALAR;
-            break;
-
-        case POISSON_SOLVER_REDBLACK_SCALAR:
-            slot = &g_cached_redblack_scalar;
-            method = POISSON_METHOD_REDBLACK_SOR;
-            backend = POISSON_BACKEND_SCALAR;
-            break;
-
-        case POISSON_SOLVER_CG_SCALAR:
-            slot = &g_cached_cg_scalar;
-            method = POISSON_METHOD_CG;
-            backend = POISSON_BACKEND_SCALAR;
-            break;
-
-        case POISSON_SOLVER_CG_SIMD:
-            slot = &g_cached_cg_simd;
-            method = POISSON_METHOD_CG;
-            backend = POISSON_BACKEND_SIMD;
-            break;
-
-        case POISSON_SOLVER_CG_OMP:
-            slot = &g_cached_cg_omp;
-            method = POISSON_METHOD_CG;
-            backend = POISSON_BACKEND_OMP;
-            break;
-
-        case POISSON_SOLVER_SOR_SIMD:
-            slot = &g_cached_sor_simd;
-            method = POISSON_METHOD_SOR;
-            backend = POISSON_BACKEND_SIMD;
-            break;
-
-        case POISSON_SOLVER_MG_SCALAR:
-            slot = &g_cached_mg_scalar;
-            method = POISSON_METHOD_MULTIGRID;
-            backend = POISSON_BACKEND_SCALAR;
-            break;
-
-        case POISSON_SOLVER_MG_OMP:
-            slot = &g_cached_mg_omp;
-            method = POISSON_METHOD_MULTIGRID;
-            backend = POISSON_BACKEND_OMP;
-            break;
-
-        case POISSON_SOLVER_PCG_MG_SCALAR:
-            slot = &g_cached_pcg_mg_scalar;
-            method = POISSON_METHOD_CG;
-            backend = POISSON_BACKEND_SCALAR;
-            break;
-
-        case POISSON_SOLVER_PCG_MG_OMP:
-            slot = &g_cached_pcg_mg_omp;
-            method = POISSON_METHOD_CG;
-            backend = POISSON_BACKEND_OMP;
-            break;
-
-        default:
-            CFD_LOG_ERROR("poisson", "poisson_solve_3d: Unknown solver type %d", solver_type);
-            return -1;
+    if (!x || !rhs) {
+        cfd_set_error(CFD_ERROR_INVALID, "poisson_solve: x and rhs are required");
+        return CFD_ERROR_INVALID;
     }
 
-    /* This call owns the cached instance until it puts it back */
-    poisson_solver_t* solver = take_cached_solver(slot);
+    /* Cleared so that the status read back below is this call's and not whatever
+     * the thread failed at last. */
+    cfd_clear_error();
 
-    /* Recreate the solver if grid dimensions or spacing changed */
-    if (solver
-        && (solver->nx != nx || solver->ny != ny || solver->nz != nz
-            || solver->dx != dx || solver->dy != dy || solver->dz != dz)) {
-        poisson_solver_destroy(solver);
-        solver = NULL;
-    }
+    poisson_solver_config_t cfg =
+        config ? *config : poisson_solver_config_preset(POISSON_PRESET_DEFAULT);
 
+    poisson_solver_t* solver = poisson_solver_create(cfg.method, cfg.backend);
     if (!solver) {
-        /* Register cleanup on first use */
-        if (cfd_atomic_cas(&g_cleanup_registered, 0, 1)) {
-            atexit(cleanup_cached_solvers);
+        /* The factory named the reason -- an unavailable backend, an unknown
+         * method -- so report that rather than overwriting it. A factory that
+         * returned NULL without setting one (an allocation failure inside a
+         * create_*_solver) must not read back as success. */
+        cfd_status_t reason = cfd_get_last_status();
+        if (reason == CFD_SUCCESS) {
+            cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                "poisson_solve: the requested method and backend could not be created");
+            reason = CFD_ERROR_UNSUPPORTED;
         }
-
-        solver = poisson_solver_create(method, backend);
-        if (!solver) {
-            return -1;
-        }
-
-        /* The convenience API has no params argument, so the PCG_MG
-         * presets carry their preconditioner into the cached instance. */
-        poisson_solver_params_t pcg_mg_params;
-        const poisson_solver_params_t* init_params = NULL;
-        if (solver_type == POISSON_SOLVER_PCG_MG_SCALAR ||
-            solver_type == POISSON_SOLVER_PCG_MG_OMP) {
-            pcg_mg_params = poisson_solver_params_default();
-            pcg_mg_params.preconditioner = POISSON_PRECOND_MULTIGRID;
-            init_params = &pcg_mg_params;
-        }
-
-        /* A failed init (e.g. multigrid on non-2^k+1 dims) must not leave a
-         * broken solver in the cache. */
-        if (poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, init_params) != CFD_SUCCESS) {
-            poisson_solver_destroy(solver);
-            return -1;
-        }
+        return reason;
     }
 
-    poisson_solver_stats_t stats = poisson_solver_stats_default();
-    cfd_status_t status = poisson_solver_solve(solver, p, p_temp, rhs, &stats);
+    cfd_status_t status =
+        poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &cfg.params);
+    if (status != CFD_SUCCESS) {
+        poisson_solver_destroy(solver);
+        return status;
+    }
 
-    /* Put the instance back. Anything it displaces was put back by a concurrent
-     * call and is idle. */
-    poisson_solver_destroy((poisson_solver_t*)cfd_atomic_ptr_exchange(slot, solver));
-
-    return (status == CFD_SUCCESS && stats.status == POISSON_CONVERGED)
-        ? stats.iterations : -1;
-}
-
-int poisson_solve(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy,
-    poisson_solver_type solver_type)
-{
-    return poisson_solve_3d(p, p_temp, rhs, nx, ny, 1, dx, dy, 0.0, solver_type);
-}
-
-/* Direct solver functions - delegate to unified interface */
-int poisson_solve_sor_scalar(
-    double* p, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy)
-{
-    /* SOR doesn't need temp buffer, pass NULL */
-    return poisson_solve(p, NULL, rhs, nx, ny, dx, dy, POISSON_SOLVER_SOR_SCALAR);
-}
-
-/* SIMD functions with runtime CPU detection */
-int poisson_solve_jacobi_simd(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy)
-{
-    return poisson_solve(p, p_temp, rhs, nx, ny, dx, dy, POISSON_SOLVER_JACOBI_SIMD);
-}
-
-int poisson_solve_redblack_simd(
-    double* p, double* p_temp, const double* rhs,
-    size_t nx, size_t ny, double dx, double dy)
-{
-    return poisson_solve(p, p_temp, rhs, nx, ny, dx, dy, POISSON_SOLVER_REDBLACK_SIMD);
+    poisson_solver_stats_t local = poisson_solver_stats_default();
+    status = poisson_solver_solve(solver, x, x_temp, rhs, stats ? stats : &local);
+    poisson_solver_destroy(solver);
+    return status;
 }

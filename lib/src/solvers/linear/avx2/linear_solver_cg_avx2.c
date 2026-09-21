@@ -393,11 +393,6 @@ static cfd_status_t cg_avx2_init(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    cfd_status_t precond_status = poisson_solver_reject_mg_precond(params);
-    if (precond_status != CFD_SUCCESS) {
-        return precond_status;
-    }
-
     /* Use aligned allocation for SIMD context */
     cg_avx2_context_t* ctx = (cg_avx2_context_t*)cfd_aligned_calloc(
         1, sizeof(cg_avx2_context_t));
@@ -414,7 +409,7 @@ static cfd_status_t cg_avx2_init(
     ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
 
     /* Check if preconditioner is enabled */
-    ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
+    ctx->use_precond = (params && params->krylov.preconditioner == POISSON_PRECOND_JACOBI);
 
     /* Precompute SIMD vectors */
     ctx->dx2_inv_vec = _mm256_set1_pd(1.0 / ctx->dx2);
@@ -513,8 +508,9 @@ static cfd_status_t cg_avx2_solve(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    /* Apply initial boundary conditions */
-    poisson_solver_apply_bc(solver, x);
+    /* Not poisson_solver_apply_bc: the initial residual has to see the same walls
+     * the iteration below inverts. See poisson_solver_krylov_apply_bc. */
+    poisson_solver_krylov_apply_bc(solver, x);
 
     /* Compute initial residual */
     compute_residual_avx2(x, rhs, r, nx, ny,
@@ -566,6 +562,10 @@ static cfd_status_t cg_avx2_solve(
 
     for (iter = 0; iter < params->max_iterations; iter++) {
         /* Compute Ap = A * p */
+        /* The halo carries the homogeneous boundary condition, which is what makes
+         * this the operator the walls describe. The direction is rebuilt from
+         * interior-only updates, so it has to be reapplied every iteration. */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, p);
         apply_laplacian_avx2(p, Ap, nx, ny,
                                   ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->dz2_inv_vec,
                                   ctx->two_vec, k_start, k_end, stride_z);

@@ -344,10 +344,19 @@ void test_3d_explicit_euler_backward_compat(void) {
 
 void test_3d_projection_backward_compat(void) {
     printf("\n=== Test: 3D Projection Backward Compat (nz=1) ===\n");
+    /* Re-pinned when the Krylov pressure solve was given the zero-gradient walls
+     * it always claimed, and an initial residual formed against that same
+     * operator. This case starts from p = 1.0 everywhere and the projection
+     * warm-starts each pressure solve, so it is sensitive to both.
+     *
+     * L2(p) stays ~1.0: a constant is in the nullspace of the zero-gradient
+     * operator, and the iteration keeps every direction mean-free, so the level
+     * the caller started from is carried rather than driven to zero walls.
+     * L2(u) and L2(v) move by ~3e-7 relative, which is the correctness fix. */
     run_backward_compat_test(NS_SOLVER_TYPE_PROJECTION,
-                             6.84647639323831686e-02,
-                             3.42315494726977212e-02,
-                             1.00000039251590289e+00);
+                             6.84649764873392075e-02,
+                             3.42317584075298928e-02,
+                             1.00000268455841357e+00);
     printf("PASSED\n");
 }
 

@@ -28,11 +28,25 @@
 #define MAX_VELOCITY 100.0
 
 cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
-                                         const ns_solver_params_t* params) {
-    if (!field || !grid || !params) {
+                                         const ns_solver_params_t* params,
+                                         poisson_solver_t* pressure) {
+    if (!field || !grid || !params || !pressure) {
         return CFD_ERROR_INVALID;
     }
     if (field->nx < 3 || field->ny < 3 || (field->nz > 1 && field->nz < 3)) {
+        return CFD_ERROR_INVALID;
+    }
+    /* Every buffer below is sized from the field, while the pressure solver was
+     * built for the grid. Its kernels sweep to solver->nx-1 etc., so a field
+     * smaller than the grid would have them run off the end of rhs and p_new.
+     * The two are separate caller-owned objects and nothing upstream ties them
+     * together; before the projection owned its solver the Poisson dimensions
+     * came from the field, so they could not diverge. */
+    if (pressure->nx != field->nx || pressure->ny != field->ny
+        || pressure->nz != field->nz) {
+        cfd_set_error(CFD_ERROR_INVALID,
+            "The pressure solver was built for the grid dimensions; this field has "
+            "different ones. Re-init the solver for the grid the field belongs to.");
         return CFD_ERROR_INVALID;
     }
 
@@ -67,24 +81,6 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
     double inv_dz  = 2.0 * inv_2dz;
     const int upwind = (params->convection_scheme == NS_CONVECTION_SCHEME_UPWIND);
 
-    /* Map the pressure-solver selection to an OpenMP Poisson preset (never a
-     * scalar one). Grid-dimension compatibility for the MG modes is validated
-     * at solver init; a failed solve here still degrades loudly via
-     * poisson_iters < 0. */
-    poisson_solver_type pressure_preset;
-    switch (params->pressure_solver) {
-        case NS_PRESSURE_SOLVER_DEFAULT:
-            pressure_preset = POISSON_SOLVER_CG_OMP;
-            break;
-        case NS_PRESSURE_SOLVER_MULTIGRID:
-            pressure_preset = POISSON_SOLVER_MG_OMP;
-            break;
-        case NS_PRESSURE_SOLVER_PCG_MG:
-            pressure_preset = POISSON_SOLVER_PCG_MG_OMP;
-            break;
-        default:
-            return CFD_ERROR_INVALID;
-    }
 
     double* u_star = (double*)cfd_calloc(total, sizeof(double));
     double* v_star = (double*)cfd_calloc(total, sizeof(double));
@@ -247,20 +243,23 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             }
         }
 
-        /* Neumann compatibility projection: standalone multigrid solves the
-         * true singular Neumann system, so the RHS must have zero interior
-         * mean or the residual stalls at the incompatible component. The
-         * CG-based presets are insensitive to it (their interior-only Krylov
-         * updates act as a nonsingular operator) and keep today's behavior. */
-        if (pressure_preset == POISSON_SOLVER_MG_OMP) {
+        /* Neumann compatibility projection, but only when the operator is actually
+         * singular. With every face zero-gradient the constants are its nullspace,
+         * so the RHS must have zero interior mean -- div(u*) only nearly does, and
+         * the remainder is removed here rather than assumed away. With a face
+         * prescribed the operator is nonsingular and shifting the RHS would change
+         * the answer instead of making it exist. */
+        if (poisson_walls_are_singular(&params->pressure_bc, nz)) {
             mg_subtract_interior_mean_omp(rhs, nx, ny, nz);
         }
 
-        /* Parallel Poisson solve on the selected OpenMP preset */
-        int poisson_iters = poisson_solve_3d(p_new, p_temp, rhs, nx, ny, nz,
-                                             dx, dy, dz, pressure_preset);
+        /* Parallel Poisson solve on the solver this projection owns, which was
+         * built on the OpenMP backend at init -- never a scalar one. */
+        poisson_solver_stats_t pstats = poisson_solver_stats_default();
+        cfd_status_t poisson_status =
+            poisson_solver_solve(pressure, p_new, p_temp, rhs, &pstats);
 
-        if (poisson_iters < 0) {
+        if (poisson_status != CFD_SUCCESS) {
             cfd_free(u_star);
             cfd_free(v_star);
             cfd_free(w_star);
@@ -269,7 +268,7 @@ cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
             cfd_free(rhs);
             cfd_free(T_energy_ws);
             cfd_free(turb_ws);
-            return CFD_ERROR_MAX_ITER;
+            return poisson_status;
         }
 
         /* STEP 3: Corrector — project velocities with pressure gradient */

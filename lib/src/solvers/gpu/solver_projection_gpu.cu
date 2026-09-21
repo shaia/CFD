@@ -19,6 +19,7 @@
 #include "cfd/core/memory.h"
 #include "cfd/core/gpu_device.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "../navier_stokes/ns_convection_internal.h"
 
 #include "gpu_shared_kernels.cuh"
 #include "../linear/gpu/poisson_cg_gpu_solve.cuh"
@@ -599,6 +600,22 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
                       "use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
+
+    /* This entry point is exported, so a caller reaches it without passing
+     * through gpu_projection_init and its validation. Checked here rather than
+     * assumed: the solve below unconditionally mean-subtracts for the
+     * zero-gradient operator, so a prescribed face or a different pressure
+     * solver would be accepted and then ignored -- the default-deny contract
+     * broken at the one door that does not check. */
+    cfd_status_t bc_status = ns_check_pressure_bc(params, 0);
+    if (bc_status != CFD_SUCCESS) {
+        return bc_status;
+    }
+    cfd_status_t ps_status = ns_check_pressure_solver(params, 0);
+    if (ps_status != CFD_SUCCESS) {
+        return ps_status;
+    }
+
     gpu_config_t cfg = config ? *config : gpu_config_default();
     if (!gpu_should_use(&cfg, field->nx, field->ny, field->nz, params->max_iter))
         return CFD_ERROR;
@@ -634,6 +651,22 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                       "convection; use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
+
+    /* This entry point is exported, so a caller reaches it without passing
+     * through gpu_projection_init and its validation. Checked here rather than
+     * assumed: the solve below unconditionally mean-subtracts for the
+     * zero-gradient operator, so a prescribed face or a different pressure
+     * solver would be accepted and then ignored -- the default-deny contract
+     * broken at the one door that does not check. */
+    cfd_status_t bc_status = ns_check_pressure_bc(params, 0);
+    if (bc_status != CFD_SUCCESS) {
+        return bc_status;
+    }
+    cfd_status_t ps_status = ns_check_pressure_solver(params, 0);
+    if (ps_status != CFD_SUCCESS) {
+        return ps_status;
+    }
+
     gpu_config_t cfg = config ? *config : gpu_config_default();
     size_t nx = field->nx, ny = field->ny, nz = field->nz;
     if (!gpu_should_use(&cfg, nx, ny, nz, params->max_iter))
@@ -721,6 +754,36 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
             nx, ny, stride_z, k_start, k_end, inv_2dx, inv_2dy, inv_2dz);
         kernel_scale_rhs<<<grid_dim, block, 0, ctx->stream>>>(
             ctx->d_rhs, nx, ny, stride_z, k_start, k_end, 1.0 / dt);
+
+        // Neumann compatibility projection, matching the CPU projection solvers. The
+        // pressure operator has zero-gradient walls and is therefore singular, the
+        // constants being its nullspace, so the RHS must have zero interior mean or CG
+        // stalls on the component lying in it. Discretely div(u*) only nearly integrates
+        // to zero, so the remainder is removed rather than assumed away.
+        //
+        // The sum never leaves the device. Bringing it to the host to divide
+        // would mean a copy and a full cudaStreamSynchronize on every one of
+        // the max_iter inner iterations -- a pipeline drain per iteration, in
+        // the loop whose pressure solve is device-resident precisely to avoid
+        // host round-trips. The subtract kernel reads the sum and the interior
+        // count and does the division itself.
+        {
+            size_t interior = (nx - 2) * (ny - 2) * (size_t)(k_end - k_start + 1);
+            size_t shmem = (size_t)cfg.block_size_x * cfg.block_size_y * sizeof(double);
+            cudaError_t cerr = cudaMemsetAsync(ctx->d_residual, 0, sizeof(double), ctx->stream);
+            if (cerr != cudaSuccess) {
+                cfd_set_error(CFD_ERROR, cudaGetErrorString(cerr));
+                cudaFree(d_cg_r);
+                cudaFree(d_cg_Ap);
+                gpu_solver_destroy(ctx_void);
+                return CFD_ERROR;
+            }
+            lin_gpu_kernel_interior_sum<<<grid_dim, block, shmem, ctx->stream>>>(
+                ctx->d_rhs, ctx->d_residual, nx, ny, stride_z, k_start, k_end);
+            lin_gpu_kernel_subtract_interior<<<grid_dim, block, 0, ctx->stream>>>(
+                ctx->d_rhs, ctx->d_residual, interior,
+                nx, ny, stride_z, k_start, k_end);
+        }
 
         // Step 3: Solve the pressure Poisson equation with Conjugate Gradient via the
         // shared device-resident core (cg_gpu_solve_device) — the same CG used by the

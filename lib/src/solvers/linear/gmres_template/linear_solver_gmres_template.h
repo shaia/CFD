@@ -228,13 +228,8 @@ static cfd_status_t GMRES_FUNC(gmres_init)(
     double dx, double dy, double dz,
     const poisson_solver_params_t* params)
 {
-    cfd_status_t precond_status = poisson_solver_reject_mg_precond(params);
-    if (precond_status != CFD_SUCCESS) {
-        return precond_status;
-    }
-
     /* Resolve restart length m (0 = auto) */
-    int m = (params && params->restart > 0) ? params->restart : GMRES_DEFAULT_RESTART;
+    int m = (params && params->krylov.restart > 0) ? params->krylov.restart : GMRES_DEFAULT_RESTART;
 
     /* H is indexed in int as i + j*(m+1), so (m+1)*m must fit in int. */
     if (m >= INT_MAX / m) {
@@ -262,7 +257,7 @@ static cfd_status_t GMRES_FUNC(gmres_init)(
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
 
     ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
-    ctx->use_precond = (params && params->preconditioner == POISSON_PRECOND_JACOBI);
+    ctx->use_precond = (params && params->krylov.preconditioner == POISSON_PRECOND_JACOBI);
 
     ctx->m = m;
     ctx->n = n;
@@ -338,11 +333,13 @@ static cfd_status_t GMRES_FUNC(gmres_solve)(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    /* Apply initial boundary conditions */
-    poisson_solver_apply_bc(solver, x);
+    /* Not poisson_solver_apply_bc: the initial residual has to see the same walls
+     * the iteration below inverts. See poisson_solver_krylov_apply_bc. */
+    poisson_solver_krylov_apply_bc(solver, x);
 
     /* Initial residual r_0 = b - A x_0 into V[0] */
     GMRES_RESIDUAL(x, rhs, Vblock, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
+
     double beta = GMRES_FUNC(gmres_norm)(Vblock, nx, ny, k_start, k_end, stride_z);
     double initial_res = beta;
 
@@ -390,11 +387,17 @@ static cfd_status_t GMRES_FUNC(gmres_solve)(
         for (int j = 0; j < m; j++) {
             double* v_j = Vblock + (size_t)j * n;
 
-            /* Arnoldi: w = A M^{-1} v_j  (w = A v_j unpreconditioned) */
+            /* Arnoldi: w = A M^{-1} v_j  (w = A v_j unpreconditioned).
+             * The halo carries the homogeneous boundary condition, which is what
+             * makes the apply the operator the walls describe. Basis vectors are
+             * built from interior-only updates, so it is applied to whichever
+             * vector A actually receives, every time. */
             if (use_precond) {
                 GMRES_PRECOND(v_j, Mv, nx, ny, diag_inv, k_start, k_end, stride_z);
+                poisson_solver_krylov_apply_bc_homogeneous(solver, Mv);
                 GMRES_APPLY_A(Mv, w, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
             } else {
+                poisson_solver_krylov_apply_bc_homogeneous(solver, v_j);
                 GMRES_APPLY_A(v_j, w, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
             }
 
@@ -451,8 +454,10 @@ static cfd_status_t GMRES_FUNC(gmres_solve)(
 
         /* Recompute the TRUE residual and decide convergence on it (prevents the
          * cheap Givens estimate from drifting below the real residual). This is
-         * the residual reported to the caller, measured with the same fixed
-         * boundary values used throughout the solve. */
+         * the residual reported to the caller. x has moved since the last apply_bc,
+         * and with zero-gradient walls the halo follows the interior, so it is
+         * refreshed first. */
+        poisson_solver_krylov_apply_bc(solver, x);
         GMRES_RESIDUAL(x, rhs, Vblock, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
         beta = GMRES_FUNC(gmres_norm)(Vblock, nx, ny, k_start, k_end, stride_z);
         final_res = beta;

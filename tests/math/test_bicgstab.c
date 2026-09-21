@@ -16,6 +16,7 @@
 
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
+#include "../test_poisson_helpers.h"
 #include "cfd/core/memory.h"
 #include "cfd/core/indexing.h"
 #include <math.h>
@@ -474,9 +475,9 @@ void test_bicgstab_l2_error(void) {
  * - Is zero on all boundaries of [0,1]² (natural Dirichlet BC)
  * - Has Laplacian ∇²p = -2π²sin(πx)sin(πy)
  *
- * Note: BiCGSTAB applies Neumann BCs internally, so the computed solution
- * may differ from the exact Dirichlet solution by a constant. We compare
- * after removing the mean from both solutions.
+ * Dirichlet walls are requested explicitly via hold_walls_at_zero. The means
+ * are still removed from both fields before comparing, which is now a no-op
+ * but costs nothing.
  *
  * Expected accuracy: O(h²) ≈ (1/32)² ≈ 0.001 for 33x33 grid.
  */
@@ -502,6 +503,7 @@ void test_bicgstab_dirichlet(void) {
     poisson_solver_t* solver = poisson_solver_create(
         POISSON_METHOD_BICGSTAB, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(solver);
+    solver->apply_bc = hold_walls_at_zero;  /* before init, which reads it */
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = TOLERANCE;

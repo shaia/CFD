@@ -106,11 +106,6 @@ static cfd_status_t sor_gpu_init(poisson_solver_t* solver,
                                  size_t nx, size_t ny, size_t nz,
                                  double dx, double dy, double dz,
                                  const poisson_solver_params_t* params) {
-    cfd_status_t bc_status = poisson_solver_reject_custom_bc(solver);
-    if (bc_status != CFD_SUCCESS) {
-        return bc_status;
-    }
-
     if (!gpu_is_available()) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED, "CUDA GPU not available at runtime");
         return CFD_ERROR_UNSUPPORTED;
@@ -132,7 +127,7 @@ static cfd_status_t sor_gpu_init(poisson_solver_t* solver,
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     ctx->factor = 2.0 * (ctx->inv_dx2 + ctx->inv_dy2 + ctx->inv_dz2);
     ctx->inv_factor = 1.0 / ctx->factor;
-    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->sor.omega : 0.0);
 
     size_t sz, ks, ke;
     poisson_solver_compute_3d_bounds(nz, nx, ny, &sz, &ks, &ke);

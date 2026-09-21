@@ -231,7 +231,7 @@ void test_sor_omega_boundary(void) {
         POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(solver1);
 
-    params.omega = 1.0;
+    params.sor.omega = 1.0;
     cfd_status_t status = poisson_solver_init(solver1, NX, NY, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
@@ -250,7 +250,7 @@ void test_sor_omega_boundary(void) {
         POISSON_METHOD_SOR, POISSON_BACKEND_SCALAR);
     TEST_ASSERT_NOT_NULL(solver2);
 
-    params.omega = 1.5;
+    params.sor.omega = 1.5;
     status = poisson_solver_init(solver2, NX, NY, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 

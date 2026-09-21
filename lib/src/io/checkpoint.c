@@ -350,6 +350,14 @@ static void write_params(chk_io* io, const ns_solver_params_t* p) {
     put_bc_values(io, &p->turb_bc.k_values);
     put_bc_values(io, &p->turb_bc.eps_values);
     put_bc_values(io, &p->turb_bc.nu_tilde_values);
+    /* pressure_bc: face types then the prescribed wall values */
+    put_i32(io, (int32_t)p->pressure_bc.left);
+    put_i32(io, (int32_t)p->pressure_bc.right);
+    put_i32(io, (int32_t)p->pressure_bc.bottom);
+    put_i32(io, (int32_t)p->pressure_bc.top);
+    put_i32(io, (int32_t)p->pressure_bc.front);
+    put_i32(io, (int32_t)p->pressure_bc.back);
+    put_bc_values(io, &p->pressure_bc.values);
 }
 
 /* ==========================================================================
@@ -549,6 +557,13 @@ cfd_status_t cfd_checkpoint_read(const char* path,
     get_bc_values(&io, &out_params->turb_bc.k_values);
     get_bc_values(&io, &out_params->turb_bc.eps_values);
     get_bc_values(&io, &out_params->turb_bc.nu_tilde_values);
+    out_params->pressure_bc.left = (poisson_wall_t)get_i32(&io);
+    out_params->pressure_bc.right = (poisson_wall_t)get_i32(&io);
+    out_params->pressure_bc.bottom = (poisson_wall_t)get_i32(&io);
+    out_params->pressure_bc.top = (poisson_wall_t)get_i32(&io);
+    out_params->pressure_bc.front = (poisson_wall_t)get_i32(&io);
+    out_params->pressure_bc.back = (poisson_wall_t)get_i32(&io);
+    get_bc_values(&io, &out_params->pressure_bc.values);
 
     /* --- sim metadata --- */
     double current_time = get_f64(&io);

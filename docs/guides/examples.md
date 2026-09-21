@@ -673,41 +673,58 @@ CFD Platform Diagnostics
 
 **What it demonstrates:**
 - `poisson_solver_create(method, backend)` factory API
-- `poisson_solver_params_t` with tolerance, max iterations and preconditioner, leaving omega at 0 (automatic)
+- `poisson_solver_params_t` with tolerance, max iterations and `krylov.preconditioner`, leaving `sor.omega` at 0 (automatic)
+- `poisson_make_rhs_compatible()` — what the default zero-gradient walls require of any RHS
 - `poisson_solver_init()`, `poisson_solver_solve()`, `poisson_solver_destroy()`
-- `poisson_solver_stats_t` for convergence monitoring
-- `poisson_solve()` convenience API
-- `poisson_solver_backend_available()` for runtime checking
-- Error handling for unavailable solvers
+- `poisson_solver_stats_t` and `poisson_solver_status_string()` for convergence monitoring
+- `poisson_solver_config_preset()` + `poisson_solve()` convenience API
+- Error handling for unavailable solvers, printing `cfd_get_last_error()` — the sentence naming the fix — not just the status category
 
 **Sections:**
-1. Method comparison (Jacobi, SOR, Red-Black SOR, CG, CG+Jacobi PC, CG+Multigrid PC, BiCGSTAB) on scalar backend
+1. Method comparison (Jacobi, SOR, Red-Black SOR, CG, CG+Jacobi PC, CG+Multigrid PC, BiCGSTAB, Multigrid) on scalar backend
 2. Backend comparison (CG on Scalar, SIMD, OMP)
-3. Convenience API demo (`poisson_solve()`)
+3. Convenience API demo (`poisson_solve()` from an edited preset)
 4. Error handling (requesting multigrid on an unavailable backend — GPU)
 
-**Problem:** Solves ∇²p = -2π²sin(πx)sin(πy) on a 65×65 grid (2^k+1, so the multigrid preconditioner can build its hierarchy) using the library's default homogeneous Neumann boundary conditions. The reported L2 error compares methods/backends against a common reference field — not against the Dirichlet analytical solution sin(πx)sin(πy), since BCs differ. Standalone multigrid is omitted: this RHS has a nonzero interior mean, which the true Neumann system cannot converge on (the same reason the stationary methods report max_iter).
+**Problem:** Solves ∇²p = -2π²sin(πx)sin(πy) on a 65×65 grid (2^k+1, so multigrid can build its hierarchy) against the library's default zero-gradient walls. That operator is singular — the constants are its nullspace — so the example calls `poisson_make_rhs_compatible()` to remove the RHS's interior mean; without it the Krylov methods refuse the solve with `POISSON_INCOMPATIBLE_RHS`, since the system has no solution at all.
+
+The reported L2 error compares methods and backends against a common reference field, **not** against the analytical sin(πx)sin(πy): that field satisfies Dirichlet p=0 on all faces while these solves use zero-gradient walls, and the mean subtraction shifts the problem again. Set `params.walls = poisson_walls_uniform(POISSON_WALL_DIRICHLET, 0.0)` to solve the problem the analytical field actually poses — the Krylov methods honour that.
 
 **Run:**
 ```bash
 ./poisson_solver_tuning
 ```
 
-**Expected Output:**
+**Expected Output:** (timings are machine-dependent)
 ```
 --- Method Comparison (Scalar Backend) ---
-  Method                Iters     Residual    L2 Error      Time  Status
-  Jacobi                10000   res=8.3e+00  L2=-1.0e+00   394 ms  max_iter
-  CG                        1   res=6.3e-11  L2=1.0e-04     0 ms  converged
-  CG + Jacobi PC            1   res=6.3e-11  L2=1.0e-04     0 ms  converged
-  CG + Multigrid PC         7   res=1.4e-06  L2=1.0e-04     2 ms  converged
-  BiCGSTAB                  1   res=6.3e-11  L2=1.0e-04     0 ms  converged
+  Method                Iters        Residual      L2 Error     Time       Status
+  Jacobi                 7371 iters  res=1.15e-07  L2=4.49e-01   111.3 ms  converged
+  SOR                     378 iters  res=1.08e-07  L2=4.51e-01    14.1 ms  converged
+  Red-Black SOR           300 iters  res=1.03e-07  L2=4.51e-01     4.6 ms  converged
+  CG                      115 iters  res=2.37e-06  L2=4.49e-01     1.7 ms  converged
+  CG + Jacobi PC          115 iters  res=2.37e-06  L2=4.49e-01     1.8 ms  converged
+  CG + Multigrid PC        20 iters  res=2.12e-06  L2=3.25e-01     1.7 ms  converged
+  BiCGSTAB                 79 iters  res=2.96e-06  L2=4.49e-01     2.1 ms  converged
+  Multigrid                12 iters  res=7.49e-08  L2=4.53e-01     0.9 ms  converged
+
+--- Backend Comparison (CG Method) ---
+  CG Scalar               115 iters  res=2.37e-06  L2=4.49e-01     1.7 ms  converged
+  CG SIMD                 115 iters  res=2.37e-06  L2=4.49e-01    67.8 ms  converged
+  CG OMP                  115 iters  res=2.37e-06  L2=4.49e-01    64.8 ms  converged
+
+--- Convenience API ---
+  poisson_solve(DEFAULT): 100 iterations, L2 error = 4.49e-01
 ```
 
-> **Note:** `L2=-1.0e+00` is a "not computed" sentinel, not a real error value. The
-> example only computes the L2 error when the solve returns `CFD_SUCCESS`; on a
-> `max_iter` (non-converged) exit it prints `-1.0` instead. Jacobi does not converge
-> on this RHS within 10000 iterations, so its L2 error is reported as `-1.0`.
+> Every method converges here, which is the point of the mean subtraction: on the
+> raw strictly-negative RHS the problem has no solution, and each method fails
+> differently — Jacobi and SOR run the budget out chasing a drifting constant,
+> while CG drives the field away with the nullspace component it is minimising
+> over. Earlier versions of this example documented that as ordinary output.
+>
+> The convenience call takes 100 iterations against CG's 115 because the preset's
+> tolerance is 1e-6 and the benchmark rows use 1e-8.
 
 ---
 
@@ -890,7 +907,7 @@ The SA variant converges similarly (u_τ ≈ 0.969, u+ within ~4% of the log law
 
 **What it demonstrates:**
 
-- Setting `params.omega` explicitly, and leaving it at `0` for the automatic value
+- Setting `params.sor.omega` explicitly, and leaving it at `0` for the automatic value
 - Replacing the default zero-gradient walls through `solver->apply_bc`, installed before `poisson_solver_init()`, which chooses ω
 - Reading `iterations` and `status` from `poisson_solver_stats_t`
 

@@ -66,6 +66,13 @@ static cfd_status_t solve_shifted(size_t nx, size_t ny, size_t nz,
     params.helmholtz_shift = sigma;
     params.tolerance = tolerance;
     params.max_iterations = 5000;
+    /* The manufactured solution vanishes on the boundary and build_rhs_2d forms
+     * the rhs from u's own boundary values, so the discrete problem posed here is
+     * Dirichlet. Requested explicitly: the default walls are zero-gradient, which
+     * is a different operator and would not reproduce u. (This test predates
+     * params.walls, when the Krylov halo happened to stay at zero and gave
+     * homogeneous Dirichlet by accident.) */
+    params.walls = poisson_walls_uniform(POISSON_WALL_DIRICHLET, 0.0);
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &params);
     if (status != CFD_SUCCESS) {
@@ -290,6 +297,9 @@ void test_zero_shift_is_bit_identical(void) {
     TEST_ASSERT_NOT_NULL(solver);
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-10;
+    /* The same walls solve_shifted uses: this test isolates the shift, so every
+     * other term of the operator has to match. */
+    params.walls = poisson_walls_uniform(POISSON_WALL_DIRICHLET, 0.0);
     TEST_ASSERT_EQUAL(CFD_SUCCESS,
                       poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
     double* work = (double*)cfd_calloc(total, sizeof(double));
@@ -474,7 +484,7 @@ void test_mg_preconditioner_rejects_the_shift(void) {
     TEST_ASSERT_NOT_NULL(solver);
     poisson_solver_params_t params = poisson_solver_params_default();
     params.helmholtz_shift = 1.0;
-    params.preconditioner = POISSON_PRECOND_MULTIGRID;
+    params.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
     TEST_ASSERT_EQUAL(CFD_ERROR_UNSUPPORTED,
                       poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
     poisson_solver_destroy(solver);
@@ -498,8 +508,9 @@ void test_jacobi_preconditioner_accepts_the_shift(void) {
     TEST_ASSERT_NOT_NULL(solver);
     poisson_solver_params_t params = poisson_solver_params_default();
     params.helmholtz_shift = sigma;
-    params.preconditioner = POISSON_PRECOND_JACOBI;
+    params.krylov.preconditioner = POISSON_PRECOND_JACOBI;
     params.tolerance = 1e-13;
+    params.walls = poisson_walls_uniform(POISSON_WALL_DIRICHLET, 0.0);
     TEST_ASSERT_EQUAL(CFD_SUCCESS,
                       poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
 

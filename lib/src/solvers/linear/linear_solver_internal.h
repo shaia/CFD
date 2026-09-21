@@ -83,14 +83,14 @@ poisson_solver_t* create_multigrid_omp_solver(void);
 /**
  * Whether a (method, backend) pair implements params.helmholtz_shift.
  *
- * Default-deny, and deliberately central rather than one check per *_init.
- * There are ~20 init functions; one that ignored the shift would silently solve
- * the unshifted equation -- a wrong answer, not a slow one. A single table means
- * a backend that has not been taught the shift fails loudly at init instead.
+ * Default-deny. Currently: scalar CG only, and not with the multigrid
+ * preconditioner, whose inner V-cycle is built from default params and would
+ * precondition with the unshifted operator. POISSON_PRECOND_JACOBI is fine --
+ * it is one diagonal term.
  *
- * Currently: scalar CG only, and not with the multigrid preconditioner, whose
- * inner V-cycle is built from default params and would precondition with the
- * unshifted operator. POISSON_PRECOND_JACOBI is fine -- it is one diagonal term.
+ * poisson_solver_check_config is what calls this; a backend that has not been
+ * taught the shift fails loudly at init rather than silently solving the
+ * unshifted equation, which is a wrong answer rather than a slow one.
  */
 static inline int poisson_solver_shift_supported(
     poisson_solver_method_t method,
@@ -99,26 +99,76 @@ static inline int poisson_solver_shift_supported(
     if (method != POISSON_METHOD_CG || backend != POISSON_BACKEND_SCALAR) {
         return 0;
     }
-    if (params && params->preconditioner == POISSON_PRECOND_MULTIGRID) {
+    if (params && params->krylov.preconditioner == POISSON_PRECOND_MULTIGRID) {
         return 0;
     }
     return 1;
 }
 
 /**
- * Reject POISSON_PRECOND_MULTIGRID on backends that don't implement it.
- * Only the scalar and OpenMP CG solvers support the MG preconditioner;
- * silently ignoring it would be a forbidden silent fallback.
+ * Validate the whole configuration against the resolved method and backend.
+ *
+ * Called once from poisson_solver_init, and the only place that decides what a
+ * given solver can honour. A parameter it cannot is refused here rather than
+ * ignored: CFD_ERROR_UNSUPPORTED where the solver would have to implement
+ * something it does not, CFD_ERROR_INVALID where the caller has asked for two
+ * contradictory things or for something that could not take effect.
+ *
+ * Central rather than per-init because the alternative -- a check inside each of
+ * the twenty-odd solver inits -- is what let BiCGSTAB ignore
+ * params.krylov.preconditioner on every backend, three GPU solvers ignore a
+ * caller's apply_bc, and would have let any of ~20 inits ignore a Helmholtz
+ * shift, for as long as they have existed.
  */
-static inline cfd_status_t poisson_solver_reject_mg_precond(
-    const poisson_solver_params_t* params) {
-    if (params && params->preconditioner == POISSON_PRECOND_MULTIGRID) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "POISSON_PRECOND_MULTIGRID is only supported by the scalar and OpenMP CG solvers");
-        return CFD_ERROR_UNSUPPORTED;
-    }
-    return CFD_SUCCESS;
-}
+cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver);
+
+/**
+ * Boundary values for a Krylov iterate, before a residual is formed from it.
+ *
+ * The Krylov solvers (CG, BiCGSTAB, GMRES) update interior points only, so the
+ * operator they invert is whatever their vectors' halos say it is. Residual and
+ * operator have to agree, or the solve converges to a field solving neither
+ * system: it returns an x with A_op*x = b + (A_op - A_residual)*x0, wrong by
+ * O(x0/h^2) at every wall-adjacent point.
+ *
+ * The iterate carries the full boundary condition -- the interior-dependent part
+ * and the lift. Search directions carry only the homogeneous part; see
+ * poisson_solver_krylov_apply_bc_homogeneous(). Call this before the initial
+ * residual and before any residual recomputed mid-solve (GMRES at each restart,
+ * where the iterate has moved and the extension is stale). The final
+ * poisson_solver_apply_bc() that fills the output halo stays as it is.
+ */
+void poisson_solver_krylov_apply_bc(poisson_solver_t* solver, double* x);
+
+/**
+ * Boundary values for a Krylov search direction, before every operator apply.
+ *
+ * Only the homogeneous part of the boundary condition: the zero-gradient
+ * extension for the default walls, a zero halo for a custom (Dirichlet) hook,
+ * whose prescribed values belong to the iterate and not to a direction. Applying
+ * an inhomogeneous condition here would make the operator affine rather than
+ * linear, which the Krylov recurrences do not describe.
+ *
+ * Required before each apply: the directions are rebuilt from interior-only
+ * updates, so their halos are stale from the previous iteration otherwise.
+ */
+void poisson_solver_krylov_apply_bc_homogeneous(poisson_solver_t* solver, double* v);
+
+/**
+ * Whether the Krylov operator has a nullspace.
+ *
+ * True when every face is zero-gradient and no apply_bc hook is installed: the
+ * discrete zero-gradient Laplacian is symmetric positive SEMI-definite, with the
+ * constants in its nullspace. The system is then solvable only for a right-hand
+ * side of zero interior mean, which poisson_solver_solve() checks and refuses
+ * otherwise -- the solvers do NOT quietly project the rhs onto the compatible
+ * subspace, because that solves a different problem than the caller asked for.
+ * poisson_make_rhs_compatible() is the caller's way to comply.
+ *
+ * A prescribed face, or a hook, pins the level and makes the operator
+ * nonsingular, where any rhs is admissible and mean-subtracting would be wrong.
+ */
+int poisson_solver_krylov_is_singular(const poisson_solver_t* solver);
 
 /**
  * Create and initialize the inner solver of POISSON_PRECOND_MULTIGRID: one
@@ -138,6 +188,7 @@ static inline cfd_status_t poisson_solver_create_mg_precond(
     poisson_solver_t* (*factory)(void),
     size_t nx, size_t ny, size_t nz,
     double dx, double dy, double dz,
+    const poisson_multigrid_params_t* requested,
     poisson_solver_t** out) {
     poisson_solver_t* mg = factory();
     if (!mg) {
@@ -145,9 +196,27 @@ static inline cfd_status_t poisson_solver_create_mg_precond(
     }
 
     poisson_solver_params_t mg_params = poisson_solver_params_default();
-    mg_params.mg_cycle = MG_CYCLE_V;
-    mg_params.mg_smoother = MG_SMOOTHER_JACOBI;
-    mg_params.mg_bc = MG_BC_DIRICHLET;
+    if (requested) {
+        mg_params.multigrid = *requested;
+    }
+
+    /* Four fields are the preconditioner's, not the caller's. A V-cycle with
+     * weighted-Jacobi smoothing, Dirichlet coarse corrections and an equal
+     * pre/post sweep count applies a symmetric operator; without that, M is not
+     * symmetric and CG is no longer minimising over a Krylov space. W and F
+     * cycles are not V applied harder -- whether they stay symmetric depends on
+     * how the recursion composes, which is not something to assume here.
+     *
+     * poisson_solver_check_config resolves the sweep count by refusing an
+     * unequal pair outright, and refuses a caller who names the other three, so
+     * the assignments below overwrite nothing that was asked for: they fill in
+     * fields the caller was required to leave at zero. The rest of the group --
+     * pre_smooth/post_smooth, coarse_max_iter, max_levels -- is the caller's and
+     * is forwarded above, which is what makes those tunable for PCG-MG at all.
+     */
+    mg_params.multigrid.cycle = MG_CYCLE_V;
+    mg_params.multigrid.smoother = MG_SMOOTHER_JACOBI;
+    mg_params.multigrid.bc = MG_BC_DIRICHLET;
 
     cfd_status_t status = poisson_solver_init(mg, nx, ny, nz, dx, dy, dz, &mg_params);
     if (status != CFD_SUCCESS) {
@@ -156,20 +225,6 @@ static inline cfd_status_t poisson_solver_create_mg_precond(
     }
 
     *out = mg;
-    return CFD_SUCCESS;
-}
-
-/**
- * Reject a caller-supplied apply_bc on solvers that apply the zero-gradient walls
- * on the GPU. They never call the host hook, so accepting one would silently solve
- * the zero-gradient problem instead of the caller's.
- */
-static inline cfd_status_t poisson_solver_reject_custom_bc(const poisson_solver_t* solver) {
-    if (solver->apply_bc) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "A custom apply_bc is not supported by solvers that apply the walls on the GPU");
-        return CFD_ERROR_UNSUPPORTED;
-    }
     return CFD_SUCCESS;
 }
 
@@ -222,7 +277,7 @@ static inline cfd_status_t poisson_solver_reject_custom_bc(const poisson_solver_
  * ============================================================================ */
 
 /**
- * Default restart length m for GMRES(m) when params.restart <= 0.
+ * Default restart length m for GMRES(m) when params.krylov.restart <= 0.
  * The Krylov basis holds m+1 grid-sized vectors, so this bounds memory.
  */
 #define GMRES_DEFAULT_RESTART 30
@@ -525,7 +580,7 @@ static inline void poisson_solver_row_omegas(
 /**
  * The omega a SOR or Red-Black SOR solver relaxes with.
  *
- * Gauss-Seidel is SOR at omega = 1, whatever params.omega says. Otherwise an
+ * Gauss-Seidel is SOR at omega = 1, whatever params.sor.omega says. Otherwise an
  * explicit omega > 0 is used as given, and omega <= 0, the default, asks for the
  * optimum: the Neumann formula for the default wall copy, and the Dirichlet
  * formula above when the caller supplies its own apply_bc. poisson_solver_init()

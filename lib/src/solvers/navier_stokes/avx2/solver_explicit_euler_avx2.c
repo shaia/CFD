@@ -107,6 +107,21 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
     if (simd_status != CFD_SUCCESS) {
         return simd_status;
     }
+
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
+
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
+
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 0);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
+    }
     if (grid->nx < 3 || grid->ny < 3 || (grid->nz > 1 && grid->nz < 3)) {
         return CFD_ERROR_INVALID;
     }

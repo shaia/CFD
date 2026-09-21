@@ -279,7 +279,7 @@ static solve_result_t solve_3d_sinusoidal_backend(
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = SOLVER_TOL;
     params.max_iterations = max_iter;
-    if (omega > 0.0) params.omega = omega;
+    if (omega > 0.0) params.sor.omega = omega;
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &params);
     if (status == CFD_ERROR_UNSUPPORTED) {
