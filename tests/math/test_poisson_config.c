@@ -207,6 +207,32 @@ void test_mg_preconditioner_symmetry_is_protected(void) {
             names[f]);
     }
 
+    /* 0 means "the default", which is 2 for both counts, so these pairs all
+     * describe the same symmetric V(2,2) the rule requires. Comparing the raw
+     * fields would refuse the mixed ones for a difference the hierarchy never
+     * sees. */
+    const int pairs[][2] = { {0, 0}, {0, 2}, {2, 0}, {2, 2} };
+    for (int i = 0; i < 4; i++) {
+        poisson_solver_params_t sym = poisson_solver_params_default();
+        sym.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
+        sym.multigrid.pre_smooth = pairs[i][0];
+        sym.multigrid.post_smooth = pairs[i][1];
+        char msg[64];
+        snprintf(msg, sizeof(msg), "V(%d,%d) resolves to V(2,2)", pairs[i][0], pairs[i][1]);
+        TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS,
+            init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &sym, NULL, &created),
+            msg);
+    }
+
+    /* A pair that stays unequal after defaulting is still refused. */
+    poisson_solver_params_t mixed = poisson_solver_params_default();
+    mixed.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
+    mixed.multigrid.pre_smooth = 0;   /* = 2 */
+    mixed.multigrid.post_smooth = 3;
+    TEST_ASSERT_EQUAL_MESSAGE(CFD_ERROR_INVALID,
+        init_with(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR, &mixed, NULL, &created),
+        "defaulted 2 against an explicit 3 is genuinely asymmetric");
+
     /* The rest of the group is the caller's and is accepted. */
     poisson_solver_params_t ok = poisson_solver_params_default();
     ok.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;

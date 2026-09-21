@@ -13,7 +13,7 @@
 
 #include "cfd/solvers/poisson_solver.h"
 #include "linear_solver_internal.h"
-#include "multigrid_internal.h"  /* mg_subtract_interior_mean */
+#include "multigrid_internal.h"  /* mg_subtract_interior_mean, MG_DEFAULT_*_SMOOTH */
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/indexing.h"
@@ -61,6 +61,18 @@ static int walls_are_all_zero_gradient(const poisson_walls_t* w)
         && w->top == POISSON_WALL_ZERO_GRADIENT
         && w->front == POISSON_WALL_ZERO_GRADIENT
         && w->back == POISSON_WALL_ZERO_GRADIENT;
+}
+
+/**
+ * A sweep count as the multigrid hierarchy will actually read it.
+ *
+ * 0 means "the default" in this field, and the template resolves it that way
+ * (linear_solver_multigrid_template.h). Comparing the raw values would call
+ * pre_smooth = 0, post_smooth = 2 asymmetric and refuse it, when the cycle it
+ * builds is the symmetric V(2,2) the rule is there to require.
+ */
+static int mg_smooth_effective(int requested, int fallback) {
+    return requested > 0 ? requested : fallback;
 }
 
 /**
@@ -354,7 +366,8 @@ cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
      * group is forwarded to the hierarchy by poisson_solver_create_mg_precond. */
     if (p->krylov.preconditioner == POISSON_PRECOND_MULTIGRID
         && (p->multigrid.cycle != 0 || p->multigrid.smoother != 0 || p->multigrid.bc != 0
-            || p->multigrid.pre_smooth != p->multigrid.post_smooth)) {
+            || mg_smooth_effective(p->multigrid.pre_smooth, MG_DEFAULT_PRE_SMOOTH)
+                   != mg_smooth_effective(p->multigrid.post_smooth, MG_DEFAULT_POST_SMOOTH))) {
         cfd_set_error(CFD_ERROR_INVALID,
             "a multigrid preconditioner fixes its cycle, smoother, boundary mode and an "
             "equal pre/post sweep count, which is what keeps it symmetric for CG; "
