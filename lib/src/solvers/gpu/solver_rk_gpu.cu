@@ -56,7 +56,7 @@
 // the per-step increment is clamped to +/-UPDATE_LIMIT before being added, and dt
 // is capped at DT_CONSERVATIVE_LIMIT. These do NOT apply to the RK2/RK4 paths.
 #define UPDATE_LIMIT          1.0
-#define DT_CONSERVATIVE_LIMIT 0.0001
+#define DT_CONSERVATIVE_LIMIT NS_EULER_DT_LIMIT
 
 // ============================================================================
 // CUDA kernels

@@ -185,6 +185,49 @@ void test_cfl_single_high_velocity_point_dominates(void) {
     grid_destroy(g);
 }
 
+
+/* Regression: the convective CFL scan must cover every k-plane.
+ *
+ * ns_dt_convective() indexed with IDX_2D and looped only j and i, so on a 3D
+ * grid it saw the k = 0 plane alone -- while explicitly handling w for 3D. A
+ * field whose fastest flow sits above that plane got a dt sized from stagnant
+ * fluid and blew past the CFL limit. Nothing caught it because every existing
+ * CFL case is 2D, or puts its fast point in plane zero.
+ */
+void test_cfl_convective_scan_covers_all_k_planes(void) {
+    const size_t nx = 10, ny = 10, nz = 5;
+    grid* g = grid_create(nx, ny, nz, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* f = flow_field_create(nx, ny, nz);
+    TEST_ASSERT_NOT_NULL(f);
+    size_t total = nx * ny * nz;
+    for (size_t i = 0; i < total; i++) {
+        f->u[i] = 0.0;
+        f->v[i] = 0.0;
+        f->w[i] = 0.0;
+        f->p[i] = 1.0;
+        f->rho[i] = 1.0;
+    }
+
+    /* One fast cell, deliberately at k = 3 and NOT in the k = 0 plane. */
+    size_t idx = 3 * nx * ny + 5 * nx + 5;
+    f->u[idx] = 50.0;
+
+    ns_solver_params_t params = ns_solver_params_default();
+    compute_time_step(f, g, &params);
+
+    /* dx = dy = 1/9 and dz = 1/4, so min spacing is 1/9. */
+    double expected = params.cfl * (1.0 / 9.0) / (50.0 + sqrt(1.4));
+    TEST_ASSERT_DOUBLE_WITHIN_MESSAGE(
+        1e-12, expected, params.dt,
+        "convective CFL ignored a k > 0 plane; dt sized from stagnant fluid");
+
+    flow_field_destroy(f);
+    grid_destroy(g);
+}
+
 /* ============================================================================
  * Group 3: Sound Speed Effects
  * ============================================================================ */
@@ -593,6 +636,7 @@ int main(void) {
     RUN_TEST(test_cfl_exact_value_zero_velocity);
     RUN_TEST(test_cfl_mixed_uv_velocity);
     RUN_TEST(test_cfl_single_high_velocity_point_dominates);
+    RUN_TEST(test_cfl_convective_scan_covers_all_k_planes);
 
     /* Sound speed */
     RUN_TEST(test_cfl_higher_pressure_reduces_dt);

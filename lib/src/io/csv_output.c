@@ -148,8 +148,15 @@ void write_csv_timeseries(const char* filename, int step, double time, const flo
         fprintf(fp, ",iterations,residual,elapsed_ms\n");
     }
 
+    /* The time column accumulates stats->dt_used -- the step the solver really
+     * took -- so this column has to report that same step, or a row contradicts
+     * itself (time=1e-4 next to dt=5e-3 under the Euler solvers' own cap).
+     * Direct callers that leave dt_used at its ns_solver_stats_default() zero
+     * still get params->dt. */
+    double dt_reported = (stats->dt_used > 0.0) ? stats->dt_used : params->dt;
+
     // Write data row using pre-computed statistics
-    fprintf(fp, "%d,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", step, time, params->dt,
+    fprintf(fp, "%d,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e", step, time, dt_reported,
             derived->u_stats.max_val, derived->v_stats.max_val, derived->w_stats.max_val,
             derived->p_stats.max_val, derived->u_stats.avg_val, derived->v_stats.avg_val,
             derived->w_stats.avg_val, derived->p_stats.avg_val);
