@@ -126,6 +126,10 @@ typedef struct {
  * the laminar viscosity only and the turbulence transport step is a no-op.
  * Zero-initialization is therefore fully backward compatible.
  */
+/* Opaque handle from cfd/nn/cfdnn.h. Forward-declared rather than included so
+ * that every consumer of this header does not acquire the nn dependency. */
+typedef struct cfd_nn_context cfd_nn_context_t;
+
 typedef enum {
     TURB_MODEL_NONE = 0,             /**< Laminar (no turbulence model) */
     TURB_MODEL_K_EPSILON = 1,        /**< Standard k-epsilon (Launder-Spalding) with wall functions */
@@ -262,6 +266,25 @@ typedef struct {
     /* Convective-term discretization (0 = central differences, backward
      * compatible). */
     ns_convection_scheme_t convection_scheme;  /**< Convection scheme selection */
+
+    /* Optional learned eddy-viscosity correction.
+     *
+     * NULL (the default) leaves the turbulence models exactly as they are --
+     * this is a correction applied ON TOP of an active k-epsilon or
+     * Spalart-Allmaras closure, not a replacement for one, because the
+     * features it consumes (a dimensionless strain rate, a turbulent Reynolds
+     * number) are built from k and epsilon and do not exist without a
+     * transport model.
+     *
+     * A context rather than a model: inference needs per-call scratch, and
+     * making the caller own it keeps allocation out of the per-step path and
+     * makes the single-threaded ownership of that scratch explicit. Size it
+     * for at least nx*ny*nz samples.
+     *
+     * The correction is multiplicative on nu_t and is clamped afterwards by
+     * the model's existing realizability bound, so it can only ever add
+     * bounded dissipation. See docs/technical-notes/ml-integration-design.md. */
+    cfd_nn_context_t* turb_closure;
 } ns_solver_params_t;
 
 

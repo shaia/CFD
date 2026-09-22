@@ -12,6 +12,7 @@
 
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
+#include "cfd/nn/cfdnn.h"
 
 #include <math.h>
 #include <string.h>
@@ -47,6 +48,122 @@ void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params) {
             field->nu_t[n] = fmin(nu_t, TURB_NU_T_MAX_FACTOR * nu);
         }
     }
+}
+
+
+/* ==========================================================================
+ * Learned eddy-viscosity correction
+ *
+ * Applied ON TOP of an active closure, never instead of one: the features are
+ * built from k and epsilon, which only exist when a transport model is running.
+ *
+ * Feature set, chosen by the locality study in
+ * docs/technical-notes/ml-integration-design.md:
+ *
+ *   ln S*     = ln(|S| k / eps)     dimensionless strain rate
+ *   ln Re_t   = ln(k^2 / (nu eps))  turbulent Reynolds number
+ *   ln y+     = ln(y u_tau / nu)    approximated here by ln(nu_t/nu)
+ *
+ * Those were measured to generalise across Reynolds number better than the
+ * non-local coordinate y/delta, which is what makes a local closure viable at
+ * all. Note that ln Re_t and ln(nu_t/nu) are nearly collinear for k-epsilon
+ * (nu_t/nu = C_mu Re_t by construction; measured correlation 0.93), so they
+ * carry less independent information than their count suggests.
+ *
+ * Safety is structural, not hoped for:
+ *   - the model's output layer is expected to be softplus, so beta >= 0;
+ *   - beta is additionally floored and ceilinged here, so a wrong model cannot
+ *     produce a negative or unbounded viscosity;
+ *   - the existing realizability clamp still runs afterwards;
+ *   - a non-finite prediction aborts the correction and leaves nu_t untouched,
+ *     rather than seeding NaN into the momentum equation.
+ * The worst case is therefore an over- or under-diffused answer, never an
+ * unstable one.
+ * ========================================================================== */
+
+#define TURB_CLOSURE_FEATURES 3
+#define TURB_CLOSURE_BETA_MIN 0.1
+#define TURB_CLOSURE_BETA_MAX 10.0
+
+void turb_apply_learned_correction(flow_field* field, const grid* grid,
+                                   const ns_solver_params_t* params) {
+    if (!field || !grid || !params || !params->turb_closure) {
+        return; /* feature off: bit-identical to the un-corrected path */
+    }
+    if (params->turb_model == TURB_MODEL_NONE || !field->nu_t) {
+        return;
+    }
+    /* SA carries no k/epsilon, so the feature set is undefined for it. Rather
+     * than silently substitute different features, do nothing. */
+    if (params->turb_model != TURB_MODEL_K_EPSILON) {
+        return;
+    }
+
+    const size_t nx = field->nx, ny = field->ny;
+    const size_t total = nx * ny * field->nz;
+    if (total == 0 || nx < 3 || ny < 3) {
+        return;
+    }
+
+    double* feats = (double*)cfd_malloc(total * TURB_CLOSURE_FEATURES * sizeof(double));
+    double* beta = (double*)cfd_malloc(total * sizeof(double));
+    if (!feats || !beta) {
+        cfd_free(feats);
+        cfd_free(beta);
+        return; /* out of memory: leave nu_t as the base model produced it */
+    }
+
+    const double dx = grid->dx ? grid->dx[0] : 1.0;
+    const double dy = grid->dy ? grid->dy[0] : 1.0;
+
+    for (size_t n = 0; n < total; n++) {
+        const double nu = local_nu(params, field, n);
+        const double k_c = fmax(field->turb_k[n], TURB_K_MIN);
+        const double eps_c = fmax(field->turb_eps[n], TURB_EPS_MIN);
+
+        /* Strain-rate magnitude from central differences; boundary nodes reuse
+         * the nearest interior value rather than a one-sided stencil, since
+         * the wall function governs them anyway. */
+        size_t i = n % nx;
+        size_t j = (n / nx) % ny;
+        size_t ic = i == 0 ? 1 : (i == nx - 1 ? nx - 2 : i);
+        size_t jc = j == 0 ? 1 : (j == ny - 1 ? ny - 2 : j);
+        size_t c = (n / (nx * ny)) * nx * ny + jc * nx + ic;
+
+        double dudy = (field->u[c + nx] - field->u[c - nx]) / (2.0 * dy);
+        double dvdx = (field->v[c + 1] - field->v[c - 1]) / (2.0 * dx);
+        double dudx = (field->u[c + 1] - field->u[c - 1]) / (2.0 * dx);
+        double dvdy = (field->v[c + nx] - field->v[c - nx]) / (2.0 * dy);
+        double s12 = 0.5 * (dudy + dvdx);
+        double s_mag = sqrt(2.0 * (dudx * dudx + dvdy * dvdy + 2.0 * s12 * s12));
+
+        double s_star = s_mag * k_c / eps_c;
+        double re_t = k_c * k_c / (nu * eps_c);
+        double nut_p = field->nu_t[n] / nu;
+
+        double* f = feats + n * TURB_CLOSURE_FEATURES;
+        f[0] = log(fmax(s_star, 1e-30));
+        f[1] = log(fmax(re_t, 1e-30));
+        f[2] = log(fmax(nut_p, 1e-30));
+    }
+
+    cfd_status_t st = cfd_nn_predict_batch(params->turb_closure, total,
+                                           feats, total * TURB_CLOSURE_FEATURES,
+                                           beta, total);
+    if (st == CFD_SUCCESS) {
+        for (size_t n = 0; n < total; n++) {
+            double b = beta[n];
+            if (!isfinite(b)) {
+                continue;
+            }
+            b = fmin(fmax(b, TURB_CLOSURE_BETA_MIN), TURB_CLOSURE_BETA_MAX);
+            const double nu = local_nu(params, field, n);
+            field->nu_t[n] = fmin(field->nu_t[n] * b, TURB_NU_T_MAX_FACTOR * nu);
+        }
+    }
+
+    cfd_free(feats);
+    cfd_free(beta);
 }
 
 double turb_wall_distance(const grid* grid, const ns_turbulence_bc_config_t* tbc,
@@ -252,6 +369,7 @@ cfd_status_t turbulence_step_explicit_with_workspace(
     }
 
     turb_update_nu_t(field, params);
+    turb_apply_learned_correction(field, grid, params);
 
     if (owns_buffer) cfd_free(buf);
     return CFD_SUCCESS;
@@ -545,6 +663,10 @@ cfd_status_t turbulence_init_uniform(flow_field* field,
         }
     }
 
+    /* No learned correction here: this is initialization, and the features it
+     * consumes (a strain rate, a turbulent Reynolds number) are meaningless
+     * before the flow has developed. The correction belongs to the per-step
+     * path only. */
     turb_update_nu_t(field, params);
     return CFD_SUCCESS;
 }

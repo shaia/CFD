@@ -103,6 +103,17 @@ double turb_wall_distance(const grid* grid, const ns_turbulence_bc_config_t* tbc
  *  (nu_t <= TURB_NU_T_MAX_FACTOR * nu). Used after transport and by BCs. */
 void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params);
 
+/**
+ * Apply the optional learned eddy-viscosity correction.
+ *
+ * Call immediately after turb_update_nu_t(). A no-op unless
+ * params->turb_closure is set and k-epsilon is active, so the un-corrected
+ * path stays bit-identical. Additive by design: turb_update_nu_t keeps its
+ * signature and its behaviour.
+ */
+void turb_apply_learned_correction(flow_field* field, const grid* grid,
+                                   const ns_solver_params_t* params);
+
 /** Shared argument/grid validation for the turbulence step (all backends):
  *  non-NULL args and fields, known model, 2D only, nx/ny >= 3, uniform
  *  spacing. Assumes turb_model != TURB_MODEL_NONE was already checked. */
