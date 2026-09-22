@@ -11,9 +11,8 @@
  *   - Rejects non-2^k+1 grid dimensions at init
  *   - Is explicitly rejected (CFD_ERROR_UNSUPPORTED) by SIMD CG and by GMRES,
  *     instead of being silently ignored
- *   - Is reachable through the poisson_solve_3d() convenience presets
- *     POISSON_SOLVER_PCG_MG_SCALAR and POISSON_SOLVER_PCG_MG_OMP with the
- *     legacy return contract
+ *   - Is reachable through the MULTIGRID_PCG preset on both the scalar and the
+ *     OpenMP backend, which report convergence as a cfd_status_t
  *
  * The iteration-count, dimension-rejection and preset checks run on both the
  * scalar and the OpenMP CG backends; OpenMP cases are skipped when the build
@@ -240,7 +239,7 @@ static int run_cg_solve(poisson_solver_backend_t backend,
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = TOLERANCE;
     params.max_iterations = MAX_ITERATIONS;
-    params.preconditioner = precond;
+    params.krylov.preconditioner = precond;
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, nz, dx, dy, dz, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -422,7 +421,7 @@ void test_mg_pcg_rejects_invalid_dims(void) {
         TEST_ASSERT_NOT_NULL_MESSAGE(solver, "Could not create CG solver");
 
         poisson_solver_params_t params = poisson_solver_params_default();
-        params.preconditioner = POISSON_PRECOND_MULTIGRID;
+        params.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params);
         printf("      %s: init status %d\n", backend_label(backend), (int)status);
@@ -447,7 +446,7 @@ static void assert_backend_rejects_mg_precond(poisson_solver_method_t method,
     }
 
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.preconditioner = POISSON_PRECOND_MULTIGRID;
+    params.krylov.preconditioner = POISSON_PRECOND_MULTIGRID;
 
     cfd_status_t status = poisson_solver_init(solver, 33, 33, 1,
                                               1.0 / 32.0, 1.0 / 32.0, 0.0, &params);
@@ -472,15 +471,15 @@ void test_mg_precond_unsupported_on_other_backends(void) {
 }
 
 /* ============================================================================
- * TEST: CONVENIENCE PRESETS (POISSON_SOLVER_PCG_MG_SCALAR / _OMP)
+ * TEST: THE MULTIGRID_PCG PRESET (scalar and OpenMP backends)
  * ============================================================================ */
 
 /**
- * Solve the sinusoidal problem on an n x n grid through a convenience preset,
- * from a zero initial guess. Returns poisson_solve_3d's result: the iteration
- * count, or -1 on failure.
+ * Solve the sinusoidal problem on an n x n grid through a preset, from a zero
+ * initial guess. Returns the iteration count, or -1 if the solve did not
+ * converge -- including when the configuration is refused at init.
  */
-static int run_preset(poisson_solver_type preset, size_t n) {
+static int run_preset(poisson_preset_t preset, poisson_solver_backend_t backend, size_t n) {
     double h = (DOMAIN_MAX - DOMAIN_MIN) / (n - 1);
     double* p = create_field_3d(n, n, 1);
     double* p_temp = create_field_3d(n, n, 1);
@@ -491,58 +490,66 @@ static int run_preset(poisson_solver_type preset, size_t n) {
 
     init_sinusoidal_rhs(rhs, n, n, h, h);
 
-    int iters = poisson_solve_3d(p, p_temp, rhs, n, n, 1, h, h, 0.0, preset);
+    poisson_solver_config_t cfg = poisson_solver_config_preset(preset);
+    cfg.backend = backend;
+
+    poisson_solver_stats_t stats = poisson_solver_stats_default();
+    cfd_status_t status =
+        poisson_solve(p, p_temp, rhs, n, n, 1, h, h, 0.0, &cfg, &stats);
 
     cfd_free(p);
     cfd_free(p_temp);
     cfd_free(rhs);
-    return iters;
+    return (status == CFD_SUCCESS) ? stats.iterations : -1;
 }
 
 void test_pcg_mg_preset(void) {
-    printf("\n    Testing poisson_solve_3d PCG_MG presets...\n");
+    printf("\n    Testing the MULTIGRID_PCG preset...\n");
 
     /* Conforming grid: converges, returns iteration count */
-    int scalar_iters = run_preset(POISSON_SOLVER_PCG_MG_SCALAR, 33);
+    int scalar_iters = run_preset(POISSON_PRESET_MULTIGRID_PCG, POISSON_BACKEND_SCALAR, 33);
     printf("      scalar 33x33 preset solve: %d iterations\n", scalar_iters);
     TEST_ASSERT_TRUE_MESSAGE(scalar_iters > 0,
         "Preset must converge on a 2^k+1 grid and report iterations");
 
-    /* Non-conforming grid: fails loudly with -1 (legacy contract) */
-    int scalar_bad = run_preset(POISSON_SOLVER_PCG_MG_SCALAR, 30);
+    /* Non-conforming grid: the multigrid hierarchy cannot be built, so init
+     * refuses and the solve never runs. */
+    int scalar_bad = run_preset(POISSON_PRESET_MULTIGRID_PCG, POISSON_BACKEND_SCALAR, 30);
     printf("      scalar 30x30 preset solve: returned %d\n", scalar_bad);
     TEST_ASSERT_EQUAL_INT_MESSAGE(-1, scalar_bad,
-        "Preset must return -1 on non-2^k+1 grids");
+        "Preset must fail on non-2^k+1 grids");
 
     if (!poisson_solver_backend_available(POISSON_BACKEND_OMP)) {
-        TEST_ASSERT_EQUAL_INT_MESSAGE(-1, run_preset(POISSON_SOLVER_PCG_MG_OMP, 33),
-            "PCG_MG_OMP preset must fail without an OpenMP backend");
-        printf("      OMP: backend not available (PCG_MG_OMP preset returned -1)\n");
+        TEST_ASSERT_EQUAL_INT_MESSAGE(-1,
+            run_preset(POISSON_PRESET_MULTIGRID_PCG, POISSON_BACKEND_OMP, 33),
+            "The OpenMP backend must fail when it is not available");
+        printf("      OMP: backend not available\n");
         return;
     }
 
-    int omp_iters = run_preset(POISSON_SOLVER_PCG_MG_OMP, 33);
+    int omp_iters = run_preset(POISSON_PRESET_MULTIGRID_PCG, POISSON_BACKEND_OMP, 33);
     printf("      OMP    33x33 preset solve: %d iterations\n", omp_iters);
     TEST_ASSERT_TRUE_MESSAGE(omp_iters > 0 && omp_iters <= MG_PCG_MAX_ITERS,
         "OMP preset must converge within the MG-PCG iteration bound");
     TEST_ASSERT_TRUE_MESSAGE(abs(omp_iters - scalar_iters) <= 2,
-        "OMP and scalar PCG_MG presets must need the same iterations (+-2)");
+        "OMP and scalar must need the same iterations (+-2)");
 
-    /* The preset must carry the MG preconditioner into its cached OMP solver,
-     * not fall back to plain CG: on 65x65 it needs far fewer iterations than
-     * the CG_OMP preset on the same problem. */
-    int omp_pcg_65 = run_preset(POISSON_SOLVER_PCG_MG_OMP, 65);
-    int omp_cg_65 = run_preset(POISSON_SOLVER_CG_OMP, 65);
-    printf("      OMP    65x65: PCG_MG preset %d iterations, CG preset %d iterations\n",
+    /* The preset must really carry the MG preconditioner and not degrade to
+     * plain CG: on 65x65 it needs far fewer iterations than the plain CG preset
+     * on the same problem. This is the assertion that the preset means what it
+     * says, and it survives the preset redesign unchanged in substance. */
+    int omp_pcg_65 = run_preset(POISSON_PRESET_MULTIGRID_PCG, POISSON_BACKEND_OMP, 65);
+    int omp_cg_65 = run_preset(POISSON_PRESET_DEFAULT, POISSON_BACKEND_OMP, 65);
+    printf("      OMP    65x65: MULTIGRID_PCG %d iterations, DEFAULT %d iterations\n",
            omp_pcg_65, omp_cg_65);
     TEST_ASSERT_TRUE_MESSAGE(omp_pcg_65 > 0 &&
                              (double)omp_cg_65 >= MG_PCG_MIN_SPEEDUP * (double)omp_pcg_65,
-        "PCG_MG_OMP preset must be multigrid-preconditioned, not plain CG");
+        "MULTIGRID_PCG must be multigrid-preconditioned, not plain CG");
 
-    int omp_bad = run_preset(POISSON_SOLVER_PCG_MG_OMP, 30);
+    int omp_bad = run_preset(POISSON_PRESET_MULTIGRID_PCG, POISSON_BACKEND_OMP, 30);
     printf("      OMP    30x30 preset solve: returned %d\n", omp_bad);
     TEST_ASSERT_EQUAL_INT_MESSAGE(-1, omp_bad,
-        "OMP preset must return -1 on non-2^k+1 grids");
+        "OMP preset must fail on non-2^k+1 grids");
 }
 
 /* ============================================================================

@@ -43,6 +43,111 @@ static inline cfd_status_t ns_check_convection_scheme(const ns_solver_params_t* 
     return CFD_SUCCESS;
 }
 
+/**
+ * Validate the pressure walls at solver init.
+ *
+ * Default (all zero-gradient) walls are what every projection solver has always
+ * used and always pass. A solver that cannot honour a prescribed face must say
+ * so rather than solve the zero-gradient problem instead of the caller's -- and
+ * that includes the time integrators, which solve no Poisson equation at all, so
+ * a pressure BC configured on one would silently do nothing.
+ *
+ * @param params                      Solver parameters (NULL means defaults)
+ * @param backend_supports_per_face   Nonzero if this solver honours params.pressure_bc
+ * @return CFD_SUCCESS, CFD_ERROR_INVALID for a value outside poisson_wall_t, or
+ *         CFD_ERROR_UNSUPPORTED
+ */
+static inline cfd_status_t ns_check_pressure_bc(const ns_solver_params_t* params,
+                                                int backend_supports_per_face) {
+    if (!params) {
+        return CFD_SUCCESS;
+    }
+    const poisson_walls_t* w = &params->pressure_bc;
+    /* Range-checked first, as the two validators beside this one do: an
+     * out-of-enum face is a caller error, not a backend limitation, and
+     * reporting it as UNSUPPORTED sends the caller to try another backend that
+     * will refuse the same garbage. A checkpoint reader casts these straight
+     * from the file, so the value is not always one the compiler chose. */
+    if (!poisson_walls_are_legal(w)) {
+        cfd_set_error(CFD_ERROR_INVALID, "Unknown poisson_wall_t in params.pressure_bc");
+        return CFD_ERROR_INVALID;
+    }
+    if (poisson_walls_are_default(w)) {
+        return CFD_SUCCESS;
+    }
+    if (!backend_supports_per_face) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "params.pressure_bc is honoured by the scalar, OpenMP and AVX2 "
+                      "projection solvers only");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return CFD_SUCCESS;
+}
+
+/**
+ * Validate the pressure-solver selection at solver init.
+ *
+ * The analogue of ns_check_pressure_bc, and missing until now, which is why
+ * NS_PRESSURE_SOLVER_MULTIGRID on rk4 or explicit_euler was accepted and did
+ * nothing: those solvers run no Poisson solve at all.
+ *
+ * @param params                          Solver parameters (NULL means defaults)
+ * @param backend_supports_pressure_solver Nonzero if this solver runs a pressure
+ *                                        solve it can choose the method for
+ * @return CFD_SUCCESS, CFD_ERROR_INVALID for an unknown value, or
+ *         CFD_ERROR_UNSUPPORTED
+ */
+static inline cfd_status_t ns_check_pressure_solver(const ns_solver_params_t* params,
+                                                    int backend_supports_pressure_solver) {
+    if (!params || params->pressure_solver == NS_PRESSURE_SOLVER_DEFAULT) {
+        return CFD_SUCCESS;
+    }
+    if (params->pressure_solver != NS_PRESSURE_SOLVER_MULTIGRID &&
+        params->pressure_solver != NS_PRESSURE_SOLVER_PCG_MG) {
+        cfd_set_error(CFD_ERROR_INVALID, "Unknown ns_solver_params_t.pressure_solver");
+        return CFD_ERROR_INVALID;
+    }
+    if (!backend_supports_pressure_solver) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "params.pressure_solver is honoured by the scalar and OpenMP "
+                      "projection solvers only");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return CFD_SUCCESS;
+}
+
+/**
+ * Validate the turbulence model at solver init.
+ *
+ * The GPU backends have no RANS kernels and were rejecting this per step, from
+ * inside solve_projection_method_gpu and its siblings. That is late: a caller
+ * gets the refusal after init has reported success, which is the one place they
+ * could still have chosen a different backend.
+ *
+ * @param params                       Solver parameters (NULL means defaults)
+ * @param backend_supports_turbulence  Nonzero if this backend implements RANS
+ * @return CFD_SUCCESS, CFD_ERROR_INVALID for an unknown model, or
+ *         CFD_ERROR_UNSUPPORTED
+ */
+static inline cfd_status_t ns_check_turbulence_model(const ns_solver_params_t* params,
+                                                     int backend_supports_turbulence) {
+    if (!params || params->turb_model == TURB_MODEL_NONE) {
+        return CFD_SUCCESS;
+    }
+    if (params->turb_model != TURB_MODEL_K_EPSILON &&
+        params->turb_model != TURB_MODEL_SPALART_ALLMARAS) {
+        cfd_set_error(CFD_ERROR_INVALID, "Unknown ns_solver_params_t.turb_model");
+        return CFD_ERROR_INVALID;
+    }
+    if (!backend_supports_turbulence) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "RANS turbulence models are implemented on the scalar, OpenMP and "
+                      "AVX2 solvers only; the GPU backends have no RANS kernels");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return CFD_SUCCESS;
+}
+
 /** Convective first derivatives of (u, v, w) at one grid point */
 typedef struct {
     double du_dx, du_dy, du_dz;

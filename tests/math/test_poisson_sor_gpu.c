@@ -23,6 +23,8 @@
  * CFD_ERROR_UNSUPPORTED), per the project's optional-backend testing policy.
  */
 
+#include "../test_poisson_helpers.h"
+
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/memory.h"
@@ -257,11 +259,6 @@ void test_sor_gpu_matches_cpu(void) {
     cfd_free(p_cpu);
 }
 
-static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
-    (void)solver;
-    (void)x;
-}
-
 /* The GPU SOR and Red-Black SOR solvers apply the zero-gradient walls on the
  * device and never call apply_bc, so init rejects a caller-supplied one rather
  * than solve the zero-gradient problem with the omega for the caller's walls. */
@@ -432,7 +429,7 @@ static int solve_gpu_17x17(poisson_solver_method_t method, double omega, int max
         return 0;
     }
     poisson_solver_params_t params = poisson_solver_params_default();
-    params.omega = omega;
+    params.sor.omega = omega;
     params.max_iterations = max_iterations;
     params.check_interval = check_interval;
     cfd_status_t st = poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params);

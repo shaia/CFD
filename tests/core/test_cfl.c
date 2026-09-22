@@ -185,6 +185,49 @@ void test_cfl_single_high_velocity_point_dominates(void) {
     grid_destroy(g);
 }
 
+
+/* Regression: the convective CFL scan must cover every k-plane.
+ *
+ * ns_dt_convective() indexed with IDX_2D and looped only j and i, so on a 3D
+ * grid it saw the k = 0 plane alone -- while explicitly handling w for 3D. A
+ * field whose fastest flow sits above that plane got a dt sized from stagnant
+ * fluid and blew past the CFL limit. Nothing caught it because every existing
+ * CFL case is 2D, or puts its fast point in plane zero.
+ */
+void test_cfl_convective_scan_covers_all_k_planes(void) {
+    const size_t nx = 10, ny = 10, nz = 5;
+    grid* g = grid_create(nx, ny, nz, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* f = flow_field_create(nx, ny, nz);
+    TEST_ASSERT_NOT_NULL(f);
+    size_t total = nx * ny * nz;
+    for (size_t i = 0; i < total; i++) {
+        f->u[i] = 0.0;
+        f->v[i] = 0.0;
+        f->w[i] = 0.0;
+        f->p[i] = 1.0;
+        f->rho[i] = 1.0;
+    }
+
+    /* One fast cell, deliberately at k = 3 and NOT in the k = 0 plane. */
+    size_t idx = 3 * nx * ny + 5 * nx + 5;
+    f->u[idx] = 50.0;
+
+    ns_solver_params_t params = ns_solver_params_default();
+    compute_time_step(f, g, &params);
+
+    /* dx = dy = 1/9 and dz = 1/4, so min spacing is 1/9. */
+    double expected = params.cfl * (1.0 / 9.0) / (50.0 + sqrt(1.4));
+    TEST_ASSERT_DOUBLE_WITHIN_MESSAGE(
+        1e-12, expected, params.dt,
+        "convective CFL ignored a k > 0 plane; dt sized from stagnant fluid");
+
+    flow_field_destroy(f);
+    grid_destroy(g);
+}
+
 /* ============================================================================
  * Group 3: Sound Speed Effects
  * ============================================================================ */
@@ -198,6 +241,9 @@ void test_cfl_higher_pressure_reduces_dt(void) {
     TEST_ASSERT_NOT_NULL(f);
 
     ns_solver_params_t params = ns_solver_params_default();
+    /* Isolate the acoustic/advective branch: with the default mu the viscous
+     * limit (dt ~ h^2) binds on this grid and masks the sound-speed scaling. */
+    params.mu = 0.0;
 
     /* Low pressure: sound_speed = sqrt(gamma * 1 / 1) = sqrt(1.4) */
     fill_uniform(f, 0.0, 0.0, 1.0, 1.0);
@@ -225,6 +271,9 @@ void test_cfl_higher_density_increases_dt(void) {
     TEST_ASSERT_NOT_NULL(f);
 
     ns_solver_params_t params = ns_solver_params_default();
+    /* Isolate the acoustic/advective branch: with the default mu the viscous
+     * limit (dt ~ h^2) binds on this grid and masks the sound-speed scaling. */
+    params.mu = 0.0;
 
     /* Low density: sound_speed = sqrt(gamma * 1 / 1) = sqrt(1.4) */
     fill_uniform(f, 0.0, 0.0, 1.0, 1.0);
@@ -376,6 +425,9 @@ void test_cfl_near_zero_speed_fallback(void) {
     fill_uniform(f, 0.0, 0.0, 1e-25, 1.0);
 
     ns_solver_params_t params = ns_solver_params_default();
+    /* Isolate the acoustic/advective branch: with the default mu the viscous
+     * limit (dt ~ h^2) binds on this grid and masks the sound-speed scaling. */
+    params.mu = 0.0;
     compute_time_step(f, g, &params);
 
     /* Fallback: max_speed = 1.0, dt = 0.2 * 0.02 / 1.0 = 0.004 */
@@ -410,6 +462,164 @@ void test_cfl_nonuniform_velocity_field_uses_max(void) {
     grid_destroy(g);
 }
 
+
+/* ============================================================================
+ * Group 7: Viscous Diffusion Limit
+ *
+ * dt < cfl * h^2 / (2 * nu * ndim), nu = mu / rho.
+ *
+ * This limit scales as h^2 where the convective limit scales as h, so it
+ * becomes the binding constraint as grids refine. It applies to the molecular
+ * viscosity, not only to a turbulence model's eddy viscosity.
+ * ============================================================================ */
+
+void test_cfl_laminar_viscous_limit_binds_on_fine_grid(void) {
+    /* The ROADMAP scenario: 129x129 unit cavity at Re=100 (nu = 1e-2). The
+     * viscous limit is several times tighter than the CFL limit here, so a dt
+     * chosen from CFL alone is unstable. */
+    grid* g = grid_create(129, 129, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* f = flow_field_create(129, 129, 1);
+    TEST_ASSERT_NOT_NULL(f);
+    fill_uniform(f, 0.0, 0.0, 1.0, 1.0);
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.mu = 1e-2;
+    params.cfl = 0.5;
+
+    compute_time_step(f, g, &params);
+
+    const double h = 1.0 / 128.0;
+    const double nu = params.mu / 1.0;
+    const double dt_visc = params.cfl * h * h / (2.0 * nu * 2);
+    const double dt_cfl = params.cfl * h / sqrt(1.4); /* zero velocity: sound speed only */
+
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, dt_visc, params.dt);
+    TEST_ASSERT_TRUE_MESSAGE(dt_visc < dt_cfl,
+                             "viscous limit must bind before CFL on this grid");
+
+    flow_field_destroy(f);
+    grid_destroy(g);
+}
+
+void test_cfl_viscous_limit_scales_as_h_squared(void) {
+    /* Halving h quarters the viscous dt, where the CFL branch would only halve
+     * it. This distinguishes the two branches unambiguously. */
+    double dt[2];
+    const size_t n[2] = {33, 65};
+
+    for (int k = 0; k < 2; k++) {
+        grid* g = grid_create(n[k], n[k], 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+        TEST_ASSERT_NOT_NULL(g);
+        grid_initialize_uniform(g);
+
+        flow_field* f = flow_field_create(n[k], n[k], 1);
+        TEST_ASSERT_NOT_NULL(f);
+        fill_uniform(f, 0.0, 0.0, 1.0, 1.0);
+
+        ns_solver_params_t params = ns_solver_params_default();
+        params.mu = 0.5;  /* large enough that viscosity binds on both grids */
+        params.cfl = 0.5;
+        compute_time_step(f, g, &params);
+        dt[k] = params.dt;
+
+        flow_field_destroy(f);
+        grid_destroy(g);
+    }
+
+    TEST_ASSERT_DOUBLE_WITHIN(1e-9, 4.0, dt[0] / dt[1]);
+}
+
+void test_cfl_viscous_limit_scales_inversely_with_mu(void) {
+    grid* g = grid_create(65, 65, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* f = flow_field_create(65, 65, 1);
+    TEST_ASSERT_NOT_NULL(f);
+    fill_uniform(f, 0.0, 0.0, 1.0, 1.0);
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.cfl = 0.5;
+
+    params.mu = 0.25;
+    compute_time_step(f, g, &params);
+    double dt_low_mu = params.dt;
+
+    params.mu = 0.5;
+    compute_time_step(f, g, &params);
+    double dt_high_mu = params.dt;
+
+    TEST_ASSERT_DOUBLE_WITHIN(1e-9, 2.0, dt_low_mu / dt_high_mu);
+
+    flow_field_destroy(f);
+    grid_destroy(g);
+}
+
+void test_cfl_zero_viscosity_disables_viscous_limit(void) {
+    grid* g = grid_create(129, 129, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    TEST_ASSERT_NOT_NULL(g);
+    grid_initialize_uniform(g);
+
+    flow_field* f = flow_field_create(129, 129, 1);
+    TEST_ASSERT_NOT_NULL(f);
+    fill_uniform(f, 0.0, 0.0, 1.0, 1.0);
+
+    ns_solver_params_t params = ns_solver_params_default();
+    params.mu = 0.0;
+    params.cfl = 0.5;
+
+    compute_time_step(f, g, &params);
+
+    const double h = 1.0 / 128.0;
+    const double expected = params.cfl * h / sqrt(1.4);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, expected, params.dt);
+
+    flow_field_destroy(f);
+    grid_destroy(g);
+}
+
+void test_cfl_viscous_limit_uses_ndim_3_in_3d(void) {
+    /* ndim goes 2 -> 3, so the 3D limit is 2/3 of the 2D one. */
+    double dt[2];
+    const size_t nz[2] = {1, 33};
+
+    for (int k = 0; k < 2; k++) {
+        grid* g = grid_create(33, 33, nz[k], 0.0, 1.0, 0.0, 1.0, 0.0,
+                              (nz[k] > 1) ? 1.0 : 0.0);
+        TEST_ASSERT_NOT_NULL(g);
+        grid_initialize_uniform(g);
+
+        flow_field* f = flow_field_create(33, 33, nz[k]);
+        TEST_ASSERT_NOT_NULL(f);
+        size_t total = f->nx * f->ny * f->nz;
+        for (size_t i = 0; i < total; i++) {
+            f->u[i] = 0.0;
+            f->v[i] = 0.0;
+            f->p[i] = 1.0;
+            f->rho[i] = 1.0;
+        }
+        if (f->w) {
+            for (size_t i = 0; i < total; i++) {
+                f->w[i] = 0.0;
+            }
+        }
+
+        ns_solver_params_t params = ns_solver_params_default();
+        params.mu = 0.5;
+        params.cfl = 0.5;
+        compute_time_step(f, g, &params);
+        dt[k] = params.dt;
+
+        flow_field_destroy(f);
+        grid_destroy(g);
+    }
+
+    TEST_ASSERT_DOUBLE_WITHIN(1e-9, 1.5, dt[0] / dt[1]);
+}
+
 /* ============================================================================
  * Test Runner
  * ============================================================================ */
@@ -426,6 +636,7 @@ int main(void) {
     RUN_TEST(test_cfl_exact_value_zero_velocity);
     RUN_TEST(test_cfl_mixed_uv_velocity);
     RUN_TEST(test_cfl_single_high_velocity_point_dominates);
+    RUN_TEST(test_cfl_convective_scan_covers_all_k_planes);
 
     /* Sound speed */
     RUN_TEST(test_cfl_higher_pressure_reduces_dt);
@@ -442,6 +653,13 @@ int main(void) {
     /* Edge cases */
     RUN_TEST(test_cfl_near_zero_speed_fallback);
     RUN_TEST(test_cfl_nonuniform_velocity_field_uses_max);
+
+    /* Viscous diffusion limit */
+    RUN_TEST(test_cfl_laminar_viscous_limit_binds_on_fine_grid);
+    RUN_TEST(test_cfl_viscous_limit_scales_as_h_squared);
+    RUN_TEST(test_cfl_viscous_limit_scales_inversely_with_mu);
+    RUN_TEST(test_cfl_zero_viscosity_disables_viscous_limit);
+    RUN_TEST(test_cfl_viscous_limit_uses_ndim_3_in_3d);
 
     return UNITY_END();
 }

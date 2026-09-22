@@ -9,6 +9,8 @@
 #include "cfd/solvers/poisson_solver.h"
 
 #include "../solvers/navier_stokes/ns_convection_internal.h"
+#include "../solvers/navier_stokes/ns_pressure_internal.h"
+#include "../solvers/navier_stokes/ns_simd_backend_internal.h"
 
 
 #ifdef _WIN32
@@ -88,7 +90,8 @@ cfd_status_t rk2_omp_impl(flow_field* field, const grid* grid,
 cfd_status_t rk4_omp_impl(flow_field* field, const grid* grid,
                            const ns_solver_params_t* params);
 cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
-                                         const ns_solver_params_t* params);
+                                         const ns_solver_params_t* params,
+                                         poisson_solver_t* pressure);
 #endif
 
 // GPU solver functions
@@ -184,7 +187,8 @@ static ns_solver_t* create_rk4_omp_solver(void);
 
 // External projection method solver functions
 extern cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
-                                            const ns_solver_params_t* params);
+                                            const ns_solver_params_t* params,
+                                            poisson_solver_t* pressure);
 extern void solve_projection_method_optimized(flow_field* field, const grid* grid,
                                               const ns_solver_params_t* params);
 
@@ -456,6 +460,11 @@ cfd_status_t solver_step(ns_solver_t* solver, flow_field* field, const grid* gri
         return CFD_ERROR;
     }
 
+    /* Default; a solver that advances by a different step overrides it. */
+    if (stats) {
+        stats->dt_used = params->dt;
+    }
+
     double start_time = get_time_ms();
 
     cfd_status_t status = solver->step(solver, field, grid, params, stats);
@@ -477,6 +486,11 @@ cfd_status_t solver_solve(ns_solver_t* solver, flow_field* field, const grid* gr
     }
     if (!solver->solve) {
         return CFD_ERROR;
+    }
+
+    /* Default; a solver that advances by a different step overrides it. */
+    if (stats) {
+        stats->dt_used = params->dt;
     }
 
     double start_time = get_time_ms();
@@ -564,6 +578,21 @@ static cfd_status_t explicit_euler_init(ns_solver_t* solver, const grid* grid,
         return scheme_status;
     }
 
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
+
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
+
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 0);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
+    }
+
     explicit_euler_context* ctx =
         (explicit_euler_context*)cfd_malloc(sizeof(explicit_euler_context));
     if (!ctx) {
@@ -584,6 +613,11 @@ static void explicit_euler_destroy(ns_solver_t* solver) {
 
 static cfd_status_t explicit_euler_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -617,6 +651,11 @@ static cfd_status_t explicit_euler_step(ns_solver_t* solver, flow_field* field, 
 
 static cfd_status_t explicit_euler_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
 
     if (field->nx < 3 || field->ny < 3) {
@@ -867,14 +906,30 @@ static ns_solver_t* create_rk4_optimized_solver(void) {
     return s;
 }
 
-static cfd_status_t explicit_euler_simd_step_guarded(ns_solver_t* solver, flow_field* field,
-                                                      const grid* grid, const ns_solver_params_t* params,
-                                                      ns_solver_stats_t* stats) {
+/* Registry-level stats wrapper for the SIMD Euler step.
+ *
+ * Was named "_guarded" for a compile-time SIMD guard that now lives in
+ * explicit_euler_simd_init(), leaving it a bare passthrough -- which is how it
+ * came to be the one Euler entry point that never reported dt_used, while its
+ * own solve() sibling twenty lines below did. */
+static cfd_status_t explicit_euler_simd_step_with_stats(ns_solver_t* solver, flow_field* field,
+                                                        const grid* grid,
+                                                        const ns_solver_params_t* params,
+                                                        ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
     return explicit_euler_simd_step(solver, field, grid, params, stats);
 }
 
 static cfd_status_t explicit_euler_simd_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                               const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     if (!solver || !field || !grid || !params) {
         return CFD_ERROR_INVALID;
     }
@@ -912,7 +967,7 @@ static ns_solver_t* create_explicit_euler_optimized_solver(void) {
 
     s->init = explicit_euler_simd_init;
     s->destroy = explicit_euler_simd_destroy;
-    s->step = explicit_euler_simd_step_guarded;
+    s->step = explicit_euler_simd_step_with_stats;
     s->solve = explicit_euler_simd_solve;
     s->apply_boundary = NULL;
     s->compute_dt = NULL;
@@ -926,70 +981,10 @@ static ns_solver_t* create_explicit_euler_optimized_solver(void) {
 
 typedef struct {
     int initialized;
+    poisson_solver_t* pressure;  /**< Owned across the solver's life; ns_pressure_internal.h */
+    poisson_solver_backend_t pressure_backend;
 } projection_context;
 
-/**
- * Validate ns_solver_params_t.pressure_solver for a projection solver whose
- * multigrid modes run on the given Poisson backend (scalar for "projection",
- * OMP for "projection_omp").
- *
- * DEFAULT (or NULL params) needs no check. Both MG modes need a multigrid
- * hierarchy on this exact grid, so the grid is probed with that backend's
- * multigrid solver; non-2^k+1 dimensions return CFD_ERROR_UNSUPPORTED.
- */
-static cfd_status_t check_mg_pressure_solver(const grid* grid,
-                                             const ns_solver_params_t* params,
-                                             poisson_solver_backend_t backend) {
-    if (!params || params->pressure_solver == NS_PRESSURE_SOLVER_DEFAULT) {
-        return CFD_SUCCESS;
-    }
-    if (params->pressure_solver != NS_PRESSURE_SOLVER_MULTIGRID &&
-        params->pressure_solver != NS_PRESSURE_SOLVER_PCG_MG) {
-        return CFD_ERROR_INVALID;
-    }
-    /* Screen degenerate grids first. poisson_solver_init reports those
-     * with CFD_ERROR_INVALID as well, so rejecting them here keeps the
-     * probe's INVALID unambiguous: below, it can only mean the
-     * multigrid-specific non-2^k+1 rejection. A grid too small to hold an
-     * interior cell is a caller error, not an unsupported configuration,
-     * so it stays INVALID rather than being remapped to UNSUPPORTED. */
-    if (grid->nx < 3 || grid->ny < 3 || (grid->nz > 1 && grid->nz < 3)) {
-        cfd_set_error(CFD_ERROR_INVALID,
-            "Multigrid pressure solver requires at least 3 points per active dimension");
-        return CFD_ERROR_INVALID;
-    }
-
-    /* Both MG modes require a multigrid hierarchy on this exact grid:
-     * probe-init and reject non-2^k+1 dimensions up front. */
-    poisson_solver_t* probe = poisson_solver_create(POISSON_METHOD_MULTIGRID, backend);
-    if (!probe) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "Multigrid Poisson solver is unavailable in this build");
-        return CFD_ERROR_UNSUPPORTED;
-    }
-    /* The probe only needs the dimension checks, which multigrid init runs
-     * before it builds anything. mg_max_levels = 1 stops it from
-     * allocating the coarse-grid hierarchy that the real pressure solve
-     * would rebuild anyway, avoiding an O(N) transient spike at init. */
-    poisson_solver_params_t probe_params = poisson_solver_params_default();
-    probe_params.mg_max_levels = 1;
-
-    cfd_status_t probe_status = poisson_solver_init(
-        probe, grid->nx, grid->ny, grid->nz,
-        grid->dx[0], grid->dy[0],
-        (grid->nz > 1 && grid->dz) ? grid->dz[0] : 0.0, &probe_params);
-    poisson_solver_destroy(probe);
-    if (probe_status == CFD_ERROR_INVALID) {
-        /* Only the grid-dimension rejection (non-2^k+1) is remapped to
-         * UNSUPPORTED so the caller can pick a different pressure solver. */
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "Multigrid pressure solver requires 2^k+1 grid points per active dimension");
-        return CFD_ERROR_UNSUPPORTED;
-    }
-    /* Other failures (e.g. CFD_ERROR_NOMEM) propagate unchanged so the
-     * real cause and its error context are not masked. */
-    return probe_status;
-}
 
 static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const ns_solver_params_t* params) {
     if (!solver || !grid) {
@@ -999,14 +994,43 @@ static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const
     if (scheme_status != CFD_SUCCESS) {
         return scheme_status;
     }
-    cfd_status_t pressure_status = check_mg_pressure_solver(grid, params, POISSON_BACKEND_SCALAR);
-    if (pressure_status != CFD_SUCCESS) {
-        return pressure_status;
+
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
     }
-    projection_context* ctx = (projection_context*)cfd_malloc(sizeof(projection_context));
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 1);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
+
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 1);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
+    }
+    projection_context* ctx = (projection_context*)cfd_calloc(1, sizeof(projection_context));
     if (!ctx) {
         return CFD_ERROR;
     }
+    ctx->pressure_backend = POISSON_BACKEND_SCALAR;
+
+    /* Build the pressure solver now. This replaces the probe that created a
+     * multigrid solver purely to find out whether the grid was 2^k+1 and then
+     * destroyed it: building the real one answers the same question and keeps
+     * the answer, so an MG mode on a bad grid still fails at init. */
+    poisson_solver_config_t cfg;
+    cfd_status_t cfg_status = ns_pressure_config(params, ctx->pressure_backend, &cfg);
+    if (cfg_status != CFD_SUCCESS) {
+        cfd_free(ctx);
+        return cfg_status;
+    }
+    cfd_status_t pressure_status =
+        ns_pressure_ensure(&ctx->pressure, &cfg, grid);
+    if (pressure_status != CFD_SUCCESS) {
+        cfd_free(ctx);
+        return pressure_status;
+    }
+
     ctx->initialized = 1;
     solver->context = ctx;
     return CFD_SUCCESS;
@@ -1014,22 +1038,60 @@ static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const
 
 static void projection_destroy(ns_solver_t* solver) {
     if (solver->context) {
-        cfd_free(solver->context);
+        projection_context* ctx = (projection_context*)solver->context;
+        ns_pressure_release(&ctx->pressure);
+        cfd_free(ctx);
         solver->context = NULL;
     }
 }
 
+/**
+ * The pressure solver for this step.
+ *
+ * Re-derived from params every step rather than trusted from init, because
+ * pressure_solver and pressure_bc are read from params on each call and a caller
+ * may resize between steps. ns_pressure_ensure() rebuilds only when something
+ * actually moved, so the common case is a comparison. Solving on with a stale
+ * configuration would be the silent kind of wrong.
+ */
+static cfd_status_t projection_pressure(ns_solver_t* solver, const grid* grid,
+                                        const ns_solver_params_t* params,
+                                        poisson_solver_t** out) {
+    projection_context* ctx = (projection_context*)solver->context;
+    if (!ctx) {
+        return CFD_ERROR_INVALID;
+    }
+
+    poisson_solver_config_t cfg;
+    cfd_status_t status = ns_pressure_config(params, ctx->pressure_backend, &cfg);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    status = ns_pressure_ensure(&ctx->pressure, &cfg, grid);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+
+    *out = ctx->pressure;
+    return CFD_SUCCESS;
+}
+
 static cfd_status_t projection_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                     const ns_solver_params_t* params, ns_solver_stats_t* stats) {
-    (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
+    }
+
+    poisson_solver_t* pressure = NULL;
+    cfd_status_t status = projection_pressure(solver, grid, params, &pressure);
+    if (status != CFD_SUCCESS) {
+        return status;
     }
 
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
-    cfd_status_t status = solve_projection_method(field, grid, &step_params);
+    status = solve_projection_method(field, grid, &step_params, pressure);
     if (status != CFD_SUCCESS) {
         return status;
     }
@@ -1050,12 +1112,17 @@ static cfd_status_t projection_step(ns_solver_t* solver, flow_field* field, cons
 
 static cfd_status_t projection_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params, ns_solver_stats_t* stats) {
-    (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
 
-    cfd_status_t status = solve_projection_method(field, grid, params);
+    poisson_solver_t* pressure = NULL;
+    cfd_status_t status = projection_pressure(solver, grid, params, &pressure);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+
+    status = solve_projection_method(field, grid, params, pressure);
     if (status != CFD_SUCCESS) {
         return status;
     }
@@ -1159,7 +1226,20 @@ static cfd_status_t gpu_explicit_init(ns_solver_t* solver, const grid* grid,
                                       const ns_solver_params_t* params) {
     (void)solver;
     (void)grid;
-    return ns_check_convection_scheme(params, 0);
+    cfd_status_t scheme_status = ns_check_convection_scheme(params, 0);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
+    }
+
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 0);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
+    return ns_check_pressure_solver(params, 0);
 }
 
 /**
@@ -1173,6 +1253,11 @@ static cfd_status_t gpu_explicit_init(ns_solver_t* solver, const grid* grid,
  */
 static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                    const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
@@ -1181,6 +1266,7 @@ static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const
     cfg.min_steps = 1;
     cfd_status_t rc = solve_explicit_euler_method_gpu(field, grid, &step_params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        stats->iterations = 1;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1189,12 +1275,19 @@ static cfd_status_t gpu_euler_step(ns_solver_t* solver, flow_field* field, const
 
 static cfd_status_t gpu_euler_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                     const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
     gpu_config_t cfg = gpu_config_default();
     cfg.min_grid_size = 1;
     cfg.min_steps = 1;
     cfd_status_t rc = solve_explicit_euler_method_gpu(field, grid, params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        /* solve_rk_gpu() runs exactly params->max_iter steps. */
+        stats->iterations = params->max_iter;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1241,10 +1334,19 @@ static cfd_status_t gpu_projection_init(ns_solver_t* solver, const grid* grid,
     if (scheme_status != CFD_SUCCESS) {
         return scheme_status;
     }
-    if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "Multigrid pressure solver is only supported by the scalar and OpenMP projection solvers");
-        return CFD_ERROR_UNSUPPORTED;
+
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 0);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
+
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 0);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
     }
     return CFD_SUCCESS;
 }
@@ -1331,6 +1433,7 @@ static cfd_status_t gpu_rk2_step(ns_solver_t* solver, flow_field* field, const g
     cfg.min_steps = 1;
     cfd_status_t rc = solve_rk2_method_gpu(field, grid, &step_params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        stats->iterations = 1;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1345,6 +1448,7 @@ static cfd_status_t gpu_rk2_solve(ns_solver_t* solver, flow_field* field, const 
     cfg.min_steps = 1;
     cfd_status_t rc = solve_rk2_method_gpu(field, grid, params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        stats->iterations = params->max_iter;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1361,6 +1465,7 @@ static cfd_status_t gpu_rk4_step(ns_solver_t* solver, flow_field* field, const g
     cfg.min_steps = 1;
     cfd_status_t rc = solve_rk4_method_gpu(field, grid, &step_params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        stats->iterations = 1;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1375,6 +1480,7 @@ static cfd_status_t gpu_rk4_solve(ns_solver_t* solver, flow_field* field, const 
     cfg.min_steps = 1;
     cfd_status_t rc = solve_rk4_method_gpu(field, grid, params, &cfg);
     if (rc == CFD_SUCCESS && stats) {
+        stats->iterations = params->max_iter;
         stats->max_temperature = compute_max_temperature(field);
         stats->max_nu_t = compute_max_nu_t(field);
     }
@@ -1435,6 +1541,11 @@ static ns_solver_t* create_rk4_gpu_solver(void) {
 
 static cfd_status_t explicit_euler_omp_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                             const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
@@ -1461,6 +1572,11 @@ static cfd_status_t explicit_euler_omp_step(ns_solver_t* solver, flow_field* fie
 
 static cfd_status_t explicit_euler_omp_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                              const ns_solver_params_t* params, ns_solver_stats_t* stats) {
+    if (stats) {
+        /* Euler clamps its own step; report what it really advanced by. */
+        stats->dt_used = fmin(params->dt, NS_EULER_DT_LIMIT);
+    }
+
     (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
@@ -1656,27 +1772,44 @@ static cfd_status_t projection_omp_init(ns_solver_t* solver, const grid* grid,
         return scheme_status;
     }
 
-    /* The MG pressure modes run on OMP multigrid, never on the scalar one */
-    cfd_status_t pressure_status = check_mg_pressure_solver(grid, params, POISSON_BACKEND_OMP);
-    if (pressure_status != CFD_SUCCESS) {
-        return pressure_status;
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
     }
 
-    /* OMP projection requires the OMP CG Poisson solver (default and PCG_MG
-     * pressure solves). Never fall back to scalar CG — it would serialize the
-     * Poisson solve. */
-    poisson_solver_t* test_solver = poisson_solver_create(
-        POISSON_METHOD_CG, POISSON_BACKEND_OMP);
-    if (!test_solver) {
-        CFD_LOG_WARNING("projection", "OMP CG Poisson solver not available");
-        return CFD_ERROR_UNSUPPORTED;
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 1);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
     }
-    poisson_solver_destroy(test_solver);
 
-    projection_context* ctx = (projection_context*)cfd_malloc(sizeof(projection_context));
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 1);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
+    }
+    projection_context* ctx = (projection_context*)cfd_calloc(1, sizeof(projection_context));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
     }
+
+    /* Every pressure mode here runs on an OpenMP Poisson backend, never a scalar
+     * one -- falling back would serialize the Poisson solve. Building the solver
+     * now replaces both the multigrid grid-dimension probe and the OMP CG
+     * availability probe, each of which created a solver to ask a question and
+     * then threw the answer away. */
+    ctx->pressure_backend = POISSON_BACKEND_OMP;
+    poisson_solver_config_t cfg;
+    cfd_status_t cfg_status = ns_pressure_config(params, ctx->pressure_backend, &cfg);
+    if (cfg_status != CFD_SUCCESS) {
+        cfd_free(ctx);
+        return cfg_status;
+    }
+    cfd_status_t pressure_status =
+        ns_pressure_ensure(&ctx->pressure, &cfg, grid);
+    if (pressure_status != CFD_SUCCESS) {
+        cfd_free(ctx);
+        return pressure_status;
+    }
+
     ctx->initialized = 1;
     solver->context = ctx;
     return CFD_SUCCESS;
@@ -1684,14 +1817,20 @@ static cfd_status_t projection_omp_init(ns_solver_t* solver, const grid* grid,
 
 static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                         const ns_solver_params_t* params, ns_solver_stats_t* stats) {
-    (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
+
+    poisson_solver_t* pressure = NULL;
+    cfd_status_t status = projection_pressure(solver, grid, params, &pressure);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
-    cfd_status_t status = solve_projection_method_omp(field, grid, &step_params);
+    status = solve_projection_method_omp(field, grid, &step_params, pressure);
     if (status != CFD_SUCCESS) {
         return status;
     }
@@ -1710,11 +1849,17 @@ static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, 
 
 static cfd_status_t projection_omp_solve(ns_solver_t* solver, flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, ns_solver_stats_t* stats) {
-    (void)solver;
     if (field->nx < 3 || field->ny < 3) {
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t status = solve_projection_method_omp(field, grid, params);
+
+    poisson_solver_t* pressure = NULL;
+    cfd_status_t status = projection_pressure(solver, grid, params, &pressure);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+
+    status = solve_projection_method_omp(field, grid, params, pressure);
     if (status != CFD_SUCCESS) {
         return status;
     }
@@ -1764,7 +1909,9 @@ int cfd_backend_is_available(ns_solver_backend_t backend) {
             return 1;  // Always available
 
         case NS_SOLVER_BACKEND_SIMD:
-            return cfd_has_simd();
+            /* Compiled-in AND supported at runtime. cfd_has_simd() alone reports a
+             * backend this build may not contain (AVX2 is off by default). */
+            return ns_simd_backend_available() ? 1 : 0;
 
         case NS_SOLVER_BACKEND_OMP:
 #ifdef CFD_ENABLE_OPENMP

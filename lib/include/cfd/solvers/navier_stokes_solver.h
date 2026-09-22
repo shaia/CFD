@@ -21,6 +21,7 @@
 
 #include "cfd/boundary/boundary_conditions.h"
 #include "cfd/core/cfd_status.h"
+#include "cfd/solvers/poisson_solver.h"
 #include "cfd/core/grid.h"
 #include <stddef.h>
 
@@ -263,6 +264,29 @@ typedef struct {
      * "projection_omp"; 0 = existing CG behavior, backward compatible). */
     ns_pressure_solver_t pressure_solver;  /**< Pressure solver selection */
 
+    /**
+     * Walls for the pressure Poisson solve (zero-init = all zero-gradient, which
+     * is what the projection solvers have always used, so zero-initialization is
+     * fully backward compatible).
+     *
+     * A pressure-driven flow needs prescribing: with zero-gradient everywhere the
+     * only streamwise forcing is the divergence of the boundary velocities, which
+     * is worth about half the momentum balance, so a channel profile decays.
+     * Prescribe the inlet and outlet faces to drive it:
+     *
+     *     params.pressure_bc.left = params.pressure_bc.right = POISSON_WALL_DIRICHLET;
+     *     params.pressure_bc.values.left  = 0.0;
+     *     params.pressure_bc.values.right = dpdx * length;
+     *
+     * Any prescribed face also makes the operator nonsingular, so the projection
+     * stops mean-subtracting div(u*) -- doing both would change the answer.
+     *
+     * Honoured by the scalar, OpenMP and AVX2 projection solvers. The GPU
+     * projection and the time integrators that solve no Poisson equation reject a
+     * non-default value at init with CFD_ERROR_UNSUPPORTED.
+     */
+    poisson_walls_t pressure_bc;
+
     /* Convective-term discretization (0 = central differences, backward
      * compatible). */
     ns_convection_scheme_t convection_scheme;  /**< Convection scheme selection */
@@ -325,6 +349,13 @@ typedef enum {
 /**
  * NSSolver statistics - filled after each solve step
  */
+/**
+ * Time-step ceiling the explicit Euler solvers impose on themselves, regardless
+ * of params.dt. Exposed so callers can reason about simulated time; the actual
+ * step of any solve is reported in ns_solver_stats_t.dt_used.
+ */
+#define NS_EULER_DT_LIMIT 0.0001
+
 typedef struct {
     int iterations;          /**< Number of iterations performed */
     double residual;         /**< Final residual norm */
@@ -334,6 +365,11 @@ typedef struct {
     double max_nu_t;         /**< Maximum eddy viscosity (when turbulence model active) */
     double cfl_number;       /**< Actual CFL number used */
     double elapsed_time_ms;  /**< Wall clock time for solve */
+    double dt_used;          /**< Time step the solver actually advanced by.
+                              *   Defaults to params->dt; the explicit Euler
+                              *   solvers clamp it to NS_EULER_DT_LIMIT, so a
+                              *   caller measuring simulated time must read this
+                              *   rather than assume params->dt. */
     cfd_status_t status;     /**< Status of the solve */
 } ns_solver_stats_t;
 
@@ -535,6 +571,7 @@ static inline ns_solver_stats_t ns_solver_stats_default(void) {
     stats.max_nu_t = 0.0;
     stats.cfl_number = 0.0;
     stats.elapsed_time_ms = 0.0;
+    stats.dt_used = 0.0;
     stats.status = CFD_SUCCESS;
     return stats;
 }

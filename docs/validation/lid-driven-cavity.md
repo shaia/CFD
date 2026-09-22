@@ -406,14 +406,20 @@ poisson_solver_t* solver = poisson_solver_create(
     POISSON_BACKEND_SIMD
 );
 
-// Configure solver parameters
+// Configure solver parameters. The preconditioner lives in the krylov group,
+// which only a Krylov method may set -- init refuses it on SOR or Jacobi.
 poisson_solver_params_t params = poisson_solver_params_default();
 params.tolerance = 1e-6;         // Absolute residual
 params.max_iterations = 5000;
-params.preconditioner = POISSON_PRECOND_JACOBI;  // Diagonal preconditioning
+params.krylov.preconditioner = POISSON_PRECOND_JACOBI;  // Diagonal preconditioning
 
-// Initialize and solve
-poisson_solver_init(solver, nx, ny, dx, dy, &params);
+// The cavity has no outlet, so the walls stay zero-gradient and the operator is
+// singular. CG refuses a right-hand side with a nonzero interior mean.
+poisson_make_rhs_compatible(rhs, nx, ny, 1);
+
+// Initialize and solve (nz = 1, dz = 0 in 2D). Both return a status: an
+// unhonourable parameter is refused at init, not ignored during the solve.
+poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
 poisson_solver_stats_t stats = poisson_solver_stats_default();
 poisson_solver_solve(solver, p, p_temp, rhs, &stats);
 poisson_solver_destroy(solver);

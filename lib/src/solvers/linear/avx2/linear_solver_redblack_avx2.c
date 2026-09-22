@@ -198,7 +198,7 @@ static cfd_status_t redblack_avx2_init(
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
     ctx->factor = 2.0 * (1.0 / ctx->dx2 + 1.0 / ctx->dy2 + ctx->inv_dz2);
     ctx->inv_factor = 1.0 / ctx->factor;
-    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->omega : 0.0);
+    ctx->omega = poisson_solver_resolve_omega(solver, params ? params->sor.omega : 0.0);
 
     /* Pre-compute SIMD vectors */
     ctx->dx2_inv_vec = _mm256_set1_pd(1.0 / ctx->dx2);

@@ -17,6 +17,7 @@
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 #include "cfd/solvers/poisson_solver.h"
+#include "../../linear/multigrid_internal.h"
 #include "cfd/solvers/energy_solver.h"
 #include "cfd/solvers/turbulence_solver.h"
 #include "../../energy/energy_solver_internal.h"
@@ -24,6 +25,8 @@
 
 #include "../boundary_copy_utils.h"
 #include "../ns_convection_internal.h"
+#include "../ns_pressure_internal.h"
+#include "../ns_simd_backend_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -70,7 +73,38 @@ typedef struct {
     double inv_dz2;
     int initialized;
     int iter_count;
+    poisson_solver_t* pressure; /**< Owned across the solver's life; see ns_pressure_internal.h */
 } projection_simd_context;
+
+/**
+ * Take the z-spacing terms from this grid, rejecting a non-uniform one.
+ *
+ * Shared by init and step because they are grid facts, not init-time facts.
+ * The step reads dz straight from the grid but used to take inv_2dz and
+ * inv_dz2 from whatever init cached, so a grid that kept its shape and changed
+ * its spacing made the two disagree inside a single step -- while
+ * ns_pressure_ensure had already rebuilt the pressure solve for the new
+ * spacing. Prediction, divergence and projection would then each use a
+ * different z operator.
+ */
+static cfd_status_t projection_simd_take_z_spacing(projection_simd_context* ctx,
+                                                   const grid* g) {
+    if (g->nz > 1 && g->dz) {
+        for (size_t kk = 1; kk < g->nz - 1; kk++) {
+            if (fabs(g->dz[kk] - g->dz[0]) > 1e-14) {
+                cfd_set_error(CFD_ERROR_INVALID,
+                    "the AVX2 projection uses a constant dz; this grid's z-spacing varies");
+                return CFD_ERROR_INVALID;
+            }
+        }
+        ctx->inv_2dz = 1.0 / (2.0 * g->dz[0]);
+        ctx->inv_dz2 = 1.0 / (g->dz[0] * g->dz[0]);
+    } else {
+        ctx->inv_2dz = 0.0;
+        ctx->inv_dz2 = 0.0;
+    }
+    return CFD_SUCCESS;
+}
 
 // Public API
 cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
@@ -93,25 +127,53 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         return scheme_status;
     }
 
-    if (params && params->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT) {
-        cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "Multigrid pressure solver is only supported by the scalar and OpenMP projection solvers");
-        return CFD_ERROR_UNSUPPORTED;
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
     }
 
-    /* Verify SIMD CG Poisson solver is available before allocating resources */
-    poisson_solver_t* test_solver = poisson_solver_create(
-        POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
-    if (!test_solver) {
-        CFD_LOG_WARNING("projection", "SIMD CG Poisson solver not available");
-        return CFD_ERROR_UNSUPPORTED;
+    /* Same guard as the other SIMD solvers, so one build configuration gives one
+     * error rather than three. */
+    cfd_status_t simd_status = ns_check_simd_backend();
+    if (simd_status != CFD_SUCCESS) {
+        return simd_status;
     }
-    poisson_solver_destroy(test_solver);
 
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 1);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
+
+    /* 0, not 1: this projection honours per-face walls but not the multigrid
+     * pressure modes -- multigrid has no SIMD backend, and routing them to the
+     * scalar one would be the silent cross-backend fallback the library forbids. */
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 0);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
+    }
     projection_simd_context* ctx =
         (projection_simd_context*)cfd_calloc(1, sizeof(projection_simd_context));
     if (!ctx) {
         return CFD_ERROR_NOMEM;
+    }
+
+    /* Build the pressure solver here rather than probing for one and throwing it
+     * away: the probe answered the same question and discarded the answer. An
+     * unavailable SIMD backend, or a grid a mode cannot take, now fails at init
+     * where the caller can still pick something else. */
+    {
+        poisson_solver_config_t cfg;
+        cfd_status_t cfg_status = ns_pressure_config(params, POISSON_BACKEND_SIMD, &cfg);
+        if (cfg_status != CFD_SUCCESS) {
+            cfd_free(ctx);
+            return cfg_status;
+        }
+        cfd_status_t pressure_status =
+            ns_pressure_ensure(&ctx->pressure, &cfg, grid);
+        if (pressure_status != CFD_SUCCESS) {
+            cfd_free(ctx);
+            return pressure_status;
+        }
     }
 
     ctx->nx = grid->nx;
@@ -119,23 +181,16 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
     ctx->nz = grid->nz;
     size_t size = ctx->nx * ctx->ny * grid->nz * sizeof(double);
 
-    /* Reject non-uniform z-spacing (solver uses constant dz) */
-    if (grid->nz > 1 && grid->dz) {
-        for (size_t kk = 1; kk < grid->nz - 1; kk++) {
-            if (fabs(grid->dz[kk] - grid->dz[0]) > 1e-14) {
-                cfd_free(ctx);
-                return CFD_ERROR_INVALID;
-            }
-        }
+    if (projection_simd_take_z_spacing(ctx, grid) != CFD_SUCCESS) {
+        ns_pressure_release(&ctx->pressure);
+        cfd_free(ctx);
+        return CFD_ERROR_INVALID;
     }
 
     size_t plane = ctx->nx * ctx->ny;
     ctx->stride_z = (grid->nz > 1) ? plane : 0;
     ctx->k_start  = (grid->nz > 1) ? 1 : 0;
     ctx->k_end    = (grid->nz > 1) ? (grid->nz - 1) : 1;
-    double dz = (grid->nz > 1 && grid->dz) ? grid->dz[0] : 0.0;
-    ctx->inv_2dz  = (grid->nz > 1 && grid->dz) ? 1.0 / (2.0 * dz) : 0.0;
-    ctx->inv_dz2  = (grid->nz > 1 && grid->dz) ? 1.0 / (dz * dz) : 0.0;
 
     size_t n_total = ctx->nx * ctx->ny * ctx->nz;
     ctx->u_star  = (double*)cfd_aligned_malloc(size);
@@ -157,6 +212,10 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
         if (ctx->u_new)    { cfd_aligned_free(ctx->u_new); }
         if (ctx->T_ws)     { cfd_aligned_free(ctx->T_ws); }
         if (ctx->turb_ws)  { cfd_free(ctx->turb_ws); }
+        /* solver->context is still NULL, so projection_simd_destroy will never
+         * run for this ctx and the pressure solver -- a full CG workspace of
+         * grid-sized vectors -- has to be released here. */
+        ns_pressure_release(&ctx->pressure);
         cfd_free(ctx);
         return CFD_ERROR_NOMEM;
     }
@@ -169,6 +228,7 @@ cfd_status_t projection_simd_init(struct NSSolver* solver, const grid* grid,
 void projection_simd_destroy(struct NSSolver* solver) {
     if (solver && solver->context) {
         projection_simd_context* ctx = (projection_simd_context*)solver->context;
+        ns_pressure_release(&ctx->pressure);
         if (ctx->initialized) {
             cfd_aligned_free(ctx->u_star);
             cfd_aligned_free(ctx->v_star);
@@ -198,6 +258,40 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
     // Verify context matches current grid
     if (ctx->nx != field->nx || ctx->ny != field->ny || ctx->nz != field->nz) {
         return CFD_ERROR_INVALID;
+    }
+
+    /* Re-derive the pressure configuration from the params of THIS step, as the
+     * scalar and OpenMP projections do. pressure_bc and pressure_solver are read
+     * from params on every step -- the compatibility projection below reads
+     * params->pressure_bc directly -- so a solver frozen at init would let the
+     * two disagree: the mean subtraction would be skipped for a prescribed face
+     * while the solver still carried the singular zero-gradient operator, and
+     * the solve would then refuse the un-subtracted RHS. ns_pressure_ensure
+     * rebuilds only when the configuration or the grid actually changed. */
+    {
+        poisson_solver_config_t cfg;
+        cfd_status_t cfg_status = ns_pressure_config(params, POISSON_BACKEND_SIMD, &cfg);
+        if (cfg_status != CFD_SUCCESS) {
+            return cfg_status;
+        }
+        cfd_status_t pressure_status = ns_pressure_ensure(&ctx->pressure, &cfg, grid);
+        if (pressure_status != CFD_SUCCESS) {
+            return pressure_status;
+        }
+        /* p_new, rhs and u_new were allocated at init from the grid this context
+         * was built for, not from the grid being stepped. */
+        cfd_status_t shape_status =
+            ns_pressure_check_shape(ctx->pressure, ctx->nx, ctx->ny, ctx->nz);
+        if (shape_status != CFD_SUCCESS) {
+            return shape_status;
+        }
+        /* Same reason, for the other half of the grid: the shape is checked
+         * above, and the spacing is taken again here so the cached z terms
+         * cannot describe an older grid than the pressure solve does. */
+        cfd_status_t spacing_status = projection_simd_take_z_spacing(ctx, grid);
+        if (spacing_status != CFD_SUCCESS) {
+            return spacing_status;
+        }
     }
 
     size_t nx = field->nx;
@@ -389,13 +483,26 @@ cfd_status_t projection_simd_step(struct NSSolver* solver, flow_field* field, co
         }
     }
 
-    // Use SIMD Poisson solver (Conjugate Gradient with SIMD)
-    // ctx->u_new is used as temp buffer for the Poisson solver
-    int poisson_iters = poisson_solve_3d(p_new, ctx->u_new, rhs, nx, ny, ctx->nz,
-                                         dx, dy, dz, POISSON_SOLVER_CG_SIMD);
+    /* Neumann compatibility projection. The pressure Poisson system has
+     * zero-gradient walls on every preset here, so it is singular with the
+     * constants as its nullspace: the RHS must have zero interior mean or the
+     * residual stalls on the component that lies in it. Discretely, div(u*)
+     * only nearly integrates to zero, so the remainder is removed here rather
+     * than assumed away. With a face prescribed the operator is nonsingular and
+     * shifting the RHS would change the answer instead of making it exist. */
+    if (poisson_walls_are_singular(&params->pressure_bc, ctx->nz)) {
+        mg_subtract_interior_mean(rhs, nx, ny, ctx->nz);
+    }
 
-    if (poisson_iters < 0) {
-        return CFD_ERROR_MAX_ITER;
+    // Solve with the solver this projection owns; ctx->u_new is the temp buffer.
+    // The status passes through rather than flattening to MAX_ITER: divergence and
+    // an unsolvable right-hand side are different problems with different fixes.
+    poisson_solver_stats_t pstats = poisson_solver_stats_default();
+    cfd_status_t poisson_status =
+        poisson_solver_solve(ctx->pressure, p_new, ctx->u_new, rhs, &pstats);
+
+    if (poisson_status != CFD_SUCCESS) {
+        return poisson_status;
     }
 
     // ============================================================

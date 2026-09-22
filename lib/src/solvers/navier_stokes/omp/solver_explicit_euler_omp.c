@@ -26,7 +26,8 @@
 #define MAX_SECOND_DERIVATIVE_LIMIT 1000.0
 #define MAX_VELOCITY_LIMIT          100.0
 #define MAX_DIVERGENCE_LIMIT        10.0
-#define DT_CONSERVATIVE_LIMIT       0.0001
+/* One definition lives in navier_stokes_solver.h (NS_EULER_DT_LIMIT). */
+#define DT_CONSERVATIVE_LIMIT NS_EULER_DT_LIMIT
 #define UPDATE_LIMIT                1.0
 #define PRESSURE_UPDATE_FACTOR      0.1
 

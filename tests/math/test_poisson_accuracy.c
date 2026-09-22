@@ -346,7 +346,7 @@ void test_zero_rhs_sor(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-10;
     params.max_iterations = 100;
-    params.omega = 1.5;
+    params.sor.omega = 1.5;
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -394,7 +394,7 @@ void test_zero_rhs_redblack(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-10;
     params.max_iterations = 100;
-    params.omega = 1.5;
+    params.sor.omega = 1.5;
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -544,7 +544,7 @@ void test_uniform_rhs_sor(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-10;
     params.max_iterations = 10000;
-    params.omega = 1.7;
+    params.sor.omega = 1.7;
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -593,7 +593,7 @@ void test_uniform_rhs_redblack(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-10;
     params.max_iterations = 10000;
-    params.omega = 1.7;
+    params.sor.omega = 1.7;
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -741,7 +741,7 @@ void test_sinusoidal_rhs_sor(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-8;
     params.max_iterations = MAX_ITERATIONS;
-    params.omega = 1.7;  /* Near-optimal for this problem */
+    params.sor.omega = 1.7;  /* Near-optimal for this problem */
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -791,7 +791,7 @@ void test_sinusoidal_rhs_redblack(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-8;
     params.max_iterations = MAX_ITERATIONS;
-    params.omega = 1.7;
+    params.sor.omega = 1.7;
 
     cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -928,7 +928,7 @@ void test_grid_convergence_sor(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-10;
         params.max_iterations = 10000;
-        params.omega = 1.7;
+        params.sor.omega = 1.7;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -992,7 +992,7 @@ void test_grid_convergence_redblack(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-10;
         params.max_iterations = 10000;
-        params.omega = 1.7;
+        params.sor.omega = 1.7;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);
@@ -1111,7 +1111,7 @@ void test_residual_convergence_sor(void) {
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-8;
     params.max_iterations = 200;
-    params.omega = 1.5;
+    params.sor.omega = 1.5;
 
     cfd_status_t init_status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, init_status);
@@ -1203,7 +1203,13 @@ void test_solver_comparison(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-10;
         params.max_iterations = 10000;
-        params.omega = 1.7;
+        /* Only the SOR family reads a relaxation factor. This used to be set for
+         * the Jacobi entry too, where it has never had any effect; init now says
+         * so rather than accepting it. */
+        if (solvers[i].method == POISSON_METHOD_SOR
+            || solvers[i].method == POISSON_METHOD_REDBLACK_SOR) {
+            params.sor.omega = 1.7;
+        }
 
         cfd_status_t status = poisson_solver_init(solver, nx, ny, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, status);

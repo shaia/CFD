@@ -393,7 +393,7 @@ void test_sor_optimal_omega(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-6;
         params.max_iterations = 2000;
-        params.omega = omega;
+        params.sor.omega = omega;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver init failed");
@@ -496,7 +496,7 @@ void test_sor_vs_jacobi_speedup(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-6;
         params.max_iterations = 5000;
-        params.omega = omega;
+        params.sor.omega = omega;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver init failed");
@@ -560,7 +560,7 @@ void test_redblack_sor_equivalence(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-6;
         params.max_iterations = 2000;
-        params.omega = omega;
+        params.sor.omega = omega;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "SOR solver init failed");
@@ -594,7 +594,7 @@ void test_redblack_sor_equivalence(void) {
         poisson_solver_params_t params = poisson_solver_params_default();
         params.tolerance = 1e-6;
         params.max_iterations = 2000;
-        params.omega = omega;
+        params.sor.omega = omega;
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);
         TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, status, "Red-Black SOR solver init failed");
@@ -783,7 +783,7 @@ void test_solver_comparison(void) {
         params.tolerance = 1e-6;
         params.max_iterations = 5000;
         if (solvers[i].omega > 0) {
-            params.omega = solvers[i].omega;
+            params.sor.omega = solvers[i].omega;
         }
 
         cfd_status_t status = poisson_solver_init(solver, n, n, 1, dx, dy, 0.0, &params);

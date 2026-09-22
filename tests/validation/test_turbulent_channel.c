@@ -30,6 +30,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "channel_dns_reference.h"
 
 void setUp(void) { cfd_init(); }

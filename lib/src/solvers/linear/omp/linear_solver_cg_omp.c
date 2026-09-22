@@ -140,7 +140,7 @@ static cfd_status_t cg_omp_init(
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
     ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
-    ctx->precond_type = params ? params->preconditioner : POISSON_PRECOND_NONE;
+    ctx->precond_type = params ? params->krylov.preconditioner : POISSON_PRECOND_NONE;
     ctx->use_precond = (ctx->precond_type == POISSON_PRECOND_JACOBI ||
                         ctx->precond_type == POISSON_PRECOND_MULTIGRID);
 
@@ -159,7 +159,8 @@ static cfd_status_t cg_omp_init(
     /* OpenMP multigrid only: a scalar inner cycle would serialize every apply */
     if (ctx->precond_type == POISSON_PRECOND_MULTIGRID) {
         cfd_status_t mg_status = poisson_solver_create_mg_precond(
-            create_multigrid_omp_solver, nx, ny, nz, dx, dy, dz, &ctx->mg_precond);
+            create_multigrid_omp_solver, nx, ny, nz, dx, dy, dz,
+            &solver->params.multigrid, &ctx->mg_precond);
         if (mg_status != CFD_SUCCESS) {
             cg_omp_destroy(solver);
             return mg_status;  /* CFD_ERROR_INVALID for non-2^k+1 dims */
@@ -200,7 +201,9 @@ static cfd_status_t cg_omp_solve(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    poisson_solver_apply_bc(solver, x);
+    /* Not poisson_solver_apply_bc: the initial residual has to see the same walls
+     * the iteration below inverts. See poisson_solver_krylov_apply_bc. */
+    poisson_solver_krylov_apply_bc(solver, x);
 
     compute_residual_omp(x, rhs, r, nx, ny, dx2, dy2, inv_dz2,
                          k_start, k_end, stride_z);
@@ -257,6 +260,10 @@ static cfd_status_t cg_omp_solve(
     double res_norm = initial_res;
 
     for (iter = 0; iter < params->max_iterations; iter++) {
+        /* The halo carries the homogeneous boundary condition, which is what makes
+         * this the operator the walls describe. The direction is rebuilt from
+         * interior-only updates, so it has to be reapplied every iteration. */
+        poisson_solver_krylov_apply_bc_homogeneous(solver, p);
         apply_laplacian_omp(p, Ap, nx, ny, dx2, dy2, inv_dz2,
                             k_start, k_end, stride_z);
 

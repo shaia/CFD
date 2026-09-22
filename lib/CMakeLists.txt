@@ -149,6 +149,7 @@ set(CFD_SIMD_SOURCES
     src/boundary/neon/boundary_conditions_neon.c
     src/boundary/neon/boundary_conditions_outlet_neon.c
     # Navier-Stokes solvers - SIMD
+    src/solvers/navier_stokes/simd/ns_simd_backend.c
     src/solvers/navier_stokes/avx2/solver_explicit_euler_avx2.c
     src/solvers/navier_stokes/avx2/solver_projection_avx2.c
     src/solvers/navier_stokes/avx2/solver_rk2_avx2.c

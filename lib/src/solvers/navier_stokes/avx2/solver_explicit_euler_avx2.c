@@ -29,6 +29,7 @@
 
 #include "../boundary_copy_utils.h"
 #include "../ns_convection_internal.h"
+#include "../ns_simd_backend_internal.h"
 #include "upwind_avx2.h"
 
 #include <math.h>
@@ -56,7 +57,8 @@
 #define MAX_SECOND_DERIVATIVE_LIMIT 1000.0
 #define MAX_VELOCITY_LIMIT          100.0
 #define MAX_DIVERGENCE_LIMIT        10.0
-#define DT_CONSERVATIVE_LIMIT       0.0001
+/* One definition lives in navier_stokes_solver.h (NS_EULER_DT_LIMIT). */
+#define DT_CONSERVATIVE_LIMIT NS_EULER_DT_LIMIT
 #define UPDATE_LIMIT                1.0
 #define PRESSURE_UPDATE_FACTOR      0.1
 
@@ -96,6 +98,29 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
     cfd_status_t scheme_status = ns_check_convection_scheme(params, 1);
     if (scheme_status != CFD_SUCCESS) {
         return scheme_status;
+    }
+
+    /* No scalar fallback: a SIMD solver that quietly runs scalar kernels turns a
+     * configuration error into a performance mystery. Fail so the caller can pick
+     * the scalar "explicit_euler" deliberately. */
+    cfd_status_t simd_status = ns_check_simd_backend();
+    if (simd_status != CFD_SUCCESS) {
+        return simd_status;
+    }
+
+    cfd_status_t turb_status = ns_check_turbulence_model(params, 1);
+    if (turb_status != CFD_SUCCESS) {
+        return turb_status;
+    }
+
+    cfd_status_t pressure_bc_status = ns_check_pressure_bc(params, 0);
+    if (pressure_bc_status != CFD_SUCCESS) {
+        return pressure_bc_status;
+    }
+
+    cfd_status_t pressure_solver_status = ns_check_pressure_solver(params, 0);
+    if (pressure_solver_status != CFD_SUCCESS) {
+        return pressure_solver_status;
     }
     if (grid->nx < 3 || grid->ny < 3 || (grid->nz > 1 && grid->nz < 3)) {
         return CFD_ERROR_INVALID;
@@ -164,18 +189,10 @@ cfd_status_t explicit_euler_simd_init(struct NSSolver* solver, const grid* grid,
     ctx->initialized = 1;
     solver->context = ctx;
 
-#if USE_AVX
-    #ifdef _OPENMP
+#ifdef _OPENMP
     CFD_LOG_INFO("solver", "Explicit Euler SIMD: AVX2 + OpenMP enabled (%d threads)", omp_get_max_threads());
-    #else
-    CFD_LOG_INFO("solver", "Explicit Euler SIMD: AVX2 enabled (OpenMP disabled)");
-    #endif
 #else
-    #ifdef _OPENMP
-    CFD_LOG_INFO("solver", "Explicit Euler OMP: Scalar + OpenMP enabled (%d threads)", omp_get_max_threads());
-    #else
-    CFD_LOG_INFO("solver", "Explicit Euler: Scalar fallback (no SIMD or OpenMP)");
-    #endif
+    CFD_LOG_INFO("solver", "Explicit Euler SIMD: AVX2 enabled (OpenMP disabled)");
 #endif
 
     return CFD_SUCCESS;
@@ -657,9 +674,9 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
     size_t nx = ctx->nx;
     size_t ny = ctx->ny;
 
+#if USE_AVX
     int ny_int = (int)(ctx->ny);
     int j;
-#if USE_AVX
     if (!turb_on) {
         simd_constants sc;
         init_simd_constants(&sc, params, conservative_dt, ctx->inv_2dz, ctx->inv_dz2);
@@ -687,18 +704,6 @@ cfd_status_t explicit_euler_simd_step(struct NSSolver* solver, flow_field* field
                 process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt,
                                         z_coord, ctx->stride_z, k_offset, 1, 1);
             }
-        }
-    }
-#else
-    for (size_t k = ctx->k_start; k < ctx->k_end; k++) {
-        size_t k_offset = k * ctx->stride_z;
-        double z_coord = (ctx->nz > 1 && grid->z) ? grid->z[k] : 0.0;
-#ifdef _OPENMP
-        #pragma omp parallel for schedule(static)
-#endif
-        for (j = 1; j < ny_int - 1; j++) {
-            process_scalar_row_turb(ctx, field, grid, params, (size_t)j, conservative_dt, z_coord,
-                                    ctx->stride_z, k_offset, turb_on, 1);
         }
     }
 #endif

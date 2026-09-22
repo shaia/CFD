@@ -234,6 +234,32 @@ void test_laplacian_stencil_manufactured_solution(void) {
  * results when solving the same Poisson problem.
  */
 
+/**
+ * Hold the walls at the manufactured solution.
+ *
+ * Prescribing wall values by pre-filling the array no longer works: the solvers
+ * derive the halo from the boundary condition before forming a residual, so
+ * anything written there beforehand is overwritten. Installing the values as a
+ * hook is how a Dirichlet problem is posed, and it also makes the operator
+ * nonsingular -- the default zero-gradient walls give a singular system, and this
+ * manufactured RHS is not compatible with it.
+ */
+static void hold_manufactured_walls(poisson_solver_t* solver, double* x) {
+    size_t nx = solver->nx;
+    size_t ny = solver->ny;
+
+    for (size_t j = 0; j < ny; j++) {
+        double y = DOMAIN_YMIN + ((double)j * solver->dy);
+        x[(j * nx) + 0] = manufactured_p(DOMAIN_XMIN, y);
+        x[(j * nx) + (nx - 1)] = manufactured_p(DOMAIN_XMAX, y);
+    }
+    for (size_t i = 0; i < nx; i++) {
+        double xx = DOMAIN_XMIN + ((double)i * solver->dx);
+        x[(0 * nx) + i] = manufactured_p(xx, DOMAIN_YMIN);
+        x[((ny - 1) * nx) + i] = manufactured_p(xx, DOMAIN_YMAX);
+    }
+}
+
 void test_cg_backend_comparison(void) {
     printf("\n    Testing CG solver backend comparison (scalar vs SIMD)...\n");
 
@@ -267,21 +293,7 @@ void test_cg_backend_comparison(void) {
         return;
     }
 
-    /* Apply Dirichlet BCs (analytical solution on boundary) */
-    for (size_t j = 0; j < ny; j++) {
-        double y = DOMAIN_YMIN + j * dy;
-        p_scalar[j * nx + 0] = manufactured_p(DOMAIN_XMIN, y);
-        p_scalar[j * nx + (nx - 1)] = manufactured_p(DOMAIN_XMAX, y);
-        p_simd[j * nx + 0] = manufactured_p(DOMAIN_XMIN, y);
-        p_simd[j * nx + (nx - 1)] = manufactured_p(DOMAIN_XMAX, y);
-    }
-    for (size_t i = 0; i < nx; i++) {
-        double x = DOMAIN_XMIN + i * dx;
-        p_scalar[0 * nx + i] = manufactured_p(x, DOMAIN_YMIN);
-        p_scalar[(ny - 1) * nx + i] = manufactured_p(x, DOMAIN_YMAX);
-        p_simd[0 * nx + i] = manufactured_p(x, DOMAIN_YMIN);
-        p_simd[(ny - 1) * nx + i] = manufactured_p(x, DOMAIN_YMAX);
-    }
+    /* Walls are prescribed through hold_manufactured_walls, installed below. */
 
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-10;
@@ -295,6 +307,7 @@ void test_cg_backend_comparison(void) {
         POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
 
     if (solver_scalar) {
+        solver_scalar->apply_bc = hold_manufactured_walls;  /* before init, which reads it */
         cfd_status_t status = poisson_solver_init(solver_scalar, nx, ny, 1, dx, dy, 0.0, &params);
         if (status == CFD_SUCCESS) {
             poisson_solver_stats_t stats = poisson_solver_stats_default();
@@ -313,6 +326,7 @@ void test_cg_backend_comparison(void) {
         POISSON_METHOD_CG, POISSON_BACKEND_SIMD);
 
     if (solver_simd) {
+        solver_simd->apply_bc = hold_manufactured_walls;  /* before init, which reads it */
         cfd_status_t status = poisson_solver_init(solver_simd, nx, ny, 1, dx, dy, 0.0, &params);
         if (status == CFD_SUCCESS) {
             poisson_solver_stats_t stats = poisson_solver_stats_default();

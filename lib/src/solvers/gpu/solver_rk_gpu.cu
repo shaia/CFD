@@ -30,6 +30,7 @@
 #include "cfd/core/gpu_device.h"
 #include "cfd/core/grid.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "../navier_stokes/ns_convection_internal.h"
 
 #include "gpu_shared_kernels.cuh"
 
@@ -55,7 +56,7 @@
 // the per-step increment is clamped to +/-UPDATE_LIMIT before being added, and dt
 // is capped at DT_CONSERVATIVE_LIMIT. These do NOT apply to the RK2/RK4 paths.
 #define UPDATE_LIMIT          1.0
-#define DT_CONSERVATIVE_LIMIT 0.0001
+#define DT_CONSERVATIVE_LIMIT NS_EULER_DT_LIMIT
 
 // ============================================================================
 // CUDA kernels
@@ -284,6 +285,21 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
                       "GPU RK solver does not support turbulence models or upwind convection; "
                       "use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
+    }
+
+    /* solve_explicit_euler_method_gpu, solve_rk2_method_gpu and
+     * solve_rk4_method_gpu are all exported and all land here, so this is the
+     * one place that sees a caller who bypassed gpu_explicit_init. These
+     * integrators run no pressure solve at all, which is exactly why a
+     * pressure_bc or pressure_solver set on one has to be refused rather than
+     * quietly doing nothing. */
+    cfd_status_t bc_status = ns_check_pressure_bc(params, 0);
+    if (bc_status != CFD_SUCCESS) {
+        return bc_status;
+    }
+    cfd_status_t ps_status = ns_check_pressure_solver(params, 0);
+    if (ps_status != CFD_SUCCESS) {
+        return ps_status;
     }
     // Energy-equation support (heat_source_func + thermal BC types/grid).
     {

@@ -325,7 +325,7 @@ typedef enum {
 typedef struct {
     int iterations;         // Total iterations
     double residual;        // Final residual
-    double elapsed_time;    // Execution time (seconds)
+    double elapsed_time_ms; // Execution time (milliseconds)
     cfd_status_t status;    // Solver status
     double max_nu_t;        // Maximum turbulent viscosity (0.0 when laminar)
 } ns_solver_stats_t;
@@ -469,7 +469,7 @@ void poisson_solver_destroy(poisson_solver_t* solver);
 ```c
 typedef enum {
     POISSON_METHOD_JACOBI,        // Jacobi iteration (fully parallelizable)
-    POISSON_METHOD_GAUSS_SEIDEL,  // Gauss-Seidel: SOR at omega = 1 (params.omega is ignored)
+    POISSON_METHOD_GAUSS_SEIDEL,  // Gauss-Seidel: SOR at omega = 1 (params.sor.omega is ignored)
     POISSON_METHOD_SOR,           // Successive Over-Relaxation
     POISSON_METHOD_REDBLACK_SOR,  // Red-Black SOR (parallelizable)
     POISSON_METHOD_CG,            // Conjugate Gradient (SPD systems)
@@ -479,8 +479,10 @@ typedef enum {
 } poisson_solver_method_t;
 ```
 
-> Preconditioning is a separate `preconditioner` field on `poisson_solver_params_t`
-> (see below), not a distinct method — CG becomes PCG when a preconditioner is set.
+> Preconditioning is a separate `params.krylov.preconditioner` field (see below),
+> not a distinct method — CG becomes PCG when a preconditioner is set. BiCGSTAB
+> reads the same group but implements no preconditioner on any backend, and
+> refuses one at init with `CFD_ERROR_UNSUPPORTED`.
 
 ### Poisson Backends
 
@@ -503,43 +505,114 @@ bool poisson_solver_backend_available(poisson_solver_backend_t backend);
 ### Poisson Parameters
 
 ```c
+// SOR, Gauss-Seidel, Red-Black SOR
 typedef struct {
+    double omega;               // Relaxation (0 = automatic, at or just below the optimum)
+} poisson_sor_params_t;
+
+// CG, BiCGSTAB, GMRES
+typedef struct {
+    poisson_precond_type_t preconditioner;  // Default POISSON_PRECOND_NONE
+    int restart;                            // GMRES(m) restart length (0 = auto/30)
+} poisson_krylov_params_t;
+
+// Multigrid, and CG when preconditioned by one
+typedef struct {
+    mg_cycle_type_t cycle;       // MG_CYCLE_V (default) / MG_CYCLE_W / MG_CYCLE_F
+    mg_smoother_type_t smoother; // MG_SMOOTHER_REDBLACK_GS (default) / MG_SMOOTHER_JACOBI
+    mg_bc_type_t bc;             // MG_BC_NEUMANN (default) / MG_BC_DIRICHLET
+    int pre_smooth;              // Pre-smoothing sweeps (0 = default 2)
+    int post_smooth;             // Post-smoothing sweeps (0 = default 2)
+    int coarse_max_iter;         // Coarsest-grid smoother sweeps (0 = default 50)
+    int max_levels;              // Max levels (0 = auto)
+} poisson_multigrid_params_t;
+
+typedef struct {
+    poisson_walls_t walls;      // Per-face walls (zero-init = all zero-gradient)
+    double helmholtz_shift;     // sigma in nabla^2 x - sigma*x = rhs (0 = pure Poisson)
     double tolerance;           // Relative tolerance (default: 1e-6)
     double absolute_tolerance;  // Absolute tolerance (default: 1e-10)
     int max_iterations;         // Max iterations (default: 5000)
-    double omega;               // SOR relaxation (default: 0 = automatic, at or just below the optimum)
-    int check_interval;         // Convergence check interval (default: 1)
+    int check_interval;         // Convergence check interval (default: 1; 0 is refused)
     bool verbose;               // Print convergence info (default: false)
-    poisson_precond_type_t preconditioner;  // Preconditioner (default: POISSON_PRECOND_NONE)
-    int restart;                // GMRES(m) restart length (default: 0 = auto/30)
 
-    // Multigrid only (all 0-defaults are backward compatible)
-    mg_cycle_type_t mg_cycle;       // MG_CYCLE_V (default) / MG_CYCLE_W / MG_CYCLE_F
-    mg_smoother_type_t mg_smoother; // MG_SMOOTHER_REDBLACK_GS (default) / MG_SMOOTHER_JACOBI
-    mg_bc_type_t mg_bc;             // MG_BC_NEUMANN (default) / MG_BC_DIRICHLET
-    int mg_pre_smooth;              // Pre-smoothing sweeps (0 = default 2)
-    int mg_post_smooth;             // Post-smoothing sweeps (0 = default 2)
-    int mg_coarse_max_iter;         // Coarsest-grid smoother sweeps (0 = default 50)
-    int mg_max_levels;              // Max levels (0 = auto)
+    poisson_sor_params_t       sor;
+    poisson_krylov_params_t    krylov;
+    poisson_multigrid_params_t multigrid;
 } poisson_solver_params_t;
 
 poisson_solver_params_t poisson_solver_params_default(void);
 ```
 
+> **A group belongs to the methods that read it.** `poisson_solver_init` returns
+> `CFD_ERROR_INVALID` for a non-zero group the chosen method does not read —
+> `sor` on CG, `krylov` on SOR, `multigrid` on a CG without a multigrid
+> preconditioner. The alternative, accepting the field and ignoring it, is what
+> let a `preconditioner` set on BiCGSTAB do nothing for years. `walls`,
+> `tolerance`, `max_iterations` and `check_interval` are common to every method.
+>
+> Within an owned group there are named exceptions, also refused at init:
+> `krylov.restart` outside GMRES, any preconditioner on BiCGSTAB or on a GPU
+> backend (no GPU solver implements one), a multigrid
+> preconditioner outside scalar and OpenMP CG, and — when `multigrid` is serving
+> as a preconditioner — its `cycle`, `smoother`, `bc`, or an unequal pre/post
+> sweep count, each of which would cost the inner cycle its symmetry. The rest of
+> that group (`pre_smooth`/`post_smooth`, `coarse_max_iter`, `max_levels`) is
+> forwarded to the preconditioner and is yours to tune.
+>
+> `helmholtz_shift` is common to every method like `walls`, because it describes
+> the operator rather than the algorithm — but only scalar CG implements it, and
+> not with the multigrid preconditioner, so anything else refuses a nonzero shift
+> with `CFD_ERROR_UNSUPPORTED`. A negative or non-finite shift is
+> `CFD_ERROR_INVALID`. A shift removes the Neumann nullspace, so a shifted solve
+> takes any RHS and must **not** be mean-subtracted.
+
 > Multigrid requires 2^k+1 grid points per active dimension (e.g. 33, 65, 129);
 > `poisson_solver_init` returns `CFD_ERROR_INVALID` otherwise. In the default
 > `MG_BC_NEUMANN` mode the solution is defined up to an additive constant.
 > Multigrid has scalar and OpenMP backends: `POISSON_BACKEND_AUTO` picks scalar
-> (AUTO prefers SIMD, which multigrid lacks), so request `POISSON_BACKEND_OMP`
-> (or the `POISSON_SOLVER_MG_OMP` preset) explicitly; its results are
-> bit-identical to scalar.
+> (AUTO prefers SIMD, which multigrid lacks), so set `cfg.backend =
+> POISSON_BACKEND_OMP` explicitly; its results are bit-identical to scalar.
+
+### Poisson Walls
+
+```c
+typedef enum {
+    POISSON_WALL_ZERO_GRADIENT = 0,  // Neumann dp/dn = 0 (default)
+    POISSON_WALL_DIRICHLET     = 1   // Prescribed value from poisson_walls_t.values
+} poisson_wall_t;
+
+typedef struct {
+    poisson_wall_t left, right, bottom, top, front, back;
+    bc_dirichlet_values_t values;    // Prescribed value per DIRICHLET face
+} poisson_walls_t;
+
+poisson_walls_t poisson_walls_default(void);                              // all zero-gradient
+poisson_walls_t poisson_walls_uniform(poisson_wall_t type, double value); // every face the same
+bool poisson_walls_are_singular(const poisson_walls_t* walls, size_t nz);
+void poisson_make_rhs_compatible(double* rhs, size_t nx, size_t ny, size_t nz);
+```
+
+> Honoured by CG, BiCGSTAB and GMRES on the scalar, OpenMP and SIMD backends. The
+> stationary and multigrid solvers, and the GPU backend, reject a non-default value
+> at init with `CFD_ERROR_UNSUPPORTED`. A non-default value together with an
+> `apply_bc` hook returns `CFD_ERROR_INVALID` — both prescribe wall values.
+>
+> All-zero-gradient walls make the operator **singular** (the constants are its
+> nullspace), so the RHS must have zero interior mean; call
+> `poisson_make_rhs_compatible()` first. An incompatible RHS is refused with
+> `CFD_ERROR_INVALID` and `stats.status = POISSON_INCOMPATIBLE_RHS`. Prescribing any
+> face makes the operator nonsingular, where any RHS is admissible and
+> mean-subtracting would instead change the answer.
+>
+> `poisson_solve()` takes a full `poisson_solver_config_t`, so it expresses walls
+> like any other parameter.
 
 `poisson_precond_type_t` values: `POISSON_PRECOND_NONE` (0, default),
 `POISSON_PRECOND_JACOBI` (1), `POISSON_PRECOND_MULTIGRID` (2 — one MG V-cycle
 per apply; scalar and OpenMP CG, 2^k+1 dims; other backends return
-`CFD_ERROR_UNSUPPORTED`). The convenience API exposes the MG-preconditioned CG
-as the `POISSON_SOLVER_PCG_MG_SCALAR` and `POISSON_SOLVER_PCG_MG_OMP` presets for
-`poisson_solve()`/`poisson_solve_3d()`.
+`CFD_ERROR_UNSUPPORTED`). `POISSON_PRESET_MULTIGRID_PCG` is the same thing as a
+starting point.
 
 ### Poisson Statistics
 
@@ -549,11 +622,71 @@ typedef struct {
     int iterations;                  // Iterations performed
     double initial_residual;         // Initial residual norm
     double final_residual;           // Final residual norm
-    double elapsed_time;             // Execution time (seconds)
+    double elapsed_time_ms;          // Execution time (milliseconds)
 } poisson_solver_stats_t;
 
 poisson_solver_stats_t poisson_solver_stats_default(void);
+
+// A short name for stats.status, for a log line or a table.
+// For the message behind a CFD_ERROR_* return, use cfd_get_last_error().
+const char* poisson_solver_status_string(poisson_solver_status_t status);
 ```
+
+### Poisson Convenience API
+
+```c
+typedef struct {
+    poisson_solver_method_t  method;
+    poisson_solver_backend_t backend;   // AUTO, except the two multigrid presets
+    poisson_solver_params_t  params;
+} poisson_solver_config_t;
+
+typedef enum {
+    POISSON_PRESET_DEFAULT = 0,    // CG, tol 1e-6
+    POISSON_PRESET_ACCURATE,       // CG, tol 1e-10 / abs 1e-14, 20000 iterations
+    POISSON_PRESET_NONSYMMETRIC,   // BiCGSTAB
+    POISSON_PRESET_SMOOTHER,       // Red-Black SOR
+    POISSON_PRESET_MULTIGRID,      // V-cycle; 2^k+1 dims; backend SCALAR
+    POISSON_PRESET_MULTIGRID_PCG   // CG + one V-cycle per apply; 2^k+1 dims; backend SCALAR
+} poisson_preset_t;
+
+poisson_solver_config_t poisson_solver_config_preset(poisson_preset_t preset);
+
+cfd_status_t poisson_solve(double* x, double* x_temp, const double* rhs,
+                           size_t nx, size_t ny, size_t nz,
+                           double dx, double dy, double dz,
+                           const poisson_solver_config_t* config,  // NULL = DEFAULT
+                           poisson_solver_stats_t* stats);
+```
+
+A preset is a starting point, not a terminal choice: it returns a config you
+edit. Neither method nor backend needs its own enumerator — GMRES on the GPU is
+`cfg.method` and `cfg.backend`, not a fourteenth preset.
+
+A preset names a backend only where AUTO would pick one that cannot run it.
+AUTO resolves to SIMD wherever AVX2 or NEON is present, and neither multigrid
+nor the multigrid preconditioner has a SIMD backend, so `POISSON_PRESET_MULTIGRID`
+and `POISSON_PRESET_MULTIGRID_PCG` ship `POISSON_BACKEND_SCALAR` — otherwise they
+would be refused at init on the machines they are most likely to run on. Set
+`cfg.backend = POISSON_BACKEND_OMP` for the threaded hierarchy. The other four
+presets leave `POISSON_BACKEND_AUTO`.
+
+```c
+poisson_solver_config_t cfg = poisson_solver_config_preset(POISSON_PRESET_ACCURATE);
+cfg.backend = POISSON_BACKEND_OMP;
+cfg.params.walls = poisson_walls_uniform(POISSON_WALL_DIRICHLET, 0.0);
+
+poisson_solver_stats_t stats = poisson_solver_stats_default();
+cfd_status_t status = poisson_solve(p, p_temp, rhs, nx, ny, 1, dx, dy, 0.0, &cfg, &stats);
+```
+
+> `poisson_solve()` builds a solver for the call and destroys it afterwards. In a
+> loop, own a `poisson_solver_t` across the iterations instead.
+>
+> Which presets refuse an incompatible right-hand side: `DEFAULT`, `ACCURATE`,
+> `NONSYMMETRIC` and `MULTIGRID_PCG`, whose outer method is Krylov. `SMOOTHER`
+> and `MULTIGRID` converge modulo a constant instead and accept any RHS.
+> Switching preset therefore changes whether a given RHS is legal.
 
 ## Turbulence API
 

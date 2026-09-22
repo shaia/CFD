@@ -205,8 +205,13 @@ cfd_status_t run_simulation_step(simulation_data* sim_data) {
         return status;
     }
 
-    // Accumulate simulation time
-    sim_data->current_time += sim_data->params.dt;
+    /* Advance by what the solver actually integrated, not by what we asked
+     * for. The explicit-Euler kernels clamp their own step to
+     * NS_EULER_DT_LIMIT, so accumulating params.dt would run current_time far
+     * ahead of the physical time simulated. Both solver_step() and
+     * solver_solve() seed dt_used with params.dt before dispatch, so it is
+     * always populated even for solvers that do not override it. */
+    sim_data->current_time += sim_data->last_stats.dt_used;
     return CFD_SUCCESS;
 }
 
@@ -221,8 +226,9 @@ cfd_status_t run_simulation_solve(simulation_data* sim_data) {
     cfd_status_t status = solver_solve(sim_data->solver, sim_data->field, sim_data->grid,
                                         &sim_data->params, &sim_data->last_stats);
 
-    // Accumulate simulation time based on iterations performed
-    sim_data->current_time += sim_data->params.dt * sim_data->last_stats.iterations;
+    /* Same reasoning as run_simulation_step(): the per-iteration step the
+     * solver actually took, times the iterations it reports. */
+    sim_data->current_time += sim_data->last_stats.dt_used * sim_data->last_stats.iterations;
 
     return status;
 }

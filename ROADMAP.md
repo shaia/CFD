@@ -150,7 +150,8 @@ non-symmetric operators arrive, e.g. implicit advection-diffusion in §1.5).
       preconditioner (`POISSON_PRECOND_MULTIGRID`, scalar CG). SIMD/GPU variants
       deferred (see `.claude/specs/multigrid-projection-integration.md`).
 - [x] Geometric multigrid OpenMP backend — `POISSON_BACKEND_OMP` (`multigrid_omp`,
-      preset `POISSON_SOLVER_MG_OMP`). One algorithm template shared with scalar; the
+      `POISSON_PRESET_MULTIGRID` with `backend = POISSON_BACKEND_OMP`). One algorithm
+      template shared with scalar; the
       OMP backend supplies row-parallel smoother/residual/transfer/BC primitives with no
       parallel reductions, so results are bit-identical to scalar at 1/2/4 threads.
       AUTO still resolves multigrid to scalar. Deferred: SIMD/GPU multigrid.
@@ -164,8 +165,9 @@ non-symmetric operators arrive, e.g. implicit advection-diffusion in §1.5).
       `lib/CMakeLists.txt`, `tests/math/test_omp_consistency.c`,
       `tests/math/test_multigrid_convergence.c`, `tests/solvers/test_linear_solver.c`.
 - [x] Multigrid pressure solve in `projection_omp` and MG-preconditioned OpenMP CG —
-      `NS_PRESSURE_SOLVER_MULTIGRID` → `POISSON_SOLVER_MG_OMP` and
-      `NS_PRESSURE_SOLVER_PCG_MG` → new `POISSON_SOLVER_PCG_MG_OMP` (OMP CG with an OMP
+      `NS_PRESSURE_SOLVER_MULTIGRID` → `POISSON_PRESET_MULTIGRID` and
+      `NS_PRESSURE_SOLVER_PCG_MG` → `POISSON_PRESET_MULTIGRID_PCG`, both on
+      `POISSON_BACKEND_OMP` (OMP CG with an OMP
       multigrid V-cycle preconditioner), with the scalar projection's init gating and no
       scalar sub-solver on the OMP path. Both CG backends share one preconditioner
       setup (`poisson_solver_create_mg_precond`).
@@ -481,9 +483,14 @@ every push to master, about 50 minutes):
 - [x] Full Ghia validation at 129×129 for Re=100, 400, 1000 — AVX2/OMP/GPU projection RMS
   ≤ 0.033, recorded in `docs/validation/cavity-backends-validation.md`
 - [ ] Extended cavity convergence to true steady-state (residual < 1e-8)
-- [ ] Explicit Euler cavity cases stop at 11,300–11,800 steps (t ≈ 1.1–1.2) through the harness's
-  kinetic-energy exit, on the 33×33 CI grid (of 25,000) and at 129×129 (of 250,000) alike; make
-  them run to a developed flow or drop them from Ghia validation
+- [x] Explicit Euler cavity cases stopped at 11,300–11,800 steps (t ≈ 1.1–1.2) through the
+  harness's kinetic-energy exit. The exit compared the change in kinetic energy **per step**
+  against a fixed threshold, which scales with dt and so measured the step size as much as
+  the flow; it is now a rate, `|d(ln KE)/dt| < 1e-6`, taken from the step the solver
+  actually used. The 129×129 Euler cases are dropped (the "or" of this item): they cost
+  ~1 h of EC2 to hold a non-production solver to a relaxed target, and were never evidence
+  of 129×129 accuracy. Euler stays validated at 33×33. See
+  `docs/validation/cavity-backends-validation.md`
 - [ ] Multi-Reynolds grid-convergence study (Richardson extrapolation)
 - [ ] Extended-time Taylor-Green decay-rate verification
 - [ ] Cross-architecture consistency (all backends identical within 0.1%)

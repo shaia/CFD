@@ -2,12 +2,14 @@
  * @file test_optimal_omega.c
  * @brief Tests for the automatic SOR relaxation factor
  *
- * The automatic omega (params.omega = 0) must be the documented optimum for the
+ * The automatic omega (params.sor.omega = 0) must be the documented optimum for the
  * walls in use, and must converge in close to the fewest sweeps any omega gives:
  * each "near best" test sweeps omega across a range on the same problem and
  * compares. The right-hand side is seeded noise with zero interior mean, so
  * every error mode is present, including the slowest.
  */
+
+#include "../test_poisson_helpers.h"
 
 #include "unity.h"
 #include "cfd/solvers/poisson_solver.h"
@@ -160,11 +162,6 @@ static double* create_noise_rhs(const grid_case_t* g) {
     return rhs;
 }
 
-static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
-    (void)solver;
-    (void)x;
-}
-
 /* Sweeps Red-Black SOR takes from a zero start with this omega (0 = automatic) */
 static int count_sweeps(poisson_solver_method_t method, const grid_case_t* g,
                         const double* rhs, double omega, double* final_residual)
@@ -181,7 +178,7 @@ static int count_sweeps(poisson_solver_method_t method, const grid_case_t* g,
     poisson_solver_params_t params = poisson_solver_params_default();
     params.tolerance = 1e-6;
     params.max_iterations = 100000;
-    params.omega = omega;
+    params.sor.omega = omega;
     cfd_status_t init = poisson_solver_init(solver, g->nx, g->ny, g->nz,
                                             g->dx, g->dy, g->dz, &params);
 
@@ -390,7 +387,7 @@ void test_explicit_omega_override(void) {
     poisson_solver_params_t params_explicit = poisson_solver_params_default();
     params_explicit.tolerance = 1e-6;
     params_explicit.max_iterations = 2000;
-    params_explicit.omega = 1.2;  /* Explicit suboptimal value */
+    params_explicit.sor.omega = 1.2;  /* Explicit suboptimal value */
     status = poisson_solver_init(solver_explicit, nx, ny, 1, dx, dy, 0.0, &params_explicit);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 

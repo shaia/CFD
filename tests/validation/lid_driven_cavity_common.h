@@ -40,7 +40,7 @@
 #define FINE_DT         0.0005
 #else
 /* Fast mode for CI - uses fewer iterations
- * At Re=100 with 33x33 grid using POISSON_SOLVER_CG_SCALAR:
+ * At Re=100 with 33x33 grid using scalar CG for the pressure solve:
  *   - 5000 steps achieves RMS < 0.10
  * Using SIMD backends achieves RMS < 0.05.
  * Using dt=0.0005 for stability. */
@@ -56,6 +56,21 @@
 #define EULER_FULL_STEPS   25000
 #define EULER_MEDIUM_STEPS 15000
 #define EULER_FAST_STEPS   10000
+
+/* Steady-state detection.
+ *
+ * CAVITY_KE_RATE_TOL is |d(ln KE)/dt| in units of 1/time, so it means the same
+ * thing at every dt and for every solver. CAVITY_MIN_SETTLE_TIME keeps the test
+ * from firing during the initial transient; it replaces a step-count guard that
+ * was itself dt-dependent.
+ *
+ * Calibration: the old per-step test fired at |dKE|/KE = 1e-8 with dt = 1e-4,
+ * i.e. a rate of 1e-4 per unit time, at t ~ 1.2 -- long before this flow is
+ * developed. 1e-6 is 100x stricter, so that point no longer reads as converged.
+ * The settle time sits past the startup transient while staying inside the CI
+ * budget (33x33 reaches t = 2.5), so the early exit is still reachable there. */
+#define CAVITY_KE_RATE_TOL      1e-6
+#define CAVITY_MIN_SETTLE_TIME  1.0
 
 /* Domain configuration for unit square cavity [0,1] x [0,1] */
 #define CAVITY_DOMAIN_XMIN  0.0
@@ -153,6 +168,7 @@ static inline void apply_cavity_bc(flow_field* field, double lid_velocity) {
 
 typedef struct {
     int steps_completed;
+    double sim_time;        /* physical time reached, from the solver's real dt */
     double final_residual;
     double max_velocity;
     int converged;
@@ -185,6 +201,7 @@ typedef struct {
 
     /* Convergence tracking */
     int steps_completed;
+    double sim_time;        /* physical time reached, from the solver's real dt */
     double final_residual;
     int converged;
 } cavity_sim_result_t;
@@ -326,12 +343,21 @@ static inline cavity_sim_result_t cavity_run_with_solver(
             return result;
         }
 
+        /* Steady state is a statement about the rate of change per unit TIME, not
+         * per step. The old |dKE|/KE < 1e-8 per-step test scaled with dt, so it
+         * read a slow transient as convergence and stopped the Explicit Euler
+         * runs at t ~ 1.2 of the t ~ 10-20 this flow needs to develop.
+         * dt_used, not params.dt: the Euler solvers clamp their own step. */
+        double dt_step = (stats.dt_used > 0.0) ? stats.dt_used : params.dt;
         double ke = compute_kinetic_energy(ctx->field);
-        result.final_residual = fabs(ke - prev_ke) / (prev_ke + 1e-10);
+        result.final_residual =
+            fabs(ke - prev_ke) / ((prev_ke + 1e-10) * dt_step);
         prev_ke = ke;
         result.steps_completed = step + 1;
+        result.sim_time = (double)(step + 1) * dt_step;
 
-        if (step > 100 && result.final_residual < 1e-8) {
+        if (result.sim_time > CAVITY_MIN_SETTLE_TIME &&
+            result.final_residual < CAVITY_KE_RATE_TOL) {
             result.converged = 1;
             break;
         }
@@ -480,12 +506,21 @@ static inline cavity_sim_result_t cavity_run_with_solver_ctx(
             return result;
         }
 
+        /* Steady state is a statement about the rate of change per unit TIME, not
+         * per step. The old |dKE|/KE < 1e-8 per-step test scaled with dt, so it
+         * read a slow transient as convergence and stopped the Explicit Euler
+         * runs at t ~ 1.2 of the t ~ 10-20 this flow needs to develop.
+         * dt_used, not params.dt: the Euler solvers clamp their own step. */
+        double dt_step = (stats.dt_used > 0.0) ? stats.dt_used : params.dt;
         double ke = compute_kinetic_energy(ctx->field);
-        result.final_residual = fabs(ke - prev_ke) / (prev_ke + 1e-10);
+        result.final_residual =
+            fabs(ke - prev_ke) / ((prev_ke + 1e-10) * dt_step);
         prev_ke = ke;
         result.steps_completed = step + 1;
+        result.sim_time = (double)(step + 1) * dt_step;
 
-        if (step > 100 && result.final_residual < 1e-8) {
+        if (result.sim_time > CAVITY_MIN_SETTLE_TIME &&
+            result.final_residual < CAVITY_KE_RATE_TOL) {
             result.converged = 1;
             break;
         }
@@ -595,12 +630,21 @@ static inline simulation_result_t run_cavity_simulation(
             break;
         }
 
+        /* Steady state is a statement about the rate of change per unit TIME, not
+         * per step. The old |dKE|/KE < 1e-8 per-step test scaled with dt, so it
+         * read a slow transient as convergence and stopped the Explicit Euler
+         * runs at t ~ 1.2 of the t ~ 10-20 this flow needs to develop.
+         * dt_used, not params.dt: the Euler solvers clamp their own step. */
+        double dt_step = (stats.dt_used > 0.0) ? stats.dt_used : params.dt;
         double ke = compute_kinetic_energy(ctx->field);
-        result.final_residual = fabs(ke - prev_ke) / (prev_ke + 1e-10);
+        result.final_residual =
+            fabs(ke - prev_ke) / ((prev_ke + 1e-10) * dt_step);
         prev_ke = ke;
         result.steps_completed = step + 1;
+        result.sim_time = (double)(step + 1) * dt_step;
 
-        if (step > 100 && result.final_residual < 1e-8) {
+        if (result.sim_time > CAVITY_MIN_SETTLE_TIME &&
+            result.final_residual < CAVITY_KE_RATE_TOL) {
             result.converged = 1;
             break;
         }
