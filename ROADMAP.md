@@ -554,14 +554,26 @@ and on having unbounded failure modes where the algorithm has proven ones.
 
 Pure-C inference with no runtime Python dependency (embedded/HPC friendly).
 
-- [ ] Binary weight format (`.cfdnn`) + loader API, modelled line-for-line on `.cfdchk`
-- [ ] Layers: Dense + activations (ReLU/LeakyReLU/Tanh/Sigmoid/GELU/Swish)
+- [x] Binary weight format (`.cfdnn`) + loader API, modelled line-for-line on `.cfdchk`
+- [x] Layers: Dense + activations (Identity/ReLU/LeakyReLU/Tanh/Sigmoid/Softplus)
 - [ ] SIMD kernels: AVX2/NEON, vectorized across cells so OMP stays bit-identical to scalar
+      (the table exports a NULL kernel today; scalar and OMP are done, OMP bit-identical)
 - [ ] Architectures: MLP (priority), Conv2D (future), Fourier Neural Operator (future)
-- [ ] Inference API (`cfd_nn_predict_batch`) + model lifecycle
-- [ ] Learned eddy-viscosity correction at the `turb_update_nu_t()` cross-backend seam
-- [ ] Validation: coarse-grid correction against Ghia RMS; must beat tuned-Cs Smagorinsky
-      and must vanish in laminar regions (Poiseuille)
+- [x] Inference API (`cfd_nn_predict_batch`) + model lifecycle
+- [x] Correction seam at `turb_update_nu_t()`, reaching all three CPU backends, with the
+      algebraic `NS_NUT_CORRECTION_S_STAR` and the learned `params.turb_closure` as
+      mutually exclusive alternatives on it
+- [x] **Algebraic competitor measured first, per the governing rule.** A two-constant
+      strain-rate power law cuts channel TKE error 14.96% → 6.23% where it was fitted and
+      12.80% → 9.27% at a held-out Re_tau, with `u_tau` unmoved (design note §2.7)
+- [ ] Trained model + Python exporter (`tools/cfdnn/`) — **blocked**: a network must now
+      beat the algebraic correction above, and §2.7 showed the only non-circular target
+      left on this case is `k+` at 9 and 14 nodes
+- [ ] Separated or adverse-pressure-gradient validation case — **prerequisite** for the
+      learned closure: in channel flow the momentum balance pins the shear stress, so the
+      closure has little authority over the quantities the gate measures
+- [ ] Validation: must beat tuned-Cs Smagorinsky, and must vanish in laminar regions
+      (the latter holds structurally and is asserted in `test_nut_correction.c`)
 
 **Three corrections to this section** (reasoning in the design note):
 

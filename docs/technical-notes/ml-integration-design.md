@@ -537,6 +537,12 @@ stay blocked.
 
 **GATE RESULT: PASS, on Reynolds stresses -- not on the mean profile.**
 
+> **Revised by §2.7.** The gate passed on two quantities, `-uv+` and `k+`. Measuring the
+> algebraic correction showed that the `-uv+` half does not survive: in this flow the mean
+> momentum balance fixes the total shear stress, so `-uv+` is nearly closure-independent and
+> its apparent error tracks the model's own discretisation error almost exactly. Read the
+> `-uv+` column below as a discretisation diagnostic. The gate still passes, on `k+` alone.
+
 `chan<N>.reystress` is now imported alongside the means, and the test compares
 three quantities. Measured in Release/AVX2, each case driven at its true Re_tau:
 
@@ -651,6 +657,92 @@ clears it on a held-out Reynolds number, is Milestone 1 justified.
 Caveats: 9 training points, two Reynolds numbers, one flow, one geometry, and the
 shear-stress derivative issue of the previous section still applies. This is
 suggestive, not settled.
+
+---
+
+### 2.7 The algebraic correction, measured — and two things §2.5 got wrong
+
+§2.6 said the algebraic form had to be tried before a network. It has been, as
+`NS_NUT_CORRECTION_S_STAR`, and measuring it corrected two errors in the gate above.
+
+#### Correction 1 — `-uv+` error is mostly discretisation, not closure error
+
+§2.5 reports a 12–16% Reynolds-shear-stress error and treats it as a closure deficiency.
+It is largely not one. In fully developed channel flow the mean momentum balance fixes the
+**total** shear stress, `tau_total/u_tau^2 = 1 - y/delta`, whatever the closure says. Any
+converged model with the right `u_tau` therefore reproduces `-uv+` automatically; the
+closure sets the mean velocity, not the stress.
+
+Measured on the baseline run, the model's own stresses against that balance:
+
+| Re_tau | RMS `-uv+` error vs DNS | RMS balance error vs `1 - y/delta` | DNS vs `1 - y/delta` |
+| ------ | ----------------------- | ---------------------------------- | -------------------- |
+| 392.24 | 15.5%                   | 15.2%                              | 3.6%                 |
+| 587.19 | 13.1%                   | 11.0%                              | 4.8%                 |
+
+The two columns track each other because they are the same quantity. One node dominates
+both: the node adjacent to the wall-function node, where `nu_t` jumps and the central
+difference straddles the jump, carries a 43% / 39% balance error and reports `-uv+ = 1.105`
+where the physical total stress is ~0.8. That is caveat 1 of §2.5 promoted from a footnote
+to the explanation.
+
+**Consequence:** of the two quantities the gate passed on, only `k+` is a genuine closure
+output. `-uv+` should be reported as a discretisation diagnostic, not as evidence for or
+against a closure — and a correction that improves it is suspect rather than encouraging.
+
+#### Correction 2 — the sign of the `nu_t` lever is inverted
+
+The obvious mapping is "k-epsilon over-predicts k, so reduce `nu_t`". Measured, it does the
+opposite. Multiplying `nu_t` by `beta` is using `C_mu' = beta * C_mu`; with the stress
+pinned by the momentum balance the strain rate absorbs the change, so `P_k = tau^2 / nu_t`
+and local equilibrium `P_k = eps` gives
+
+```text
+k = tau / sqrt(C_mu')     =>     k ~ beta^(-1/2)
+```
+
+**Lowering `nu_t` raises k.** The first a posteriori run confirmed it quantitatively:
+`beta = 0.90` predicts +5.4% in k and the run gave +6.0%, and every DNS-RMS got worse —
+`k+` 14.96% → 20.40% at the Reynolds number the fit was made on. The fitted TKE ratio must
+therefore be inverted and squared, `beta_nu = beta_k^(-2)`, before it is applied.
+
+#### The result, with the sign right
+
+`beta = A (S*)^B`, `A = 1.6945`, `B = -0.2778`, from the least-squares fit of
+`ln(k_dns/k_model)` on `ln S*` at Re_tau = 392.24 transformed by `beta_nu = beta_k^(-2)`.
+Release/AVX2, each case driven at its true Re_tau, k-epsilon:
+
+| Re_tau | | `u+` RMS | `-uv+` RMS | `k+` RMS | `u_tau` |
+| ------ | --- | -------- | ---------- | -------- | ------- |
+| 392.24 (fitted) | baseline | 1.30% | 15.47% | 14.96% | 0.9716 |
+| 392.24 | corrected | 1.63% | 15.75% | **6.23%** | 0.9723 |
+| 587.19 (held out) | baseline | 1.24% | 13.06% | 12.80% | 0.9807 |
+| 587.19 | corrected | 1.54% | 13.07% | **9.27%** | 0.9807 |
+
+**A 58% reduction in TKE error where it was fitted, and 28% at a held-out Reynolds
+number.** `u_tau` is unmoved, so the friction calibration survives. The mean profile gives
+up 0.3 percentage points, which is the expected trade: k-epsilon's constants are calibrated
+on that profile, so improving k has to cost it something. `-uv+` does not move, exactly as
+Correction 1 predicts it cannot.
+
+**One refit iteration made it worse and was discarded.** Using the measured response to
+re-fit (`beta_needed = beta_applied * (k_corr/k_dns)^2`, refit on the corrected run's own
+S*) gave `A = 1.9948, B = -0.4364` and `k+` RMS 6.30% / 9.49% — worse at both Reynolds
+numbers, with `u_tau` pulled to 0.9529. Nine training points do not support a second
+iteration. The transformed first fit is kept.
+
+#### What this does to the case for a network
+
+It raises the bar it has to clear. The analytic competitor is now two constants that cut
+TKE error by more than half and generalise to a held-out Reynolds number, and the governing
+rule of §1.1 says a network must beat *that*, not the uncorrected model. It also narrows
+the target: `-uv+` is not evidence, so the only quantity left to learn against on this case
+is `k+`, at 9 and 14 nodes.
+
+**What would change the picture** is a flow where the closure actually sets the stress
+distribution, rather than one where the momentum balance pins it. A separated or
+adverse-pressure-gradient case is now a prerequisite for the learned closure, for the same
+reason DNS data was a prerequisite for measuring closure error at all.
 
 ---
 

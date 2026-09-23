@@ -52,10 +52,17 @@ void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params) {
 
 
 /* ==========================================================================
- * Learned eddy-viscosity correction
+ * Optional eddy-viscosity corrections: algebraic, or learned
  *
- * Applied ON TOP of an active closure, never instead of one: the features are
- * built from k and epsilon, which only exist when a transport model is running.
+ * Two alternatives on one seam, and the algebraic one is the incumbent: a
+ * power law in the dimensionless strain rate, which is a C_mu that varies with
+ * the local strain. Per the design note's governing rule -- ML earns its place
+ * only where no analytic answer exists -- a learned closure has to beat it on a
+ * held-out Reynolds number to be worth shipping. Setting both is refused.
+ *
+ * Either way the correction is applied ON TOP of an active closure, never
+ * instead of one: the features are built from k and epsilon, which only exist
+ * when a transport model is running.
  *
  * Feature set, chosen by the locality study in
  * docs/technical-notes/ml-integration-design.md:
@@ -95,6 +102,42 @@ void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params) {
  * ========================================================================== */
 
 /**
+ * Strain-rate magnitude |S| = sqrt(2 S_ij S_ij) at cell n, from central
+ * differences.
+ *
+ * Boundary nodes reuse the nearest interior value rather than a one-sided
+ * stencil, since the wall function governs them anyway. Shared by both
+ * corrections so they cannot drift apart in how they see the flow.
+ */
+static double turb_strain_magnitude(const flow_field* field, const grid* grid, size_t n) {
+    const size_t nx = field->nx, ny = field->ny;
+    const double dx = grid->dx ? grid->dx[0] : 1.0;
+    const double dy = grid->dy ? grid->dy[0] : 1.0;
+
+    size_t i = n % nx;
+    size_t j = (n / nx) % ny;
+    size_t ic = i == 0 ? 1 : (i == nx - 1 ? nx - 2 : i);
+    size_t jc = j == 0 ? 1 : (j == ny - 1 ? ny - 2 : j);
+    size_t c = (n / (nx * ny)) * nx * ny + jc * nx + ic;
+
+    double dudy = (field->u[c + nx] - field->u[c - nx]) / (2.0 * dy);
+    double dvdx = (field->v[c + 1] - field->v[c - 1]) / (2.0 * dx);
+    double dudx = (field->u[c + 1] - field->u[c - 1]) / (2.0 * dx);
+    double dvdy = (field->v[c + nx] - field->v[c - nx]) / (2.0 * dy);
+    double s12 = 0.5 * (dudy + dvdx);
+    return sqrt(2.0 * (dudx * dudx + dvdy * dvdy + 2.0 * s12 * s12));
+}
+
+/** Dimensionless strain rate S* = |S| k / epsilon at cell n. */
+static double turb_s_star(const flow_field* field, const grid* grid,
+                          const ns_solver_params_t* params, size_t n) {
+    (void)params;
+    const double k_c = fmax(field->turb_k[n], TURB_K_MIN);
+    const double eps_c = fmax(field->turb_eps[n], TURB_EPS_MIN);
+    return turb_strain_magnitude(field, grid, n) * k_c / eps_c;
+}
+
+/**
  * Per-cell features for one tile of cells [base, base + count).
  *
  * Split out from the apply loop so the two array walks stay readable while the
@@ -103,33 +146,13 @@ void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params) {
 static void turb_closure_features(const flow_field* field, const grid* grid,
                                   const ns_solver_params_t* params,
                                   size_t base, size_t count, double* feats) {
-    const size_t nx = field->nx, ny = field->ny;
-    const double dx = grid->dx ? grid->dx[0] : 1.0;
-    const double dy = grid->dy ? grid->dy[0] : 1.0;
-
     for (size_t t = 0; t < count; t++) {
         const size_t n = base + t;
         const double nu = local_nu(params, field, n);
         const double k_c = fmax(field->turb_k[n], TURB_K_MIN);
         const double eps_c = fmax(field->turb_eps[n], TURB_EPS_MIN);
 
-        /* Strain-rate magnitude from central differences; boundary nodes reuse
-         * the nearest interior value rather than a one-sided stencil, since
-         * the wall function governs them anyway. */
-        size_t i = n % nx;
-        size_t j = (n / nx) % ny;
-        size_t ic = i == 0 ? 1 : (i == nx - 1 ? nx - 2 : i);
-        size_t jc = j == 0 ? 1 : (j == ny - 1 ? ny - 2 : j);
-        size_t c = (n / (nx * ny)) * nx * ny + jc * nx + ic;
-
-        double dudy = (field->u[c + nx] - field->u[c - nx]) / (2.0 * dy);
-        double dvdx = (field->v[c + 1] - field->v[c - 1]) / (2.0 * dx);
-        double dudx = (field->u[c + 1] - field->u[c - 1]) / (2.0 * dx);
-        double dvdy = (field->v[c + nx] - field->v[c - nx]) / (2.0 * dy);
-        double s12 = 0.5 * (dudy + dvdx);
-        double s_mag = sqrt(2.0 * (dudx * dudx + dvdy * dvdy + 2.0 * s12 * s12));
-
-        double s_star = s_mag * k_c / eps_c;
+        double s_star = turb_s_star(field, grid, params, n);
         double re_t = k_c * k_c / (nu * eps_c);
         double nut_p = field->nu_t[n] / nu;
 
@@ -140,18 +163,56 @@ static void turb_closure_features(const flow_field* field, const grid* grid,
     }
 }
 
+/**
+ * Algebraic correction: nu_t *= clamp(A * (S*)^B).
+ *
+ * Equivalent to a C_mu that varies with the local strain rate, since
+ * nu_t = C_mu k^2 / eps. Coefficients and their provenance are at
+ * TURB_ALG_BETA_A in the internal header.
+ */
+static void turb_apply_algebraic_correction(flow_field* field, const grid* grid,
+                                            const ns_solver_params_t* params) {
+    const size_t total = field->nx * field->ny * field->nz;
+    for (size_t n = 0; n < total; n++) {
+        const double s_star = fmax(turb_s_star(field, grid, params, n), 1e-30);
+        double b = TURB_ALG_BETA_A * pow(s_star, TURB_ALG_BETA_B);
+        b = fmin(fmax(b, TURB_CLOSURE_BETA_MIN), TURB_CLOSURE_BETA_MAX);
+        const double nu = local_nu(params, field, n);
+        field->nu_t[n] = fmin(field->nu_t[n] * b, TURB_NU_T_MAX_FACTOR * nu);
+    }
+}
+
 cfd_status_t turb_check_closure_config(const ns_solver_params_t* params) {
-    if (!params || !params->turb_closure) {
+    if (!params) {
+        return CFD_SUCCESS;
+    }
+    if (params->turb_nut_correction != NS_NUT_CORRECTION_NONE &&
+        params->turb_nut_correction != NS_NUT_CORRECTION_S_STAR) {
+        cfd_set_error(CFD_ERROR_INVALID, "Unknown ns_solver_params_t.turb_nut_correction");
+        return CFD_ERROR_INVALID;
+    }
+    /* Two multipliers on nu_t would compound, and the result would be neither
+     * the fitted algebraic correction nor the trained one. Pick one. */
+    if (params->turb_closure && params->turb_nut_correction != NS_NUT_CORRECTION_NONE) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "params.turb_closure and params.turb_nut_correction are "
+                      "alternatives: set one, not both");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    if (!params->turb_closure && params->turb_nut_correction == NS_NUT_CORRECTION_NONE) {
         return CFD_SUCCESS; /* feature off */
     }
-    /* SA carries no k/epsilon, so the feature set is undefined for it, and with
-     * no model at all there is nothing to correct. Refused rather than ignored:
-     * a caller who set a closure asked for it to run. */
+    /* SA carries no k/epsilon, so S* and its companions are undefined for it,
+     * and with no model at all there is nothing to correct. Refused rather than
+     * ignored: a caller who configured a correction asked for it to run. */
     if (params->turb_model != TURB_MODEL_K_EPSILON) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "params.turb_closure requires TURB_MODEL_K_EPSILON: its features "
-                      "are built from k and epsilon, which no other model carries");
+                      "an eddy-viscosity correction requires TURB_MODEL_K_EPSILON: its "
+                      "features are built from k and epsilon, which no other model carries");
         return CFD_ERROR_UNSUPPORTED;
+    }
+    if (!params->turb_closure) {
+        return CFD_SUCCESS; /* algebraic correction needs no model */
     }
 
     const cfd_nn_model_t* model = cfd_nn_context_model(params->turb_closure);
@@ -173,9 +234,10 @@ cfd_status_t turb_check_closure_config(const ns_solver_params_t* params) {
     return CFD_SUCCESS;
 }
 
-cfd_status_t turb_apply_learned_correction(flow_field* field, const grid* grid,
-                                           const ns_solver_params_t* params) {
-    if (!params || !params->turb_closure) {
+cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
+                                        const ns_solver_params_t* params) {
+    if (!params || (!params->turb_closure &&
+                    params->turb_nut_correction == NS_NUT_CORRECTION_NONE)) {
         return CFD_SUCCESS; /* feature off: bit-identical to the un-corrected path */
     }
 
@@ -185,7 +247,7 @@ cfd_status_t turb_apply_learned_correction(flow_field* field, const grid* grid,
     }
     if (!field || !grid || !field->nu_t || !field->turb_k || !field->turb_eps) {
         cfd_set_error(CFD_ERROR_INVALID,
-                      "turb_apply_learned_correction: missing field, grid or k-epsilon state");
+                      "turb_apply_nu_t_correction: missing field, grid or k-epsilon state");
         return CFD_ERROR_INVALID;
     }
 
@@ -198,8 +260,13 @@ cfd_status_t turb_apply_learned_correction(flow_field* field, const grid* grid,
      * The step validator already enforces this; a direct caller may not have. */
     if (nx < 3 || ny < 3) {
         cfd_set_error(CFD_ERROR_INVALID,
-                      "turb_apply_learned_correction requires nx >= 3 and ny >= 3");
+                      "turb_apply_nu_t_correction requires nx >= 3 and ny >= 3");
         return CFD_ERROR_INVALID;
+    }
+
+    if (params->turb_nut_correction == NS_NUT_CORRECTION_S_STAR) {
+        turb_apply_algebraic_correction(field, grid, params);
+        return CFD_SUCCESS;
     }
 
     /* Tiled so the scratch is a fixed stack allocation rather than a per-step
@@ -439,7 +506,7 @@ cfd_status_t turbulence_step_explicit_with_workspace(
     }
 
     turb_update_nu_t(field, params);
-    cfd_status_t closure_status = turb_apply_learned_correction(field, grid, params);
+    cfd_status_t closure_status = turb_apply_nu_t_correction(field, grid, params);
 
     if (owns_buffer) cfd_free(buf);
     return closure_status;

@@ -103,7 +103,7 @@ double turb_wall_distance(const grid* grid, const ns_turbulence_bc_config_t* tbc
  *  (nu_t <= TURB_NU_T_MAX_FACTOR * nu). Used after transport and by BCs. */
 void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params);
 
-/* --- Learned eddy-viscosity correction --- */
+/* --- Optional eddy-viscosity corrections (algebraic or learned) --- */
 
 /** Features per cell: ln S*, ln Re_t, ln(nu_t/nu). The model's input width must
  *  equal this exactly; a model of any other shape is rejected at solver init. */
@@ -121,26 +121,58 @@ void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params);
  *  just means smaller tiles. */
 #define TURB_CLOSURE_TILE 256
 
+/* --- Algebraic correction: beta = A * (S*)^B, i.e. a strain-dependent C_mu ---
+ *
+ * Fitted by least squares on ln(k_dns / k_model) against ln S* at Re_tau =
+ * 392.24 (9 comparison nodes), then evaluated at the held-out Re_tau = 587.19.
+ * The target is the TKE ratio rather than the shear-stress ratio because in
+ * fully developed channel flow the total shear stress is fixed by the mean
+ * momentum balance, so -uv+ is nearly closure-independent and its apparent
+ * error is dominated by discretisation. k is a genuine closure output.
+ *
+ * THE SIGN IS NOT THE INTUITIVE ONE, and the first version of these constants
+ * had it backwards. Multiplying nu_t by beta is the same as using
+ * C_mu' = beta * C_mu. In a stress-constrained flow the shear stress is set by
+ * the mean momentum balance, not by the closure, so the strain rate absorbs any
+ * change in nu_t: tau = nu_t |S| is fixed, P_k = tau^2 / nu_t, and local
+ * equilibrium (P_k = eps) with nu_t = C_mu' k^2/eps gives
+ *
+ *     k = tau / sqrt(C_mu')  =>  k scales as beta^(-1/2).
+ *
+ * LOWERING nu_t therefore RAISES k. Measured: beta = 0.90 predicts +5.4% in k
+ * and the run gave +6.0%. So to scale k by a factor r the multiplier must be
+ * beta = r^(-2), which is how the fitted TKE ratio is converted below.
+ *
+ * Provenance, the failed first attempt and the a posteriori numbers are in
+ * docs/technical-notes/ml-integration-design.md 2.7. These are fitted
+ * constants, not derived ones -- treat them as a measured baseline for a
+ * learned closure to beat, not as physics. */
+#define TURB_ALG_BETA_A 1.6945
+#define TURB_ALG_BETA_B (-0.2778)
+
 /**
- * Apply the optional learned eddy-viscosity correction.
+ * Apply whichever optional eddy-viscosity correction params selects: the
+ * algebraic strain-rate power law, or the learned closure.
  *
  * Call immediately after turb_update_nu_t(). Returns CFD_SUCCESS and touches
- * nothing when params->turb_closure is NULL, so the un-corrected path stays
+ * nothing when neither is configured, so the un-corrected path stays
  * bit-identical. Additive by design: turb_update_nu_t keeps its signature and
  * its behaviour.
  *
- * @return CFD_SUCCESS; CFD_ERROR_UNSUPPORTED if a closure is set with any model
- *         other than k-epsilon (the features are built from k and epsilon, so
- *         they do not exist for Spalart-Allmaras); CFD_ERROR_INVALID for a NULL
+ * @return CFD_SUCCESS; CFD_ERROR_UNSUPPORTED if a correction is configured with
+ *         any model other than k-epsilon (S*, Re_t and nu_t/nu are built from k
+ *         and epsilon, so they do not exist for Spalart-Allmaras), or if both
+ *         corrections are configured at once; CFD_ERROR_INVALID for a NULL
  *         field/grid, a missing turbulence field or a model of the wrong shape;
  *         CFD_ERROR_DIVERGED if the model predicts a non-finite value. Never a
  *         silent skip: a caller that asked for a correction gets one or an error.
  */
-cfd_status_t turb_apply_learned_correction(flow_field* field, const grid* grid,
-                                           const ns_solver_params_t* params);
+cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
+                                        const ns_solver_params_t* params);
 
 /**
- * Validate params->turb_closure against params->turb_model at solver init.
+ * Validate params->turb_closure and params->turb_nut_correction against
+ * params->turb_model at solver init.
  *
  * Checked here rather than per step so a caller learns before init returns,
  * while they can still choose a different configuration.

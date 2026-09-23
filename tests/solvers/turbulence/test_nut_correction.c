@@ -1,10 +1,11 @@
 /**
- * @file test_learned_closure.c
- * @brief Contract tests for the optional learned eddy-viscosity correction.
+ * @file test_nut_correction.c
+ * @brief Contract tests for the optional eddy-viscosity corrections.
  *
- * The correction changes physics, so what is tested here is not accuracy -- no
- * trained model exists yet -- but the guarantees the design note makes about a
- * correction that is switched on:
+ * Two alternatives share one seam: the algebraic strain-rate power law
+ * (params.turb_nut_correction) and the learned closure (params.turb_closure).
+ * Accuracy is measured elsewhere -- test_turbulent_channel against DNS -- so
+ * what is tested here is the contract both must honour:
  *
  * 1. beta = 1 is BIT-IDENTICAL to running without a closure. Anything else
  *    means the hook perturbs the base model.
@@ -135,22 +136,31 @@ static ns_solver_params_t make_params(turbulence_model_t model) {
  * differ by the correction alone. Over several steps the correction feeds back
  * into k and eps and the comparison would no longer be exact.
  */
-static cfd_status_t step_once(cfd_nn_context_t* closure, double* out_nu_t) {
+static cfd_status_t step_once_with(cfd_nn_context_t* closure,
+                                   ns_nut_correction_t algebraic, double k0,
+                                   double* out_nu_t, double* out_k, double* out_eps) {
     grid* g = make_grid();
     flow_field* field = make_field();
     ns_solver_params_t params = make_params(TURB_MODEL_K_EPSILON);
     params.turb_closure = closure;
+    params.turb_nut_correction = algebraic;
 
     TEST_ASSERT_EQUAL(CFD_SUCCESS,
-                      turbulence_init_uniform(field, &params, TEST_K0, TEST_EPS0, 0.0));
+                      turbulence_init_uniform(field, &params, k0, TEST_EPS0, 0.0));
     cfd_status_t status = turbulence_step_explicit(field, g, &params, TEST_DT, 0.0);
-    if (status == CFD_SUCCESS && out_nu_t) {
-        memcpy(out_nu_t, field->nu_t, CELLS * sizeof(double));
+    if (status == CFD_SUCCESS) {
+        if (out_nu_t) memcpy(out_nu_t, field->nu_t, CELLS * sizeof(double));
+        if (out_k) memcpy(out_k, field->turb_k, CELLS * sizeof(double));
+        if (out_eps) memcpy(out_eps, field->turb_eps, CELLS * sizeof(double));
     }
 
     flow_field_destroy(field);
     grid_destroy(g);
     return status;
+}
+
+static cfd_status_t step_once(cfd_nn_context_t* closure, double* out_nu_t) {
+    return step_once_with(closure, NS_NUT_CORRECTION_NONE, TEST_K0, out_nu_t, NULL, NULL);
 }
 
 /* Load TMP_MODEL and create a context of the given capacity. */
@@ -312,7 +322,121 @@ void test_closure_with_spalart_allmaras_is_refused(void) {
 }
 
 /* ============================================================================
- * 5. The refusal happens at init, while the caller can still choose
+ * 5. The algebraic correction on the same seam
+ * ============================================================================ */
+
+/* Must match TURB_ALG_BETA_A / _B in turbulence_solver_internal.h. Duplicated
+ * rather than included so a coefficient change has to be made deliberately in
+ * both places, and cannot pass unnoticed because the test recomputes it. */
+#define ALG_A 1.6945
+#define ALG_B (-0.2778)
+
+static cfd_status_t init_solver_with(ns_solver_params_t* params); /* section 6 */
+
+void test_algebraic_default_is_off(void) {
+    double base[CELLS];
+    double with_none[CELLS];
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, step_once(NULL, base));
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, step_once_with(NULL, NS_NUT_CORRECTION_NONE, TEST_K0,
+                                                  with_none, NULL, NULL));
+    TEST_ASSERT_EQUAL_MEMORY(base, with_none, sizeof(base));
+}
+
+void test_algebraic_applies_the_documented_power_law(void) {
+    double base[CELLS], k[CELLS], eps[CELLS], corrected[CELLS];
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      step_once_with(NULL, NS_NUT_CORRECTION_NONE, TEST_K0, base, k, eps));
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, step_once_with(NULL, NS_NUT_CORRECTION_S_STAR, TEST_K0,
+                                                  corrected, NULL, NULL));
+
+    /* The field carries u = j/(NY-1) and v = 0, so the only nonzero strain is
+     * du/dy and the central difference gives |S| = du/dy exactly. k and eps are
+     * the same in both runs: the correction lands after the transport step and
+     * does not feed back within one step. */
+    const double dy = 1.0 / (double)(NY - 1);
+    const double s_mag = (1.0 / (double)(NY - 1)) / dy; /* = 1.0 */
+
+    for (size_t n = 0; n < CELLS; n++) {
+        double s_star = s_mag * k[n] / eps[n];
+        double beta = ALG_A * pow(s_star, ALG_B);
+        if (beta < 0.1) beta = 0.1;
+        if (beta > 10.0) beta = 10.0;
+        TEST_ASSERT_DOUBLE_WITHIN(1e-12 * base[n] * beta, base[n] * beta, corrected[n]);
+    }
+}
+
+void test_algebraic_vanishes_where_turbulence_does(void) {
+    /* The ship gate requires the correction to vanish in laminar regions. It
+     * does so structurally rather than by fitting: the correction is
+     * multiplicative and bounded by TURB_CLOSURE_BETA_MAX, and nu_t = C_mu
+     * k^2/eps is already negligible where k is, so the most it can do is scale
+     * a vanishing viscosity by ten. Started from k = 0; the transport leaves a
+     * rounding-level residue rather than an exact zero, which is why this
+     * bounds the ratio instead of asserting equality. */
+    double base[CELLS], corrected[CELLS];
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      step_once_with(NULL, NS_NUT_CORRECTION_NONE, 0.0, base, NULL, NULL));
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, step_once_with(NULL, NS_NUT_CORRECTION_S_STAR, 0.0,
+                                                  corrected, NULL, NULL));
+    for (size_t n = 0; n < CELLS; n++) {
+        TEST_ASSERT_TRUE_MESSAGE(corrected[n] <= 10.0 * base[n] + 1e-300,
+                                 "correction exceeded the clamp in a laminar region");
+        /* And negligible against the molecular viscosity it sits beside. */
+        TEST_ASSERT_TRUE_MESSAGE(corrected[n] < 1e-8 * TEST_MU,
+                                 "nu_t is not negligible in a laminar region");
+    }
+}
+
+void test_algebraic_with_spalart_allmaras_is_refused(void) {
+    grid* g = make_grid();
+    flow_field* field = make_field();
+    ns_solver_params_t params = make_params(TURB_MODEL_SPALART_ALLMARAS);
+    params.turb_nut_correction = NS_NUT_CORRECTION_S_STAR;
+
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, turbulence_init_uniform(field, &params, 0.0, 0.0, 1e-3));
+    TEST_ASSERT_EQUAL(CFD_ERROR_UNSUPPORTED,
+                      turbulence_step_explicit(field, g, &params, TEST_DT, 0.0));
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+void test_unknown_correction_value_is_refused(void) {
+    grid* g = make_grid();
+    flow_field* field = make_field();
+    ns_solver_params_t params = make_params(TURB_MODEL_K_EPSILON);
+    params.turb_nut_correction = (ns_nut_correction_t)99;
+
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      turbulence_init_uniform(field, &params, TEST_K0, TEST_EPS0, 0.0));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      turbulence_step_explicit(field, g, &params, TEST_DT, 0.0));
+
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
+void test_both_corrections_at_once_are_refused(void) {
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, write_constant_model(2.0f));
+    cfd_nn_model_t* model = NULL;
+    cfd_nn_context_t* ctx = NULL;
+    open_closure(CELLS, &model, &ctx);
+
+    /* Two multipliers on nu_t would compound into something that is neither
+     * the fitted correction nor the trained one. */
+    TEST_ASSERT_EQUAL(CFD_ERROR_UNSUPPORTED,
+                      step_once_with(ctx, NS_NUT_CORRECTION_S_STAR, TEST_K0, NULL, NULL, NULL));
+
+    ns_solver_params_t params = make_params(TURB_MODEL_K_EPSILON);
+    params.turb_closure = ctx;
+    params.turb_nut_correction = NS_NUT_CORRECTION_S_STAR;
+    TEST_ASSERT_EQUAL(CFD_ERROR_UNSUPPORTED, init_solver_with(&params));
+
+    close_closure(model, ctx);
+}
+
+/* ============================================================================
+ * 6. The refusal happens at init, while the caller can still choose
  * ============================================================================ */
 
 static cfd_status_t init_solver_with(ns_solver_params_t* params) {
@@ -388,6 +512,12 @@ int main(void) {
     RUN_TEST(test_non_finite_prediction_fails_the_step);
     RUN_TEST(test_wrong_model_shape_is_rejected);
     RUN_TEST(test_closure_with_spalart_allmaras_is_refused);
+    RUN_TEST(test_algebraic_default_is_off);
+    RUN_TEST(test_algebraic_applies_the_documented_power_law);
+    RUN_TEST(test_algebraic_vanishes_where_turbulence_does);
+    RUN_TEST(test_algebraic_with_spalart_allmaras_is_refused);
+    RUN_TEST(test_unknown_correction_value_is_refused);
+    RUN_TEST(test_both_corrections_at_once_are_refused);
     RUN_TEST(test_solver_init_refuses_closure_without_kepsilon);
     RUN_TEST(test_solver_init_refuses_wrong_model_shape);
     RUN_TEST(test_solver_init_accepts_a_valid_closure);
