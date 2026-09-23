@@ -149,6 +149,15 @@ CFD_LIBRARY_EXPORT void cfd_nn_context_destroy(cfd_nn_context_t* ctx);
 /** "scalar", "avx2", "neon" or "omp" -- the backend actually resolved. */
 CFD_LIBRARY_EXPORT const char* cfd_nn_context_backend(const cfd_nn_context_t* ctx);
 
+/** The max_batch the context was created with: the largest sample count a
+ *  single predict call may pass. A caller with more samples than that must
+ *  split them, which is what the turbulence closure does. 0 if ctx is NULL. */
+CFD_LIBRARY_EXPORT size_t cfd_nn_context_capacity(const cfd_nn_context_t* ctx);
+
+/** The model the context executes, so a consumer can check the shape it is
+ *  about to feed before the first step. NULL if ctx is NULL. */
+CFD_LIBRARY_EXPORT const cfd_nn_model_t* cfd_nn_context_model(const cfd_nn_context_t* ctx);
+
 /* ---------------------------------------------------------------- predict -- */
 
 /**

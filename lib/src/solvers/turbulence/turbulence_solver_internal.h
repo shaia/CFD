@@ -103,16 +103,54 @@ double turb_wall_distance(const grid* grid, const ns_turbulence_bc_config_t* tbc
  *  (nu_t <= TURB_NU_T_MAX_FACTOR * nu). Used after transport and by BCs. */
 void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params);
 
+/* --- Learned eddy-viscosity correction --- */
+
+/** Features per cell: ln S*, ln Re_t, ln(nu_t/nu). The model's input width must
+ *  equal this exactly; a model of any other shape is rejected at solver init. */
+#define TURB_CLOSURE_FEATURES 3
+/** The model predicts one multiplier per cell. */
+#define TURB_CLOSURE_OUTPUTS 1
+/** Bounds on the predicted multiplier. Both directions matter: the correction
+ *  the channel DNS asks for is below 1 (k-epsilon over-predicts turbulent
+ *  energy in the outer layer), so this is NOT a dissipation-only correction and
+ *  the floor is what keeps a reduced nu_t away from zero. */
+#define TURB_CLOSURE_BETA_MIN 0.1
+#define TURB_CLOSURE_BETA_MAX 10.0
+/** Cells per inference call. The correction walks the grid in tiles so it needs
+ *  no per-step allocation and no context sized to the grid; a smaller context
+ *  just means smaller tiles. */
+#define TURB_CLOSURE_TILE 256
+
 /**
  * Apply the optional learned eddy-viscosity correction.
  *
- * Call immediately after turb_update_nu_t(). A no-op unless
- * params->turb_closure is set and k-epsilon is active, so the un-corrected
- * path stays bit-identical. Additive by design: turb_update_nu_t keeps its
- * signature and its behaviour.
+ * Call immediately after turb_update_nu_t(). Returns CFD_SUCCESS and touches
+ * nothing when params->turb_closure is NULL, so the un-corrected path stays
+ * bit-identical. Additive by design: turb_update_nu_t keeps its signature and
+ * its behaviour.
+ *
+ * @return CFD_SUCCESS; CFD_ERROR_UNSUPPORTED if a closure is set with any model
+ *         other than k-epsilon (the features are built from k and epsilon, so
+ *         they do not exist for Spalart-Allmaras); CFD_ERROR_INVALID for a NULL
+ *         field/grid, a missing turbulence field or a model of the wrong shape;
+ *         CFD_ERROR_DIVERGED if the model predicts a non-finite value. Never a
+ *         silent skip: a caller that asked for a correction gets one or an error.
  */
-void turb_apply_learned_correction(flow_field* field, const grid* grid,
-                                   const ns_solver_params_t* params);
+cfd_status_t turb_apply_learned_correction(flow_field* field, const grid* grid,
+                                           const ns_solver_params_t* params);
+
+/**
+ * Validate params->turb_closure against params->turb_model at solver init.
+ *
+ * Checked here rather than per step so a caller learns before init returns,
+ * while they can still choose a different configuration.
+ *
+ * @return CFD_SUCCESS when no closure is set or the configuration is usable;
+ *         CFD_ERROR_UNSUPPORTED when a closure is set without k-epsilon;
+ *         CFD_ERROR_INVALID when the model's input or output width does not
+ *         match what the closure feeds it.
+ */
+cfd_status_t turb_check_closure_config(const ns_solver_params_t* params);
 
 /** Shared argument/grid validation for the turbulence step (all backends):
  *  non-NULL args and fields, known model, 2D only, nx/ny >= 3, uniform

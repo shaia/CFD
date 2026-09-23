@@ -239,18 +239,28 @@ The pressure-guess proposal was chosen partly for a safety property — a bad ne
 iterations, not accuracy. A closure correction does change physics; that is the point. So
 safety has to be structural instead, enforced in C rather than hoped for:
 
-1. **The network output is non-negative.** A softplus output layer means the correction can
-   only *add* dissipation. A model that cannot remove viscosity cannot destabilize the
-   momentum solve; the worst case is an over-diffused answer, which is wrong but bounded and
-   visible.
+1. **The multiplier is bounded on both sides.** This point originally read "a softplus output
+   layer means the correction can only *add* dissipation, so it cannot destabilize the
+   momentum solve." **That argument is withdrawn**, and it was withdrawn on the evidence in
+   §2.5: k-ε *over*-predicts turbulent energy in the outer layer, so the correction the DNS
+   asks for is β < 1. A dissipation-only correction could not represent the deficiency this
+   work exists to fix. The implementation therefore clamps β to
+   `[TURB_CLOSURE_BETA_MIN, TURB_CLOSURE_BETA_MAX]` = `[0.1, 10]`: a wrong model can scale
+   `nu_t` by at most ten either way, never to zero and never negative. Stability rests on
+   that floor, not on one-sidedness — at β = 0.1 the momentum equation sees a
+   laminar-viscosity-dominated limit it already handles with the turbulence model switched
+   off. A softplus output layer is still the right choice at export time, because it keeps
+   the raw prediction positive before the clamp ever sees it.
 2. **The existing clamp still applies.** `fmin(nu_t, TURB_NU_T_MAX_FACTOR * nu)` is already
    in `turb_update_nu_t` and is not bypassed. The learned path inherits the same
    realizability bound the analytic models have.
 3. **Non-finite output is an error, not a value.** Inference returns `CFD_ERROR_DIVERGED` if
    any output is non-finite, so a corrupt model fails the step loudly rather than seeding
-   NaN into a flow field.
-4. **Correction ≡ 0 must be bit-identical to today.** This is a test, not an aspiration; see
-   §2.5.
+   NaN into a flow field. The correction propagates that status out of the turbulence step,
+   so the step itself fails; it never drops the correction and reports success.
+4. **Correction ≡ 0 must be bit-identical to today.** This is a test, not an aspiration:
+   `tests/solvers/turbulence/test_learned_closure.c` asserts memory equality between a run
+   with no closure and one whose model predicts exactly 1.0.
 
 ---
 
@@ -374,24 +384,35 @@ should not replicate it.
 
 ### 2.4 Integration at `turb_update_nu_t()`
 
-1. `TURB_MODEL_LEARNED_VISCOSITY` joins `turbulence_model_t`, with 0 remaining the
-   backward-compatible default per the project's enum rule.
-2. A branch in `turb_update_nu_t()` assembles local features, calls
-   `cfd_nn_predict_batch` once over all cells, applies softplus, and then falls through to
-   the **existing** `TURB_NU_T_MAX_FACTOR * nu` clamp.
-3. The model handle lives on `ns_solver_params_t`, following the established
+**As built, and where it differs from the plan above.** No
+`TURB_MODEL_LEARNED_VISCOSITY` enumerator was added. The correction is not a model of its
+own but a multiplier applied *on top of* k-ε, which is what the locality study of §2.6
+actually fits (`beta = k_dns / k_model`), so the switch is the presence of
+`params.turb_closure` rather than a model selection. Concretely:
+
+1. `turb_apply_learned_correction()` runs immediately after `turb_update_nu_t()` in all three
+   turbulence backends (scalar, OMP, AVX2), which keeps `turb_update_nu_t` unchanged for
+   every caller that does not set a closure.
+2. It walks the grid in tiles of `TURB_CLOSURE_TILE` cells, calling `cfd_nn_predict_batch`
+   per tile. Tiling is what keeps the scratch a fixed stack buffer rather than a per-step
+   allocation, and it means the context need not be sized to the grid.
+3. Each predicted β is clamped to `[0.1, 10]` and multiplied into `nu_t`, which then passes
+   through the **existing** `TURB_NU_T_MAX_FACTOR * nu` realizability clamp.
+4. The model handle lives on `ns_solver_params_t`, following the established
    `source_func`/`source_context` callback-plus-context precedent. (`solver-params-redesign.md`
    notes that struct is already 24+ fields; this does not block the work, but the field
    belongs in a future grouped struct.)
 
-Rejections, with no silent fallbacks anywhere:
+Rejections, with no silent fallbacks anywhere. Every one of these is covered by
+`tests/solvers/turbulence/test_learned_closure.c`:
 
 | Configuration | Result |
 | ------------- | ------ |
 | GPU backend, any turbulence model | already `CFD_ERROR_UNSUPPORTED` |
 | 3D or non-uniform grid | already `CFD_ERROR_UNSUPPORTED` |
-| Model handle set with a non-learned `turb_model` | `CFD_ERROR_UNSUPPORTED` at init |
-| Learned model selected with no model loaded | `CFD_ERROR_INVALID` at init |
+| Closure set with any `turb_model` but k-ε, including `TURB_MODEL_NONE` | `CFD_ERROR_UNSUPPORTED` at init, and again at the step |
+| Closure whose model is not 3 inputs → 1 output | `CFD_ERROR_INVALID` at init, and again at the step |
+| Model predicts a non-finite value | `CFD_ERROR_DIVERGED`, failing the step |
 
 ### 2.5 Validation
 

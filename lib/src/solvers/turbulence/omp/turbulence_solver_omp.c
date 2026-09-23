@@ -295,8 +295,8 @@ cfd_status_t turbulence_step_explicit_omp_with_workspace(
     }
 
     turb_update_nu_t(field, params);
-    turb_apply_learned_correction(field, grid, params);
+    cfd_status_t closure_status = turb_apply_learned_correction(field, grid, params);
 
     if (owns_buffer) cfd_free(buf);
-    return CFD_SUCCESS;
+    return closure_status;
 }

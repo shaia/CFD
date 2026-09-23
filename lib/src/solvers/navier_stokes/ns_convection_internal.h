@@ -11,6 +11,8 @@
 #ifndef CFD_NS_CONVECTION_INTERNAL_H
 #define CFD_NS_CONVECTION_INTERNAL_H
 
+#include "../turbulence/turbulence_solver_internal.h"
+
 #include "cfd/core/cfd_status.h"
 #include "cfd/math/stencils.h"
 #include "cfd/solvers/navier_stokes_solver.h"
@@ -131,7 +133,16 @@ static inline cfd_status_t ns_check_pressure_solver(const ns_solver_params_t* pa
  */
 static inline cfd_status_t ns_check_turbulence_model(const ns_solver_params_t* params,
                                                      int backend_supports_turbulence) {
-    if (!params || params->turb_model == TURB_MODEL_NONE) {
+    if (!params) {
+        return CFD_SUCCESS;
+    }
+    /* Before the TURB_MODEL_NONE exit: a closure set with no turbulence model
+     * is exactly the configuration that used to run as a silent no-op. */
+    cfd_status_t closure_status = turb_check_closure_config(params);
+    if (closure_status != CFD_SUCCESS) {
+        return closure_status;
+    }
+    if (params->turb_model == TURB_MODEL_NONE) {
         return CFD_SUCCESS;
     }
     if (params->turb_model != TURB_MODEL_K_EPSILON &&

@@ -150,6 +150,14 @@ const char* cfd_nn_context_backend(const cfd_nn_context_t* ctx) {
     return ctx->impl->name;
 }
 
+size_t cfd_nn_context_capacity(const cfd_nn_context_t* ctx) {
+    return ctx ? ctx->max_batch : 0;
+}
+
+const cfd_nn_model_t* cfd_nn_context_model(const cfd_nn_context_t* ctx) {
+    return ctx ? ctx->model : NULL;
+}
+
 /* ==========================================================================
  * Inference
  * ========================================================================== */

@@ -70,53 +70,45 @@ void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params) {
  * (nu_t/nu = C_mu Re_t by construction; measured correlation 0.93), so they
  * carry less independent information than their count suggests.
  *
- * Safety is structural, not hoped for:
- *   - the model's output layer is expected to be softplus, so beta >= 0;
- *   - beta is additionally floored and ceilinged here, so a wrong model cannot
- *     produce a negative or unbounded viscosity;
- *   - the existing realizability clamp still runs afterwards;
- *   - a non-finite prediction aborts the correction and leaves nu_t untouched,
- *     rather than seeding NaN into the momentum equation.
- * The worst case is therefore an over- or under-diffused answer, never an
- * unstable one.
+ * Safety is structural, not hoped for -- but note what it does and does not
+ * promise. The correction is MULTIPLICATIVE and the DNS data asks for beta < 1
+ * in the outer layer, so this removes eddy viscosity as well as adding it. It
+ * is not a dissipation-only correction, and the claim that it can only
+ * over-diffuse does not hold:
+ *   - beta is clamped to [TURB_CLOSURE_BETA_MIN, TURB_CLOSURE_BETA_MAX], so a
+ *     wrong model can scale nu_t by at most 10x either way, never to zero and
+ *     never negative;
+ *   - the existing realizability clamp still runs afterwards, bounding the
+ *     upper side a second time;
+ *   - a non-finite prediction fails the step with CFD_ERROR_DIVERGED rather
+ *     than seeding NaN into the momentum equation.
+ * A reduced nu_t means less damping, so stability is bounded by the floor
+ * rather than argued away: at beta = BETA_MIN the momentum equation sees at
+ * worst the laminar-viscosity-dominated limit it already handles when the
+ * turbulence model is off.
+ *
+ * Scope, for whoever trains the model: turbulence_apply_bcs() runs after this
+ * and overwrites nu_t at wall nodes and at the first interior node next to a
+ * no-slip wall with the wall-shear-matching value. The correction therefore
+ * cannot move those points, which is consistent with the design note's caveat
+ * that they measure the wall treatment rather than the transport equations.
  * ========================================================================== */
 
-#define TURB_CLOSURE_FEATURES 3
-#define TURB_CLOSURE_BETA_MIN 0.1
-#define TURB_CLOSURE_BETA_MAX 10.0
-
-void turb_apply_learned_correction(flow_field* field, const grid* grid,
-                                   const ns_solver_params_t* params) {
-    if (!field || !grid || !params || !params->turb_closure) {
-        return; /* feature off: bit-identical to the un-corrected path */
-    }
-    if (params->turb_model == TURB_MODEL_NONE || !field->nu_t) {
-        return;
-    }
-    /* SA carries no k/epsilon, so the feature set is undefined for it. Rather
-     * than silently substitute different features, do nothing. */
-    if (params->turb_model != TURB_MODEL_K_EPSILON) {
-        return;
-    }
-
+/**
+ * Per-cell features for one tile of cells [base, base + count).
+ *
+ * Split out from the apply loop so the two array walks stay readable while the
+ * grid is traversed in tiles; see TURB_CLOSURE_TILE for why it is tiled.
+ */
+static void turb_closure_features(const flow_field* field, const grid* grid,
+                                  const ns_solver_params_t* params,
+                                  size_t base, size_t count, double* feats) {
     const size_t nx = field->nx, ny = field->ny;
-    const size_t total = nx * ny * field->nz;
-    if (total == 0 || nx < 3 || ny < 3) {
-        return;
-    }
-
-    double* feats = (double*)cfd_malloc(total * TURB_CLOSURE_FEATURES * sizeof(double));
-    double* beta = (double*)cfd_malloc(total * sizeof(double));
-    if (!feats || !beta) {
-        cfd_free(feats);
-        cfd_free(beta);
-        return; /* out of memory: leave nu_t as the base model produced it */
-    }
-
     const double dx = grid->dx ? grid->dx[0] : 1.0;
     const double dy = grid->dy ? grid->dy[0] : 1.0;
 
-    for (size_t n = 0; n < total; n++) {
+    for (size_t t = 0; t < count; t++) {
+        const size_t n = base + t;
         const double nu = local_nu(params, field, n);
         const double k_c = fmax(field->turb_k[n], TURB_K_MIN);
         const double eps_c = fmax(field->turb_eps[n], TURB_EPS_MIN);
@@ -141,29 +133,107 @@ void turb_apply_learned_correction(flow_field* field, const grid* grid,
         double re_t = k_c * k_c / (nu * eps_c);
         double nut_p = field->nu_t[n] / nu;
 
-        double* f = feats + n * TURB_CLOSURE_FEATURES;
+        double* f = feats + t * TURB_CLOSURE_FEATURES;
         f[0] = log(fmax(s_star, 1e-30));
         f[1] = log(fmax(re_t, 1e-30));
         f[2] = log(fmax(nut_p, 1e-30));
     }
+}
 
-    cfd_status_t st = cfd_nn_predict_batch(params->turb_closure, total,
-                                           feats, total * TURB_CLOSURE_FEATURES,
-                                           beta, total);
-    if (st == CFD_SUCCESS) {
-        for (size_t n = 0; n < total; n++) {
-            double b = beta[n];
-            if (!isfinite(b)) {
-                continue;
-            }
-            b = fmin(fmax(b, TURB_CLOSURE_BETA_MIN), TURB_CLOSURE_BETA_MAX);
+cfd_status_t turb_check_closure_config(const ns_solver_params_t* params) {
+    if (!params || !params->turb_closure) {
+        return CFD_SUCCESS; /* feature off */
+    }
+    /* SA carries no k/epsilon, so the feature set is undefined for it, and with
+     * no model at all there is nothing to correct. Refused rather than ignored:
+     * a caller who set a closure asked for it to run. */
+    if (params->turb_model != TURB_MODEL_K_EPSILON) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "params.turb_closure requires TURB_MODEL_K_EPSILON: its features "
+                      "are built from k and epsilon, which no other model carries");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+
+    const cfd_nn_model_t* model = cfd_nn_context_model(params->turb_closure);
+    if (!model) {
+        cfd_set_error(CFD_ERROR_INVALID, "params.turb_closure carries no model");
+        return CFD_ERROR_INVALID;
+    }
+    if (cfd_nn_model_inputs(model) != TURB_CLOSURE_FEATURES ||
+        cfd_nn_model_outputs(model) != TURB_CLOSURE_OUTPUTS) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "params.turb_closure model shape must be 3 inputs -> 1 output "
+                      "(ln S*, ln Re_t, ln nu_t/nu -> beta)");
+        return CFD_ERROR_INVALID;
+    }
+    if (cfd_nn_context_capacity(params->turb_closure) == 0) {
+        cfd_set_error(CFD_ERROR_INVALID, "params.turb_closure has zero batch capacity");
+        return CFD_ERROR_INVALID;
+    }
+    return CFD_SUCCESS;
+}
+
+cfd_status_t turb_apply_learned_correction(flow_field* field, const grid* grid,
+                                           const ns_solver_params_t* params) {
+    if (!params || !params->turb_closure) {
+        return CFD_SUCCESS; /* feature off: bit-identical to the un-corrected path */
+    }
+
+    cfd_status_t status = turb_check_closure_config(params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    if (!field || !grid || !field->nu_t || !field->turb_k || !field->turb_eps) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "turb_apply_learned_correction: missing field, grid or k-epsilon state");
+        return CFD_ERROR_INVALID;
+    }
+
+    const size_t nx = field->nx, ny = field->ny;
+    const size_t total = nx * ny * field->nz;
+    if (total == 0) {
+        return CFD_SUCCESS;
+    }
+    /* The central-difference features need one interior neighbour each way.
+     * The step validator already enforces this; a direct caller may not have. */
+    if (nx < 3 || ny < 3) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "turb_apply_learned_correction requires nx >= 3 and ny >= 3");
+        return CFD_ERROR_INVALID;
+    }
+
+    /* Tiled so the scratch is a fixed stack allocation rather than a per-step
+     * malloc, and so a context smaller than the grid still works -- it just
+     * makes the tiles smaller. */
+    size_t tile = cfd_nn_context_capacity(params->turb_closure);
+    if (tile > TURB_CLOSURE_TILE) {
+        tile = TURB_CLOSURE_TILE;
+    }
+    double feats[TURB_CLOSURE_TILE * TURB_CLOSURE_FEATURES];
+    double beta[TURB_CLOSURE_TILE];
+
+    for (size_t base = 0; base < total; base += tile) {
+        const size_t count = (total - base < tile) ? (total - base) : tile;
+
+        turb_closure_features(field, grid, params, base, count, feats);
+
+        status = cfd_nn_predict_batch(params->turb_closure, count, feats,
+                                      count * TURB_CLOSURE_FEATURES, beta, count);
+        if (status != CFD_SUCCESS) {
+            cfd_set_error(status,
+                          "learned eddy-viscosity closure: inference failed; nu_t is "
+                          "left as the k-epsilon model produced it and the step fails");
+            return status;
+        }
+
+        for (size_t t = 0; t < count; t++) {
+            const size_t n = base + t;
+            const double b = fmin(fmax(beta[t], TURB_CLOSURE_BETA_MIN), TURB_CLOSURE_BETA_MAX);
             const double nu = local_nu(params, field, n);
             field->nu_t[n] = fmin(field->nu_t[n] * b, TURB_NU_T_MAX_FACTOR * nu);
         }
     }
-
-    cfd_free(feats);
-    cfd_free(beta);
+    return CFD_SUCCESS;
 }
 
 double turb_wall_distance(const grid* grid, const ns_turbulence_bc_config_t* tbc,
@@ -369,10 +439,10 @@ cfd_status_t turbulence_step_explicit_with_workspace(
     }
 
     turb_update_nu_t(field, params);
-    turb_apply_learned_correction(field, grid, params);
+    cfd_status_t closure_status = turb_apply_learned_correction(field, grid, params);
 
     if (owns_buffer) cfd_free(buf);
-    return CFD_SUCCESS;
+    return closure_status;
 }
 
 cfd_status_t turbulence_step_explicit(flow_field* field, const grid* grid,

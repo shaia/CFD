@@ -302,12 +302,20 @@ typedef struct {
      *
      * A context rather than a model: inference needs per-call scratch, and
      * making the caller own it keeps allocation out of the per-step path and
-     * makes the single-threaded ownership of that scratch explicit. Size it
-     * for at least nx*ny*nz samples.
+     * makes the single-threaded ownership of that scratch explicit. Any
+     * capacity works -- the correction walks the grid in tiles and clamps the
+     * tile to the context's max_batch -- but a context sized for a few hundred
+     * samples or more avoids needless inference calls.
      *
-     * The correction is multiplicative on nu_t and is clamped afterwards by
-     * the model's existing realizability bound, so it can only ever add
-     * bounded dissipation. See docs/technical-notes/ml-integration-design.md. */
+     * The model must take exactly 3 inputs and produce 1 output, and
+     * turb_model must be TURB_MODEL_K_EPSILON; anything else is refused at
+     * solver init rather than ignored.
+     *
+     * The correction multiplies nu_t by a clamped factor in [0.1, 10] and the
+     * existing realizability bound still applies on top. It can reduce nu_t as
+     * well as raise it -- the channel DNS asks for a reduction in the outer
+     * layer -- so it is bounded, not dissipation-only.
+     * See docs/technical-notes/ml-integration-design.md. */
     cfd_nn_context_t* turb_closure;
 } ns_solver_params_t;
 
