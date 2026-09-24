@@ -135,7 +135,10 @@ static void put_f32(nn_io* io, float v) {
 static void put_string(nn_io* io, const char* s) {
     size_t n = s ? strlen(s) : 0;
     if (n > CFD_NN_MAX_STRING) {
-        n = CFD_NN_MAX_STRING;
+        /* Refused, not truncated: the reader rejects this length, so a clamp
+         * here would report success and hand back a different name on load. */
+        io->status = CFD_ERROR_INVALID;
+        return;
     }
     put_u32(io, (uint32_t)n);
     nn_write_bytes(io, s, n);
@@ -222,7 +225,9 @@ static cfd_status_t validate_layers(const cfd_nn_layer_desc_t* layers, size_t n)
 }
 
 cfd_status_t cfd_nn_model_write(const char* path, const cfd_nn_model_desc_t* desc) {
-    if (!path || !desc) {
+    /* Checked before the file is created, so an overlong name leaves no
+     * half-written model behind. */
+    if (!path || !desc || (desc->name && strlen(desc->name) > CFD_NN_MAX_STRING)) {
         return CFD_ERROR_INVALID;
     }
     cfd_status_t vs = validate_layers(desc->layers, desc->layer_count);

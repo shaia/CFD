@@ -314,6 +314,25 @@ void test_writer_rejects_bad_shapes(void) {
     TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_nn_model_write(TMP_MODEL, &d2));
 }
 
+/* The reader refuses a name longer than the cap, so the writer must refuse it
+ * too. Clamping instead would report success and load back a different model
+ * name -- the silent kind of round-trip failure this file exists to rule out.
+ * The cap mirrors CFD_NN_MAX_STRING, private to the library but part of the
+ * format's contract. */
+#define NAME_CAP 4096u
+
+void test_writer_rejects_overlong_name(void) {
+    char* name = (char*)malloc(NAME_CAP + 2);
+    TEST_ASSERT_NOT_NULL(name);
+    memset(name, 'n', NAME_CAP + 1);
+    name[NAME_CAP + 1] = '\0';
+
+    cfd_nn_layer_desc_t l = make_layer(CFD_NN_ACT_IDENTITY);
+    cfd_nn_model_desc_t d = {name, &l, 1};
+    TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, cfd_nn_model_write(TMP_MODEL, &d));
+    free(name);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_write_then_load_roundtrip);
@@ -326,5 +345,6 @@ int main(void) {
     RUN_TEST(test_api_guards);
     RUN_TEST(test_unavailable_backend_is_reported);
     RUN_TEST(test_writer_rejects_bad_shapes);
+    RUN_TEST(test_writer_rejects_overlong_name);
     return UNITY_END();
 }
