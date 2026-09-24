@@ -445,12 +445,19 @@ cfd_status_t turbulence_step_explicit_with_workspace(
         cfd_set_error(CFD_ERROR_INVALID, "turbulence_solver: params must be non-NULL");
         return CFD_ERROR_INVALID;
     }
+    /* Checked before the disabled-model exit below: a correction configured
+     * against no turbulence model is refused here exactly as it is at solver
+     * init, rather than silently skipped because the step has nothing to do. */
+    cfd_status_t status = turb_check_closure_config(params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
     /* Turbulence disabled: a legitimate no-op. */
     if (params->turb_model == TURB_MODEL_NONE) {
         return CFD_SUCCESS;
     }
 
-    cfd_status_t status = turb_validate_step_args(field, grid, params);
+    status = turb_validate_step_args(field, grid, params);
     if (status != CFD_SUCCESS) {
         return status;
     }
