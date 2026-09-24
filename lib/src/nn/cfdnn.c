@@ -99,7 +99,12 @@ cfd_status_t cfd_nn_context_create(const cfd_nn_model_t* model, size_t max_batch
         return CFD_ERROR_INVALID;
     }
     *out_ctx = NULL;
-    if (!model || max_batch == 0) {
+    /* max_batch is caller-supplied, so both products that size the scratch
+     * are checked before they are formed: a wrapped element or byte count
+     * would allocate a short buffer and leave the kernels writing past it. */
+    if (!model || max_batch == 0 || model->widest == 0 ||
+        max_batch > SIZE_MAX / model->widest ||
+        max_batch * model->widest > SIZE_MAX / sizeof(float)) {
         return CFD_ERROR_INVALID;
     }
 
