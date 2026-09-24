@@ -259,7 +259,7 @@ safety has to be structural instead, enforced in C rather than hoped for:
    NaN into a flow field. The correction propagates that status out of the turbulence step,
    so the step itself fails; it never drops the correction and reports success.
 4. **Correction ≡ 0 must be bit-identical to today.** This is a test, not an aspiration:
-   `tests/solvers/turbulence/test_learned_closure.c` asserts memory equality between a run
+   `tests/solvers/turbulence/test_nut_correction.c` asserts memory equality between a run
    with no closure and one whose model predicts exactly 1.0.
 
 ---
@@ -405,7 +405,7 @@ actually fits (`beta = k_dns / k_model`), so the switch is the presence of
    belongs in a future grouped struct.)
 
 Rejections, with no silent fallbacks anywhere. Every one of these is covered by
-`tests/solvers/turbulence/test_learned_closure.c`:
+`tests/solvers/turbulence/test_nut_correction.c`:
 
 | Configuration | Result |
 | ------------- | ------ |
