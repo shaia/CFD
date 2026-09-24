@@ -245,6 +245,47 @@ void test_factor_below_the_floor_is_clamped(void) {
     assert_scaled_by(1.0e-4f, 0.1);
 }
 
+/* Mirror of the internal header's constants: private to the library, but the
+ * composition they define is the documented contract. */
+#define TEST_C_MU       0.09
+#define TEST_NU_T_CAP_F 1e5
+#define TEST_EPS_FLOOR  1e-10
+
+/* The realizability clamp lands AFTER the correction, never before AND after.
+ *
+ * turb_update_nu_t already clamps, so scaling its output would give cap*beta
+ * wherever the raw k-epsilon value had been clamped -- and beta > 1 could not
+ * lift a clamped cell at all. k0 here is large enough that the raw value sits
+ * above the cap while raw*beta still sits below it, so the correct answer
+ * (raw*beta) and the wrong one (cap*beta) are different numbers. */
+void test_correction_scales_the_unclamped_viscosity(void) {
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, write_constant_model(0.5f));
+    cfd_nn_model_t*   model = NULL;
+    cfd_nn_context_t* ctx   = NULL;
+    open_closure(CELLS, &model, &ctx);
+
+    double nu_t[CELLS], k[CELLS], eps[CELLS];
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      step_once_with(ctx, NS_NUT_CORRECTION_NONE, 40.0,
+                                     nu_t, k, eps));
+
+    const double cap = TEST_NU_T_CAP_F * TEST_MU; /* rho = 1, so nu = mu */
+    int clamp_bound = 0;
+    for (size_t n = 0; n < CELLS; n++) {
+        const double raw =
+            TEST_C_MU * k[n] * k[n] / fmax(eps[n], TEST_EPS_FLOOR);
+        const double expect = fmin(raw * 0.5, cap);
+        TEST_ASSERT_DOUBLE_WITHIN(1e-12 * expect, expect, nu_t[n]);
+        if (raw > cap) {
+            clamp_bound = 1;
+        }
+    }
+    /* Without this the case is vacuous: it would pass on the old code too. */
+    TEST_ASSERT_TRUE_MESSAGE(clamp_bound,
+                             "raw nu_t must exceed the cap for this to test anything");
+    close_closure(model, ctx);
+}
+
 /* ============================================================================
  * 3. Tiling is invisible
  * ============================================================================ */
@@ -508,6 +549,7 @@ int main(void) {
     RUN_TEST(test_predicted_factor_scales_nu_t);
     RUN_TEST(test_factor_above_the_ceiling_is_clamped);
     RUN_TEST(test_factor_below_the_floor_is_clamped);
+    RUN_TEST(test_correction_scales_the_unclamped_viscosity);
     RUN_TEST(test_small_context_matches_grid_sized_context);
     RUN_TEST(test_non_finite_prediction_fails_the_step);
     RUN_TEST(test_wrong_model_shape_is_rejected);

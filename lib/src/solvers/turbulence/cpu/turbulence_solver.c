@@ -50,6 +50,21 @@ void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params) {
     }
 }
 
+/* The k-epsilon eddy viscosity before the realizability clamp.
+ *
+ * turb_update_nu_t stores the CLAMPED value, so a correction that scaled
+ * field->nu_t directly would be scaling the cap wherever the clamp had bound:
+ * beta < 1 would shrink the cap rather than the model's own answer, and
+ * beta > 1 could not lift a clamped value at all. Both corrections are
+ * k-epsilon only, so this reproduces that branch of turb_update_nu_t exactly
+ * and the single clamp then lands where the docs say it does -- after the
+ * correction, not before and after. */
+static double turb_nu_t_raw(const flow_field* field, size_t n) {
+    const double k_c   = fmax(field->turb_k[n], 0.0);
+    const double eps_c = fmax(field->turb_eps[n], TURB_EPS_MIN);
+    return TURB_C_MU * k_c * k_c / eps_c;
+}
+
 
 /* ==========================================================================
  * Optional eddy-viscosity corrections: algebraic, or learned
@@ -178,7 +193,7 @@ static void turb_apply_algebraic_correction(flow_field* field, const grid* grid,
         double b = TURB_ALG_BETA_A * pow(s_star, TURB_ALG_BETA_B);
         b = fmin(fmax(b, TURB_CLOSURE_BETA_MIN), TURB_CLOSURE_BETA_MAX);
         const double nu = local_nu(params, field, n);
-        field->nu_t[n] = fmin(field->nu_t[n] * b, TURB_NU_T_MAX_FACTOR * nu);
+        field->nu_t[n] = fmin(turb_nu_t_raw(field, n) * b, TURB_NU_T_MAX_FACTOR * nu);
     }
 }
 
@@ -297,7 +312,8 @@ cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
             const size_t n = base + t;
             const double b = fmin(fmax(beta[t], TURB_CLOSURE_BETA_MIN), TURB_CLOSURE_BETA_MAX);
             const double nu = local_nu(params, field, n);
-            field->nu_t[n] = fmin(field->nu_t[n] * b, TURB_NU_T_MAX_FACTOR * nu);
+            field->nu_t[n] =
+                fmin(turb_nu_t_raw(field, n) * b, TURB_NU_T_MAX_FACTOR * nu);
         }
     }
     return CFD_SUCCESS;
