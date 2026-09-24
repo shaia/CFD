@@ -39,8 +39,10 @@ static const uint8_t NN_MAGIC[8] = {'C', 'F', 'D', 'N', 'N', 0, 0, 0};
 
 #define NN_ENDIAN_MARKER 0x01020304u /* decoded LE; foreign-endian files differ */
 #define NN_FLAG_CHECKSUM 0x0001u     /* flags bit0: trailing CRC32 present */
+#define NN_FLAG_KNOWN    NN_FLAG_CHECKSUM /* every other bit is unassigned */
 #define NN_DTYPE_F32     1u
 #define NN_DTYPE_F64     2u /* reserved; rejected by this reader */
+#define NN_LAYOUT_ROW_MAJOR 0u /* the only layout the kernels index */
 
 /* ==========================================================================
  * CRC32 (IEEE 802.3, reflected, poly 0xEDB88320) -- table-less and stateless
@@ -322,19 +324,25 @@ cfd_status_t cfd_nn_load_impl(const char* path, const void* bytes, size_t size,
     (void)get_u16(&io); /* lib major */
     (void)get_u16(&io); /* lib minor */
     (void)get_u16(&io); /* lib patch */
-    uint16_t flags = get_u16(&io);
-    uint8_t  dtype = get_u8(&io);
-    (void)get_u8(&io);
-    (void)get_u16(&io);
+    uint16_t flags  = get_u16(&io);
+    uint8_t  dtype  = get_u8(&io);
+    uint8_t  layout = get_u8(&io);
+    uint32_t rsv    = get_u16(&io);
     uint32_t layer_count = get_u32(&io);
-    (void)get_u32(&io);
-    (void)get_u32(&io);
+    rsv |= get_u32(&io);
+    rsv |= get_u32(&io);
 
     if (io.status == CFD_SUCCESS) {
         /* Reject unknown, never guess -- the checkpoint.c rule, applied to
-         * version, byte order and precision alike. */
+         * version, byte order, precision, flag bits, tensor layout and the
+         * reserved words alike. */
         if (version != CFD_NN_FORMAT_VERSION || endian != NN_ENDIAN_MARKER ||
-            dtype != NN_DTYPE_F32) {
+            dtype != NN_DTYPE_F32 || (flags & (uint16_t)~NN_FLAG_KNOWN) != 0 ||
+            layout != NN_LAYOUT_ROW_MAJOR || rsv != 0) {
+            /* Unassigned flag bits, a foreign tensor layout and a nonzero
+             * reserved word each mean the file carries something this build
+             * does not implement; accepting it would index the weights as
+             * row-major anyway and predict silently wrong numbers. */
             io.status = CFD_ERROR_UNSUPPORTED;
         } else if (layer_count == 0 || layer_count > CFD_NN_MAX_LAYERS) {
             io.status = CFD_ERROR_INVALID; /* cap checked before any allocation */

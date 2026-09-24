@@ -208,6 +208,14 @@ void test_rejects_corrupt_files(void) {
     expect_status_after_poke(24, 2, CFD_ERROR_UNSUPPORTED, "f64 dtype reserved");
     expect_status_after_poke(24, 99, CFD_ERROR_UNSUPPORTED, "unknown dtype");
     expect_status_after_poke(28, 0xFF, CFD_ERROR_INVALID, "layer_count past cap");
+    /* Reject-unknown covers the fields a later format version would use,
+     * not just the ones this one reads: a file that sets them means
+     * something this build cannot honour. */
+    expect_status_after_poke(23, 0x80, CFD_ERROR_UNSUPPORTED, "unassigned flag bit");
+    expect_status_after_poke(25, 1, CFD_ERROR_UNSUPPORTED, "unknown tensor layout");
+    expect_status_after_poke(26, 1, CFD_ERROR_UNSUPPORTED, "nonzero reserved u16");
+    expect_status_after_poke(32, 1, CFD_ERROR_UNSUPPORTED, "nonzero reserved u32 #1");
+    expect_status_after_poke(36, 1, CFD_ERROR_UNSUPPORTED, "nonzero reserved u32 #2");
 }
 
 /* A flipped weight bit leaves every declared size valid, so only the CRC can
