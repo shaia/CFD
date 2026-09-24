@@ -497,9 +497,11 @@ if(BUILD_SHARED_LIBS)
         ${CFD_SCALAR_SOURCES}
         ${CFD_SIMD_SOURCES}
     )
-    if(OpenMP_C_FOUND)
-        list(APPEND CFD_UNIFIED_SOURCES ${CFD_OMP_SOURCES})
-    endif()
+    # CFD_OMP_BUILD_SOURCES is the full OMP set when OpenMP is available and
+    # the serially-correct subset when it is not. The subset is not optional:
+    # the dispatchers reference bc_impl_omp and cfd_nn_impl_omp unconditionally,
+    # and the shared library links no cfd_omp to supply them.
+    list(APPEND CFD_UNIFIED_SOURCES ${CFD_OMP_BUILD_SOURCES})
     if(CFD_HAS_CUDA)
         list(APPEND CFD_UNIFIED_SOURCES ${CFD_CUDA_SOURCES})
     else()
