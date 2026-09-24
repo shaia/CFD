@@ -280,13 +280,14 @@ reason.
  8   4  format_version u32 = 1       (mismatch -> CFD_ERROR_UNSUPPORTED)
 12   4  endian_marker  u32 = 0x01020304
 16   6  lib_version    major/minor/patch u16 x3
-22   2  flags          u16  bit0 = trailing CRC32 present
+22   2  flags          u16  bit0 = trailing CRC32 present; other bits rejected
 24   1  dtype          u8   1=f32 (only supported), 2=f64 (reserved)
-25   1  tensor_layout  u8
-26   2  reserved
+25   1  tensor_layout  u8   0 = row-major, the only layout the kernels index
+26   2  reserved       u16  must be 0
 28   4  layer_count    u32
-32  ..  input_features u32, output_features u32, reserved
-64  ..  name (u32 len + bytes), metadata kv pairs, layer records
+32   4  reserved       u32  must be 0
+36   4  reserved       u32  must be 0
+40  ..  name (u32 len + bytes), then the layer records
  ..  4  crc32 over all preceding bytes
 ```
 
