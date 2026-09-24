@@ -340,6 +340,10 @@ static void write_params(chk_io* io, const ns_solver_params_t* p) {
     put_i32(io, (int32_t)p->turb_model);
     put_i32(io, (int32_t)p->pressure_solver);
     put_i32(io, (int32_t)p->convection_scheme);
+    /* turb_closure is a caller-owned context and cannot be stored; the enum
+     * beside it can be, and a resume that dropped it would silently change
+     * the eddy viscosity while reporting success. */
+    put_i32(io, (int32_t)p->turb_nut_correction);
     /* turb_bc: face types then k, epsilon and nu_tilde Dirichlet values */
     put_i32(io, (int32_t)p->turb_bc.left);
     put_i32(io, (int32_t)p->turb_bc.right);
@@ -548,6 +552,7 @@ cfd_status_t cfd_checkpoint_read(const char* path,
     out_params->turb_model = (turbulence_model_t)get_i32(&io);
     out_params->pressure_solver = (ns_pressure_solver_t)get_i32(&io);
     out_params->convection_scheme = (ns_convection_scheme_t)get_i32(&io);
+    out_params->turb_nut_correction = (ns_nut_correction_t)get_i32(&io);
     out_params->turb_bc.left = (bc_type_t)get_i32(&io);
     out_params->turb_bc.right = (bc_type_t)get_i32(&io);
     out_params->turb_bc.bottom = (bc_type_t)get_i32(&io);

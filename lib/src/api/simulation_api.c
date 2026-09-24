@@ -414,6 +414,9 @@ cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char
     new_params.source_context = sim_data->params.source_context;
     new_params.heat_source_func = sim_data->params.heat_source_func;
     new_params.heat_source_context = sim_data->params.heat_source_context;
+    // Same reason, and the same silent-physics-change if dropped: the learned
+    // closure is a caller-owned context, so the checkpoint stores no trace of it.
+    new_params.turb_closure = sim_data->params.turb_closure;
 
     // Initialize the new solver against the new grid/params *before* touching the
     // old state, so a failed init leaves the existing simulation untouched and

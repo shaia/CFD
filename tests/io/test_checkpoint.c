@@ -97,6 +97,7 @@ static ns_solver_params_t make_nondefault_params(void) {
     p.turb_model = TURB_MODEL_K_EPSILON;
     p.pressure_solver = NS_PRESSURE_SOLVER_PCG_MG;
     p.convection_scheme = NS_CONVECTION_SCHEME_UPWIND;
+    p.turb_nut_correction = NS_NUT_CORRECTION_S_STAR;
     p.turb_bc.left = BC_TYPE_DIRICHLET;
     p.turb_bc.right = BC_TYPE_NEUMANN;
     p.turb_bc.bottom = BC_TYPE_NOSLIP;
@@ -202,6 +203,7 @@ static void assert_params_equal(const ns_solver_params_t* a, const ns_solver_par
     TEST_ASSERT_EQUAL_INT(a->turb_model, b->turb_model);
     TEST_ASSERT_EQUAL_INT(a->pressure_solver, b->pressure_solver);
     TEST_ASSERT_EQUAL_INT(a->convection_scheme, b->convection_scheme);
+    TEST_ASSERT_EQUAL_INT(a->turb_nut_correction, b->turb_nut_correction);
     TEST_ASSERT_EQUAL_INT(a->turb_bc.left, b->turb_bc.left);
     TEST_ASSERT_EQUAL_INT(a->turb_bc.right, b->turb_bc.right);
     TEST_ASSERT_EQUAL_INT(a->turb_bc.bottom, b->turb_bc.bottom);
