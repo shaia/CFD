@@ -8,7 +8,7 @@ This note makes that decision, records the reasoning, and corrects the roadmap w
 investigation showed it was wrong.
 
 **Audience:** library contributors and future maintainers. This is not user documentation —
-for the API, see `docs/reference/nn-inference.md`.
+for the API, see the public header `lib/include/cfd/nn/cfdnn.h`.
 
 **Why this note exists:** the most valuable output of the investigation was not the design
 that was chosen but the design that was *rejected*, and why. Without that written down, the
