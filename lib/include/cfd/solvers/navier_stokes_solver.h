@@ -317,11 +317,10 @@ typedef struct {
     /* Optional learned eddy-viscosity correction.
      *
      * NULL (the default) leaves the turbulence models exactly as they are --
-     * this is a correction applied ON TOP of an active k-epsilon or
-     * Spalart-Allmaras closure, not a replacement for one, because the
-     * features it consumes (a dimensionless strain rate, a turbulent Reynolds
-     * number) are built from k and epsilon and do not exist without a
-     * transport model.
+     * this is a correction applied ON TOP of an active k-epsilon closure, not
+     * a replacement for one, because the features it consumes (a dimensionless
+     * strain rate, a turbulent Reynolds number) are built from k and epsilon,
+     * which no other model carries. Spalart-Allmaras is refused, not corrected.
      *
      * A context rather than a model: inference needs per-call scratch, and
      * making the caller own it keeps allocation out of the per-step path and
