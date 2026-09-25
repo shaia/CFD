@@ -209,6 +209,33 @@ typedef enum {
 } ns_convection_scheme_t;
 
 /**
+ * Algebraic correction to the k-epsilon eddy viscosity.
+ *
+ * NS_NUT_CORRECTION_NONE (0) is the standard model, so zero-initialization is
+ * fully backward compatible and bit-identical to a build without this field.
+ *
+ * NS_NUT_CORRECTION_S_STAR multiplies nu_t by a power law in the dimensionless
+ * strain rate S* = |S| k / epsilon. Since nu_t = C_mu k^2 / epsilon, that is
+ * exactly a C_mu which varies with the local strain -- the same device
+ * realizable k-epsilon uses, with coefficients fitted here against channel DNS
+ * (see docs/technical-notes/ml-integration-design.md 2.7). It exists to be the
+ * analytic competitor any learned closure has to beat, per that note's rule
+ * that ML earns its place only where no analytic answer exists.
+ *
+ * The multiplier is clamped to [0.1, 10] and the existing realizability bound
+ * still applies on top. It can reduce nu_t as well as raise it -- the channel
+ * DNS asks for a reduction in the outer layer -- so it is bounded, not
+ * dissipation-only.
+ *
+ * k-epsilon only: S* is built from k and epsilon, which no other model carries.
+ * Rejected at init with any other turbulence model.
+ */
+typedef enum {
+    NS_NUT_CORRECTION_NONE = 0,   /**< Standard k-epsilon eddy viscosity (default) */
+    NS_NUT_CORRECTION_S_STAR = 1, /**< Strain-rate power law (variable C_mu) */
+} ns_nut_correction_t;
+
+/**
  * Navier-Stokes solver parameters
  */
 typedef struct {
@@ -286,6 +313,10 @@ typedef struct {
     /* Convective-term discretization (0 = central differences, backward
      * compatible). */
     ns_convection_scheme_t convection_scheme;  /**< Convection scheme selection */
+
+    /* Strain-rate correction to the k-epsilon eddy viscosity. Zero (NONE) is
+     * the standard model. */
+    ns_nut_correction_t turb_nut_correction;
 } ns_solver_params_t;
 
 

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Checkpoints carry the eddy-viscosity correction setting**, so
+  `CFD_CHECKPOINT_FORMAT_VERSION` goes 3 -> 4 and files written by earlier versions are
+  rejected. `ns_solver_params_t.turb_nut_correction` is now serialized, and range-checked
+  when read back, so resuming a run that used it no longer comes back with the correction
+  silently off (`lib/include/cfd/io/checkpoint.h`, `lib/src/io/checkpoint.c`,
+  `tests/io/test_checkpoint.c`).
+
 - **The Poisson API no longer accepts configuration it cannot honour.** An audit found
   eleven places where a parameter could be set and then silently ignored. `poisson_solver_init`
   now refuses each of them, with `cfd_get_last_error()` carrying the sentence that names the
@@ -148,6 +155,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/math/test_poisson_config.c`)
 
 ### Added
+
+- **Strain-rate correction to the k-epsilon eddy viscosity** (`NS_NUT_CORRECTION_S_STAR`,
+  `ns_solver_params_t.turb_nut_correction`). A two-constant power law in `S* = |S| k / eps`
+  -- a `C_mu` that varies with the local strain -- fitted against MKM channel DNS. It cuts the
+  channel TKE error from 14.96% to 6.23% at Re_tau 392 where it was fitted, and from 12.80% to
+  9.27% at a held-out Re_tau 587, with `u_tau` unmoved. Off by default and bit-identical when
+  off; k-epsilon only, refused with `CFD_ERROR_UNSUPPORTED` for any other model. Applied in
+  the scalar, OpenMP and AVX2 turbulence steps; GPU turbulence is already refused. Why this,
+  and why not an ML pressure guess, is in `docs/technical-notes/ml-integration-design.md`
+  (`tests/solvers/turbulence/test_nut_correction.c`).
 
 - **Helmholtz shift in the Poisson solvers** — new
   `poisson_solver_params_t.helmholtz_shift` (sigma; 0 = the existing pure-Poisson path).

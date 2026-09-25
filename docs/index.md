@@ -36,6 +36,7 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 | [Validation](validation/) | Benchmark results and validation | Researchers |
 | [Turbulent Channel DNS](validation/turbulent-channel-dns.md) | RANS closure validation against Moser-Kim-Mansour DNS | Researchers |
 | [SIMD Optimization](technical-notes/simd-optimization-analysis.md) | AVX2/NEON implementation details | Performance engineers |
+| [ML Integration Design](technical-notes/ml-integration-design.md) | Why ML for pressure was rejected, the algebraic eddy-viscosity correction that shipped, and the design for a learned one | Contributors |
 
 ## Documentation by Role
 

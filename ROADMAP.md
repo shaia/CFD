@@ -106,7 +106,7 @@ Genuine constraints to be aware of (not backlog items):
 | 4 | Scalability & Performance | P1–P2 | MPI, GPU improvements, profiling tools (modular libs ✅) |
 | 5 | I/O & Post-processing | P1–P3 | HDF5, modern VTK XML, in-situ viz (CSV ✅) |
 | 6 | Validation & Documentation | P0–P1 | 129×129 release validation, convergence studies, docs |
-| 7 | ML Integration | P3 | Future — full-C inference vs hybrid kernels |
+| 7 | ML Integration | P3 | Approach A chosen; algebraic ν_t correction shipped, inference engine held |
 
 ---
 
@@ -540,47 +540,97 @@ performance comparison, solver selection, custom BCs/source terms, CSV export, c
 
 ## Phase 7: ML Integration (P3, future)
 
-**Goal:** integrate pre-trained neural-network surrogate models for ~1000× faster inference.
-Train in Python (PyTorch/JAX); use this library for compute. Two approaches are under
-consideration — pick one before implementing.
+**Decision made:** **Approach A — full C inference**, with a **learned eddy-viscosity
+correction** as the first consumer. Rationale, rejected alternatives, format and integration
+design in [ml-integration-design.md](docs/technical-notes/ml-integration-design.md).
 
-### Approach A — Full C Inference
+**Governing rule established by this decision:** *ML earns its place only where no analytic
+or algorithmic answer exists.* This library has twice replaced a tuned constant with an
+analytic one (SOR omega via Young's formula; multigrid in place of iteration tuning). A
+learned model that competes with a provably optimal algorithm loses on cost, on maintenance,
+and on having unbounded failure modes where the algorithm has proven ones.
+
+### Approach A — Full C Inference (chosen)
 
 Pure-C inference with no runtime Python dependency (embedded/HPC friendly).
 
-- [ ] Binary weight format (`.cfdnn`) + JSON metadata + loader API
-- [ ] Layers: Dense, activations (ReLU/LeakyReLU/Tanh/Sigmoid/GELU/Swish), batch/layer norm,
-      dropout (identity at inference)
-- [ ] SIMD kernels: AVX2/NEON matrix-vector and matrix-matrix multiply, cache-tiled
+The inference engine below is built and tested on the `feature/cfdnn-inference` branch but
+**held, not merged**: it is public API with no trained model to run. It merges together
+with the first model that clears the two blocked items further down.
+
+- [ ] Binary weight format (`.cfdnn`) + loader API, modelled line-for-line on `.cfdchk`
+      *(held on branch)*
+- [ ] Layers: Dense + activations (Identity/ReLU/LeakyReLU/Tanh/Sigmoid/Softplus)
+      *(held on branch)*
+- [ ] SIMD kernels: AVX2/NEON, vectorized across cells so OMP stays bit-identical to scalar
+      (on the branch the table exports a NULL kernel; scalar and OMP are done, OMP
+      bit-identical)
 - [ ] Architectures: MLP (priority), Conv2D (future), Fourier Neural Operator (future)
-- [ ] Inference API (`cfdnn_predict` / `cfdnn_predict_batch`) + model lifecycle
-- [ ] Hybrid solver use: ML initial guess, adaptive ML↔CFD switching, ensemble UQ
-- [ ] Benchmarking + validation (inference time vs Python, accuracy vs CFD, cavity surrogate)
+- [ ] Inference API (`cfd_nn_predict_batch`) + model lifecycle *(held on branch)*
+- [x] Correction seam at `turb_update_nu_t()`, reaching all three CPU backends, carrying
+      the algebraic `NS_NUT_CORRECTION_S_STAR`; the learned `params.turb_closure` joins it
+      with the engine
+- [x] **Algebraic competitor measured first, per the governing rule.** A two-constant
+      strain-rate power law cuts channel TKE error 14.96% → 6.23% where it was fitted and
+      12.80% → 9.27% at a held-out Re_tau, with `u_tau` unmoved (design note §2.7)
+- [ ] Trained model + Python exporter (`tools/cfdnn/`) — **blocked**: a network must now
+      beat the algebraic correction above, and §2.7 showed the only non-circular target
+      left on this case is `k+` at 9 and 14 nodes
+- [ ] Separated or adverse-pressure-gradient validation case — **prerequisite** for the
+      learned closure: in channel flow the momentum balance pins the shear stress, so the
+      closure has little authority over the quantities the gate measures
+- [ ] Validation: must beat tuned-Cs Smagorinsky, and must vanish in laminar regions
+      (the latter holds structurally and is asserted in `test_nut_correction.c`)
 
-### Approach B — Hybrid Python + C Kernels
+**Three corrections to this section** (reasoning in the design note):
 
-Python handles training/orchestration; C provides optimized compute kernels. Lower effort,
-easier to support new architectures.
+1. **No JSON metadata.** There is no JSON parser in the repo, and adding one would be the
+   first third-party runtime dependency in project history. A sidecar also creates a
+   two-file consistency problem the CRC cannot cover. The format is self-describing binary:
+   one file, one CRC.
+2. **No batch-norm or dropout.** Dropout is identity at inference. Batch-norm folds exactly
+   into the preceding layer's weights at export time. The format *rejects* a batch-norm
+   layer kind so a non-folding exporter fails loudly rather than silently producing a wrong
+   model.
+3. **MLP-first was correct** and is retained — the pointwise closure needs Dense only.
 
-- [ ] SIMD matrix ops (`cfd_matmul`, `cfd_matmul_add_bias`) + in-place activations
-- [ ] Python bindings for the C compute kernels
-- [ ] Physics residual kernels for PINN training (NS residual, FD gradient/laplacian)
-- [ ] Batch simulation API for dataset generation (OpenMP)
-- [ ] Memory-mapped zero-copy buffers between C and Python/NumPy
+**Success criteria (rewritten).** The original "~1000x faster inference / <5% L2 error vs
+CFD (Re < 200)" targeted a flow surrogate. It is not a defensible bar in a library that
+validates with MMS convergence *order*, Ghia RMS to four decimals across backends, and
+bit-identical 3D degeneracy — and it was never achievable against a warm-started,
+multigrid-preconditioned projection method. Superseded by the closure ship gate in the
+design note.
 
-### A vs B
+### Approach B — Hybrid Python + C Kernels (not chosen)
 
-| Aspect | A (Full C Inference) | B (Hybrid) |
-|--------|----------------------|------------|
-| Implementation effort | High | Medium |
-| Python dependency | None at runtime | Required |
-| New architecture support | Requires C changes | Just Python |
-| Deployment | Embedded/HPC friendly | Python environment |
-| Performance | Highest | High (kernel-level) |
-| Flexibility | Fixed architectures | Any PyTorch model |
+Rejected because it makes a Python environment a *runtime* requirement of a zero-dependency
+C library, across a five-configuration CI matrix including Windows x86 and macOS ARM64.
+Recorded for the future: Python bindings for the C compute kernels, physics residual kernels
+for PINN training, a batch simulation API for dataset generation, and memory-mapped
+zero-copy NumPy buffers.
 
-**Success criteria (Approach A):** load/run exported PyTorch models; <1 ms inference for a
-64×64 grid; <5% L2 error vs CFD (Re < 200); SIMD kernels >2× over scalar.
+### Rejected: ML for the pressure Poisson initial guess
+
+Investigated and rejected on evidence — **do not re-propose without reading the design
+note.** Three independent findings: under the library's relative stopping rule a better
+initial guess shrinks the convergence target by the same factor it shrinks the residual, so
+it cannot buy iterations; a local network removes the high-frequency error that was already
+cheap and leaves the low-frequency error that sets the iteration count; and MG-preconditioned
+CG already reaches 5 grid-independent iterations at 33^2-129^2 while the projection method
+already warm-starts.
+
+### Redirected work (non-ML, surfaced by the Phase 7 investigation)
+
+- [ ] Remove the duplicated residual dot product in the unpreconditioned CG branch —
+      `rho_new = (r,r)` and `res_norm = sqrt((r,r))` are the same quantity computed by two
+      full O(N) passes, in all three CPU backends (`cpu/linear_solver_cg.c`,
+      `avx2/linear_solver_cg_avx2.c`, `omp/linear_solver_cg_omp.c` — grep
+      `rho_new = dot_product`). The preconditioned branch must keep its own `(r,r)`,
+      since `rho_new = (r,z)` there.
+- [ ] Blend the wall-function branches in `turbulence_wall_u_tau()` (Spalding's law). With
+      `WALL_KAPPA = 0.41` / `WALL_B = 5.2` the linear and log laws do not intersect exactly
+      at `WALL_YPLUS_LAMINAR`, so `u_tau` jumps at the switch. Measure the jump first.
+      Note `test_turbulent_channel` uses this function as its measurement instrument.
 
 **References:** [GGML](https://github.com/ggerganov/ggml) ·
 [ONNX Runtime C API](https://onnxruntime.ai/) ·

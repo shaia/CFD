@@ -32,7 +32,8 @@ extern "C" {
  *
  * Function-pointer parameters (`source_func`, `heat_source_func`, and their
  * contexts) cannot be serialized and are excluded; callers that use custom
- * callbacks must re-supply them after a restore.
+ * callbacks must re-supply them after a restore. `turb_nut_correction` is a
+ * plain enum and IS stored.
  *
  * Portability: all multi-byte values are written little-endian with fixed-width
  * types and IEEE-754 doubles (no raw struct dumps). A header endianness marker
@@ -41,7 +42,7 @@ extern "C" {
  */
 
 /** Current on-disk checkpoint format version. Bumped on any layout change. */
-#define CFD_CHECKPOINT_FORMAT_VERSION 3u
+#define CFD_CHECKPOINT_FORMAT_VERSION 4u
 
 /** Recommended file extension for checkpoint files. */
 #define CFD_CHECKPOINT_EXTENSION ".cfdchk"

@@ -31,6 +31,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "channel_dns_reference.h"
 
 void setUp(void) { cfd_init(); }
@@ -185,6 +186,10 @@ static double compute_ke(const flow_field* field) {
     return 0.5 * ke;
 }
 
+/* Eddy-viscosity correction under test, selected by argv[2]. The default keeps
+ * every recorded baseline in this file and in the design note reproducible. */
+static ns_nut_correction_t g_nut_correction = NS_NUT_CORRECTION_NONE;
+
 static void run_channel(turbulence_model_t model, const char* label) {
     const double nu = 1.0 / g_re_tau;
 
@@ -222,6 +227,11 @@ static void run_channel(turbulence_model_t model, const char* label) {
     params.mu = nu; /* rho = 1: dynamic == kinematic */
     params.source_func = channel_body_force;
     params.turb_model = model;
+    /* k-epsilon only: the algebraic correction's S* comes from k and epsilon.
+     * Off unless argv[2] asked for it, so the recorded baselines are unchanged. */
+    if (model == TURB_MODEL_K_EPSILON) {
+        params.turb_nut_correction = g_nut_correction;
+    }
     params.turb_bc.bottom = BC_TYPE_NOSLIP;
     params.turb_bc.top = BC_TYPE_NOSLIP;
     /* left/right stay PERIODIC (zero-init) */
@@ -360,13 +370,26 @@ static void run_channel(turbulence_model_t model, const char* label) {
             /* Machine-readable dump for the locality study: can a correction
              * built ONLY from local invariants reproduce the DNS target, or
              * does it need the non-local coordinate y/delta? Columns are
-             * deliberately split into local and non-local groups. */
-            if (model == TURB_MODEL_K_EPSILON && k_dns > 0.01 && k_mod > 1e-12) {
+             * deliberately split into local and non-local groups.
+             *
+             * Two targets are emitted, and they are not interchangeable:
+             *
+             *   beta_k  = k_dns / k_model      what the first locality study fit
+             *   beta_uv = uv_dns / uv_model    what a nu_t multiplier controls
+             *
+             * A correction applied to nu_t moves the modelled shear stress
+             * nu_t*dU/dy directly and moves k only through the production term,
+             * so beta_uv is the target that matches the application and beta_k
+             * is not. Fitting one and applying the other is a units-level
+             * mismatch: for k-epsilon nu_t ~ k^2/eps, so a k ratio would have
+             * to be squared before it meant anything about nu_t. */
+            if (model == TURB_MODEL_K_EPSILON && k_dns > 0.01 && k_mod > 1e-12 &&
+                uv_dns > 0.01 && uv_mod > 1e-12) {
                 double eps_c = fmax(field->turb_eps[idx], 1e-30);
                 double s_star = fabs(dudy) * field->turb_k[idx] / eps_c;
                 double re_t   = field->turb_k[idx] * field->turb_k[idx] / (nu * eps_c);
                 double nut_p  = field->nu_t[idx] / nu;
-                printf("CSV,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e\n",
+                printf("CSV,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e\n",
                        g_re_tau,
                        yplus,                      /* local  */
                        s_star,                     /* local  */
@@ -374,7 +397,10 @@ static void run_channel(turbulence_model_t model, const char* label) {
                        nut_p,                      /* local  */
                        g->y[j] / CH_DELTA,         /* NON-local */
                        k_mod,                      /* model k+ */
-                       k_dns);                     /* target k+ */
+                       k_dns,                      /* target k+ */
+                       uv_mod,                     /* model -uv+ */
+                       uv_dns,                     /* target -uv+ */
+                       uv_dns / uv_mod);           /* beta for nu_t */
             }
             printf("[%s] DNS y+=%6.1f  u+=%5.2f/%5.2f (%4.1f%%)"
                    "  -uv+=%5.3f/%5.3f (%5.1f%%)"
@@ -434,10 +460,19 @@ int main(int argc, char** argv) {
          * function silently leaves its valid band. */
         g_ny = channel_ny_for(g_re_tau);
     }
+    if (argc > 2) {
+        if (strcmp(argv[2], "s_star") == 0) {
+            g_nut_correction = NS_NUT_CORRECTION_S_STAR;
+        } else if (strcmp(argv[2], "none") != 0) {
+            printf("Unknown correction '%s'; expected 'none' or 's_star'\n", argv[2]);
+            return 1;
+        }
+    }
     channel_select_dns(g_re_tau);
-    printf("[channel] Re_tau = %.0f  ny = %zu  y+_first = %.1f  ref = %s\n",
+    printf("[channel] Re_tau = %.0f  ny = %zu  y+_first = %.1f  ref = %s  nu_t correction = %s\n",
            g_re_tau, g_ny, (CH_LY / (double)(g_ny - 1)) * g_re_tau,
-           g_dns_n > 0 ? "MKM DNS" : "none (log-law only)");
+           g_dns_n > 0 ? "MKM DNS" : "none (log-law only)",
+           g_nut_correction == NS_NUT_CORRECTION_S_STAR ? "s_star" : "none");
 
     UNITY_BEGIN();
     RUN_TEST(test_channel_kepsilon);

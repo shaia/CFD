@@ -49,6 +49,164 @@ void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params) {
     }
 }
 
+/* The k-epsilon eddy viscosity before the realizability clamp.
+ *
+ * turb_update_nu_t stores the CLAMPED value, so a correction that scaled
+ * field->nu_t directly would be scaling the cap wherever the clamp had bound:
+ * beta < 1 would shrink the cap rather than the model's own answer, and
+ * beta > 1 could not lift a clamped value at all. Both corrections are
+ * k-epsilon only, so this reproduces that branch of turb_update_nu_t exactly
+ * and the single clamp then lands where the docs say it does -- after the
+ * correction, not before and after. */
+static double turb_nu_t_raw(const flow_field* field, size_t n) {
+    const double k_c   = fmax(field->turb_k[n], 0.0);
+    const double eps_c = fmax(field->turb_eps[n], TURB_EPS_MIN);
+    return TURB_C_MU * k_c * k_c / eps_c;
+}
+
+
+/* ==========================================================================
+ * Optional eddy-viscosity correction
+ *
+ * A power law in the dimensionless strain rate, which is a C_mu that varies
+ * with the local strain. It is the analytic competitor the design note's
+ * governing rule -- ML earns its place only where no analytic answer exists --
+ * requires any learned closure to beat on a held-out Reynolds number.
+ *
+ * The correction is applied ON TOP of an active closure, never instead of one:
+ * S* is built from k and epsilon, which only exist when a transport model is
+ * running.
+ *
+ * Safety is structural, not hoped for -- but note what it does and does not
+ * promise. The correction is MULTIPLICATIVE and the DNS data asks for beta < 1
+ * in the outer layer, so this removes eddy viscosity as well as adding it. It
+ * is not a dissipation-only correction, and the claim that it can only
+ * over-diffuse does not hold:
+ *   - beta is clamped to [TURB_CLOSURE_BETA_MIN, TURB_CLOSURE_BETA_MAX], so the
+ *     correction can scale nu_t by at most 10x either way, never to zero and
+ *     never negative;
+ *   - the existing realizability clamp still runs afterwards, bounding the
+ *     upper side a second time.
+ * A reduced nu_t means less damping, so stability is bounded by the floor
+ * rather than argued away: at beta = BETA_MIN the momentum equation sees at
+ * worst the laminar-viscosity-dominated limit it already handles when the
+ * turbulence model is off.
+ *
+ * Scope: turbulence_apply_bcs() runs after this and overwrites nu_t at wall
+ * nodes and at the first interior node next to a no-slip wall with the
+ * wall-shear-matching value. The correction therefore cannot move those
+ * points, which is consistent with the design note's caveat that they measure
+ * the wall treatment rather than the transport equations.
+ * ========================================================================== */
+
+/**
+ * Strain-rate magnitude |S| = sqrt(2 S_ij S_ij) at cell n, from central
+ * differences.
+ *
+ * Boundary nodes reuse the nearest interior value rather than a one-sided
+ * stencil, since the wall function governs them anyway.
+ */
+static double turb_strain_magnitude(const flow_field* field, const grid* grid, size_t n) {
+    const size_t nx = field->nx, ny = field->ny;
+    const double dx = grid->dx ? grid->dx[0] : 1.0;
+    const double dy = grid->dy ? grid->dy[0] : 1.0;
+
+    size_t i = n % nx;
+    size_t j = (n / nx) % ny;
+    size_t ic = i == 0 ? 1 : (i == nx - 1 ? nx - 2 : i);
+    size_t jc = j == 0 ? 1 : (j == ny - 1 ? ny - 2 : j);
+    size_t c = (n / (nx * ny)) * nx * ny + jc * nx + ic;
+
+    double dudy = (field->u[c + nx] - field->u[c - nx]) / (2.0 * dy);
+    double dvdx = (field->v[c + 1] - field->v[c - 1]) / (2.0 * dx);
+    double dudx = (field->u[c + 1] - field->u[c - 1]) / (2.0 * dx);
+    double dvdy = (field->v[c + nx] - field->v[c - nx]) / (2.0 * dy);
+    double s12 = 0.5 * (dudy + dvdx);
+    return sqrt(2.0 * (dudx * dudx + dvdy * dvdy + 2.0 * s12 * s12));
+}
+
+/** Dimensionless strain rate S* = |S| k / epsilon at cell n. */
+static double turb_s_star(const flow_field* field, const grid* grid, size_t n) {
+    const double k_c = fmax(field->turb_k[n], TURB_K_MIN);
+    const double eps_c = fmax(field->turb_eps[n], TURB_EPS_MIN);
+    return turb_strain_magnitude(field, grid, n) * k_c / eps_c;
+}
+
+/**
+ * Algebraic correction: nu_t *= clamp(A * (S*)^B).
+ *
+ * Equivalent to a C_mu that varies with the local strain rate, since
+ * nu_t = C_mu k^2 / eps. Coefficients and their provenance are at
+ * TURB_ALG_BETA_A in the internal header.
+ */
+static void turb_apply_algebraic_correction(flow_field* field, const grid* grid,
+                                            const ns_solver_params_t* params) {
+    const size_t total = field->nx * field->ny * field->nz;
+    for (size_t n = 0; n < total; n++) {
+        const double s_star = fmax(turb_s_star(field, grid, n), 1e-30);
+        double b = TURB_ALG_BETA_A * pow(s_star, TURB_ALG_BETA_B);
+        b = fmin(fmax(b, TURB_CLOSURE_BETA_MIN), TURB_CLOSURE_BETA_MAX);
+        const double nu = local_nu(params, field, n);
+        field->nu_t[n] = fmin(turb_nu_t_raw(field, n) * b, TURB_NU_T_MAX_FACTOR * nu);
+    }
+}
+
+cfd_status_t turb_check_closure_config(const ns_solver_params_t* params) {
+    if (!params) {
+        return CFD_SUCCESS;
+    }
+    if (params->turb_nut_correction != NS_NUT_CORRECTION_NONE &&
+        params->turb_nut_correction != NS_NUT_CORRECTION_S_STAR) {
+        cfd_set_error(CFD_ERROR_INVALID, "Unknown ns_solver_params_t.turb_nut_correction");
+        return CFD_ERROR_INVALID;
+    }
+    if (params->turb_nut_correction == NS_NUT_CORRECTION_NONE) {
+        return CFD_SUCCESS; /* feature off */
+    }
+    /* SA carries no k/epsilon, so S* is undefined for it, and with no model at
+     * all there is nothing to correct. Refused rather than ignored: a caller
+     * who configured a correction asked for it to run. */
+    if (params->turb_model != TURB_MODEL_K_EPSILON) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "an eddy-viscosity correction requires TURB_MODEL_K_EPSILON: its "
+                      "features are built from k and epsilon, which no other model carries");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return CFD_SUCCESS;
+}
+
+cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
+                                        const ns_solver_params_t* params) {
+    if (!params || params->turb_nut_correction == NS_NUT_CORRECTION_NONE) {
+        return CFD_SUCCESS; /* feature off: bit-identical to the un-corrected path */
+    }
+
+    cfd_status_t status = turb_check_closure_config(params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    if (!field || !grid || !field->nu_t || !field->turb_k || !field->turb_eps) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "turb_apply_nu_t_correction: missing field, grid or k-epsilon state");
+        return CFD_ERROR_INVALID;
+    }
+
+    const size_t nx = field->nx, ny = field->ny;
+    if (nx * ny * field->nz == 0) {
+        return CFD_SUCCESS;
+    }
+    /* The central-difference strain rate needs one interior neighbour each way.
+     * The step validator already enforces this; a direct caller may not have. */
+    if (nx < 3 || ny < 3) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "turb_apply_nu_t_correction requires nx >= 3 and ny >= 3");
+        return CFD_ERROR_INVALID;
+    }
+
+    turb_apply_algebraic_correction(field, grid, params);
+    return CFD_SUCCESS;
+}
+
 double turb_wall_distance(const grid* grid, const ns_turbulence_bc_config_t* tbc,
                           size_t i, size_t j, int* has_wall) {
     double d = 0.0;
@@ -191,12 +349,19 @@ cfd_status_t turbulence_step_explicit_with_workspace(
         cfd_set_error(CFD_ERROR_INVALID, "turbulence_solver: params must be non-NULL");
         return CFD_ERROR_INVALID;
     }
+    /* Checked before the disabled-model exit below: a correction configured
+     * against no turbulence model is refused here exactly as it is at solver
+     * init, rather than silently skipped because the step has nothing to do. */
+    cfd_status_t status = turb_check_closure_config(params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
     /* Turbulence disabled: a legitimate no-op. */
     if (params->turb_model == TURB_MODEL_NONE) {
         return CFD_SUCCESS;
     }
 
-    cfd_status_t status = turb_validate_step_args(field, grid, params);
+    status = turb_validate_step_args(field, grid, params);
     if (status != CFD_SUCCESS) {
         return status;
     }
@@ -252,9 +417,10 @@ cfd_status_t turbulence_step_explicit_with_workspace(
     }
 
     turb_update_nu_t(field, params);
+    cfd_status_t closure_status = turb_apply_nu_t_correction(field, grid, params);
 
     if (owns_buffer) cfd_free(buf);
-    return CFD_SUCCESS;
+    return closure_status;
 }
 
 cfd_status_t turbulence_step_explicit(flow_field* field, const grid* grid,
@@ -545,6 +711,9 @@ cfd_status_t turbulence_init_uniform(flow_field* field,
         }
     }
 
+    /* No eddy-viscosity correction here: this is initialization, and the strain
+     * rate it consumes is meaningless before the flow has developed. The
+     * correction belongs to the per-step path only. */
     turb_update_nu_t(field, params);
     return CFD_SUCCESS;
 }
