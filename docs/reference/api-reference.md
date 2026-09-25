@@ -589,6 +589,8 @@ typedef struct {
 
 poisson_walls_t poisson_walls_default(void);                              // all zero-gradient
 poisson_walls_t poisson_walls_uniform(poisson_wall_t type, double value); // every face the same
+bool poisson_walls_are_default(const poisson_walls_t* walls);  // every face zero-gradient (NULL: true)
+bool poisson_walls_are_legal(const poisson_walls_t* walls);    // no face outside the enum (NULL: true)
 bool poisson_walls_are_singular(const poisson_walls_t* walls, size_t nz);
 void poisson_make_rhs_compatible(double* rhs, size_t nx, size_t ny, size_t nz);
 ```
