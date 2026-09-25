@@ -331,6 +331,72 @@ void test_hook_alone_and_defaults_accepted(void) {
     poisson_solver_destroy(b);
 }
 
+/**
+ * poisson_walls_are_default() and poisson_walls_are_legal(), face by face.
+ *
+ * Both were file-static six-face chains before they were exported, and both are
+ * now load-bearing at Poisson init and at Navier-Stokes init. A face added to
+ * poisson_walls_t and forgotten in either chain is the duplication hazard
+ * exporting them was supposed to end, so each face is named here.
+ */
+void test_walls_predicates(void) {
+    poisson_walls_t w = poisson_walls_default();
+    TEST_ASSERT_TRUE_MESSAGE(poisson_walls_are_default(&w), "the default IS default");
+    TEST_ASSERT_TRUE(poisson_walls_are_legal(&w));
+
+    /* NULL is the default operator for both, which is what the callers rely on
+     * when params is absent. */
+    TEST_ASSERT_TRUE(poisson_walls_are_default(NULL));
+    TEST_ASSERT_TRUE(poisson_walls_are_legal(NULL));
+
+    /* One Dirichlet face at a time: every face must count. */
+    poisson_wall_t* faces[6];
+    poisson_walls_t probe = poisson_walls_default();
+    faces[0] = &probe.left;   faces[1] = &probe.right;
+    faces[2] = &probe.bottom; faces[3] = &probe.top;
+    faces[4] = &probe.front;  faces[5] = &probe.back;
+    for (int f = 0; f < 6; f++) {
+        probe = poisson_walls_default();
+        *faces[f] = POISSON_WALL_DIRICHLET;
+        TEST_ASSERT_FALSE_MESSAGE(poisson_walls_are_default(&probe),
+                                  "a prescribed face is not the default operator");
+        TEST_ASSERT_TRUE_MESSAGE(poisson_walls_are_legal(&probe),
+                                 "DIRICHLET is one of the two legal values");
+
+        /* The same face off-enum: still not default, and now not legal either. */
+        probe = poisson_walls_default();
+        *faces[f] = (poisson_wall_t)99;
+        TEST_ASSERT_FALSE_MESSAGE(poisson_walls_are_legal(&probe),
+                                  "every face must be range-checked");
+    }
+
+    /* The legal set is exactly these two. */
+    poisson_walls_t z = poisson_walls_uniform(POISSON_WALL_ZERO_GRADIENT, 0.0);
+    poisson_walls_t u = poisson_walls_uniform(POISSON_WALL_DIRICHLET, 1.0);
+    TEST_ASSERT_TRUE(poisson_walls_are_legal(&z));
+    TEST_ASSERT_TRUE(poisson_walls_are_legal(&u));
+    TEST_ASSERT_TRUE_MESSAGE(poisson_walls_are_default(&z),
+                             "uniform zero-gradient is the default operator");
+    TEST_ASSERT_FALSE(poisson_walls_are_default(&u));
+}
+
+/** An off-enum face is refused at init, and as INVALID rather than UNSUPPORTED. */
+void test_off_enum_face_rejected_at_init(void) {
+    const size_t n = 17;
+    const double h = 1.0 / (double)(n - 1);
+
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG, POISSON_BACKEND_SCALAR);
+    TEST_ASSERT_NOT_NULL(solver);
+    poisson_solver_params_t params = poisson_solver_params_default();
+    params.walls = poisson_walls_default();
+    params.walls.top = (poisson_wall_t)7;
+    /* Not UNSUPPORTED: no backend can honour a value outside the enum, so
+     * telling the caller to try another one sends them nowhere. */
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params));
+    poisson_solver_destroy(solver);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_linear_field_exact_cg_scalar);
@@ -340,6 +406,8 @@ int main(void) {
     RUN_TEST(test_linear_field_exact_gmres);
     RUN_TEST(test_dirichlet_lift_is_linear);
     RUN_TEST(test_singularity_predicate);
+    RUN_TEST(test_walls_predicates);
+    RUN_TEST(test_off_enum_face_rejected_at_init);
     RUN_TEST(test_unsupported_methods_reject_walls);
     RUN_TEST(test_walls_with_hook_rejected);
     RUN_TEST(test_hook_alone_and_defaults_accepted);
