@@ -340,6 +340,9 @@ static void write_params(chk_io* io, const ns_solver_params_t* p) {
     put_i32(io, (int32_t)p->turb_model);
     put_i32(io, (int32_t)p->pressure_solver);
     put_i32(io, (int32_t)p->convection_scheme);
+    /* A resume that dropped this would silently change the eddy viscosity
+     * while reporting success. */
+    put_i32(io, (int32_t)p->turb_nut_correction);
     /* turb_bc: face types then k, epsilon and nu_tilde Dirichlet values */
     put_i32(io, (int32_t)p->turb_bc.left);
     put_i32(io, (int32_t)p->turb_bc.right);
@@ -474,6 +477,12 @@ static int chk_params_are_legal(const ns_solver_params_t* p) {
     }
     if (p->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL
         && p->convection_scheme != NS_CONVECTION_SCHEME_UPWIND) {
+        return 0;
+    }
+    /* Folded in from the standalone check that arrived with the strain-rate
+     * correction (#224): same rule, same entry point, one validator. */
+    if (p->turb_nut_correction != NS_NUT_CORRECTION_NONE
+        && p->turb_nut_correction != NS_NUT_CORRECTION_S_STAR) {
         return 0;
     }
     return 1;
@@ -618,6 +627,7 @@ cfd_status_t cfd_checkpoint_read(const char* path,
     out_params->turb_model = (turbulence_model_t)get_i32(&io);
     out_params->pressure_solver = (ns_pressure_solver_t)get_i32(&io);
     out_params->convection_scheme = (ns_convection_scheme_t)get_i32(&io);
+    out_params->turb_nut_correction = (ns_nut_correction_t)get_i32(&io);
     out_params->turb_bc.left = (bc_type_t)get_i32(&io);
     out_params->turb_bc.right = (bc_type_t)get_i32(&io);
     out_params->turb_bc.bottom = (bc_type_t)get_i32(&io);
