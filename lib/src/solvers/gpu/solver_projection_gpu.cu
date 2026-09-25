@@ -651,9 +651,12 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
         if (step_status != CFD_SUCCESS)
             break;
     }
-    gpu_solver_download(ctx, field);
+    // The download has its own status contract, and a solve whose result never
+    // reached the host did not succeed. The step error wins when both fail: it
+    // is the cause, and the failed transfer is its consequence.
+    cfd_status_t dl_status = gpu_solver_download(ctx, field);
     gpu_solver_destroy(ctx);
-    return step_status;
+    return step_status != CFD_SUCCESS ? step_status : dl_status;
 }
 
 // NOTE: thermal_bc_type_ok and apply_thermal_bcs_gpu are shared with the RK GPU
