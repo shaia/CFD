@@ -218,6 +218,8 @@ CFD_LIBRARY_EXPORT poisson_walls_t poisson_walls_default(void);
  * asks the same question when it decides whether a projection backend can
  * honour params.pressure_bc, and a second open-coded copy of the six-face
  * comparison is one more place to forget a face.
+ *
+ * NULL reads as true: no walls configured IS the default operator.
  */
 CFD_LIBRARY_EXPORT bool poisson_walls_are_default(const poisson_walls_t* walls);
 
@@ -228,8 +230,14 @@ CFD_LIBRARY_EXPORT bool poisson_walls_are_default(const poisson_walls_t* walls);
  * this enum disagree off-enum: the halo routines treat any non-DIRICHLET value
  * as zero-gradient, while poisson_walls_are_singular() calls a face prescribed
  * unless it is exactly ZERO_GRADIENT -- so a stray value builds the singular
- * operator while reporting the system as nonsingular. A caller that accepts
- * walls from a file or an untrusted struct should check before configuring them.
+ * operator while reporting the system as nonsingular, which skips the
+ * zero-interior-mean check and lets an unsolvable rhs through to the iteration.
+ * A caller that accepts walls from a file or an untrusted struct should check
+ * before configuring them.
+ *
+ * NULL reads as true, for the same reason it does in poisson_walls_are_default():
+ * it means the default operator, not an unchecked one. A caller validating a
+ * pointer it may not own should reject NULL itself before asking.
  */
 CFD_LIBRARY_EXPORT bool poisson_walls_are_legal(const poisson_walls_t* walls);
 

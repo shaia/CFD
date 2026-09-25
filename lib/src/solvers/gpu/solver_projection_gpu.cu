@@ -537,6 +537,13 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
     dim3 block(ctx->config.block_size_x, ctx->config.block_size_y);
     dim3 grid_dim((nx - 2 + block.x - 1) / block.x, (ny - 2 + block.y - 1) / block.y);
 
+    // cudaGetLastError() reports the last failure from ANY CUDA call on this
+    // thread, not just this function's, and it is the only way to see an async
+    // launch failure. Clear whatever the process did earlier first, or the step
+    // inherits it: gpu_select_device(999) in the API test leaves "invalid device
+    // ordinal" pending, and the checks below would blame this solve for it.
+    (void)cudaGetLastError();
+
     cudaEventRecord(ctx->start_event, ctx->stream);
     kernel_velocity_rhs<<<grid_dim, block, 0, ctx->stream>>>(
         ctx->d_u, ctx->d_v, ctx->d_w, ctx->d_p,
@@ -559,11 +566,21 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
         ctx->d_p, ctx->d_rhs, nx, ny, stride_z, k_start, k_end, p_relax);
     bc_apply_scalar_3d_gpu(ctx->d_p, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
     cudaEventRecord(ctx->stop_event, ctx->stream);
-    cudaStreamSynchronize(ctx->stream);
 
+    // Launches are asynchronous and report nothing at the call site: this is
+    // where a bad launch configuration, and then a fault inside a kernel, become
+    // visible. Returning CFD_SUCCESS without asking left every caller --
+    // including the step loop that now propagates this status -- to treat a
+    // failed device as a converged one.
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaStreamSynchronize(ctx->stream));
+
+    // Timing only: a failure here says nothing about the solve, so it costs the
+    // sample rather than the step.
     float ms = 0;
-    cudaEventElapsedTime(&ms, ctx->start_event, ctx->stop_event);
-    ctx->stats.kernel_time_ms += ms;
+    if (cudaEventElapsedTime(&ms, ctx->start_event, ctx->stop_event) == cudaSuccess) {
+        ctx->stats.kernel_time_ms += ms;
+    }
     ctx->stats.kernels_launched += 6;
     if (stats)
         *stats = ctx->stats;
@@ -630,13 +647,23 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
         return CFD_ERROR;
     }
     gpu_solver_stats_t stats;
+    // The loop's status is this function's status. Returning CFD_SUCCESS after a
+    // step failed reported a converged run on a field advanced part way and then
+    // downloaded, which is the error-to-warning conversion the error-handling
+    // rules forbid. The download still happens so the caller can inspect what the
+    // device held when it failed.
+    cfd_status_t step_status = CFD_SUCCESS;
     for (int iter = 0; iter < params->max_iter; iter++) {
-        if (gpu_solver_step(ctx, grid, params, &stats) != CFD_SUCCESS)
+        step_status = gpu_solver_step(ctx, grid, params, &stats);
+        if (step_status != CFD_SUCCESS)
             break;
     }
-    gpu_solver_download(ctx, field);
+    // The download has its own status contract, and a solve whose result never
+    // reached the host did not succeed. The step error wins when both fail: it
+    // is the cause, and the failed transfer is its consequence.
+    cfd_status_t dl_status = gpu_solver_download(ctx, field);
     gpu_solver_destroy(ctx);
-    return CFD_SUCCESS;
+    return step_status != CFD_SUCCESS ? step_status : dl_status;
 }
 
 // NOTE: thermal_bc_type_ok and apply_thermal_bcs_gpu are shared with the RK GPU

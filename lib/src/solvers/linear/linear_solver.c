@@ -77,18 +77,9 @@ static int mg_smooth_effective(int requested, int fallback) {
     return requested > 0 ? requested : fallback;
 }
 
-/**
- * Whether a face carries one of the two values the operator can express.
- *
- * Worth checking because the two readers of this enum disagree about anything
- * else: poisson_apply_walls() writes a Dirichlet value only for
- * POISSON_WALL_DIRICHLET and treats every other value as zero-gradient, while
- * poisson_walls_are_singular() calls a face prescribed unless it is exactly
- * POISSON_WALL_ZERO_GRADIENT. A stray 2 therefore builds the singular
- * zero-gradient operator while reporting the system as nonsingular, which skips
- * the zero-interior-mean check and lets an unsolvable rhs through to the
- * iteration -- the 1e21 residual this branch exists to prevent.
- */
+/* One face. Why it is worth asking at all is on poisson_walls_are_legal() in
+ * the public header; keeping the argument in one place is the point of having
+ * exported the predicate. */
 static int wall_type_is_legal(poisson_wall_t type) {
     return type == POISSON_WALL_ZERO_GRADIENT || type == POISSON_WALL_DIRICHLET;
 }
