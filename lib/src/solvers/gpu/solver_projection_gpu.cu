@@ -559,11 +559,21 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
         ctx->d_p, ctx->d_rhs, nx, ny, stride_z, k_start, k_end, p_relax);
     bc_apply_scalar_3d_gpu(ctx->d_p, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
     cudaEventRecord(ctx->stop_event, ctx->stream);
-    cudaStreamSynchronize(ctx->stream);
 
+    // Kernel launches above are asynchronous and report nothing at the call
+    // site, so this is where a bad launch configuration or a fault inside a
+    // kernel becomes visible. Returning CFD_SUCCESS without asking left every
+    // caller -- including the step loop that now propagates this status -- to
+    // treat a failed device as a converged one.
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaStreamSynchronize(ctx->stream));
+
+    // Timing only: a failure here says nothing about the solve, so it costs the
+    // sample rather than the step.
     float ms = 0;
-    cudaEventElapsedTime(&ms, ctx->start_event, ctx->stop_event);
-    ctx->stats.kernel_time_ms += ms;
+    if (cudaEventElapsedTime(&ms, ctx->start_event, ctx->stop_event) == cudaSuccess) {
+        ctx->stats.kernel_time_ms += ms;
+    }
     ctx->stats.kernels_launched += 6;
     if (stats)
         *stats = ctx->stats;
