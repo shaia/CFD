@@ -17,6 +17,13 @@
  *
  * The distinction was changed once already without a test to hold it; this file
  * is that test.
+ *
+ * A solver whose backend this build cannot run reports CFD_ERROR_UNSUPPORTED at
+ * init for that reason alone, which is indistinguishable here from the refusal
+ * under test. Each solver is therefore probed with default walls first and
+ * skipped when it comes back unsupported -- the project's optional-backend
+ * policy, and the reason this file cannot simply assert on every registered
+ * name. On a runner without AVX2 that is every *_optimized solver.
  */
 
 #include "cfd/core/cfd_init.h"
@@ -60,6 +67,29 @@ static ns_solver_registry_t* create_registry(void) {
     return registry;
 }
 
+/*
+ * Nonzero when this build can actually run the solver.
+ *
+ * Registration is not enough: the SIMD solvers are registered unconditionally
+ * and refuse at init on a machine without AVX2/NEON. Probed with default walls,
+ * which every solver has always accepted, so an UNSUPPORTED here is about the
+ * backend and never about the configuration under test.
+ */
+static int solver_is_runnable(ns_solver_registry_t* registry, const char* type,
+                              const grid* g) {
+    ns_solver_t* slv = cfd_solver_create(registry, type);
+    if (!slv) {
+        return 0;
+    }
+    ns_solver_params_t defaults = ns_solver_params_default();
+    defaults.dt = 5e-4;
+    defaults.mu = 0.01;
+    defaults.max_iter = 1;
+    cfd_status_t status = solver_init(slv, g, &defaults);
+    solver_destroy(slv);
+    return status == CFD_SUCCESS;
+}
+
 static ns_solver_params_t make_params(void) {
     ns_solver_params_t params = ns_solver_params_default();
     params.dt = 5e-4;
@@ -79,11 +109,12 @@ static int expect_init_status(const ns_solver_params_t* params,
 
     int checked = 0;
     for (size_t s = 0; s < NUM_CPU_SOLVERS; s++) {
-        ns_solver_t* slv = cfd_solver_create(registry, CPU_SOLVERS[s]);
-        if (!slv) {
-            printf("  %s not registered (skipping)\n", CPU_SOLVERS[s]);
+        if (!solver_is_runnable(registry, CPU_SOLVERS[s], g)) {
+            printf("  %s unavailable in this build (skipping)\n", CPU_SOLVERS[s]);
             continue;
         }
+        ns_solver_t* slv = cfd_solver_create(registry, CPU_SOLVERS[s]);
+        TEST_ASSERT_NOT_NULL(slv);
         cfd_status_t status = solver_init(slv, g, params);
         solver_destroy(slv);
         cfd_status_t want = honours_per_face(CPU_SOLVERS[s]) ? on_per_face : on_others;
