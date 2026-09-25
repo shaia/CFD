@@ -630,13 +630,20 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
         return CFD_ERROR;
     }
     gpu_solver_stats_t stats;
+    // The loop's status is this function's status. Returning CFD_SUCCESS after a
+    // step failed reported a converged run on a field advanced part way and then
+    // downloaded, which is the error-to-warning conversion the error-handling
+    // rules forbid. The download still happens so the caller can inspect what the
+    // device held when it failed.
+    cfd_status_t step_status = CFD_SUCCESS;
     for (int iter = 0; iter < params->max_iter; iter++) {
-        if (gpu_solver_step(ctx, grid, params, &stats) != CFD_SUCCESS)
+        step_status = gpu_solver_step(ctx, grid, params, &stats);
+        if (step_status != CFD_SUCCESS)
             break;
     }
     gpu_solver_download(ctx, field);
     gpu_solver_destroy(ctx);
-    return CFD_SUCCESS;
+    return step_status;
 }
 
 // NOTE: thermal_bc_type_ok and apply_thermal_bcs_gpu are shared with the RK GPU
