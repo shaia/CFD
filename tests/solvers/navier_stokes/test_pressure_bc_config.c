@@ -74,6 +74,11 @@ static ns_solver_registry_t* create_registry(void) {
  * and refuse at init on a machine without AVX2/NEON. Probed with default walls,
  * which every solver has always accepted, so an UNSUPPORTED here is about the
  * backend and never about the configuration under test.
+ *
+ * ONLY unsupported is a skip. Any other status means the default configuration
+ * -- the one every solver is supposed to accept -- was refused, or an
+ * allocation failed, and turning that into a skip would quietly shrink this
+ * file to the scalar solver while all three tests still reported PASS.
  */
 static int solver_is_runnable(ns_solver_registry_t* registry, const char* type,
                               const grid* g) {
@@ -87,7 +92,11 @@ static int solver_is_runnable(ns_solver_registry_t* registry, const char* type,
     defaults.max_iter = 1;
     cfd_status_t status = solver_init(slv, g, &defaults);
     solver_destroy(slv);
-    return status == CFD_SUCCESS;
+    if (status == CFD_ERROR_UNSUPPORTED) {
+        return 0;
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, (int)status, type);
+    return 1;
 }
 
 static ns_solver_params_t make_params(void) {
