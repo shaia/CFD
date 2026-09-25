@@ -391,6 +391,55 @@ void test_reject_bad_version(void) {
     flow_field_destroy(f);
 }
 
+/**
+ * A parameter outside its enum is refused by the READER, not left to whichever
+ * door downstream happens to look.
+ *
+ * The illegal value is written through cfd_checkpoint_write rather than poked
+ * into the bytes, because a poke breaks the CRC and would be rejected as bit-rot
+ * before reaching the check under test. A file from a different build, or one
+ * edited and re-checksummed, arrives exactly like this: internally consistent,
+ * semantically impossible.
+ *
+ * thermal_bc is the field chosen deliberately: nothing anywhere else range-checks
+ * a thermal or turbulence face, so before this the value reached the caller.
+ */
+void test_reject_out_of_enum_params(void) {
+    grid* g = grid_create(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid_initialize_uniform(g);
+    flow_field* f = flow_field_create(8, 8, 1);
+    fill_field_known(f, 1.0);
+
+    ns_solver_params_t p = ns_solver_params_default();
+    p.thermal_bc.left = (bc_type_t)99;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      cfd_checkpoint_write(CK_PATH, g, f, &p, 0.0, "rk2", NULL, NULL));
+
+    grid* g2 = NULL;
+    flow_field* f2 = NULL;
+    ns_solver_params_t p2;
+    char name[64] = {0};
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      cfd_checkpoint_read(CK_PATH, &g2, &f2, &p2, NULL, name, sizeof(name),
+                                          NULL, 0, NULL, 0));
+    /* Nothing is published on the failure path. */
+    TEST_ASSERT_NULL(g2);
+    TEST_ASSERT_NULL(f2);
+
+    /* The same check covers the walls, which the NS layer also validates -- both
+     * doors, not one. */
+    ns_solver_params_t w = ns_solver_params_default();
+    w.pressure_bc.back = (poisson_wall_t)42;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      cfd_checkpoint_write(CK_PATH, g, f, &w, 0.0, "rk2", NULL, NULL));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      cfd_checkpoint_read(CK_PATH, &g2, &f2, &p2, NULL, name, sizeof(name),
+                                          NULL, 0, NULL, 0));
+
+    grid_destroy(g);
+    flow_field_destroy(f);
+}
+
 void test_reject_bad_magic(void) {
     grid* g = grid_create(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
@@ -615,6 +664,7 @@ int main(void) {
     RUN_TEST(test_highlevel_restore_into_different_dims);
     RUN_TEST(test_reject_bad_version);
     RUN_TEST(test_reject_bad_magic);
+    RUN_TEST(test_reject_out_of_enum_params);
     RUN_TEST(test_reject_truncated);
     RUN_TEST(test_reject_crc_corruption);
     RUN_TEST(test_restart_continuity_scalar);

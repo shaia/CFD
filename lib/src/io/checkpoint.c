@@ -13,6 +13,7 @@
 #include "cfd/io/checkpoint.h"
 
 #include "cfd/core/cfd_version.h"
+#include "cfd/solvers/poisson_solver.h"  /* poisson_walls_are_legal */
 #include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 
@@ -409,6 +410,58 @@ cfd_status_t cfd_checkpoint_write(const char* path,
     return status;
 }
 
+/* Every enum below is cast straight out of the file, so none of the values are
+ * ones the compiler chose. Range-checked HERE rather than left to whichever
+ * door downstream happens to look: solver init catches turb_model,
+ * pressure_solver, convection_scheme and pressure_bc, but nothing anywhere
+ * range-checks a thermal_bc or turb_bc face, and a caller who never inits an NS
+ * solver is told nothing at all. A corrupt file is the reader's to reject --
+ * the same reject-unknown rule this file already applies to version, byte
+ * order and dtype. */
+static int chk_bc_type_is_legal(bc_type_t t) {
+    return t == BC_TYPE_PERIODIC || t == BC_TYPE_NEUMANN || t == BC_TYPE_DIRICHLET
+        || t == BC_TYPE_NOSLIP || t == BC_TYPE_INLET || t == BC_TYPE_OUTLET
+        || t == BC_TYPE_SYMMETRY;
+}
+
+static int chk_bc_faces_are_legal(const bc_type_t* faces) {
+    for (int i = 0; i < 6; i++) {
+        if (!chk_bc_type_is_legal(faces[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int chk_params_are_legal(const ns_solver_params_t* p) {
+    const bc_type_t thermal[6] = {p->thermal_bc.left, p->thermal_bc.right,
+                                  p->thermal_bc.bottom, p->thermal_bc.top,
+                                  p->thermal_bc.front, p->thermal_bc.back};
+    const bc_type_t turb[6] = {p->turb_bc.left, p->turb_bc.right,
+                               p->turb_bc.bottom, p->turb_bc.top,
+                               p->turb_bc.front, p->turb_bc.back};
+    if (!chk_bc_faces_are_legal(thermal) || !chk_bc_faces_are_legal(turb)) {
+        return 0;
+    }
+    if (!poisson_walls_are_legal(&p->pressure_bc)) {
+        return 0;
+    }
+    if (p->turb_model != TURB_MODEL_NONE && p->turb_model != TURB_MODEL_K_EPSILON
+        && p->turb_model != TURB_MODEL_SPALART_ALLMARAS) {
+        return 0;
+    }
+    if (p->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT
+        && p->pressure_solver != NS_PRESSURE_SOLVER_MULTIGRID
+        && p->pressure_solver != NS_PRESSURE_SOLVER_PCG_MG) {
+        return 0;
+    }
+    if (p->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL
+        && p->convection_scheme != NS_CONVECTION_SCHEME_UPWIND) {
+        return 0;
+    }
+    return 1;
+}
+
 /* ==========================================================================
  * Public API: read
  * ========================================================================== */
@@ -591,6 +644,20 @@ cfd_status_t cfd_checkpoint_read(const char* path,
         flow_field_destroy(f);
         cfd_set_error(io.status, "cfd_checkpoint_read: read failed");
         return io.status;
+    }
+
+    /* After the CRC, so bit-rot is reported as bit-rot; before the outputs are
+     * published, so no caller ever holds params carrying a value no enum
+     * defines. */
+    if (!chk_params_are_legal(out_params)) {
+        grid_destroy(g);
+        flow_field_destroy(f);
+        memset(out_params, 0, sizeof(*out_params));
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "cfd_checkpoint_read: the file carries a solver parameter "
+                      "outside its enum; it was written by a different build or "
+                      "has been edited");
+        return CFD_ERROR_INVALID;
     }
 
     *out_grid = g;
