@@ -29,7 +29,8 @@ typedef struct {
     double dx2;
     double dy2;
     double inv_dz2;    /* 1/dz^2 (0 for 2D) */
-    double diag_inv;
+    double diag_inv;   /* Jacobi preconditioner: 1/(2/dx2 + 2/dy2 + 2*inv_dz2 + sigma) */
+    double sigma;      /* Helmholtz shift; 0 = pure Poisson */
 
     size_t stride_z;   /* nx*ny for 3D, 0 for 2D */
     size_t k_start;    /* first interior k index */
@@ -139,7 +140,12 @@ static cfd_status_t cg_omp_init(
     ctx->dy2 = dy * dy;
     ctx->inv_dz2 = poisson_solver_compute_inv_dz2(dz);
     poisson_solver_compute_3d_bounds(nz, nx, ny, &ctx->stride_z, &ctx->k_start, &ctx->k_end);
-    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2);
+    ctx->sigma = params ? params->helmholtz_shift : 0.0;
+    /* The shift is a diagonal term, so it folds into the Jacobi diagonal; adding
+     * 0.0 to a finite positive sum is exact, leaving the unshifted value
+     * bit-identical. */
+    ctx->diag_inv = 1.0 / (2.0 / ctx->dx2 + 2.0 / ctx->dy2 + 2.0 * ctx->inv_dz2
+                           + ctx->sigma);
     ctx->precond_type = params ? params->krylov.preconditioner : POISSON_PRECOND_NONE;
     ctx->use_precond = (ctx->precond_type == POISSON_PRECOND_JACOBI ||
                         ctx->precond_type == POISSON_PRECOND_MULTIGRID);
@@ -197,6 +203,7 @@ static cfd_status_t cg_omp_solve(
     double* Ap = ctx->Ap;
     int use_precond = ctx->use_precond;
     double diag_inv = ctx->diag_inv;
+    double sigma = ctx->sigma;
 
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
@@ -207,6 +214,12 @@ static cfd_status_t cg_omp_solve(
 
     compute_residual_omp(x, rhs, r, nx, ny, dx2, dy2, inv_dz2,
                          k_start, k_end, stride_z);
+    /* Shifted operator A_h = -lap + sigma*I, so r = b - A_h x loses sigma*x.
+     * Through the existing axpy and behind a branch, as in the scalar CG: at
+     * sigma = 0 the unshifted path runs exactly the instructions it did before. */
+    if (sigma != 0.0) {
+        axpy_omp(-sigma, x, r, nx, ny, k_start, k_end, stride_z);
+    }
 
     double initial_res = sqrt(dot_product_omp(r, r, nx, ny,
                                               k_start, k_end, stride_z));
@@ -266,6 +279,9 @@ static cfd_status_t cg_omp_solve(
         poisson_solver_krylov_apply_bc_homogeneous(solver, p);
         apply_laplacian_omp(p, Ap, nx, ny, dx2, dy2, inv_dz2,
                             k_start, k_end, stride_z);
+        if (sigma != 0.0) {
+            axpy_omp(sigma, p, Ap, nx, ny, k_start, k_end, stride_z);
+        }
 
         double p_dot_Ap = dot_product_omp(p, Ap, nx, ny,
                                           k_start, k_end, stride_z);

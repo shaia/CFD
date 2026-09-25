@@ -46,11 +46,61 @@
 #define MAX_PRESSURE 1000.0
 
 /**
+ * Turn the explicit increment in `star` into the implicit viscous one:
+ *
+ *     (I - theta*nu*dt*lap) delta = star - cur,   star = cur + delta
+ *
+ * solved as lap(delta) - sigma*delta = -sigma*(star - cur) with delta = 0 on the
+ * boundary nodes, where star already equals cur. See ns_viscous_internal.h.
+ * Clamped afterwards: the explicit increment is left unclamped by the predictor,
+ * because at a large dt it legitimately overshoots and the solve is what
+ * removes that overshoot.
+ */
+static cfd_status_t implicit_viscous_component(poisson_solver_t* viscous,
+                                               const double* cur, double* star,
+                                               double* rhs, double* delta,
+                                               size_t nx, size_t ny, size_t total,
+                                               size_t k_start, size_t k_end,
+                                               size_t stride_z) {
+    double sigma = viscous->params.helmholtz_shift;
+
+    memset(delta, 0, total * sizeof(double));
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                rhs[idx] = -sigma * (star[idx] - cur[idx]);
+            }
+        }
+    }
+
+    poisson_solver_stats_t vstats = poisson_solver_stats_default();
+    cfd_status_t status = poisson_solver_solve(viscous, delta, NULL, rhs, &vstats);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+
+    for (size_t k = k_start; k < k_end; k++) {
+        for (size_t j = 1; j < ny - 1; j++) {
+            for (size_t i = 1; i < nx - 1; i++) {
+                size_t idx = k * stride_z + IDX_2D(i, j, nx);
+                star[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, cur[idx] + delta[idx]));
+            }
+        }
+    }
+    return CFD_SUCCESS;
+}
+
+/**
  * Projection Method Solver
+ *
+ * `viscous` is the implicit viscous solver for an implicit
+ * params->viscous_scheme, or NULL to advance the viscous term explicitly.
  */
 cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params,
-                                     poisson_solver_t* pressure) {
+                                     poisson_solver_t* pressure,
+                                     poisson_solver_t* viscous) {
     if (!field || !grid || !params || !pressure) {
         return CFD_ERROR_INVALID;
     }
@@ -60,8 +110,17 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     /* The buffers below are sized from the field; the solver from the grid. */
     cfd_status_t shape_status =
         ns_pressure_check_shape(pressure, field->nx, field->ny, field->nz);
+    if (shape_status == CFD_SUCCESS && viscous) {
+        shape_status = ns_pressure_check_shape(viscous, field->nx, field->ny, field->nz);
+    }
     if (shape_status != CFD_SUCCESS) {
         return shape_status;
+    }
+    /* The implicit operator has one constant viscosity; nu + nu_t does not. */
+    if (viscous && params->turb_model != TURB_MODEL_NONE) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "The implicit viscous solve does not support turbulence models");
+        return CFD_ERROR_UNSUPPORTED;
     }
 
     size_t nx = field->nx;
@@ -111,12 +170,15 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
     const int turb_on = (params->turb_model != TURB_MODEL_NONE);
     double* turb_ws = turb_on
         ? (double*)cfd_calloc(TURB_WORKSPACE_SIZE(total), sizeof(double)) : NULL;
+    const int implicit_visc = (viscous != NULL);
+    double* delta = implicit_visc ? (double*)cfd_calloc(total, sizeof(double)) : NULL;
 
     if (!u_star || !v_star || !w_star || !p_new || !p_temp || !rhs ||
-        (needs_T_ws && !T_energy_ws) || (turb_on && !turb_ws)) {
+        (needs_T_ws && !T_energy_ws) || (turb_on && !turb_ws) ||
+        (implicit_visc && !delta)) {
         cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
         cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
-        cfd_free(T_energy_ws); cfd_free(turb_ws);
+        cfd_free(T_energy_ws); cfd_free(turb_ws); cfd_free(delta);
         return CFD_ERROR_NOMEM;
     }
 
@@ -237,9 +299,12 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                     v_star[idx] = v + dt * (-conv_v + visc_v + source_v);
                     w_star[idx] = w + dt * (-conv_w + visc_w + source_w);
 
-                    u_star[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, u_star[idx]));
-                    v_star[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, v_star[idx]));
-                    w_star[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, w_star[idx]));
+                    /* An implicit scheme clamps after its solve instead */
+                    if (!implicit_visc) {
+                        u_star[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, u_star[idx]));
+                        v_star[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, v_star[idx]));
+                        w_star[idx] = fmax(-MAX_VELOCITY, fmin(MAX_VELOCITY, w_star[idx]));
+                    }
                 }
             }
         }
@@ -247,6 +312,25 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         /* Copy boundary values from field to star arrays */
         copy_boundary_velocities_3d(u_star, v_star, w_star,
                                     field->u, field->v, field->w, nx, ny, nz);
+
+        /* Implicit viscous term: replace each explicit increment by the solution
+         * of (I - theta*nu*dt*lap) delta = increment. rhs is free until the
+         * pressure solve below overwrites it. */
+        if (implicit_visc) {
+            const double* cur[3] = {field->u, field->v, field->w};
+            double* star[3] = {u_star, v_star, w_star};
+            for (int c = 0; c < 3; c++) {
+                cfd_status_t visc_status = implicit_viscous_component(
+                    viscous, cur[c], star[c], rhs, delta, nx, ny, total,
+                    k_start, k_end, stride_z);
+                if (visc_status != CFD_SUCCESS) {
+                    cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
+                    cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
+                    cfd_free(T_energy_ws); cfd_free(turb_ws); cfd_free(delta);
+                    return visc_status;
+                }
+            }
+        }
 
         /* ============================================================
          * STEP 2: Solve Poisson equation for pressure
@@ -294,7 +378,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         if (poisson_status != CFD_SUCCESS) {
             cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
             cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
-            cfd_free(T_energy_ws); cfd_free(turb_ws);
+            cfd_free(T_energy_ws); cfd_free(turb_ws); cfd_free(delta);
             return poisson_status;
         }
 
@@ -334,7 +418,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
             if (energy_status != CFD_SUCCESS) {
                 cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
                 cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
-                cfd_free(T_energy_ws); cfd_free(turb_ws);
+                cfd_free(T_energy_ws); cfd_free(turb_ws); cfd_free(delta);
                 return energy_status;
             }
         }
@@ -344,7 +428,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
         if (bc_status != CFD_SUCCESS) {
             cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
             cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
-            cfd_free(T_energy_ws); cfd_free(turb_ws);
+            cfd_free(T_energy_ws); cfd_free(turb_ws); cfd_free(delta);
             return bc_status;
         }
 
@@ -364,7 +448,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
             if (turb_status != CFD_SUCCESS) {
                 cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
                 cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
-                cfd_free(T_energy_ws); cfd_free(turb_ws);
+                cfd_free(T_energy_ws); cfd_free(turb_ws); cfd_free(delta);
                 return turb_status;
             }
         }
@@ -375,7 +459,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                 !isfinite(field->w[n]) || !isfinite(field->p[n])) {
                 cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
                 cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
-                cfd_free(T_energy_ws); cfd_free(turb_ws);
+                cfd_free(T_energy_ws); cfd_free(turb_ws); cfd_free(delta);
                 return CFD_ERROR_DIVERGED;
             }
         }
@@ -383,7 +467,7 @@ cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
 
     cfd_free(u_star); cfd_free(v_star); cfd_free(w_star);
     cfd_free(p_new); cfd_free(p_temp); cfd_free(rhs);
-    cfd_free(T_energy_ws); cfd_free(turb_ws);
+    cfd_free(T_energy_ws); cfd_free(turb_ws); cfd_free(delta);
 
     return CFD_SUCCESS;
 }

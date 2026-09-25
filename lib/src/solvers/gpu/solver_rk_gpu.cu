@@ -266,10 +266,7 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
     if (order != 1 && order != 2 && order != 4)
         return CFD_ERROR_INVALID;
 
-    gpu_config_t cfg = config ? *config : gpu_config_default();
     size_t nx = field->nx, ny = field->ny, nz = field->nz;
-    if (!gpu_should_use(&cfg, nx, ny, nz, params->max_iter))
-        return CFD_ERROR;
 
     // Host callbacks cannot run on the device.
     if (params->source_func != NULL) {
@@ -278,12 +275,15 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
                       "use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
-    // RANS turbulence models and upwind convection have no GPU kernels.
+    // RANS turbulence, upwind convection and implicit viscous terms have no GPU
+    // kernels. Repeated here because these entry points are exported and skip the
+    // solver_step() capability check.
     if (params->turb_model != TURB_MODEL_NONE ||
-        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL) {
+        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL ||
+        params->viscous_scheme != NS_VISCOUS_SCHEME_EXPLICIT) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "GPU RK solver does not support turbulence models or upwind convection; "
-                      "use a CPU, OMP, or AVX2 solver");
+                      "GPU RK solver does not support turbulence models, upwind convection or "
+                      "an implicit viscous scheme; use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
 
@@ -301,6 +301,12 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
     if (ps_status != CFD_SUCCESS) {
         return ps_status;
     }
+    /* After the refusals above, as in solve_projection_method_gpu: they are
+     * about the parameters, and a grid too small for the GPU used to turn every
+     * one of them into a bare CFD_ERROR. */
+    gpu_config_t cfg = config ? *config : gpu_config_default();
+    if (!gpu_should_use(&cfg, nx, ny, nz, params->max_iter))
+        return CFD_ERROR;
     // Energy-equation support (heat_source_func + thermal BC types/grid).
     {
         cfd_status_t e = gpu_check_energy_support(params, nx, ny, nz);

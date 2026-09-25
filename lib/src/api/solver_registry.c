@@ -10,6 +10,7 @@
 
 #include "../solvers/navier_stokes/ns_convection_internal.h"
 #include "../solvers/navier_stokes/ns_pressure_internal.h"
+#include "../solvers/navier_stokes/ns_viscous_internal.h"
 #include "../solvers/navier_stokes/ns_simd_backend_internal.h"
 
 
@@ -91,7 +92,8 @@ cfd_status_t rk4_omp_impl(flow_field* field, const grid* grid,
                            const ns_solver_params_t* params);
 cfd_status_t solve_projection_method_omp(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params,
-                                         poisson_solver_t* pressure);
+                                         poisson_solver_t* pressure,
+                                         poisson_solver_t* viscous);
 #endif
 
 // GPU solver functions
@@ -188,7 +190,8 @@ static ns_solver_t* create_rk4_omp_solver(void);
 // External projection method solver functions
 extern cfd_status_t solve_projection_method(flow_field* field, const grid* grid,
                                             const ns_solver_params_t* params,
-                                            poisson_solver_t* pressure);
+                                            poisson_solver_t* pressure,
+                                            poisson_solver_t* viscous);
 extern void solve_projection_method_optimized(flow_field* field, const grid* grid,
                                               const ns_solver_params_t* params);
 
@@ -443,6 +446,11 @@ cfd_status_t solver_init(ns_solver_t* solver, const grid* grid, const ns_solver_
     if (!solver) {
         return CFD_ERROR_INVALID;
     }
+    cfd_status_t scheme_status = ns_check_viscous_scheme(
+        params, (solver->capabilities & NS_SOLVER_CAP_IMPLICIT_VISCOUS) != 0);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
+    }
     if (!solver->init) {
         return CFD_SUCCESS;  // Optional
     }
@@ -458,6 +466,14 @@ cfd_status_t solver_step(ns_solver_t* solver, flow_field* field, const grid* gri
     }
     if (!solver->step) {
         return CFD_ERROR;
+    }
+    /* Checked on every call, not only at init: params are the caller's and may
+     * have changed since, and an implicit scheme a solver ignored would run
+     * explicit at a dt chosen because it no longer had to be stable. */
+    cfd_status_t scheme_status = ns_check_viscous_scheme(
+        params, (solver->capabilities & NS_SOLVER_CAP_IMPLICIT_VISCOUS) != 0);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
     }
 
     /* Default; a solver that advances by a different step overrides it. */
@@ -486,6 +502,14 @@ cfd_status_t solver_solve(ns_solver_t* solver, flow_field* field, const grid* gr
     }
     if (!solver->solve) {
         return CFD_ERROR;
+    }
+    /* Checked on every call, not only at init: params are the caller's and may
+     * have changed since, and an implicit scheme a solver ignored would run
+     * explicit at a dt chosen because it no longer had to be stable. */
+    cfd_status_t scheme_status = ns_check_viscous_scheme(
+        params, (solver->capabilities & NS_SOLVER_CAP_IMPLICIT_VISCOUS) != 0);
+    if (scheme_status != CFD_SUCCESS) {
+        return scheme_status;
     }
 
     /* Default; a solver that advances by a different step overrides it. */
@@ -982,9 +1006,15 @@ static ns_solver_t* create_explicit_euler_optimized_solver(void) {
 typedef struct {
     int initialized;
     poisson_solver_t* pressure;  /**< Owned across the solver's life; ns_pressure_internal.h */
-    poisson_solver_backend_t pressure_backend;
+    poisson_solver_t* viscous;   /**< Implicit viscous solve; NULL while the scheme is
+                                      explicit. ns_viscous_internal.h */
+    poisson_solver_backend_t pressure_backend; /**< Backend of both owned solvers */
 } projection_context;
 
+static void projection_destroy(ns_solver_t* solver);
+static cfd_status_t projection_viscous(ns_solver_t* solver, const grid* grid,
+                                       const ns_solver_params_t* params,
+                                       poisson_solver_t** out);
 
 static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const ns_solver_params_t* params) {
     if (!solver || !grid) {
@@ -1033,6 +1063,16 @@ static cfd_status_t projection_init(ns_solver_t* solver, const grid* grid, const
 
     ctx->initialized = 1;
     solver->context = ctx;
+
+    /* Built now for the same reason the pressure solver is: an implicit scheme
+     * this backend cannot run -- or one combined with a turbulence model --
+     * fails at init, where the caller can still choose something else. */
+    poisson_solver_t* viscous = NULL;
+    cfd_status_t viscous_status = projection_viscous(solver, grid, params, &viscous);
+    if (viscous_status != CFD_SUCCESS) {
+        projection_destroy(solver);
+        return viscous_status;
+    }
     return CFD_SUCCESS;
 }
 
@@ -1040,6 +1080,7 @@ static void projection_destroy(ns_solver_t* solver) {
     if (solver->context) {
         projection_context* ctx = (projection_context*)solver->context;
         ns_pressure_release(&ctx->pressure);
+        ns_pressure_release(&ctx->viscous);
         cfd_free(ctx);
         solver->context = NULL;
     }
@@ -1076,6 +1117,44 @@ static cfd_status_t projection_pressure(ns_solver_t* solver, const grid* grid,
     return CFD_SUCCESS;
 }
 
+/**
+ * The implicit viscous solver for this step, or NULL for an explicit scheme.
+ *
+ * The twin of projection_pressure(): sigma = 1/(theta*nu*dt) depends on dt, so
+ * it is re-derived every step and ns_pressure_ensure() rebuilds only when it
+ * moved. Released when the scheme goes back to explicit rather than kept, so a
+ * run that tried an implicit scheme once does not carry its vectors for good.
+ */
+static cfd_status_t projection_viscous(ns_solver_t* solver, const grid* grid,
+                                       const ns_solver_params_t* params,
+                                       poisson_solver_t** out) {
+    *out = NULL;
+    projection_context* ctx = (projection_context*)solver->context;
+    if (!ctx) {
+        return CFD_ERROR_INVALID;
+    }
+
+    double theta = 0.0;
+    cfd_status_t status = ns_viscous_theta(params, &theta);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    double sigma = (theta > 0.0) ? ns_viscous_shift(theta, params->mu, params->dt) : 0.0;
+    if (sigma == 0.0) {
+        ns_pressure_release(&ctx->viscous);
+        return CFD_SUCCESS;
+    }
+
+    poisson_solver_config_t cfg = ns_viscous_config(ctx->pressure_backend, sigma, grid->nz);
+    status = ns_pressure_ensure(&ctx->viscous, &cfg, grid);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+
+    *out = ctx->viscous;
+    return CFD_SUCCESS;
+}
+
 static cfd_status_t projection_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                     const ns_solver_params_t* params, ns_solver_stats_t* stats) {
     if (field->nx < 3 || field->ny < 3) {
@@ -1087,11 +1166,16 @@ static cfd_status_t projection_step(ns_solver_t* solver, flow_field* field, cons
     if (status != CFD_SUCCESS) {
         return status;
     }
+    poisson_solver_t* viscous = NULL;
+    status = projection_viscous(solver, grid, params, &viscous);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
-    status = solve_projection_method(field, grid, &step_params, pressure);
+    status = solve_projection_method(field, grid, &step_params, pressure, viscous);
     if (status != CFD_SUCCESS) {
         return status;
     }
@@ -1121,8 +1205,13 @@ static cfd_status_t projection_solve(ns_solver_t* solver, flow_field* field, con
     if (status != CFD_SUCCESS) {
         return status;
     }
+    poisson_solver_t* viscous = NULL;
+    status = projection_viscous(solver, grid, params, &viscous);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
-    status = solve_projection_method(field, grid, params, pressure);
+    status = solve_projection_method(field, grid, params, pressure, viscous);
     if (status != CFD_SUCCESS) {
         return status;
     }
@@ -1150,7 +1239,8 @@ static ns_solver_t* create_projection_solver(void) {
     s->name = NS_SOLVER_TYPE_PROJECTION;
     s->description = "Projection method (Chorin's method)";
     s->version = "1.0.0";
-    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT;
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT |
+                      NS_SOLVER_CAP_IMPLICIT_VISCOUS;
     s->backend = NS_SOLVER_BACKEND_SCALAR;
 
     s->init = projection_init;
@@ -1812,6 +1902,16 @@ static cfd_status_t projection_omp_init(ns_solver_t* solver, const grid* grid,
 
     ctx->initialized = 1;
     solver->context = ctx;
+
+    /* Built now for the same reason the pressure solver is: an implicit scheme
+     * this backend cannot run -- or one combined with a turbulence model --
+     * fails at init, where the caller can still choose something else. */
+    poisson_solver_t* viscous = NULL;
+    cfd_status_t viscous_status = projection_viscous(solver, grid, params, &viscous);
+    if (viscous_status != CFD_SUCCESS) {
+        projection_destroy(solver);
+        return viscous_status;
+    }
     return CFD_SUCCESS;
 }
 
@@ -1826,11 +1926,16 @@ static cfd_status_t projection_omp_step(ns_solver_t* solver, flow_field* field, 
     if (status != CFD_SUCCESS) {
         return status;
     }
+    poisson_solver_t* viscous = NULL;
+    status = projection_viscous(solver, grid, params, &viscous);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
     ns_solver_params_t step_params = *params;
     step_params.max_iter = 1;
 
-    status = solve_projection_method_omp(field, grid, &step_params, pressure);
+    status = solve_projection_method_omp(field, grid, &step_params, pressure, viscous);
     if (status != CFD_SUCCESS) {
         return status;
     }
@@ -1858,8 +1963,13 @@ static cfd_status_t projection_omp_solve(ns_solver_t* solver, flow_field* field,
     if (status != CFD_SUCCESS) {
         return status;
     }
+    poisson_solver_t* viscous = NULL;
+    status = projection_viscous(solver, grid, params, &viscous);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
 
-    status = solve_projection_method_omp(field, grid, params, pressure);
+    status = solve_projection_method_omp(field, grid, params, pressure, viscous);
     if (status != CFD_SUCCESS) {
         return status;
     }
@@ -1885,7 +1995,8 @@ static ns_solver_t* create_projection_omp_solver(void) {
     s->name = NS_SOLVER_TYPE_PROJECTION_OMP;
     s->description = "OpenMP-parallelized Projection solver";
     s->version = "1.0.0";
-    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT | NS_SOLVER_CAP_PARALLEL;
+    s->capabilities = NS_SOLVER_CAP_INCOMPRESSIBLE | NS_SOLVER_CAP_TRANSIENT |
+                      NS_SOLVER_CAP_PARALLEL | NS_SOLVER_CAP_IMPLICIT_VISCOUS;
 
     s->init = projection_omp_init;    // Checks OMP CG and MG pressure-solver availability
     s->destroy = projection_destroy;

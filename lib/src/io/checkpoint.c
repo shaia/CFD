@@ -343,6 +343,7 @@ static void write_params(chk_io* io, const ns_solver_params_t* p) {
     /* A resume that dropped this would silently change the eddy viscosity
      * while reporting success. */
     put_i32(io, (int32_t)p->turb_nut_correction);
+    put_i32(io, (int32_t)p->viscous_scheme);
     /* turb_bc: face types then k, epsilon and nu_tilde Dirichlet values */
     put_i32(io, (int32_t)p->turb_bc.left);
     put_i32(io, (int32_t)p->turb_bc.right);
@@ -415,11 +416,11 @@ cfd_status_t cfd_checkpoint_write(const char* path,
 /* Every enum below is cast straight out of the file, so none of the values are
  * ones the compiler chose. Range-checked HERE rather than left to whichever
  * door downstream happens to look: solver init catches turb_model,
- * pressure_solver, convection_scheme and pressure_bc, but nothing anywhere
- * range-checks a thermal_bc or turb_bc face, and a caller who never inits an NS
- * solver is told nothing at all. A corrupt file is the reader's to reject --
- * the same reject-unknown rule this file already applies to version, byte
- * order and dtype. */
+ * pressure_solver, convection_scheme, viscous_scheme and pressure_bc, but
+ * nothing anywhere range-checks a thermal_bc or turb_bc face, and a caller who
+ * never inits an NS solver is told nothing at all. A corrupt file is the
+ * reader's to reject -- the same reject-unknown rule this file already applies
+ * to version, byte order and dtype. */
 static int chk_bc_type_is_legal(bc_type_t t) {
     return t == BC_TYPE_PERIODIC || t == BC_TYPE_NEUMANN || t == BC_TYPE_DIRICHLET
         || t == BC_TYPE_NOSLIP || t == BC_TYPE_INLET || t == BC_TYPE_OUTLET
@@ -483,6 +484,11 @@ static int chk_params_are_legal(const ns_solver_params_t* p) {
      * correction (#224): same rule, same entry point, one validator. */
     if (p->turb_nut_correction != NS_NUT_CORRECTION_NONE
         && p->turb_nut_correction != NS_NUT_CORRECTION_S_STAR) {
+        return 0;
+    }
+    if (p->viscous_scheme != NS_VISCOUS_SCHEME_EXPLICIT
+        && p->viscous_scheme != NS_VISCOUS_SCHEME_BACKWARD_EULER
+        && p->viscous_scheme != NS_VISCOUS_SCHEME_CRANK_NICOLSON) {
         return 0;
     }
     return 1;
@@ -628,6 +634,7 @@ cfd_status_t cfd_checkpoint_read(const char* path,
     out_params->pressure_solver = (ns_pressure_solver_t)get_i32(&io);
     out_params->convection_scheme = (ns_convection_scheme_t)get_i32(&io);
     out_params->turb_nut_correction = (ns_nut_correction_t)get_i32(&io);
+    out_params->viscous_scheme = (ns_viscous_scheme_t)get_i32(&io);
     out_params->turb_bc.left = (bc_type_t)get_i32(&io);
     out_params->turb_bc.right = (bc_type_t)get_i32(&io);
     out_params->turb_bc.bottom = (bc_type_t)get_i32(&io);
