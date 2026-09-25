@@ -13,7 +13,6 @@
 #include "cfd/io/checkpoint.h"
 
 #include "cfd/core/cfd_version.h"
-#include "cfd/solvers/poisson_solver.h"  /* poisson_walls_are_legal */
 #include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 
@@ -424,6 +423,24 @@ static int chk_bc_type_is_legal(bc_type_t t) {
         || t == BC_TYPE_SYMMETRY;
 }
 
+/* The wall-type check is spelled out here rather than calling the canonical
+ * poisson_walls_are_legal(). That predicate lives in linear_solver.c, which is
+ * part of cfd_api, while this file is part of cfd_core -- a target documented
+ * as depending on nothing (docs/architecture/architecture.md) and carrying no
+ * target_link_libraries at all. Calling up into the API layer would invert that
+ * dependency and leave anyone linking CFD::Core alone with an undefined symbol;
+ * the unified CFD::Library that every test links hides it. Six comparisons are
+ * the cheaper price. Keep the two in step if poisson_wall_t gains a member. */
+static int chk_wall_type_is_legal(poisson_wall_t t) {
+    return t == POISSON_WALL_ZERO_GRADIENT || t == POISSON_WALL_DIRICHLET;
+}
+
+static int chk_walls_are_legal(const poisson_walls_t* w) {
+    return chk_wall_type_is_legal(w->left) && chk_wall_type_is_legal(w->right)
+        && chk_wall_type_is_legal(w->bottom) && chk_wall_type_is_legal(w->top)
+        && chk_wall_type_is_legal(w->front) && chk_wall_type_is_legal(w->back);
+}
+
 static int chk_bc_faces_are_legal(const bc_type_t* faces) {
     for (int i = 0; i < 6; i++) {
         if (!chk_bc_type_is_legal(faces[i])) {
@@ -443,7 +460,7 @@ static int chk_params_are_legal(const ns_solver_params_t* p) {
     if (!chk_bc_faces_are_legal(thermal) || !chk_bc_faces_are_legal(turb)) {
         return 0;
     }
-    if (!poisson_walls_are_legal(&p->pressure_bc)) {
+    if (!chk_walls_are_legal(&p->pressure_bc)) {
         return 0;
     }
     if (p->turb_model != TURB_MODEL_NONE && p->turb_model != TURB_MODEL_K_EPSILON
