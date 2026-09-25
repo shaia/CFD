@@ -393,6 +393,40 @@ void test_reject_bad_version(void) {
     flow_field_destroy(f);
 }
 
+/**
+ * An unknown turb_nut_correction is refused by the READER.
+ *
+ * Written through cfd_checkpoint_write rather than poked into the bytes,
+ * because a poke breaks the CRC and would be rejected as bit-rot before
+ * reaching the check under test. A file from a different build arrives exactly
+ * like this: internally consistent, semantically impossible.
+ */
+void test_reject_unknown_nut_correction(void) {
+    grid* g = grid_create(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid_initialize_uniform(g);
+    flow_field* f = flow_field_create(8, 8, 1);
+    fill_field_known(f, 1.0);
+
+    ns_solver_params_t p = ns_solver_params_default();
+    p.turb_nut_correction = (ns_nut_correction_t)99;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      cfd_checkpoint_write(CK_PATH, g, f, &p, 0.0, "rk2", NULL, NULL));
+
+    grid* g2 = NULL;
+    flow_field* f2 = NULL;
+    ns_solver_params_t p2;
+    char name[64] = {0};
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      cfd_checkpoint_read(CK_PATH, &g2, &f2, &p2, NULL, name, sizeof(name),
+                                          NULL, 0, NULL, 0));
+    /* Nothing is published on the failure path. */
+    TEST_ASSERT_NULL(g2);
+    TEST_ASSERT_NULL(f2);
+
+    grid_destroy(g);
+    flow_field_destroy(f);
+}
+
 void test_reject_bad_magic(void) {
     grid* g = grid_create(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
     grid_initialize_uniform(g);
@@ -617,6 +651,7 @@ int main(void) {
     RUN_TEST(test_highlevel_restore_into_different_dims);
     RUN_TEST(test_reject_bad_version);
     RUN_TEST(test_reject_bad_magic);
+    RUN_TEST(test_reject_unknown_nut_correction);
     RUN_TEST(test_reject_truncated);
     RUN_TEST(test_reject_crc_corruption);
     RUN_TEST(test_restart_continuity_scalar);

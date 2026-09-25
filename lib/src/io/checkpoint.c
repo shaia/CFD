@@ -413,6 +413,20 @@ cfd_status_t cfd_checkpoint_write(const char* path,
     return status;
 }
 
+/* turb_nut_correction is cast straight out of the file, so the value is not one
+ * the compiler chose. Range-checked HERE, where the untrusted bytes enter: the
+ * same reject-unknown rule this file already applies to version, byte order and
+ * dtype. turb_check_closure_config() also refuses an unknown value at solver
+ * init, but a caller who restores params without initing an NS solver is told
+ * nothing at all, and a corrupt file is the reader's to reject.
+ *
+ * A wider chk_params_are_legal(), covering the thermal_bc and turb_bc faces and
+ * the other enums this reader casts, is in flight separately; fold this into it
+ * rather than keeping two checks when the two meet. */
+static int chk_nut_correction_is_legal(ns_nut_correction_t c) {
+    return c == NS_NUT_CORRECTION_NONE || c == NS_NUT_CORRECTION_S_STAR;
+}
+
 /* ==========================================================================
  * Public API: read
  * ========================================================================== */
@@ -596,6 +610,20 @@ cfd_status_t cfd_checkpoint_read(const char* path,
         flow_field_destroy(f);
         cfd_set_error(io.status, "cfd_checkpoint_read: read failed");
         return io.status;
+    }
+
+    /* After the CRC, so bit-rot is reported as bit-rot; before the outputs are
+     * published, so no caller ever holds params carrying a value no enum
+     * defines. */
+    if (!chk_nut_correction_is_legal(out_params->turb_nut_correction)) {
+        grid_destroy(g);
+        flow_field_destroy(f);
+        memset(out_params, 0, sizeof(*out_params));
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "cfd_checkpoint_read: the file carries an unknown "
+                      "turb_nut_correction; it was written by a different build or "
+                      "has been edited");
+        return CFD_ERROR_INVALID;
     }
 
     *out_grid = g;
