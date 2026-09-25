@@ -103,6 +103,75 @@ double turb_wall_distance(const grid* grid, const ns_turbulence_bc_config_t* tbc
  *  (nu_t <= TURB_NU_T_MAX_FACTOR * nu). Used after transport and by BCs. */
 void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params);
 
+/* --- Optional eddy-viscosity correction --- */
+
+/** Bounds on the correction multiplier. Both directions matter: the correction
+ *  the channel DNS asks for is below 1 (k-epsilon over-predicts turbulent
+ *  energy in the outer layer), so this is NOT a dissipation-only correction and
+ *  the floor is what keeps a reduced nu_t away from zero. */
+#define TURB_CLOSURE_BETA_MIN 0.1
+#define TURB_CLOSURE_BETA_MAX 10.0
+
+/* --- Algebraic correction: beta = A * (S*)^B, i.e. a strain-dependent C_mu ---
+ *
+ * Fitted by least squares on ln(k_dns / k_model) against ln S* at Re_tau =
+ * 392.24 (9 comparison nodes), then evaluated at the held-out Re_tau = 587.19.
+ * The target is the TKE ratio rather than the shear-stress ratio because in
+ * fully developed channel flow the total shear stress is fixed by the mean
+ * momentum balance, so -uv+ is nearly closure-independent and its apparent
+ * error is dominated by discretisation. k is a genuine closure output.
+ *
+ * THE SIGN IS NOT THE INTUITIVE ONE, and the first version of these constants
+ * had it backwards. Multiplying nu_t by beta is the same as using
+ * C_mu' = beta * C_mu. In a stress-constrained flow the shear stress is set by
+ * the mean momentum balance, not by the closure, so the strain rate absorbs any
+ * change in nu_t: tau = nu_t |S| is fixed, P_k = tau^2 / nu_t, and local
+ * equilibrium (P_k = eps) with nu_t = C_mu' k^2/eps gives
+ *
+ *     k = tau / sqrt(C_mu')  =>  k scales as beta^(-1/2).
+ *
+ * LOWERING nu_t therefore RAISES k. Measured: beta = 0.90 predicts +5.4% in k
+ * and the run gave +6.0%. So to scale k by a factor r the multiplier must be
+ * beta = r^(-2), which is how the fitted TKE ratio is converted below.
+ *
+ * Provenance, the failed first attempt and the a posteriori numbers are in
+ * docs/technical-notes/ml-integration-design.md 2.7. These are fitted
+ * constants, not derived ones -- treat them as a measured baseline for a
+ * learned closure to beat, not as physics. */
+#define TURB_ALG_BETA_A 1.6945
+#define TURB_ALG_BETA_B (-0.2778)
+
+/**
+ * Apply the eddy-viscosity correction params->turb_nut_correction selects.
+ *
+ * Call immediately after turb_update_nu_t(). Returns CFD_SUCCESS and touches
+ * nothing when no correction is configured, so the un-corrected path stays
+ * bit-identical. Additive by design: turb_update_nu_t keeps its signature and
+ * its behaviour.
+ *
+ * @return CFD_SUCCESS; CFD_ERROR_UNSUPPORTED if a correction is configured with
+ *         any model other than k-epsilon (S* is built from k and epsilon, so it
+ *         does not exist for Spalart-Allmaras); CFD_ERROR_INVALID for an
+ *         unknown correction value, a NULL field/grid or a missing turbulence
+ *         field. Never a silent skip: a caller that asked for a correction gets
+ *         one or an error.
+ */
+cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
+                                        const ns_solver_params_t* params);
+
+/**
+ * Validate params->turb_nut_correction against params->turb_model at solver
+ * init.
+ *
+ * Checked here rather than per step so a caller learns before init returns,
+ * while they can still choose a different configuration.
+ *
+ * @return CFD_SUCCESS when no correction is set or the configuration is usable;
+ *         CFD_ERROR_UNSUPPORTED when a correction is set without k-epsilon;
+ *         CFD_ERROR_INVALID for a value no enum defines.
+ */
+cfd_status_t turb_check_closure_config(const ns_solver_params_t* params);
+
 /** Shared argument/grid validation for the turbulence step (all backends):
  *  non-NULL args and fields, known model, 2D only, nx/ny >= 3, uniform
  *  spacing. Assumes turb_model != TURB_MODEL_NONE was already checked. */

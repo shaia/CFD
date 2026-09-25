@@ -267,6 +267,8 @@ typedef struct {
     ns_pressure_solver_t pressure_solver;  // NS_PRESSURE_SOLVER_DEFAULT (0) = backend's CG
     // Convective-term discretization (momentum and temperature advection)
     ns_convection_scheme_t convection_scheme;  // NS_CONVECTION_SCHEME_CENTRAL (0) = central
+    // Optional eddy-viscosity correction (k-epsilon only)
+    ns_nut_correction_t turb_nut_correction;   // NS_NUT_CORRECTION_NONE (0) = standard model
 } ns_solver_params_t;
 
 ns_solver_params_t ns_solver_params_default(void);
@@ -298,6 +300,27 @@ typedef enum {
     NS_CONVECTION_SCHEME_CENTRAL = 0, // O(h^2) central differences (default)
     NS_CONVECTION_SCHEME_UPWIND = 1,  // O(h) first-order upwind differences
 } ns_convection_scheme_t;
+```
+
+`ns_nut_correction_t` selects an optional multiplier on the k-epsilon eddy
+viscosity, applied after `nu_t` is recomputed and before the existing
+realizability clamp. `NS_NUT_CORRECTION_S_STAR` is a two-constant power law in
+the dimensionless strain rate `S* = |S| k / epsilon` — equivalently, a `C_mu`
+that varies with the local strain — fitted against channel DNS (design note
+§2.7). The multiplier is clamped to `[0.1, 10]` and can lower `nu_t` as well as
+raise it. Setting it with any turbulence model other than k-epsilon fails
+solver init with `CFD_ERROR_UNSUPPORTED`:
+
+```c
+params.turb_model          = TURB_MODEL_K_EPSILON;
+params.turb_nut_correction = NS_NUT_CORRECTION_S_STAR;
+```
+
+```c
+typedef enum {
+    NS_NUT_CORRECTION_NONE = 0,   // Standard k-epsilon eddy viscosity (default)
+    NS_NUT_CORRECTION_S_STAR = 1, // Strain-rate power law (variable C_mu)
+} ns_nut_correction_t;
 ```
 
 `turbulence_model_t` is defined in `cfd/solvers/navier_stokes_solver.h`:

@@ -384,11 +384,18 @@ cfd_status_t turbulence_step_explicit_avx2_with_workspace(
                       "turbulence_solver_avx2: params must be non-NULL");
         return CFD_ERROR_INVALID;
     }
+    /* Checked before the disabled-model exit below: a correction configured
+     * against no turbulence model is refused here exactly as it is at solver
+     * init, rather than silently skipped because the step has nothing to do. */
+    cfd_status_t status = turb_check_closure_config(params);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
     if (params->turb_model == TURB_MODEL_NONE) {
         return CFD_SUCCESS;
     }
 
-    cfd_status_t status = turb_validate_step_args(field, grid, params);
+    status = turb_validate_step_args(field, grid, params);
     if (status != CFD_SUCCESS) {
         return status;
     }
@@ -443,7 +450,8 @@ cfd_status_t turbulence_step_explicit_avx2_with_workspace(
     }
 
     turb_update_nu_t(field, params);
+    cfd_status_t closure_status = turb_apply_nu_t_correction(field, grid, params);
 
     if (owns_buffer) cfd_free(buf);
-    return CFD_SUCCESS;
+    return closure_status;
 }
