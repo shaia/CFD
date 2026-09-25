@@ -537,6 +537,13 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
     dim3 block(ctx->config.block_size_x, ctx->config.block_size_y);
     dim3 grid_dim((nx - 2 + block.x - 1) / block.x, (ny - 2 + block.y - 1) / block.y);
 
+    // cudaGetLastError() reports the last failure from ANY CUDA call on this
+    // thread, not just this function's, and it is the only way to see an async
+    // launch failure. Clear whatever the process did earlier first, or the step
+    // inherits it: gpu_select_device(999) in the API test leaves "invalid device
+    // ordinal" pending, and the checks below would blame this solve for it.
+    (void)cudaGetLastError();
+
     cudaEventRecord(ctx->start_event, ctx->stream);
     kernel_velocity_rhs<<<grid_dim, block, 0, ctx->stream>>>(
         ctx->d_u, ctx->d_v, ctx->d_w, ctx->d_p,
@@ -560,11 +567,11 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
     bc_apply_scalar_3d_gpu(ctx->d_p, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
     cudaEventRecord(ctx->stop_event, ctx->stream);
 
-    // Kernel launches above are asynchronous and report nothing at the call
-    // site, so this is where a bad launch configuration or a fault inside a
-    // kernel becomes visible. Returning CFD_SUCCESS without asking left every
-    // caller -- including the step loop that now propagates this status -- to
-    // treat a failed device as a converged one.
+    // Launches are asynchronous and report nothing at the call site: this is
+    // where a bad launch configuration, and then a fault inside a kernel, become
+    // visible. Returning CFD_SUCCESS without asking left every caller --
+    // including the step loop that now propagates this status -- to treat a
+    // failed device as a converged one.
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaStreamSynchronize(ctx->stream));
 
