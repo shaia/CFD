@@ -138,6 +138,31 @@ typedef enum {
 } turbulence_model_t;
 
 /**
+ * Law of the wall used by the wall functions (ns_turbulence_bc_config_t.wall_law).
+ *
+ * Both use kappa = 0.41, B = 5.2 and the same wall treatment; they differ only
+ * in how u_tau is recovered from the first-node speed, which matters most in
+ * the buffer layer and at the low end of the log layer:
+ *
+ *  - NS_WALL_LAW_LOG (0, default): the linear law u+ = y+ below the y+ where it
+ *    meets the log law u+ = ln(y+)/kappa + B (11.06 with these constants), the
+ *    log law above it. u_tau is continuous; only its slope changes there.
+ *    Closer to channel DNS from y+ ~ 20 on, including where wall-function grids
+ *    put the first node, 30 <= y+ <= 100 (u+ 0.7% under DNS at y+ = 40).
+ *  - NS_WALL_LAW_SPALDING: Spalding's single smooth law through the sublayer,
+ *    buffer and log layer. Closer to DNS below y+ ~ 17 (within 4%, where the
+ *    log law is up to 22% off at y+ = 11); above, it sits under the log law,
+ *    which puts u+ 4.4% under DNS at y+ = 40 and u_tau ~3% above the log law's.
+ *
+ * Any other value is refused by turbulence_apply_bcs() with CFD_ERROR_INVALID
+ * whenever a turbulence model is active.
+ */
+typedef enum {
+    NS_WALL_LAW_LOG = 0,      /**< Linear/log law, switched where they cross (default) */
+    NS_WALL_LAW_SPALDING = 1, /**< Spalding's smooth law of the wall */
+} ns_wall_law_t;
+
+/**
  * Per-face turbulence boundary condition configuration.
  *
  * Face type meanings for the turbulence fields (k/epsilon or nu_tilde):
@@ -145,13 +170,13 @@ typedef enum {
  *  - BC_TYPE_NEUMANN: zero-gradient (typical outlet)
  *  - BC_TYPE_DIRICHLET: fixed values from k_values/eps_values/nu_tilde_values
  *    (typical inlet)
- *  - BC_TYPE_NOSLIP: wall-function wall — standard log-law treatment: friction
- *    velocity from the log law at the first interior node, equilibrium k and
- *    epsilon (or nu_tilde) there, and a wall-node eddy viscosity chosen so the
- *    discrete wall shear stress matches the log law.
+ *  - BC_TYPE_NOSLIP: wall-function wall: friction velocity u_tau from the law
+ *    of the wall selected by wall_law, at the first interior node; equilibrium
+ *    k and epsilon (or nu_tilde) there; and a first-node eddy viscosity chosen
+ *    so the discrete wall shear stress is exactly u_tau^2.
  *
- * Zero-initialization produces an all-PERIODIC configuration, mirroring
- * ns_thermal_bc_config_t semantics.
+ * Zero-initialization produces an all-PERIODIC configuration with the log law
+ * (NS_WALL_LAW_LOG), mirroring ns_thermal_bc_config_t semantics.
  */
 typedef struct {
     bc_type_t left;    /**< BC type for x=0 face */
@@ -163,6 +188,7 @@ typedef struct {
     bc_dirichlet_values_t k_values;         /**< Fixed k per Dirichlet face */
     bc_dirichlet_values_t eps_values;       /**< Fixed epsilon per Dirichlet face */
     bc_dirichlet_values_t nu_tilde_values;  /**< Fixed nu_tilde per Dirichlet face */
+    ns_wall_law_t wall_law;                 /**< Law of the wall on NOSLIP faces */
 } ns_turbulence_bc_config_t;
 
 /**

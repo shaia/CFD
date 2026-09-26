@@ -872,7 +872,10 @@ Part 3: Grid Refinement (Explicit Euler, dt=5e-04, T=0.5)
 - Enabling k-ε or Spalart-Allmaras turbulence via `params.turb_model`
 - Configuring wall-function walls with `BC_TYPE_NOSLIP` faces in `params.turb_bc`
 - Calling `turbulence_init_uniform()` before time-stepping
-- Recovering the friction velocity u_τ via `turbulence_wall_u_tau()`
+- Choosing the law of the wall with `params.turb_bc.wall_law`: `NS_WALL_LAW_LOG`
+  (default) or `NS_WALL_LAW_SPALDING`
+- Measuring u_τ by inverting the log law at the first node, the same yardstick for
+  either wall law, independently of the wall function
 - Comparing the computed u+ profile against the log law
 - VTK output with the four turbulence scalar fields (`turbulent_kinetic_energy`,
   `dissipation_rate`, `nu_tilde`, `turbulent_viscosity`)
@@ -889,30 +892,34 @@ Part 3: Grid Refinement (Explicit Euler, dt=5e-04, T=0.5)
 
 **Run:**
 ```bash
-./turbulent_channel        # k-epsilon (default)
-./turbulent_channel ke     # k-epsilon explicitly
-./turbulent_channel sa     # Spalart-Allmaras
+./turbulent_channel              # k-epsilon, log-law wall function (defaults)
+./turbulent_channel ke           # k-epsilon explicitly
+./turbulent_channel sa           # Spalart-Allmaras
+./turbulent_channel ke spalding  # k-epsilon with Spalding's law of the wall
 ```
 
-**Expected output (k-ε):**
+**Expected output (k-ε, log law):**
 ```
-  Converged at step 23745 (KE residual 1.00e-06)
+  Converged at step 22815 (KE residual 9.89e-07)
 
-Recovered u_tau = 0.9724 (exact force balance: 1.0000)
+Log-law u_tau at the first node = 0.9709 (exact force balance: 1.0000)
 
         y+        u+   log-law       err
-      39.5     13.56     14.17      4.3%
-      79.0     15.71     15.86      0.9%
-     118.5     16.74     16.85      0.6%
+      39.5     14.09     14.17      0.5%
+      79.0     16.24     15.86      2.4%
+     118.5     17.26     16.85      2.5%
      ...
-     395.0     19.53     19.78      1.3%
+     395.0     20.08     19.78      1.5%
 
 Wrote turbulent_channel.vtk (open in ParaView to inspect nu_t/k).
 ```
-The SA variant converges similarly (u_τ ≈ 0.971, u+ within ~2% of the log law past the
-first node). The example recovers u_τ with `turbulence_wall_u_tau()`, the model's own
-Spalding's law, so the first node's 4.3% is the gap between Spalding's law and the log law at
-y+ = 39.5, not a model error. The validation test measures against the log law instead.
+The SA variant converges similarly (u_τ ≈ 0.967, u+ within ~5% of the log law).
+
+With `spalding` the k-ε run prints u_τ = 0.9409 and u+ up to 4.2% above the log law.
+Spalding's law sits below the log law for y+ < ~100, so the same wall shear needs a
+lower first-node speed (u_p 13.19 against 13.68). Against Moser-Kim-Mansour DNS, whose
+u+ is 14.27 at y+ = 39.5, that is 7.6% low where the log law is 4.1% low, which is why
+the log law is the default for first nodes at 30 ≤ y+ ≤ 100.
 
 ---
 

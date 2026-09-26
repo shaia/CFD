@@ -355,6 +355,8 @@ static void write_params(chk_io* io, const ns_solver_params_t* p) {
     put_bc_values(io, &p->turb_bc.k_values);
     put_bc_values(io, &p->turb_bc.eps_values);
     put_bc_values(io, &p->turb_bc.nu_tilde_values);
+    /* A resume that dropped it would switch the wall law back to the default */
+    put_i32(io, (int32_t)p->turb_bc.wall_law);
     /* pressure_bc: face types then the prescribed wall values */
     put_i32(io, (int32_t)p->pressure_bc.left);
     put_i32(io, (int32_t)p->pressure_bc.right);
@@ -490,6 +492,10 @@ static int chk_params_are_legal(const ns_solver_params_t* p) {
     if (p->viscous_scheme != NS_VISCOUS_SCHEME_EXPLICIT
         && p->viscous_scheme != NS_VISCOUS_SCHEME_BACKWARD_EULER
         && p->viscous_scheme != NS_VISCOUS_SCHEME_CRANK_NICOLSON) {
+        return 0;
+    }
+    if (p->turb_bc.wall_law != NS_WALL_LAW_LOG
+        && p->turb_bc.wall_law != NS_WALL_LAW_SPALDING) {
         return 0;
     }
     return 1;
@@ -645,6 +651,7 @@ cfd_status_t cfd_checkpoint_read(const char* path,
     get_bc_values(&io, &out_params->turb_bc.k_values);
     get_bc_values(&io, &out_params->turb_bc.eps_values);
     get_bc_values(&io, &out_params->turb_bc.nu_tilde_values);
+    out_params->turb_bc.wall_law = (ns_wall_law_t)get_i32(&io);
     out_params->pressure_bc.left = (poisson_wall_t)get_i32(&io);
     out_params->pressure_bc.right = (poisson_wall_t)get_i32(&io);
     out_params->pressure_bc.bottom = (poisson_wall_t)get_i32(&io);

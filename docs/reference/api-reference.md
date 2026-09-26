@@ -364,7 +364,7 @@ typedef enum {
 | `BC_TYPE_PERIODIC` | Periodic (default for all faces) |
 | `BC_TYPE_NEUMANN` | Zero-gradient (outlet) |
 | `BC_TYPE_DIRICHLET` | Fixed inlet values via per-face `k_values` / `eps_values` / `nu_tilde_values` |
-| `BC_TYPE_NOSLIP` | Log-law wall-function treatment |
+| `BC_TYPE_NOSLIP` | Wall-function treatment; law of the wall from `turb_bc.wall_law` (log law by default, or Spalding's) |
 
 ### Solver Statistics
 
@@ -790,15 +790,16 @@ faces as configured in `params->turb_bc`.  Also called automatically by the NS s
 ### turbulence_wall_u_tau
 
 ```c
-double turbulence_wall_u_tau(double u_p, double y_p, double nu);
+double turbulence_wall_u_tau(ns_wall_law_t law, double u_p, double y_p, double nu);
 ```
 
 Compute the friction velocity u_τ from the first-node parallel velocity `u_p`, wall-normal
-distance `y_p`, and kinematic viscosity `nu` by solving Spalding's law of the wall
-(safeguarded Newton iteration).  One smooth law covers the viscous sublayer (`u+ → y+`), the
-buffer layer and the log layer (`u+ → ln(y+)/κ + B`), so u_τ is continuous and increasing in
-`u_p`.  Returns 0 for non-positive inputs.  Used internally by the wall-function BC; exposed
-for testing and post-processing.
+distance `y_p`, and kinematic viscosity `nu` from the law of the wall `law`: `NS_WALL_LAW_LOG`
+(linear law below y+ = 11.06, where it meets the log law `u+ = ln(y+)/κ + B`, log law above)
+or `NS_WALL_LAW_SPALDING` (one smooth law through the sublayer, buffer and log layers).
+Either way u_τ is continuous and increasing in `u_p`.  Returns 0 for non-positive inputs or
+an unknown law.  This is the value the wall-function BC imposes for
+`params.turb_bc.wall_law`; exposed for testing and post-processing.
 
 ### VTK and CSV turbulence output
 
