@@ -507,8 +507,17 @@ every push to master, about 50 minutes):
   of 129×129 accuracy. Euler stays validated at 33×33. See
   `docs/validation/cavity-backends-validation.md`
 - [ ] Multi-Reynolds grid-convergence study (Richardson extrapolation)
-- [ ] Extended-time Taylor-Green decay-rate verification
-- [ ] Cross-architecture consistency (all backends identical within 0.1%)
+- [x] Extended-time Taylor-Green decay-rate verification — `test_taylor_green_decay.c` fits the
+  kinetic-energy decay rate over t = 10 (86% of the energy gone; t = 20 in full validation)
+  on every projection backend: within 0.04% of −4ν at 65×65, no early/late drift, second-order
+  convergence. It runs on one wall-bounded vortex cell. On the periodic vortex, the projection
+  (no periodic pressure solve) reaches 0.92 of the rate and the pseudo-compressible Euler/RK
+  solvers 0.42 on every grid. See `docs/validation/taylor-green-decay.md`
+- [x] Cross-architecture consistency (all backends identical within 0.1%) — `test_solver_architecture.c`
+  compares the whole field of AVX2, OpenMP and CUDA against scalar for projection and Euler
+  (cavity) and Euler, RK2, RK4 (periodic Taylor-Green). Closing it took a fix to the CUDA
+  Euler/RK boundary handling, which differed from the CPU solvers by 75% (Euler, cavity) and
+  0.18% (RK)
 - [ ] Memory + performance regression benchmarks
 
 **Other benchmarks (P2):**
@@ -522,8 +531,10 @@ every push to master, about 50 minutes):
 |------|---------|--------------|
 | Cavity Ghia Validation | 33×33, 5000 steps | 129×129; 50000 steps (Re=100), 60000 (Re=400), 100000 (Re=1000) |
 | Cavity Re=400 Stability | 25×25, 500 steps | 65×65, 20000 steps |
-| Grid Convergence | 17→25→33 | 33→65→129 |
+| Grid Convergence (monotone RMS vs Ghia) | 17→25→33 | 17→25→33 |
+| Grid Convergence (Richardson) | Re=100: 17/33/65 | Re=100: 33/65/129; Re=400: 65/129/257; Re=1000: 129/193/257 |
 | Taylor-Green Vortex | 32×32, 200 steps | 128×128, 10000 steps |
+| Taylor-Green decay rate | 65×65, t=10 | 129×129, t=20 |
 
 ### 6.2 Convergence Studies (P1)
 

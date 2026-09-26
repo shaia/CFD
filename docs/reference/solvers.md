@@ -879,7 +879,14 @@ p(x,y,t) = -0.25(cos(2x) + cos(2y))exp(-4νt)
 
 **Results:**
 - Velocity error < 1% at t=1.0
-- Energy decay matches analytical solution
+- Extended-time decay rate (projection, all backends): the fitted kinetic-energy decay rate
+  is within 0.04% of −4ν on a 65×65 grid over t = 10, while the energy falls by 86%, and
+  converges at second order. This is run on one vortex cell with walls, [0, π]², because
+  the projection's pressure solve has no periodic option. On the periodic vortex the
+  pseudo-compressible `explicit_euler`/`rk2`/`rk4` solvers reach only 0.42 of the decay
+  rate on every grid: their `dp/dt = −0.1 ρ ∇·u` pressure update cannot follow the
+  decaying vortex pressure. See
+  [taylor-green-decay.md](../validation/taylor-green-decay.md).
 
 **3D Extension:**
 

@@ -310,6 +310,8 @@ if(BUILD_TESTS)
 
     # Taylor-Green vortex validation test
     add_executable(test_taylor_green_vortex tests/validation/test_taylor_green_vortex.c)
+    add_executable(test_taylor_green_decay tests/validation/test_taylor_green_decay.c)
+    add_executable(test_cavity_richardson tests/validation/test_cavity_richardson.c)
 
     # Poiseuille flow validation test
     add_executable(test_poiseuille_flow tests/validation/test_poiseuille_flow.c)
@@ -334,6 +336,8 @@ if(BUILD_TESTS)
     # Release-only: also run the Ra=1e4 de Vahl Davis tier (finer grid, slower)
     if(CAVITY_FULL_VALIDATION)
         target_compile_definitions(test_natural_convection PRIVATE CAVITY_FULL_VALIDATION=1)
+        target_compile_definitions(test_taylor_green_decay PRIVATE CAVITY_FULL_VALIDATION=1)
+        target_compile_definitions(test_cavity_richardson PRIVATE CAVITY_FULL_VALIDATION=1)
     endif()
 
     # Mathematical accuracy tests
@@ -466,6 +470,8 @@ if(BUILD_TESTS)
     target_link_libraries(test_ghia_projection_omp PRIVATE CFD::Library unity)
     target_link_libraries(test_ghia_projection_gpu PRIVATE CFD::Library unity)
     target_link_libraries(test_taylor_green_vortex PRIVATE CFD::Library unity)
+    target_link_libraries(test_taylor_green_decay PRIVATE CFD::Library unity)
+    target_link_libraries(test_cavity_richardson PRIVATE CFD::Library unity)
     target_link_libraries(test_taylor_green_3d PRIVATE CFD::Library unity)
     target_link_libraries(test_quiescent_3d PRIVATE CFD::Library unity)
     target_link_libraries(test_poiseuille_flow PRIVATE CFD::Library unity)
@@ -618,10 +624,24 @@ if(BUILD_TESTS)
         set_tests_properties(CavityBackend_Consistency PROPERTIES
             DEPENDS "CavityBackend_ProjectionAvx2;CavityBackend_ProjectionOmp;CavityBackend_ProjectionGpu"
         )
+
+        # Richardson grid-convergence study, one test per Reynolds number so they
+        # run in parallel. Re=400/1000 need 257x257 grids to be in the asymptotic
+        # range, which is what makes them the longest tests here (ROADMAP 6.1).
+        add_test(NAME CavityRichardson_Re100 COMMAND test_cavity_richardson re100)
+        add_test(NAME CavityRichardson_Re400 COMMAND test_cavity_richardson re400)
+        add_test(NAME CavityRichardson_Re1000 COMMAND test_cavity_richardson re1000)
+        set_tests_properties(
+            CavityRichardson_Re100 CavityRichardson_Re400 CavityRichardson_Re1000
+            PROPERTIES TIMEOUT 21600 LABELS "validation"
+        )
     else()
         # CI mode: run all sequentially (fast enough at 33x33)
         add_test(NAME CavityBackendsTest COMMAND test_cavity_backends)
         set_tests_properties(CavityBackendsTest PROPERTIES LABELS "validation")
+        # Richardson study at Re=100 on 17/33/65: machinery, monotone convergence, order
+        add_test(NAME CavityRichardsonTest COMMAND test_cavity_richardson)
+        set_tests_properties(CavityRichardsonTest PROPERTIES LABELS "validation")
     endif()
 
     # Ghia validation tests - per architecture
@@ -636,6 +656,8 @@ if(BUILD_TESTS)
 
     # Taylor-Green vortex validation test
     add_test(NAME TaylorGreenVortexTest COMMAND test_taylor_green_vortex)
+    # Extended-time decay rate: fitted over most of the energy decay (ROADMAP 6.1)
+    add_test(NAME TaylorGreenDecayTest COMMAND test_taylor_green_decay)
 
     # 3D validation tests
     add_test(NAME TaylorGreen3DTest COMMAND test_taylor_green_3d)
@@ -720,6 +742,7 @@ if(BUILD_TESTS)
         GhiaProjectionOmpTest
         GhiaProjectionGpuTest
         TaylorGreenVortexTest
+        TaylorGreenDecayTest
         TaylorGreen3DTest
         Quiescent3DTest
         PoiseuilleFlowTest
