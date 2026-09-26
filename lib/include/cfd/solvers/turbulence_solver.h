@@ -25,9 +25,8 @@
  * (the latter is absorbed into a modified pressure, standard practice).
  *
  * Wall functions (faces marked BC_TYPE_NOSLIP in params->turb_bc): u_tau from
- * Spalding's law of the wall, which is linear (u+ = y+) in the viscous
- * sublayer, logarithmic (u+ = ln(y+)/kappa + B) in the log layer, and smooth
- * through the buffer layer between them.
+ * the law of the wall in params->turb_bc.wall_law -- the linear/log law
+ * (default) or Spalding's smooth law; see ns_wall_law_t.
  */
 
 #ifndef CFD_TURBULENCE_SOLVER_H
@@ -66,9 +65,10 @@ CFD_LIBRARY_EXPORT cfd_status_t turbulence_step_explicit(flow_field* field, cons
  * Apply per-face turbulence boundary conditions, including wall functions.
  *
  * Face types (params->turb_bc): PERIODIC (default), NEUMANN (zero-gradient),
- * DIRICHLET (fixed values), NOSLIP (log-law wall function: sets equilibrium
- * k/eps or nu_tilde at the first interior node and a wall-node nu_t chosen so
- * the discrete wall shear matches the log law).
+ * DIRICHLET (fixed values), NOSLIP (wall function on the law in
+ * params->turb_bc.wall_law: sets equilibrium k/eps or nu_tilde at the first
+ * interior node and a first-node nu_t chosen so the discrete wall shear is
+ * exactly u_tau^2, with u_tau from turbulence_wall_u_tau()).
  *
  * Faces are applied in the order left, right, bottom, top; later faces
  * overwrite shared corner cells (same precedence as energy_apply_thermal_bcs).
@@ -76,7 +76,8 @@ CFD_LIBRARY_EXPORT cfd_status_t turbulence_step_explicit(flow_field* field, cons
  * No-op returning CFD_SUCCESS when params->turb_model == TURB_MODEL_NONE.
  *
  * @return CFD_SUCCESS, CFD_ERROR_INVALID for NULL args / unsupported face
- *         types / too-small grids, CFD_ERROR_UNSUPPORTED for 3D grids.
+ *         types / an unknown turb_bc.wall_law / too-small grids,
+ *         CFD_ERROR_UNSUPPORTED for 3D grids.
  */
 CFD_LIBRARY_EXPORT cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
                                                      const ns_solver_params_t* params);
@@ -94,18 +95,25 @@ CFD_LIBRARY_EXPORT cfd_status_t turbulence_init_uniform(flow_field* field,
                                                         double nu_tilde0);
 
 /**
- * Solve Spalding's law of the wall for the friction velocity u_tau.
+ * Friction velocity u_tau from a law of the wall -- the value the wall function
+ * imposes for that law.
  *
  * Given the wall-parallel speed u_p at wall distance y_p and kinematic
  * viscosity nu, returns u_tau such that u+ = u_p/u_tau and y+ = u_tau*y_p/nu
- * satisfy
- *   y+ = u+ + e^{-kappa B} [e^{kappa u+} - 1 - kappa u+ - (kappa u+)^2/2 - (kappa u+)^3/6]
- * (kappa = 0.41, B = 5.2; safeguarded Newton iteration). One smooth law covers
- * the viscous sublayer (u+ -> y+), buffer layer and log layer
- * (u+ -> ln(y+)/kappa + B), so u_tau is continuous and increasing in u_p.
- * Returns 0.0 for non-positive inputs. Exposed for testing and diagnostics.
+ * satisfy the selected law (kappa = 0.41, B = 5.2):
+ *
+ *  - NS_WALL_LAW_LOG: u+ = y+ while u_p*y_p/nu <= y+_c^2, else
+ *    u+ = ln(y+)/kappa + B (Newton iteration), with y+_c = 11.06 where the two
+ *    meet, so u_tau is continuous in u_p.
+ *  - NS_WALL_LAW_SPALDING:
+ *      y+ = u+ + e^{-kappa B} [e^{kappa u+} - 1 - kappa u+ - (kappa u+)^2/2 - (kappa u+)^3/6]
+ *    (safeguarded Newton iteration), smooth through all three layers.
+ *
+ * Both are increasing in u_p. Returns 0.0 for non-positive inputs or an
+ * unknown law. See ns_wall_law_t for which to choose.
  */
-CFD_LIBRARY_EXPORT double turbulence_wall_u_tau(double u_p, double y_p, double nu);
+CFD_LIBRARY_EXPORT double turbulence_wall_u_tau(ns_wall_law_t law, double u_p, double y_p,
+                                                double nu);
 
 #ifdef __cplusplus
 }

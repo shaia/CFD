@@ -99,6 +99,7 @@ static ns_solver_params_t make_nondefault_params(void) {
     p.convection_scheme = NS_CONVECTION_SCHEME_UPWIND;
     p.turb_nut_correction = NS_NUT_CORRECTION_S_STAR;
     p.viscous_scheme = NS_VISCOUS_SCHEME_CRANK_NICOLSON;
+    p.turb_bc.wall_law = NS_WALL_LAW_SPALDING;
     p.turb_bc.left = BC_TYPE_DIRICHLET;
     p.turb_bc.right = BC_TYPE_NEUMANN;
     p.turb_bc.bottom = BC_TYPE_NOSLIP;
@@ -206,6 +207,7 @@ static void assert_params_equal(const ns_solver_params_t* a, const ns_solver_par
     TEST_ASSERT_EQUAL_INT(a->convection_scheme, b->convection_scheme);
     TEST_ASSERT_EQUAL_INT(a->turb_nut_correction, b->turb_nut_correction);
     TEST_ASSERT_EQUAL_INT(a->viscous_scheme, b->viscous_scheme);
+    TEST_ASSERT_EQUAL_INT(a->turb_bc.wall_law, b->turb_bc.wall_law);
     TEST_ASSERT_EQUAL_INT(a->turb_bc.left, b->turb_bc.left);
     TEST_ASSERT_EQUAL_INT(a->turb_bc.right, b->turb_bc.right);
     TEST_ASSERT_EQUAL_INT(a->turb_bc.bottom, b->turb_bc.bottom);
@@ -430,6 +432,17 @@ void test_reject_unknown_nut_correction(void) {
     v.viscous_scheme = (ns_viscous_scheme_t)7;
     TEST_ASSERT_EQUAL(CFD_SUCCESS,
                       cfd_checkpoint_write(CK_PATH, g, f, &v, 0.0, "rk2", NULL, NULL));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      cfd_checkpoint_read(CK_PATH, &g2, &f2, &p2, NULL, name, sizeof(name),
+                                          NULL, 0, NULL, 0));
+    TEST_ASSERT_NULL(g2);
+    TEST_ASSERT_NULL(f2);
+
+    /* ...and turb_bc.wall_law */
+    ns_solver_params_t w = ns_solver_params_default();
+    w.turb_bc.wall_law = (ns_wall_law_t)7;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      cfd_checkpoint_write(CK_PATH, g, f, &w, 0.0, "rk2", NULL, NULL));
     TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
                       cfd_checkpoint_read(CK_PATH, &g2, &f2, &p2, NULL, name, sizeof(name),
                                           NULL, 0, NULL, 0));

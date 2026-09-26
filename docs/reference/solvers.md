@@ -974,21 +974,34 @@ Wall distance d is computed on the fly from faces marked `BC_TYPE_NOSLIP` in `tu
 
 ### Wall Functions
 
-Log-law wall treatment is applied at every face marked `BC_TYPE_NOSLIP` in `turb_bc`.
+Wall-function treatment is applied at every face marked `BC_TYPE_NOSLIP` in `turb_bc`.
 
-**Spalding's law of the wall:**
+**Law of the wall** (`params.turb_bc.wall_law`, κ = 0.41, B = 5.2 for both):
 
-```
-y+ = u+ + e^(-κB) [e^(κu+) - 1 - κu+ - (κu+)²/2 - (κu+)³/6],    κ = 0.41,  B = 5.2
-```
+| `ns_wall_law_t` | Law | Use when |
+|---|---|---|
+| `NS_WALL_LAW_LOG` (0, default) | u+ = y+ below y+_c, u+ = (1/κ) ln(y+) + B above | First node at y+ ≳ 20, including the usual wall-function range 30–100 |
+| `NS_WALL_LAW_SPALDING` | y+ = u+ + e^(-κB) [e^(κu+) - 1 - κu+ - (κu+)²/2 - (κu+)³/6] | The first node may sit below y+ ≈ 17 (sublayer or lower buffer layer) |
 
-It is linear (u+ = y+) in the viscous sublayer and approaches the log law
-u+ = (1/κ) ln(y+) + B far from the wall, blending smoothly through the buffer layer. Below
-y+ ≈ 100 it sits under the log law: u_τ for a given u_p is 3.1% above the log-law value at
-y+ = 40, 0.9% at y+ = 100. The friction velocity u_τ is recovered by safeguarded Newton
-iteration on u+ (`turbulence_wall_u_tau()`). An earlier linear/log switch at y+ = 11.63 made
-u_τ jump 3.3% there (wall shear 6.6%, ε 10%), because with these constants the two laws
-cross at y+ = 11.06.
+The log law switches branch at y+_c = 11.06, where the linear and log laws meet, so u_τ is
+continuous and only its slope changes. The switch is taken on the wall Reynolds number
+u_p y_p / ν ≤ y+_c², which is known before u_τ. It used to sit at y+ = 11.63, where the laws
+do not meet, and u_τ jumped 3.3% there (wall shear 6.6%, ε 10%).
+
+Spalding's law is one smooth curve through the sublayer, buffer and log layers, solved by
+safeguarded Newton iteration on u+. Below y+ ≈ 100 it sits under the log law: u_τ for a
+given u_p is 3.1% above the log-law value at y+ = 40, 0.9% at y+ = 100.
+
+Which is closer to reality depends on where the first node sits. Against Moser-Kim-Mansour
+channel DNS at Re_τ ≈ 395:
+
+| y+ | 5 | 11 | 15 | 20 | 30 | 39.5 | 100 |
+|---|---|---|---|---|---|---|---|
+| Log law vs DNS | +3.7% | +22.5% | +10.8% | +4.2% | 0.0% | −0.7% | −0.6% |
+| Spalding vs DNS | +1.2% | −1.7% | −3.9% | −5.2% | −5.2% | −4.4% | −1.7% |
+
+Spalding's law is closer up to y+ ≈ 17, the log law from about y+ = 20 on.
+`turbulence_wall_u_tau(law, u_p, y_p, ν)` returns the u_τ each law imposes.
 
 **Equilibrium values at the first interior node (distance y_p from the wall):**
 
@@ -1033,26 +1046,19 @@ between all available backends.
 u_τ is recovered from the first-node velocity by inverting the pure log law, independently
 of the model's own wall law, so the yardstick does not move with the model it grades.
 
-**k-ε results:**
+**Results** (u_τ error vs the exact 1; u+ error vs the log law):
 
-| Quantity | Value | Error |
-|----------|-------|-------|
-| u_τ (recovered) | 0.941 | 5.9% |
-| u+ at y+ = 39.5 | — | 1.0% vs log law |
-| u+ at y+ = 79   | — | 2.4% vs log law |
+| Model | Wall law | u_τ (recovered) | u_τ error | u+ at y+ = 39.5 | u+ at y+ = 79 |
+|-------|----------|-----------------|-----------|-----------------|---------------|
+| k-ε | log (default) | 0.971 | 2.9% | 0.5% | 2.4% |
+| SA  | log (default) | 0.967 | 3.3% | 0.6% | 3.5% |
+| k-ε | Spalding | 0.941 | 5.9% | 1.0% | 2.4% |
+| SA  | Spalding | 0.940 | 6.0% | 1.1% | 3.4% |
 
-**SA results:**
-
-| Quantity | Value | Error |
-|----------|-------|-------|
-| u_τ (recovered) | 0.940 | 6.0% |
-| u+ at y+ ≈ 39.5 | — | 1.1% vs log law |
-| u+ at y+ ≈ 79   | — | 3.4% vs log law |
-
-With the earlier linear/log wall function the u_τ errors were 2.9% (k-ε) and 3.1% (SA).
 Spalding's law sits below the log law at the first node (y+ = 39.5), imposing a 3.1% higher
 u_τ for a given u_p, so the steady first-node velocity drops 3.6% and the log-law yardstick
-reads it as a larger u_τ deficit.
+reads it as a larger u_τ deficit. The test runs the default. The SA log-law figure was
+recorded as 3.1% before, from a Debug build; this Release build reads 3.3%.
 
 Source: `tests/validation/test_turbulent_channel.c` (ctest label `validation`).
 

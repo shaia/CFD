@@ -4,20 +4,22 @@
  * Fully-developed turbulent channel flow at a prescribed friction Reynolds
  * number Re_tau, driven by a constant streamwise body force f_x = u_tau^2/delta
  * (so the exact steady friction velocity is u_tau = 1 in these units):
- *   - periodic in x, wall-function walls (Spalding's law) at y = 0 and y = 2*delta
+ *   - periodic in x, wall-function walls at y = 0 and y = 2*delta
  *   - RANS closure: standard k-epsilon or Spalart-Allmaras
  *
  * This example demonstrates:
  *   - Enabling a turbulence model via params.turb_model
  *   - Configuring wall-function walls via params.turb_bc (BC_TYPE_NOSLIP faces)
+ *   - Choosing the law of the wall via params.turb_bc.wall_law
  *   - Initializing the turbulence fields with turbulence_init_uniform
  *   - Comparing the computed u+ profile against the log law
  *
  * Uses the direct solver interface (registry + solver_step) with a fixed time
  * step; run_simulation_step is not used because it overrides params.dt.
  *
- * Usage: turbulent_channel [model]
- *   model = "ke" (k-epsilon, default) or "sa" (Spalart-Allmaras)
+ * Usage: turbulent_channel [model] [wall-law]
+ *   model    = "ke" (k-epsilon, default) or "sa" (Spalart-Allmaras)
+ *   wall-law = "log" (linear/log law, default) or "spalding"
  */
 
 #include "cfd/boundary/boundary_conditions.h"
@@ -34,6 +36,28 @@
 
 #define KAPPA 0.41
 #define LOG_B 5.2
+
+/* u_tau that puts (y_p, u_p) exactly on the log law, by Newton iteration.
+ * This is the measuring instrument for the u+ table, so it is deliberately
+ * not turbulence_wall_u_tau(): with the "spalding" wall law the wall function
+ * sits below the log law for y+ < ~100 (3% in u_tau at y+ = 40), and reading
+ * u_tau back through the law being tested would shift every u+ by that amount.
+ * With one fixed yardstick, the two wall laws can be compared directly. */
+static double log_law_u_tau(double u_p, double y_p, double nu) {
+    double ut = sqrt(nu * u_p / y_p);
+    for (int it = 0; it < 50; it++) {
+        double yplus = ut * y_p / nu;
+        double f = ut * (log(yplus) / KAPPA + LOG_B) - u_p;
+        double fp = (log(yplus) + 1.0) / KAPPA + LOG_B;
+        double next = ut - f / fp;
+        int converged = fabs(next - ut) < 1e-12 * ut;
+        ut = next;
+        if (converged) {
+            break;
+        }
+    }
+    return ut;
+}
 
 /* Periodic in x, no-slip walls in y (boundary values set directly; the
  * projection solver preserves caller-set boundary values). */
@@ -89,12 +113,19 @@ int main(int argc, char* argv[]) {
         model = TURB_MODEL_SPALART_ALLMARAS;
         model_name = "Spalart-Allmaras";
     }
+    ns_wall_law_t wall_law = NS_WALL_LAW_LOG;
+    const char* wall_law_name = "log law";
+    if (argc > 2 && strcmp(argv[2], "spalding") == 0) {
+        wall_law = NS_WALL_LAW_SPALDING;
+        wall_law_name = "Spalding";
+    }
 
     printf("Turbulent Channel Flow (RANS + wall functions)\n");
     printf("===============================================\n");
     printf("Grid:       %zu x %zu\n", nx, ny);
     printf("Re_tau:     %.1f\n", Re_tau);
     printf("Model:      %s\n", model_name);
+    printf("Wall law:   %s\n", wall_law_name);
     printf("First-node y+: %.1f (wall-function target: 30-100)\n\n",
            (H / (double)(ny - 1)) / nu);
 
@@ -132,6 +163,7 @@ int main(int argc, char* argv[]) {
     params.turb_model = model;
     params.turb_bc.bottom = BC_TYPE_NOSLIP; /* wall-function wall */
     params.turb_bc.top = BC_TYPE_NOSLIP;    /* left/right stay PERIODIC */
+    params.turb_bc.wall_law = wall_law;
 
     /* Turbulence initial condition: ~5% intensity of the bulk velocity */
     double k0 = 1.5 * pow(0.05 * u_bulk0, 2.0);
@@ -182,9 +214,10 @@ int main(int argc, char* argv[]) {
     size_t i_mid = nx / 2;
     double y_p = g->y[1] - g->y[0];
     double u_p = fabs(field->u[nx + i_mid]);
-    double u_tau = turbulence_wall_u_tau(u_p, y_p, nu);
+    double u_tau = log_law_u_tau(u_p, y_p, nu);
 
-    printf("\nRecovered u_tau = %.4f (exact force balance: 1.0000)\n\n", u_tau);
+    printf("\nLog-law u_tau at the first node = %.4f (exact force balance: 1.0000)\n\n",
+           u_tau);
     printf("  %8s  %8s  %8s  %8s\n", "y+", "u+", "log-law", "err");
     for (size_t j = 1; j <= (ny - 1) / 2; j++) {
         double yplus = g->y[j] / nu; /* u_tau = 1 in these units */
