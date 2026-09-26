@@ -1,335 +1,336 @@
 /**
  * @file test_solver_architecture.c
- * @brief Cross-architecture solver consistency tests
+ * @brief Cross-architecture consistency: every backend of a solver family must
+ *        reproduce the scalar reference within 0.1% (ROADMAP 6.1)
  *
- * This test file verifies that solver backend implementations (CPU scalar,
- * AVX2/SIMD, OpenMP, GPU) produce consistent results for the same problem.
+ * Each case runs the scalar solver and every other backend of the same family
+ * (AVX2/SIMD, OpenMP, CUDA) from the same initial state, then compares the WHOLE
+ * field, not a probe point:
  *
- * VALIDATION REQUIREMENTS:
- * 1. Euler backends MUST produce identical results (ARCH_CONSISTENCY_TOL = 0.002)
- *    - Same explicit time integration, deterministic operations
+ *   max|u_b - u_ref| / max|u_ref|   and the same for v      < 0.1%
+ *   max|p_b - p_ref| / range(p_ref), pressure mean removed  < 0.1%
  *
- * 2. Projection backends produce consistent results (ARCH_PROJECTION_CONSISTENCY_TOL = 0.01)
- *    - CPU uses CG Poisson solver, AVX2/OMP/GPU use Red-Black SOR
- *    - Different Poisson solvers converge to slightly different pressure fields
- *    - Small velocity differences are expected and acceptable
+ * Pressure is compared with its mean removed because the zero-gradient pressure
+ * Poisson operator fixes it only up to a constant. The four corner nodes are
+ * left out: no five-point stencil reads them, so no backend is obliged to agree
+ * on them.
  *
- * 3. All non-optional backends must succeed
+ * Each family is run on the problem its solvers are built for:
  *
- * If tests fail, the BACKEND implementation needs fixing, not the tolerance.
+ *   - Projection: the 33x33 lid-driven cavity. Its pressure solve has walls, not
+ *     periodicity, so a periodic problem is outside its contract.
+ *   - Explicit Euler: the same cavity (its stencil reads the ghost cells and it
+ *     keeps the caller's velocity boundaries), and a periodic Taylor-Green vortex.
+ *   - RK2 / RK4: a periodic Taylor-Green vortex only. They wrap the stencil and
+ *     make every field periodic after the step, so a lid never enters them.
+ *
+ * The Taylor-Green grid spans [-h, 2pi] with h = 2pi/(n-2): the periodic ghost
+ * copy u[0] = u[n-2] then has period exactly 2pi.
+ *
+ * A backend that is not compiled in is skipped; a family with no backend to
+ * compare against is ignored. A mismatch fails the test: fix the backend, not
+ * the tolerance.
  */
 
-#include "cavity_reference_data.h"
+#include "../test_macros.h"
 #include "lid_driven_cavity_common.h"
+
+#include "cfd/core/indexing.h"
+
+#include <string.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 void setUp(void) {}
 void tearDown(void) {}
 
 /* ============================================================================
- * TEST CONFIGURATION
+ * CONFIGURATION
  * ============================================================================ */
 
-/* Minimal configuration for architecture consistency checks
- *
- * Note: Explicit Euler solver uses a conservative dt limit (0.0001) internally
- * for stability. We use more steps for Euler tests to ensure non-zero flow
- * develops at the center point, providing meaningful consistency validation.
- * With dt=0.0001 and 5000 steps, we get 0.5s of simulation time.
- */
-#define ARCH_TEST_STEPS_EULER  5000  /* Euler needs many steps due to internal dt limit */
-#define ARCH_TEST_STEPS_PROJ   50    /* Projection uses full dt, fewer steps needed */
-#define ARCH_TEST_DT           0.005
-#define ARCH_GRID_SIZE         9
+/** Backends must agree with the scalar reference to 0.1% (ROADMAP 6.1). */
+#define ARCH_CONSISTENCY_TOL 1e-3
 
-/* Tolerance for backend consistency (must match exactly) */
-#define ARCH_CONSISTENCY_TOL 0.002
+#define ARCH_CAVITY_N  33
+#define ARCH_CAVITY_RE 100.0
+/* t = 1.0: the primary vortex has formed, so the whole field is in play */
+#define ARCH_PROJ_STEPS 2000
+#define ARCH_PROJ_DT    0.0005
+/* Explicit Euler caps its own step at 1e-4 */
+#define ARCH_EULER_STEPS 5000
+#define ARCH_EULER_DT    0.0001
 
-/* Wider tolerance for projection backends: CPU uses CG Poisson solver while
- * AVX2/OMP/GPU use Red-Black SOR. Different Poisson solvers converge to
- * slightly different pressure fields, causing small velocity differences.
- * Both produce correct results within their solver tolerances. */
-#define ARCH_PROJECTION_CONSISTENCY_TOL 0.01
+#define ARCH_TG_N        34
+#define ARCH_TG_NU       0.05
+#define ARCH_TG_STEPS    400
+#define ARCH_TG_DT_RK    0.02 /* t = 8: KE has decayed by e^-1.6 */
+#define ARCH_TG_DT_EULER 0.0001
 
-/* ============================================================================
- * SOLVER RESULT STRUCTURE
- * ============================================================================
- * Uses cavity_sim_result_t from lid_driven_cavity_common.h as the underlying
- * type. The solver_result_t typedef provides backward compatibility.
- */
+typedef enum { ARCH_CASE_CAVITY, ARCH_CASE_TAYLOR_GREEN } arch_case_t;
 
-typedef cavity_sim_result_t solver_result_t;
-
-/* Helper: check if solver result indicates the backend is not compiled in.
- * Only returns true for genuine unavailability (SIMD/OMP/GPU not enabled).
- * Runtime failures (divergence, invalid setup) return false so they
- * properly fail the test instead of being silently skipped. */
-static int solver_not_available(const solver_result_t* r) {
-    return r->solver_unavailable;
-}
+typedef struct {
+    double du; /* max|du| / max|u_ref| */
+    double dv; /* max|dv| / max|v_ref| */
+    double dp; /* max|dp| / range(p_ref), both means removed */
+} field_diff_t;
 
 /* ============================================================================
- * Run simulation with specific solver
- * ============================================================================
- * Thin wrapper around cavity_run_with_solver() with fixed Re=100, lid_vel=1.0
- */
-
-static solver_result_t run_solver(const char* solver_type,
-                                   size_t nx, size_t ny,
-                                   int max_steps, double dt) {
-    return cavity_run_with_solver(solver_type, nx, ny, 100.0, 1.0, max_steps, dt);
-}
-
-/* ============================================================================
- * TEST: Explicit Euler - CPU, AVX2, OpenMP must match exactly
+ * FIELD COMPARISON
  * ============================================================================ */
 
-void test_euler_cpu_avx2_consistency(void) {
-    printf("\n    Comparing Explicit Euler: CPU vs AVX2/SIMD\n");
-
-    solver_result_t cpu = run_solver(
-        NS_SOLVER_TYPE_EXPLICIT_EULER,
-        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS_EULER, ARCH_TEST_DT
-    );
-    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Euler must succeed");
-
-    solver_result_t avx2 = run_solver(
-        NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
-        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS_EULER, ARCH_TEST_DT
-    );
-
-    /* Skip test if AVX2 solver is not available */
-    if (solver_not_available(&avx2)) {
-        printf("      AVX2 solver not available, skipping\n");
-        TEST_IGNORE_MESSAGE("AVX2 solver not available (AVX2 not enabled)");
-    }
-
-    TEST_ASSERT_TRUE_MESSAGE(avx2.success, "AVX2 Euler must succeed");
-
-    double diff = fabs(cpu.u_at_center - avx2.u_at_center);
-    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
-    printf("      AVX2 u_center: %.6f\n", avx2.u_at_center);
-    printf("      Difference:    %.6f\n", diff);
-
-    TEST_ASSERT_TRUE_MESSAGE(diff < ARCH_CONSISTENCY_TOL,
-        "CPU and AVX2 Euler must produce identical results");
+static int is_corner(size_t i, size_t j, size_t nx, size_t ny) {
+    return (i == 0 || i == nx - 1) && (j == 0 || j == ny - 1);
 }
 
-void test_euler_cpu_omp_consistency(void) {
-    printf("\n    Comparing Explicit Euler: CPU vs OpenMP\n");
+static field_diff_t compare_fields(const flow_field* ref, const flow_field* b) {
+    size_t nx = ref->nx, ny = ref->ny;
+    double p_ref_mean = 0.0, p_b_mean = 0.0;
+    size_t count = 0;
+    for (size_t j = 0; j < ny; j++) {
+        for (size_t i = 0; i < nx; i++) {
+            if (is_corner(i, j, nx, ny))
+                continue;
+            p_ref_mean += ref->p[IDX_2D(i, j, nx)];
+            p_b_mean += b->p[IDX_2D(i, j, nx)];
+            count++;
+        }
+    }
+    p_ref_mean /= (double)count;
+    p_b_mean /= (double)count;
 
-    solver_result_t cpu = run_solver(
-        NS_SOLVER_TYPE_EXPLICIT_EULER,
-        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS_EULER, ARCH_TEST_DT
-    );
-    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Euler must succeed");
-
-    solver_result_t omp = run_solver(
-        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
-        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS_EULER, ARCH_TEST_DT
-    );
-
-    /* Skip test if OMP solver is not available */
-    if (solver_not_available(&omp)) {
-        printf("      OpenMP solver not available, skipping\n");
-        TEST_IGNORE_MESSAGE("OpenMP solver not available (OpenMP not enabled)");
+    double u_max = 0.0, v_max = 0.0, du = 0.0, dv = 0.0, dp = 0.0;
+    double p_lo = INFINITY, p_hi = -INFINITY;
+    for (size_t j = 0; j < ny; j++) {
+        for (size_t i = 0; i < nx; i++) {
+            if (is_corner(i, j, nx, ny))
+                continue;
+            size_t idx = IDX_2D(i, j, nx);
+            double p_ref = ref->p[idx] - p_ref_mean;
+            u_max = fmax(u_max, fabs(ref->u[idx]));
+            v_max = fmax(v_max, fabs(ref->v[idx]));
+            du = fmax(du, fabs(b->u[idx] - ref->u[idx]));
+            dv = fmax(dv, fabs(b->v[idx] - ref->v[idx]));
+            dp = fmax(dp, fabs((b->p[idx] - p_b_mean) - p_ref));
+            p_lo = fmin(p_lo, p_ref);
+            p_hi = fmax(p_hi, p_ref);
+        }
     }
 
-    TEST_ASSERT_TRUE_MESSAGE(omp.success, "OMP Euler must succeed");
-
-    double diff = fabs(cpu.u_at_center - omp.u_at_center);
-    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
-    printf("      OMP  u_center: %.6f\n", omp.u_at_center);
-    printf("      Difference:    %.6f\n", diff);
-
-    TEST_ASSERT_TRUE_MESSAGE(diff < ARCH_CONSISTENCY_TOL,
-        "CPU and OpenMP Euler must produce identical results");
+    field_diff_t d;
+    d.du = du / u_max;
+    d.dv = dv / v_max;
+    d.dp = dp / (p_hi - p_lo);
+    return d;
 }
 
 /* ============================================================================
- * TEST: Projection - CPU, AVX2, OpenMP must match exactly
+ * RUNNERS
  * ============================================================================ */
 
-void test_projection_cpu_avx2_consistency(void) {
-    printf("\n    Comparing Projection: CPU vs AVX2/SIMD\n");
+typedef struct {
+    flow_field* field; /* owned by ctx or standalone; release with arch_run_free */
+    cavity_context_t* ctx;
+    grid* g;
+    int unavailable;
+    char error_msg[256];
+} arch_run_t;
 
-    solver_result_t cpu = run_solver(
-        NS_SOLVER_TYPE_PROJECTION,
-        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
-    );
-    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Projection must succeed");
-
-    solver_result_t avx2 = run_solver(
-        NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
-        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
-    );
-
-    /* Skip test if AVX2 solver is not available */
-    if (solver_not_available(&avx2)) {
-        printf("      AVX2 solver not available, skipping\n");
-        TEST_IGNORE_MESSAGE("AVX2 solver not available (AVX2 not enabled)");
+static void arch_run_free(arch_run_t* r) {
+    if (r->ctx) {
+        cavity_context_destroy(r->ctx);
+    } else {
+        if (r->field)
+            flow_field_destroy(r->field);
+        if (r->g)
+            grid_destroy(r->g);
     }
-
-    TEST_ASSERT_TRUE_MESSAGE(avx2.success, "AVX2 Projection must succeed");
-
-    double diff = fabs(cpu.u_at_center - avx2.u_at_center);
-    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
-    printf("      AVX2 u_center: %.6f\n", avx2.u_at_center);
-    printf("      Difference:    %.6f\n", diff);
-
-    TEST_ASSERT_TRUE_MESSAGE(diff < ARCH_PROJECTION_CONSISTENCY_TOL,
-        "CPU and AVX2 Projection must produce consistent results");
+    memset(r, 0, sizeof(*r));
 }
 
-void test_projection_cpu_omp_consistency(void) {
-    printf("\n    Comparing Projection: CPU vs OpenMP\n");
-
-    solver_result_t cpu = run_solver(
-        NS_SOLVER_TYPE_PROJECTION,
-        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
-    );
-    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Projection must succeed");
-
-    solver_result_t omp = run_solver(
-        NS_SOLVER_TYPE_PROJECTION_OMP,
-        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
-    );
-
-    /* Skip test if OMP solver is not available */
-    if (solver_not_available(&omp)) {
-        printf("      OpenMP solver not available, skipping\n");
-        TEST_IGNORE_MESSAGE("OpenMP solver not available (OpenMP not enabled)");
+static arch_run_t run_cavity(const char* type, int steps, double dt) {
+    arch_run_t r = {0};
+    cavity_sim_result_t sim = cavity_run_with_solver_ctx(type, ARCH_CAVITY_N, ARCH_CAVITY_N,
+                                                         ARCH_CAVITY_RE, 1.0, steps, dt, &r.ctx);
+    r.unavailable = sim.solver_unavailable;
+    if (!sim.success) {
+        snprintf(r.error_msg, sizeof(r.error_msg), "%s", sim.error_msg);
+        return r;
     }
-
-    TEST_ASSERT_TRUE_MESSAGE(omp.success, "OMP Projection must succeed");
-
-    double diff = fabs(cpu.u_at_center - omp.u_at_center);
-    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
-    printf("      OMP  u_center: %.6f\n", omp.u_at_center);
-    printf("      Difference:    %.6f\n", diff);
-
-    TEST_ASSERT_TRUE_MESSAGE(diff < ARCH_PROJECTION_CONSISTENCY_TOL,
-        "CPU and OpenMP Projection must produce consistent results");
+    r.field = r.ctx->field;
+    return r;
 }
 
-/* ============================================================================
- * TEST: GPU backend consistency
- * ============================================================================ */
+/* Periodic Taylor-Green vortex, u = cos x sin y, v = -sin x cos y, advanced with
+ * the default momentum source switched off. */
+static arch_run_t run_taylor_green(const char* type, int steps, double dt) {
+    arch_run_t r = {0};
+    size_t n = ARCH_TG_N;
+    double h = 2.0 * M_PI / (double)(n - 2);
 
-void test_projection_cpu_gpu_consistency(void) {
-    printf("\n    Comparing Projection: CPU vs GPU\n");
-
-    solver_result_t cpu = run_solver(
-        NS_SOLVER_TYPE_PROJECTION,
-        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
-    );
-    TEST_ASSERT_TRUE_MESSAGE(cpu.success, "CPU Projection must succeed");
-
-    solver_result_t gpu = run_solver(
-        NS_SOLVER_TYPE_PROJECTION_GPU,
-        ARCH_GRID_SIZE, ARCH_GRID_SIZE,
-        ARCH_TEST_STEPS_PROJ, ARCH_TEST_DT
-    );
-
-    /* Skip test if GPU solver is not available */
-    if (solver_not_available(&gpu)) {
-        printf("      GPU solver not available, skipping\n");
-        TEST_IGNORE_MESSAGE("GPU solver not available (CUDA not enabled or no GPU)");
+    r.g = grid_create(n, n, 1, -h, 2.0 * M_PI, -h, 2.0 * M_PI, 0.0, 0.0);
+    r.field = flow_field_create(n, n, 1);
+    if (!r.g || !r.field) {
+        snprintf(r.error_msg, sizeof(r.error_msg), "Failed to allocate grid/field");
+        return r;
+    }
+    grid_initialize_uniform(r.g);
+    for (size_t j = 0; j < n; j++) {
+        for (size_t i = 0; i < n; i++) {
+            size_t idx = IDX_2D(i, j, n);
+            double x = r.g->x[i], y = r.g->y[j];
+            r.field->u[idx] = cos(x) * sin(y);
+            r.field->v[idx] = -sin(x) * cos(y);
+            r.field->p[idx] = -0.25 * (cos(2.0 * x) + cos(2.0 * y));
+            r.field->rho[idx] = 1.0;
+            r.field->T[idx] = 300.0;
+        }
     }
 
-    TEST_ASSERT_TRUE_MESSAGE(gpu.success, "GPU Projection must succeed");
-
-    double diff = fabs(cpu.u_at_center - gpu.u_at_center);
-    printf("      CPU  u_center: %.6f\n", cpu.u_at_center);
-    printf("      GPU  u_center: %.6f\n", gpu.u_at_center);
-    printf("      Difference:    %.6f\n", diff);
-
-    TEST_ASSERT_TRUE_MESSAGE(diff < ARCH_PROJECTION_CONSISTENCY_TOL,
-        "CPU and GPU Projection must produce consistent results");
-}
-
-/* ============================================================================
- * TEST: All solver types can be instantiated
- * ============================================================================ */
-
-void test_all_solvers_instantiate(void) {
-    printf("\n    Testing solver instantiation\n");
-
-    /* Required solvers (must always be available) */
-    const char* required_types[] = {
-        NS_SOLVER_TYPE_EXPLICIT_EULER,
-        NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
-        NS_SOLVER_TYPE_PROJECTION,
-        NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
-    };
-    const char* required_names[] = {
-        "Explicit Euler CPU",
-        "Explicit Euler AVX2",
-        "Projection CPU",
-        "Projection AVX2",
-    };
-    const int num_required = 4;
-
-    /* Optional solvers (may not be available depending on build configuration) */
-    const char* optional_types[] = {
-        NS_SOLVER_TYPE_EXPLICIT_EULER_OMP,
-        NS_SOLVER_TYPE_PROJECTION_OMP,
-        NS_SOLVER_TYPE_PROJECTION_GPU,
-    };
-    const char* optional_names[] = {
-        "Explicit Euler OMP",
-        "Projection OMP",
-        "Projection GPU",
-    };
-    const int num_optional = 3;
+    ns_solver_params_t params = ns_solver_params_default();
+    params.dt = dt;
+    params.mu = ARCH_TG_NU;
+    params.max_iter = 1;
+    params.source_amplitude_u = 0.0;
+    params.source_amplitude_v = 0.0;
 
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
+    ns_solver_t* solver = cfd_solver_create(registry, type);
+    if (!solver) {
+        r.unavailable = 1;
+        snprintf(r.error_msg, sizeof(r.error_msg), "Solver '%s' not available", type);
+        cfd_registry_destroy(registry);
+        return r;
+    }
 
-    int required_count = 0;
-    int optional_count = 0;
-
-    /* Check required solvers */
-    for (int i = 0; i < num_required; i++) {
-        ns_solver_t* solver = cfd_solver_create(registry, required_types[i]);
-        if (solver) {
-            printf("      %s: OK\n", required_names[i]);
-            solver_destroy(solver);
-            required_count++;
-        } else {
-            printf("      %s: FAILED\n", required_names[i]);
+    cfd_status_t status = solver_init(solver, r.g, &params);
+    if (status == CFD_ERROR_UNSUPPORTED) {
+        r.unavailable = 1;
+        snprintf(r.error_msg, sizeof(r.error_msg), "Solver '%s' backend not compiled", type);
+    } else if (status != CFD_SUCCESS) {
+        snprintf(r.error_msg, sizeof(r.error_msg), "Solver '%s' init failed (%d)", type, status);
+    } else {
+        ns_solver_stats_t stats = ns_solver_stats_default();
+        for (int step = 0; step < steps; step++) {
+            bc_apply_periodic(r.field->u, n, n);
+            bc_apply_periodic(r.field->v, n, n);
+            bc_apply_periodic(r.field->p, n, n);
+            status = solver_step(solver, r.field, r.g, &params, &stats);
+            if (status != CFD_SUCCESS) {
+                snprintf(r.error_msg, sizeof(r.error_msg), "Solver '%s' step %d failed (%d)", type,
+                         step, status);
+                break;
+            }
         }
     }
 
-    /* Check optional solvers */
-    for (int i = 0; i < num_optional; i++) {
-        ns_solver_t* solver = cfd_solver_create(registry, optional_types[i]);
-        if (solver) {
-            printf("      %s: OK (optional)\n", optional_names[i]);
-            solver_destroy(solver);
-            optional_count++;
-        } else {
-            printf("      %s: SKIPPED (optional, not available)\n", optional_names[i]);
-        }
-    }
-
+    solver_destroy(solver);
     cfd_registry_destroy(registry);
+    return r;
+}
 
-    printf("      %d/%d required solvers instantiated\n", required_count, num_required);
-    if (optional_count > 0) {
-        printf("      %d/%d optional solvers instantiated\n", optional_count, num_optional);
+static arch_run_t run_case(arch_case_t c, const char* type, int steps, double dt) {
+    return (c == ARCH_CASE_CAVITY) ? run_cavity(type, steps, dt)
+                                   : run_taylor_green(type, steps, dt);
+}
+
+/* ============================================================================
+ * FAMILY COMPARISON
+ * ============================================================================ */
+
+/* types[0] is the scalar reference; the rest are compared against it. */
+static void check_family(arch_case_t c, const char* const* types, int n_types, int steps,
+                         double dt) {
+    arch_run_t ref = run_case(c, types[0], steps, dt);
+    if (ref.error_msg[0]) {
+        char msg[sizeof(ref.error_msg)];
+        snprintf(msg, sizeof(msg), "%s", ref.error_msg);
+        arch_run_free(&ref);
+        TEST_FAIL_PRINTF("Scalar reference %s failed: %s", types[0], msg);
     }
 
-    TEST_ASSERT_EQUAL_INT_MESSAGE(num_required, required_count,
-        "All required solvers must be instantiable");
+    int compared = 0;
+    int failed = 0;
+    for (int k = 1; k < n_types; k++) {
+        arch_run_t b = run_case(c, types[k], steps, dt);
+        if (b.unavailable) {
+            printf("      %-26s SKIPPED (%s)\n", types[k], b.error_msg);
+            arch_run_free(&b);
+            continue;
+        }
+        if (b.error_msg[0]) {
+            printf("      %-26s FAILED: %s\n", types[k], b.error_msg);
+            failed = 1;
+            arch_run_free(&b);
+            continue;
+        }
+
+        field_diff_t d = compare_fields(ref.field, b.field);
+        int ok = d.du < ARCH_CONSISTENCY_TOL && d.dv < ARCH_CONSISTENCY_TOL &&
+                 d.dp < ARCH_CONSISTENCY_TOL;
+        printf("      %-26s du=%.2e dv=%.2e dp=%.2e  %s\n", types[k], d.du, d.dv, d.dp,
+               ok ? "ok" : "EXCEEDS 0.1%");
+        failed |= !ok;
+        compared++;
+        arch_run_free(&b);
+    }
+    arch_run_free(&ref);
+
+    if (failed) {
+        TEST_FAIL_MESSAGE("A backend differs from the scalar reference by more than 0.1%");
+    }
+    if (compared == 0) {
+        TEST_IGNORE_MESSAGE("No optimized backend compiled in to compare against");
+    }
+}
+
+/* ============================================================================
+ * TESTS
+ * ============================================================================ */
+
+static const char* const PROJECTION_TYPES[] = {
+    NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, NS_SOLVER_TYPE_PROJECTION_OMP,
+    NS_SOLVER_TYPE_PROJECTION_GPU};
+static const char* const EULER_TYPES[] = {
+    NS_SOLVER_TYPE_EXPLICIT_EULER, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED,
+    NS_SOLVER_TYPE_EXPLICIT_EULER_OMP, NS_SOLVER_TYPE_EXPLICIT_EULER_GPU};
+static const char* const RK2_TYPES[] = {NS_SOLVER_TYPE_RK2, NS_SOLVER_TYPE_RK2_OPTIMIZED,
+                                        NS_SOLVER_TYPE_RK2_OMP, NS_SOLVER_TYPE_RK2_GPU};
+static const char* const RK4_TYPES[] = {NS_SOLVER_TYPE_RK4, NS_SOLVER_TYPE_RK4_OPTIMIZED,
+                                        NS_SOLVER_TYPE_RK4_OMP, NS_SOLVER_TYPE_RK4_GPU};
+
+#define N_TYPES(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+void test_projection_cavity(void) {
+    printf("\n    Projection, 33x33 cavity Re=100, t=%.1f\n", ARCH_PROJ_STEPS * ARCH_PROJ_DT);
+    check_family(ARCH_CASE_CAVITY, PROJECTION_TYPES, N_TYPES(PROJECTION_TYPES), ARCH_PROJ_STEPS,
+                 ARCH_PROJ_DT);
+}
+
+void test_euler_cavity(void) {
+    printf("\n    Explicit Euler, 33x33 cavity Re=100, t=%.1f\n", ARCH_EULER_STEPS * ARCH_EULER_DT);
+    check_family(ARCH_CASE_CAVITY, EULER_TYPES, N_TYPES(EULER_TYPES), ARCH_EULER_STEPS,
+                 ARCH_EULER_DT);
+}
+
+void test_euler_taylor_green(void) {
+    printf("\n    Explicit Euler, periodic Taylor-Green\n");
+    check_family(ARCH_CASE_TAYLOR_GREEN, EULER_TYPES, N_TYPES(EULER_TYPES), ARCH_TG_STEPS,
+                 ARCH_TG_DT_EULER);
+}
+
+void test_rk2_taylor_green(void) {
+    printf("\n    RK2, periodic Taylor-Green, t=%.0f\n", ARCH_TG_STEPS * ARCH_TG_DT_RK);
+    check_family(ARCH_CASE_TAYLOR_GREEN, RK2_TYPES, N_TYPES(RK2_TYPES), ARCH_TG_STEPS,
+                 ARCH_TG_DT_RK);
+}
+
+void test_rk4_taylor_green(void) {
+    printf("\n    RK4, periodic Taylor-Green, t=%.0f\n", ARCH_TG_STEPS * ARCH_TG_DT_RK);
+    check_family(ARCH_CASE_TAYLOR_GREEN, RK4_TYPES, N_TYPES(RK4_TYPES), ARCH_TG_STEPS,
+                 ARCH_TG_DT_RK);
 }
 
 /* ============================================================================
@@ -339,25 +340,17 @@ void test_all_solvers_instantiate(void) {
 int main(void) {
     UNITY_BEGIN();
 
-    printf("\n");
+    printf("\n========================================\n");
+    printf("CROSS-ARCHITECTURE CONSISTENCY\n");
     printf("========================================\n");
-    printf("CROSS-ARCHITECTURE CONSISTENCY TESTS\n");
-    printf("========================================\n");
-    printf("\n");
-    printf("Consistency tolerance: diff < %.3f\n", ARCH_CONSISTENCY_TOL);
-    printf("\n");
+    printf("Every backend vs the scalar reference, whole field, tolerance %.1f%%\n",
+           ARCH_CONSISTENCY_TOL * 100.0);
 
-    printf("[Solver Instantiation]\n");
-    RUN_TEST(test_all_solvers_instantiate);
-
-    printf("\n[Explicit Euler Backend Consistency]\n");
-    RUN_TEST(test_euler_cpu_avx2_consistency);
-    RUN_TEST(test_euler_cpu_omp_consistency);
-
-    printf("\n[Projection Backend Consistency]\n");
-    RUN_TEST(test_projection_cpu_avx2_consistency);
-    RUN_TEST(test_projection_cpu_omp_consistency);
-    RUN_TEST(test_projection_cpu_gpu_consistency);
+    RUN_TEST(test_projection_cavity);
+    RUN_TEST(test_euler_cavity);
+    RUN_TEST(test_euler_taylor_green);
+    RUN_TEST(test_rk2_taylor_green);
+    RUN_TEST(test_rk4_taylor_green);
 
     return UNITY_END();
 }
