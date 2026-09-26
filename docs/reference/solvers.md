@@ -1030,21 +1030,29 @@ between all available backends.
 **Setup:** Re_τ = 395, δ = 1, 16×21 uniform grid, body-force-driven
 (f_x = u_τ²/δ = 1 so exact steady u_τ = 1), first-node y+ ≈ 40.
 
+u_τ is recovered from the first-node velocity by inverting the pure log law, independently
+of the model's own wall law, so the yardstick does not move with the model it grades.
+
 **k-ε results:**
 
 | Quantity | Value | Error |
 |----------|-------|-------|
-| u_τ (recovered) | 0.971 | 2.9% |
-| u+ at y+ = 39.5 | — | 0.5% vs log law |
+| u_τ (recovered) | 0.941 | 5.9% |
+| u+ at y+ = 39.5 | — | 1.0% vs log law |
 | u+ at y+ = 79   | — | 2.4% vs log law |
 
 **SA results:**
 
 | Quantity | Value | Error |
 |----------|-------|-------|
-| u_τ (recovered) | 0.969 | 3.1% |
-| u+ at y+ ≈ 39.5 | — | 0.5% vs log law |
-| u+ at y+ ≈ 79   | — | 3.7% vs log law |
+| u_τ (recovered) | 0.940 | 6.0% |
+| u+ at y+ ≈ 39.5 | — | 1.1% vs log law |
+| u+ at y+ ≈ 79   | — | 3.4% vs log law |
+
+With the earlier linear/log wall function the u_τ errors were 2.9% (k-ε) and 3.1% (SA).
+Spalding's law sits below the log law at the first node (y+ = 39.5), imposing a 3.1% higher
+u_τ for a given u_p, so the steady first-node velocity drops 3.6% and the log-law yardstick
+reads it as a larger u_τ deficit.
 
 Source: `tests/validation/test_turbulent_channel.c` (ctest label `validation`).
 

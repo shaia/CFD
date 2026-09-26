@@ -4,7 +4,7 @@
  * Fully-developed turbulent channel flow at a prescribed friction Reynolds
  * number Re_tau, driven by a constant streamwise body force f_x = u_tau^2/delta
  * (so the exact steady friction velocity is u_tau = 1 in these units):
- *   - periodic in x, log-law wall-function walls at y = 0 and y = 2*delta
+ *   - periodic in x, wall-function walls (Spalding's law) at y = 0 and y = 2*delta
  *   - RANS closure: standard k-epsilon or Spalart-Allmaras
  *
  * This example demonstrates:
