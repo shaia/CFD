@@ -162,10 +162,11 @@ void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params);
  * @return CFD_SUCCESS; CFD_ERROR_UNSUPPORTED if a correction is configured with
  *         any model other than k-epsilon (S*, Re_t and nu_t/nu are built from k
  *         and epsilon, so they do not exist for Spalart-Allmaras), or if both
- *         corrections are configured at once; CFD_ERROR_INVALID for a NULL
- *         field/grid, a missing turbulence field or a model of the wrong shape;
- *         CFD_ERROR_DIVERGED if the model predicts a non-finite value. Never a
- *         silent skip: a caller that asked for a correction gets one or an error.
+ *         corrections are configured at once; CFD_ERROR_INVALID for an unknown
+ *         correction value, a NULL field/grid, a missing turbulence field or a
+ *         model of the wrong shape; CFD_ERROR_DIVERGED if the model predicts a
+ *         non-finite value. Never a silent skip: a caller that asked for a
+ *         correction gets one or an error.
  */
 cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
                                         const ns_solver_params_t* params);
@@ -177,10 +178,11 @@ cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
  * Checked here rather than per step so a caller learns before init returns,
  * while they can still choose a different configuration.
  *
- * @return CFD_SUCCESS when no closure is set or the configuration is usable;
- *         CFD_ERROR_UNSUPPORTED when a closure is set without k-epsilon;
- *         CFD_ERROR_INVALID when the model's input or output width does not
- *         match what the closure feeds it.
+ * @return CFD_SUCCESS when no correction is set or the configuration is usable;
+ *         CFD_ERROR_UNSUPPORTED when a correction is set without k-epsilon, or
+ *         when both corrections are set at once;
+ *         CFD_ERROR_INVALID for a value no enum defines, or when the model's
+ *         input or output width does not match what the closure feeds it.
  */
 cfd_status_t turb_check_closure_config(const ns_solver_params_t* params);
 

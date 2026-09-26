@@ -47,6 +47,7 @@ The single source of truth for backend gaps. Each algorithm targets scalar (CPU)
 |                     | RK2 (Heun)     | done | done     | —        | done     | done |
 |                     | RK4 (classical)| done | done     | —        | done     | done |
 |                     | Upwind convection (1st order) | done | done | — | done | —² |
+|                     | Implicit viscous (BE / CN)³   | done | —    | — | done | —  |
 | **Energy Eq.**      | Advec-diff + Boussinesq + thermal BCs | done | done | — | done | done |
 | **Turbulence**      | k-ε / SA + wall functions             | done | done | — | done | —    |
 | **Linear Solvers**  | Jacobi         | done | done     | done     | done     | done |
@@ -64,6 +65,10 @@ OMP backend; a "plain SOR OMP" would either change the numerics silently or need
 low-value wavefront machinery, so it is intentionally omitted.
 
 ² GPU solvers reject `NS_CONVECTION_SCHEME_UPWIND` with `CFD_ERROR_UNSUPPORTED`.
+
+³ `params.viscous_scheme` on the projection solvers; laminar only (a turbulence model is
+refused, since ν + ν_t needs a variable-coefficient implicit operator). Every other solver
+refuses an implicit scheme through `NS_SOLVER_CAP_IMPLICIT_VISCOUS`.
 
 ### Known Limitations
 
@@ -106,7 +111,7 @@ Genuine constraints to be aware of (not backlog items):
 | 4 | Scalability & Performance | P1–P2 | MPI, GPU improvements, profiling tools (modular libs ✅) |
 | 5 | I/O & Post-processing | P1–P3 | HDF5, modern VTK XML, in-situ viz (CSV ✅) |
 | 6 | Validation & Documentation | P0–P1 | 129×129 release validation, convergence studies, docs |
-| 7 | ML Integration | P3 | Approach A (full-C inference) chosen — learned eddy-viscosity closure |
+| 7 | ML Integration | P3 | Approach A chosen; algebraic ν_t correction shipped, inference engine built here |
 
 ---
 
@@ -226,10 +231,20 @@ Stencil tests, convergence-order, MMS, and divergence-free validation are done (
 Implemented: RK2 (Heun) and RK4 (classical), all CPU/AVX2/OMP/GPU backends, O(dt²)/O(dt⁴)
 verified. See `/add-ns-time-integrator` for the cross-backend workflow.
 
+Implicit viscous term (`params.viscous_scheme`): backward Euler (θ = 1, L-stable) and
+Crank–Nicolson (θ = ½) on the scalar and OpenMP projection solvers. Each is solved as a
+Helmholtz-shifted CG problem per velocity component, which removes the diffusion limit on
+dt. Viscous-part order is verified at 1.0 / 2.0 on a discrete eigenmode. The full step
+stays O(dt), from explicit convection and non-incremental Chorin splitting. See
+`docs/reference/solvers.md#viscous-time-discretization`.
+
 **Still needed:**
 
-- [ ] Implicit Euler (backward Euler)
-- [ ] Crank-Nicolson (2nd order implicit)
+- [x] Implicit Euler (backward Euler) — viscous term, scalar + OMP projection
+- [x] Crank-Nicolson (2nd order implicit) — viscous term, scalar + OMP projection
+- [ ] Implicit viscous on AVX2 / CUDA projection (needs the Helmholtz shift in SIMD and GPU CG)
+- [ ] Variable-coefficient implicit viscous for ν + ν_t (turbulence)
+- [ ] Second order overall: AB2/CN with incremental pressure correction
 - [ ] BDF2 (backward differentiation)
 - [ ] Adaptive time stepping with error control
 

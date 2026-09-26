@@ -344,6 +344,7 @@ static void write_params(chk_io* io, const ns_solver_params_t* p) {
      * beside it can be, and a resume that dropped it would silently change
      * the eddy viscosity while reporting success. */
     put_i32(io, (int32_t)p->turb_nut_correction);
+    put_i32(io, (int32_t)p->viscous_scheme);
     /* turb_bc: face types then k, epsilon and nu_tilde Dirichlet values */
     put_i32(io, (int32_t)p->turb_bc.left);
     put_i32(io, (int32_t)p->turb_bc.right);
@@ -413,18 +414,85 @@ cfd_status_t cfd_checkpoint_write(const char* path,
     return status;
 }
 
-/* turb_nut_correction is cast straight out of the file, so the value is not one
- * the compiler chose. Range-checked HERE, where the untrusted bytes enter: the
- * same reject-unknown rule this file already applies to version, byte order and
- * dtype. turb_check_closure_config() also refuses an unknown value at solver
- * init, but a caller who restores params without initing an NS solver is told
- * nothing at all, and a corrupt file is the reader's to reject.
- *
- * A wider chk_params_are_legal(), covering the thermal_bc and turb_bc faces and
- * the other enums this reader casts, is in flight separately; fold this into it
- * rather than keeping two checks when the two meet. */
-static int chk_nut_correction_is_legal(ns_nut_correction_t c) {
-    return c == NS_NUT_CORRECTION_NONE || c == NS_NUT_CORRECTION_S_STAR;
+/* Every enum below is cast straight out of the file, so none of the values are
+ * ones the compiler chose. Range-checked HERE rather than left to whichever
+ * door downstream happens to look: solver init catches turb_model,
+ * pressure_solver, convection_scheme, viscous_scheme and pressure_bc, but
+ * nothing anywhere range-checks a thermal_bc or turb_bc face, and a caller who
+ * never inits an NS solver is told nothing at all. A corrupt file is the
+ * reader's to reject -- the same reject-unknown rule this file already applies
+ * to version, byte order and dtype. */
+static int chk_bc_type_is_legal(bc_type_t t) {
+    return t == BC_TYPE_PERIODIC || t == BC_TYPE_NEUMANN || t == BC_TYPE_DIRICHLET
+        || t == BC_TYPE_NOSLIP || t == BC_TYPE_INLET || t == BC_TYPE_OUTLET
+        || t == BC_TYPE_SYMMETRY;
+}
+
+/* The wall-type check is spelled out here rather than calling the canonical
+ * poisson_walls_are_legal(). That predicate lives in linear_solver.c, which is
+ * part of cfd_api, while this file is part of cfd_core -- a target documented
+ * as depending on nothing (docs/architecture/architecture.md) and carrying no
+ * target_link_libraries at all. Calling up into the API layer would invert that
+ * dependency and leave anyone linking CFD::Core alone with an undefined symbol;
+ * the unified CFD::Library that every test links hides it. Six comparisons are
+ * the cheaper price. Keep the two in step if poisson_wall_t gains a member. */
+static int chk_wall_type_is_legal(poisson_wall_t t) {
+    return t == POISSON_WALL_ZERO_GRADIENT || t == POISSON_WALL_DIRICHLET;
+}
+
+static int chk_walls_are_legal(const poisson_walls_t* w) {
+    return chk_wall_type_is_legal(w->left) && chk_wall_type_is_legal(w->right)
+        && chk_wall_type_is_legal(w->bottom) && chk_wall_type_is_legal(w->top)
+        && chk_wall_type_is_legal(w->front) && chk_wall_type_is_legal(w->back);
+}
+
+static int chk_bc_faces_are_legal(const bc_type_t* faces) {
+    for (int i = 0; i < 6; i++) {
+        if (!chk_bc_type_is_legal(faces[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int chk_params_are_legal(const ns_solver_params_t* p) {
+    const bc_type_t thermal[6] = {p->thermal_bc.left, p->thermal_bc.right,
+                                  p->thermal_bc.bottom, p->thermal_bc.top,
+                                  p->thermal_bc.front, p->thermal_bc.back};
+    const bc_type_t turb[6] = {p->turb_bc.left, p->turb_bc.right,
+                               p->turb_bc.bottom, p->turb_bc.top,
+                               p->turb_bc.front, p->turb_bc.back};
+    if (!chk_bc_faces_are_legal(thermal) || !chk_bc_faces_are_legal(turb)) {
+        return 0;
+    }
+    if (!chk_walls_are_legal(&p->pressure_bc)) {
+        return 0;
+    }
+    if (p->turb_model != TURB_MODEL_NONE && p->turb_model != TURB_MODEL_K_EPSILON
+        && p->turb_model != TURB_MODEL_SPALART_ALLMARAS) {
+        return 0;
+    }
+    if (p->pressure_solver != NS_PRESSURE_SOLVER_DEFAULT
+        && p->pressure_solver != NS_PRESSURE_SOLVER_MULTIGRID
+        && p->pressure_solver != NS_PRESSURE_SOLVER_PCG_MG) {
+        return 0;
+    }
+    if (p->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL
+        && p->convection_scheme != NS_CONVECTION_SCHEME_UPWIND) {
+        return 0;
+    }
+    /* Folded in from the standalone check that arrived with the strain-rate
+     * correction (#224): same rule, same entry point, one validator. */
+    if (p->turb_nut_correction != NS_NUT_CORRECTION_NONE
+        && p->turb_nut_correction != NS_NUT_CORRECTION_S_STAR) {
+        return 0;
+    }
+    if (p->viscous_scheme != NS_VISCOUS_SCHEME_EXPLICIT
+        && p->viscous_scheme != NS_VISCOUS_SCHEME_BACKWARD_EULER
+        && p->viscous_scheme != NS_VISCOUS_SCHEME_CRANK_NICOLSON) {
+        return 0;
+    }
+    return 1;
 }
 
 /* ==========================================================================
@@ -567,6 +635,7 @@ cfd_status_t cfd_checkpoint_read(const char* path,
     out_params->pressure_solver = (ns_pressure_solver_t)get_i32(&io);
     out_params->convection_scheme = (ns_convection_scheme_t)get_i32(&io);
     out_params->turb_nut_correction = (ns_nut_correction_t)get_i32(&io);
+    out_params->viscous_scheme = (ns_viscous_scheme_t)get_i32(&io);
     out_params->turb_bc.left = (bc_type_t)get_i32(&io);
     out_params->turb_bc.right = (bc_type_t)get_i32(&io);
     out_params->turb_bc.bottom = (bc_type_t)get_i32(&io);
@@ -615,13 +684,13 @@ cfd_status_t cfd_checkpoint_read(const char* path,
     /* After the CRC, so bit-rot is reported as bit-rot; before the outputs are
      * published, so no caller ever holds params carrying a value no enum
      * defines. */
-    if (!chk_nut_correction_is_legal(out_params->turb_nut_correction)) {
+    if (!chk_params_are_legal(out_params)) {
         grid_destroy(g);
         flow_field_destroy(f);
         memset(out_params, 0, sizeof(*out_params));
         cfd_set_error(CFD_ERROR_INVALID,
-                      "cfd_checkpoint_read: the file carries an unknown "
-                      "turb_nut_correction; it was written by a different build or "
+                      "cfd_checkpoint_read: the file carries a solver parameter "
+                      "outside its enum; it was written by a different build or "
                       "has been edited");
         return CFD_ERROR_INVALID;
     }

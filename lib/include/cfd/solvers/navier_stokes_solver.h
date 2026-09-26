@@ -223,8 +223,13 @@ typedef enum {
  * exactly a C_mu which varies with the local strain -- the same device
  * realizable k-epsilon uses, with coefficients fitted here against channel DNS
  * (see docs/technical-notes/ml-integration-design.md 2.7). It exists to be the
- * analytic competitor a learned closure has to beat, per that note's rule that
- * ML earns its place only where no analytic answer exists.
+ * analytic competitor any learned closure has to beat, per that note's rule
+ * that ML earns its place only where no analytic answer exists.
+ *
+ * The multiplier is clamped to [0.1, 10] and the existing realizability bound
+ * still applies on top. It can reduce nu_t as well as raise it -- the channel
+ * DNS asks for a reduction in the outer layer -- so it is bounded, not
+ * dissipation-only.
  *
  * k-epsilon only: S* is built from k and epsilon, which no other model carries.
  * Rejected at init with any other turbulence model, and rejected together with
@@ -234,6 +239,49 @@ typedef enum {
     NS_NUT_CORRECTION_NONE = 0,   /**< Standard k-epsilon eddy viscosity (default) */
     NS_NUT_CORRECTION_S_STAR = 1, /**< Strain-rate power law (variable C_mu) */
 } ns_nut_correction_t;
+
+/**
+ * Time discretization of the momentum viscous term.
+ *
+ * NS_VISCOUS_SCHEME_EXPLICIT (0) keeps forward Euler, so zero-initialization is
+ * fully backward compatible, and dt stays bounded by the diffusion limit
+ * dt < h^2 / (2 * nu * ndim).
+ *
+ * The implicit schemes advance the viscous term with the theta-method, solving
+ *
+ *     (I - theta * nu * dt * lap) delta = b,   u* = u^n + delta
+ *
+ * once per velocity component per step, where b is the increment the explicit
+ * predictor computes and delta is zero on every boundary node (boundary values
+ * are held at their step-start values for the step, exactly as the explicit
+ * predictor holds them). That removes the diffusion limit from dt;
+ * compute_time_step() leaves it out.
+ *
+ * What it buys is stability, not a higher overall order: convection stays
+ * forward Euler and the projection is Chorin's non-incremental splitting, so a
+ * full step remains O(dt) under either scheme.
+ *
+ * - NS_VISCOUS_SCHEME_BACKWARD_EULER (theta = 1) is L-stable: stiff modes are
+ *   damped at any dt. The choice for marching to a steady state with a large dt.
+ * - NS_VISCOUS_SCHEME_CRANK_NICOLSON (theta = 1/2) makes the viscous part
+ *   O(dt^2) but is only A-stable: as nu * dt * |lambda| grows its amplification
+ *   tends to -1, so high-wavenumber modes flip sign each step instead of
+ *   decaying. Prefer it for transients at a dt near the explicit limit.
+ *
+ * Implemented on the scalar "projection" and OpenMP "projection_omp" solvers
+ * (NS_SOLVER_CAP_IMPLICIT_VISCOUS), for laminar flow: combining an implicit
+ * scheme with a turbulence model is rejected with CFD_ERROR_UNSUPPORTED, since
+ * nu + nu_t varies in space and the implicit operator has constant
+ * coefficients. Every other solver rejects an implicit scheme with
+ * CFD_ERROR_UNSUPPORTED at init and at step; any other value is rejected with
+ * CFD_ERROR_INVALID. The energy equation stays explicit, so the thermal
+ * diffusion limit on dt still applies when it is active.
+ */
+typedef enum {
+    NS_VISCOUS_SCHEME_EXPLICIT = 0,        /**< Forward Euler (default) */
+    NS_VISCOUS_SCHEME_BACKWARD_EULER = 1,  /**< Implicit, theta = 1, L-stable */
+    NS_VISCOUS_SCHEME_CRANK_NICOLSON = 2,  /**< Implicit, theta = 1/2, A-stable */
+} ns_viscous_scheme_t;
 
 /**
  * Navier-Stokes solver parameters
@@ -344,6 +392,9 @@ typedef struct {
      * under the same clamp. Zero (NONE) is the standard model. Setting both
      * this and turb_closure is refused at init. */
     ns_nut_correction_t turb_nut_correction;
+
+    /* Viscous-term time discretization (0 = explicit, backward compatible). */
+    ns_viscous_scheme_t viscous_scheme;  /**< Viscous scheme selection */
 } ns_solver_params_t;
 
 
@@ -378,6 +429,7 @@ typedef enum {
     NS_SOLVER_CAP_SIMD = (1 << 4),            /**< Uses SIMD optimizations */
     NS_SOLVER_CAP_PARALLEL = (1 << 5),        /**< Supports parallel execution */
     NS_SOLVER_CAP_GPU = (1 << 6),             /**< Supports GPU acceleration */
+    NS_SOLVER_CAP_IMPLICIT_VISCOUS = (1 << 7), /**< Honours an implicit viscous_scheme */
 } ns_solver_capabilities_t;
 
 
@@ -629,7 +681,11 @@ CFD_LIBRARY_EXPORT void compute_source_terms(double x, double y, double z, int i
                                              const ns_solver_params_t* params, double* source_u,
                                              double* source_v, double* source_w);
 
-/** Time step computation */
+/**
+ * Time step computation: sets params->dt to the minimum of the convective,
+ * viscous and thermal stability limits. The viscous limit is left out when
+ * params->viscous_scheme is implicit, which is the point of choosing one.
+ */
 CFD_LIBRARY_EXPORT void compute_time_step(flow_field* field, const grid* grid,
                                           ns_solver_params_t* params);
 

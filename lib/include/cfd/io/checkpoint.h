@@ -20,7 +20,7 @@ extern "C" {
  * The checkpoint format is a portable, versioned binary file (`.cfdchk`) that
  * captures everything needed to resume a simulation bit-exactly from a step
  * boundary: the grid geometry, the flow field, the solver parameters (including
- * the turbulence model, pressure solver, convection scheme and the thermal and
+ * the turbulence model, pressure solver, convection and viscous schemes and the thermal and
  * turbulence boundary conditions), the accumulated simulation time, and the
  * active solver's registry name.
  *
@@ -45,7 +45,7 @@ extern "C" {
  */
 
 /** Current on-disk checkpoint format version. Bumped on any layout change. */
-#define CFD_CHECKPOINT_FORMAT_VERSION 4u
+#define CFD_CHECKPOINT_FORMAT_VERSION 5u
 
 /** Recommended file extension for checkpoint files. */
 #define CFD_CHECKPOINT_EXTENSION ".cfdchk"

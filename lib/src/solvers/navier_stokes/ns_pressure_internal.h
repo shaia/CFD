@@ -63,6 +63,10 @@ static inline cfd_status_t ns_pressure_config(const ns_solver_params_t* params,
 /**
  * Make *slot a solver matching cfg on this grid, building or rebuilding it.
  *
+ * Not specific to the pressure solve: the implicit viscous solver a projection
+ * owns (ns_viscous_internal.h) is kept by the same rule, and its Helmholtz shift
+ * depends on dt, so a caller that changes dt rebuilds it here.
+ *
  * Rebuilds when the method, backend, parameters or grid differ from what the
  * existing instance was built for, rather than assuming any of them is fixed:
  * pressure_solver is read from params on every step today, and a caller may
@@ -115,7 +119,7 @@ static inline cfd_status_t ns_pressure_ensure(poisson_solver_t** slot,
         if (same_grid && same_config) {
             return CFD_SUCCESS;
         }
-        CFD_LOG_DEBUG("projection", "pressure solver rebuilt: %s",
+        CFD_LOG_DEBUG("projection", "owned Poisson solver rebuilt: %s",
                       same_grid ? "configuration changed" : "grid changed");
         poisson_solver_destroy(existing);
         *slot = NULL;
@@ -192,6 +196,12 @@ static inline cfd_status_t ns_pressure_ensure(poisson_solver_t** slot,
 static inline cfd_status_t ns_pressure_check_shape(const poisson_solver_t* pressure,
                                                    size_t nx, size_t ny, size_t nz) {
     if (!pressure) {
+        /* Set rather than left to the caller's last failure: cfd_get_last_status()
+         * is sticky, so a silent return here reports whatever the thread failed at
+         * previously -- the same hazard ns_pressure_ensure() clears for above. */
+        cfd_set_error(CFD_ERROR_INVALID,
+            "The projection solver has no pressure solver; it was not initialized, "
+            "or a previous init failed and its status was discarded.");
         return CFD_ERROR_INVALID;
     }
     if (pressure->nx != nx || pressure->ny != ny || pressure->nz != nz) {

@@ -50,14 +50,14 @@ void tearDown(void) {}
  * HELPERS
  * ============================================================================ */
 
-/** Solve with the scalar CG backend at the given shift. */
-static cfd_status_t solve_shifted(size_t nx, size_t ny, size_t nz,
-                                  double dx, double dy, double dz,
-                                  double sigma, double tolerance,
-                                  const double* rhs, double* x,
-                                  poisson_solver_stats_t* stats_out) {
-    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG,
-                                                     POISSON_BACKEND_SCALAR);
+/** Solve with CG on the given backend at the given shift. */
+static cfd_status_t solve_shifted_on(poisson_solver_backend_t backend,
+                                     size_t nx, size_t ny, size_t nz,
+                                     double dx, double dy, double dz,
+                                     double sigma, double tolerance,
+                                     const double* rhs, double* x,
+                                     poisson_solver_stats_t* stats_out) {
+    poisson_solver_t* solver = poisson_solver_create(POISSON_METHOD_CG, backend);
     if (!solver) {
         return CFD_ERROR_UNSUPPORTED;
     }
@@ -91,6 +91,16 @@ static cfd_status_t solve_shifted(size_t nx, size_t ny, size_t nz,
     cfd_free(work);
     poisson_solver_destroy(solver);
     return CFD_SUCCESS;
+}
+
+/** Solve with the scalar CG backend at the given shift. */
+static cfd_status_t solve_shifted(size_t nx, size_t ny, size_t nz,
+                                  double dx, double dy, double dz,
+                                  double sigma, double tolerance,
+                                  const double* rhs, double* x,
+                                  poisson_solver_stats_t* stats_out) {
+    return solve_shifted_on(POISSON_BACKEND_SCALAR, nx, ny, nz, dx, dy, dz,
+                            sigma, tolerance, rhs, x, stats_out);
 }
 
 /** Max |x - expected| over interior points. */
@@ -188,6 +198,53 @@ void test_discrete_mms_is_exact(void) {
     cfd_free(u);
     cfd_free(rhs);
     cfd_free(x);
+}
+
+void test_omp_cg_matches_scalar(void) {
+    /* The OpenMP CG carries the shift the same way the scalar one does, through a
+     * guarded axpy at the same two call sites. It must hit the same exact discrete
+     * solution, and agree with the scalar iterate to reduction-order rounding. */
+    const size_t n = 33;
+    const double h = 1.0 / (double)(n - 1);
+    const double sigmas[] = {1.0, 1e3, 1e8};
+
+    size_t total = n * n;
+    double* u = (double*)cfd_calloc(total, sizeof(double));
+    double* rhs = (double*)cfd_calloc(total, sizeof(double));
+    double* xs = (double*)cfd_calloc(total, sizeof(double));
+    double* xo = (double*)cfd_calloc(total, sizeof(double));
+
+    fill_manufactured_2d(u, n, h);
+
+    for (size_t s = 0; s < sizeof(sigmas) / sizeof(sigmas[0]); s++) {
+        double sigma = sigmas[s];
+        build_rhs_2d(u, rhs, n, h, sigma);
+        memset(xs, 0, total * sizeof(double));
+        memset(xo, 0, total * sizeof(double));
+
+        cfd_status_t omp_status = solve_shifted_on(POISSON_BACKEND_OMP, n, n, 1, h, h, 0.0,
+                                                   sigma, 1e-13, rhs, xo, NULL);
+        if (omp_status == CFD_ERROR_UNSUPPORTED) {
+            cfd_free(u); cfd_free(rhs); cfd_free(xs); cfd_free(xo);
+            TEST_IGNORE_MESSAGE("OpenMP CG not available");
+        }
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, omp_status);
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, solve_shifted(n, n, 1, h, h, 0.0, sigma, 1e-13,
+                                                     rhs, xs, NULL));
+
+        double err = max_interior_error(xo, u, n, n, 1);
+        double diff = max_interior_error(xo, xs, n, n, 1);
+        printf("OMP CG sigma=%-8.0e max|x - u| = %.3e  max|omp - scalar| = %.3e\n",
+               sigma, err, diff);
+        TEST_ASSERT_TRUE_MESSAGE(err < 1e-8,
+                                 "OpenMP shifted solve missed the exact discrete solution");
+        TEST_ASSERT_TRUE_MESSAGE(diff < 1e-10, "OpenMP and scalar shifted CG disagree");
+    }
+
+    cfd_free(u);
+    cfd_free(rhs);
+    cfd_free(xs);
+    cfd_free(xo);
 }
 
 void test_shift_changes_the_answer(void) {
@@ -454,10 +511,11 @@ void test_unsupported_backends_reject_the_shift(void) {
             cfd_status_t status = poisson_solver_init(solver, n, n, 1, h, h, 0.0, &params);
 
             int supported = (methods[m] == POISSON_METHOD_CG &&
-                             backends[b] == POISSON_BACKEND_SCALAR);
+                             (backends[b] == POISSON_BACKEND_SCALAR ||
+                              backends[b] == POISSON_BACKEND_OMP));
             if (supported) {
                 TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, status,
-                                          "scalar CG must accept the shift");
+                                          "scalar and OpenMP CG must accept the shift");
             } else {
                 /* Multigrid rejects a 17x17 grid as non-2^k+1 before reaching
                  * the shift check, and a backend can be absent at runtime;
@@ -538,6 +596,7 @@ int main(void) {
 
     RUN_TEST(test_discrete_mms_is_exact);
     RUN_TEST(test_shift_changes_the_answer);
+    RUN_TEST(test_omp_cg_matches_scalar);
     RUN_TEST(test_discrete_mms_is_exact_3d);
     RUN_TEST(test_zero_shift_is_bit_identical);
     RUN_TEST(test_larger_shift_converges_faster);

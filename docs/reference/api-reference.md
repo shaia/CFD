@@ -270,6 +270,8 @@ typedef struct {
     // Optional eddy-viscosity corrections (k-epsilon only, mutually exclusive)
     cfd_nn_context_t*   turb_closure;          // NULL (default) = no learned correction
     ns_nut_correction_t turb_nut_correction;   // NS_NUT_CORRECTION_NONE (0) = standard model
+    // Viscous-term time discretization (projection and projection_omp)
+    ns_viscous_scheme_t viscous_scheme;  // NS_VISCOUS_SCHEME_EXPLICIT (0) = explicit
 } ns_solver_params_t;
 
 ns_solver_params_t ns_solver_params_default(void);
@@ -308,14 +310,41 @@ viscosity, applied after `nu_t` is recomputed and before the existing
 realizability clamp. `NS_NUT_CORRECTION_S_STAR` is a two-constant power law in
 the dimensionless strain rate `S* = |S| k / epsilon` — equivalently, a `C_mu`
 that varies with the local strain — fitted against channel DNS (design note
-§2.7). It is the analytic competitor a learned closure has to beat, so it is
-kept alongside `turb_closure` rather than replaced by it:
+§2.7). The multiplier is clamped to `[0.1, 10]` and can lower `nu_t` as well as
+raise it. Setting it with any turbulence model other than k-epsilon fails
+solver init with `CFD_ERROR_UNSUPPORTED`. It is the analytic competitor a
+learned closure has to beat, so it is kept alongside `turb_closure` rather than
+replaced by it; setting both fails solver init with `CFD_ERROR_UNSUPPORTED`:
+
+```c
+params.turb_model          = TURB_MODEL_K_EPSILON;
+params.turb_nut_correction = NS_NUT_CORRECTION_S_STAR;
+```
 
 ```c
 typedef enum {
     NS_NUT_CORRECTION_NONE = 0,   // Standard k-epsilon eddy viscosity (default)
     NS_NUT_CORRECTION_S_STAR = 1, // Strain-rate power law (variable C_mu)
 } ns_nut_correction_t;
+```
+
+`ns_viscous_scheme_t` selects how the momentum viscous term is advanced in time.
+The implicit schemes solve `(I − θ·ν·dt·∇²)δ = b` once per velocity component
+per step. That removes the diffusion limit on dt, and `compute_time_step()`
+leaves it out. They are implemented on `projection` and `projection_omp`, which
+carry `NS_SOLVER_CAP_IMPLICIT_VISCOUS`. Every other solver rejects them with
+`CFD_ERROR_UNSUPPORTED` in `solver_init`, `solver_step` and `solver_solve`, and
+so do the exported GPU entry points (`solve_*_gpu`, `gpu_solver_step`) and
+combining an implicit scheme with a turbulence model. Unknown values are
+`CFD_ERROR_INVALID`. The full step stays first order in time: the gain is
+stability (see [Viscous Time Discretization](solvers.md#viscous-time-discretization)).
+
+```c
+typedef enum {
+    NS_VISCOUS_SCHEME_EXPLICIT = 0,        // Forward Euler (default)
+    NS_VISCOUS_SCHEME_BACKWARD_EULER = 1,  // Implicit, theta = 1, L-stable
+    NS_VISCOUS_SCHEME_CRANK_NICOLSON = 2,  // Implicit, theta = 1/2, A-stable
+} ns_viscous_scheme_t;
 ```
 
 `turbulence_model_t` is defined in `cfd/solvers/navier_stokes_solver.h`:
@@ -579,8 +608,8 @@ poisson_solver_params_t poisson_solver_params_default(void);
 > forwarded to the preconditioner and is yours to tune.
 >
 > `helmholtz_shift` is common to every method like `walls`, because it describes
-> the operator rather than the algorithm — but only scalar CG implements it, and
-> not with the multigrid preconditioner, so anything else refuses a nonzero shift
+> the operator rather than the algorithm — but only scalar and OpenMP CG implement
+> it, and not with the multigrid preconditioner, so anything else refuses a nonzero shift
 > with `CFD_ERROR_UNSUPPORTED`. A negative or non-finite shift is
 > `CFD_ERROR_INVALID`. A shift removes the Neumann nullspace, so a shifted solve
 > takes any RHS and must **not** be mean-subtracted.
@@ -607,6 +636,8 @@ typedef struct {
 
 poisson_walls_t poisson_walls_default(void);                              // all zero-gradient
 poisson_walls_t poisson_walls_uniform(poisson_wall_t type, double value); // every face the same
+bool poisson_walls_are_default(const poisson_walls_t* walls);  // every face zero-gradient (NULL: true)
+bool poisson_walls_are_legal(const poisson_walls_t* walls);    // no face outside the enum (NULL: true)
 bool poisson_walls_are_singular(const poisson_walls_t* walls, size_t nz);
 void poisson_make_rhs_compatible(double* rhs, size_t nx, size_t ny, size_t nz);
 ```
@@ -839,7 +870,7 @@ cfd_status_t write_centerline_to_csv(flow_field* field, grid_t* grid,
 
 Portable, versioned binary save/restore of the complete simulation state. The
 `.cfdchk` format stores the grid, flow field, solver parameters (including the
-turbulence model, pressure solver, convection scheme, and thermal and turbulence
+turbulence model, pressure solver, convection and viscous schemes, and thermal and turbulence
 boundary conditions), the accumulated simulation time, and the active solver's
 registry name. Solver
 context buffers (e.g. Runge-Kutta stages) are pure per-step scratch and are

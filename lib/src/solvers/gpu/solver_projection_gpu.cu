@@ -525,6 +525,15 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
                              const ns_solver_params_t* params, gpu_solver_stats_t* stats) {
     if (!ctx_void || !grid || !params)
         return CFD_ERROR_INVALID;
+    // The kernels below advance the viscous term explicitly; an implicit scheme
+    // would otherwise run explicit at a dt chosen because it no longer had to be
+    // stable.
+    if (params->viscous_scheme != NS_VISCOUS_SCHEME_EXPLICIT) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "gpu_solver_step advances the viscous term explicitly; an implicit "
+                      "viscous_scheme needs the scalar or OpenMP projection solver");
+        return CFD_ERROR_UNSUPPORTED;
+    }
     struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
     size_t nx = ctx->nx, ny = ctx->ny, nz = ctx->nz;
     size_t stride_z = ctx->stride_z;
@@ -536,6 +545,13 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
     double inv_dz2 = (nz > 1) ? 1.0 / (grid->dz[0] * grid->dz[0]) : 0.0;
     dim3 block(ctx->config.block_size_x, ctx->config.block_size_y);
     dim3 grid_dim((nx - 2 + block.x - 1) / block.x, (ny - 2 + block.y - 1) / block.y);
+
+    // cudaGetLastError() reports the last failure from ANY CUDA call on this
+    // thread, not just this function's, and it is the only way to see an async
+    // launch failure. Clear whatever the process did earlier first, or the step
+    // inherits it: gpu_select_device(999) in the API test leaves "invalid device
+    // ordinal" pending, and the checks below would blame this solve for it.
+    (void)cudaGetLastError();
 
     cudaEventRecord(ctx->start_event, ctx->stream);
     kernel_velocity_rhs<<<grid_dim, block, 0, ctx->stream>>>(
@@ -559,11 +575,21 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
         ctx->d_p, ctx->d_rhs, nx, ny, stride_z, k_start, k_end, p_relax);
     bc_apply_scalar_3d_gpu(ctx->d_p, nx, ny, nz, BC_TYPE_NEUMANN, ctx->stream);
     cudaEventRecord(ctx->stop_event, ctx->stream);
-    cudaStreamSynchronize(ctx->stream);
 
+    // Launches are asynchronous and report nothing at the call site: this is
+    // where a bad launch configuration, and then a fault inside a kernel, become
+    // visible. Returning CFD_SUCCESS without asking left every caller --
+    // including the step loop that now propagates this status -- to treat a
+    // failed device as a converged one.
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaStreamSynchronize(ctx->stream));
+
+    // Timing only: a failure here says nothing about the solve, so it costs the
+    // sample rather than the step.
     float ms = 0;
-    cudaEventElapsedTime(&ms, ctx->start_event, ctx->stop_event);
-    ctx->stats.kernel_time_ms += ms;
+    if (cudaEventElapsedTime(&ms, ctx->start_event, ctx->stop_event) == cudaSuccess) {
+        ctx->stats.kernel_time_ms += ms;
+    }
     ctx->stats.kernels_launched += 6;
     if (stats)
         *stats = ctx->stats;
@@ -592,12 +618,15 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
-    // RANS turbulence models and upwind convection have no GPU kernels.
+    // RANS turbulence, upwind convection and implicit viscous terms have no GPU
+    // kernels. Repeated here because these entry points are exported and skip the
+    // solver_step() capability check.
     if (params->turb_model != TURB_MODEL_NONE ||
-        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL) {
+        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL ||
+        params->viscous_scheme != NS_VISCOUS_SCHEME_EXPLICIT) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "GPU NS solver does not support turbulence models or upwind convection; "
-                      "use a CPU, OMP, or AVX2 solver");
+                      "GPU NS solver does not support turbulence models, upwind convection "
+                      "or an implicit viscous scheme; use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
 
@@ -630,13 +659,23 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
         return CFD_ERROR;
     }
     gpu_solver_stats_t stats;
+    // The loop's status is this function's status. Returning CFD_SUCCESS after a
+    // step failed reported a converged run on a field advanced part way and then
+    // downloaded, which is the error-to-warning conversion the error-handling
+    // rules forbid. The download still happens so the caller can inspect what the
+    // device held when it failed.
+    cfd_status_t step_status = CFD_SUCCESS;
     for (int iter = 0; iter < params->max_iter; iter++) {
-        if (gpu_solver_step(ctx, grid, params, &stats) != CFD_SUCCESS)
+        step_status = gpu_solver_step(ctx, grid, params, &stats);
+        if (step_status != CFD_SUCCESS)
             break;
     }
-    gpu_solver_download(ctx, field);
+    // The download has its own status contract, and a solve whose result never
+    // reached the host did not succeed. The step error wins when both fail: it
+    // is the cause, and the failed transfer is its consequence.
+    cfd_status_t dl_status = gpu_solver_download(ctx, field);
     gpu_solver_destroy(ctx);
-    return CFD_SUCCESS;
+    return step_status != CFD_SUCCESS ? step_status : dl_status;
 }
 
 // NOTE: thermal_bc_type_ok and apply_thermal_bcs_gpu are shared with the RK GPU
@@ -646,12 +685,16 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
-    // RANS turbulence models and upwind convection have no GPU kernels.
+    // RANS turbulence, upwind convection and implicit viscous terms have no GPU
+    // kernels. Repeated here because these entry points are exported and skip the
+    // solver_step() capability check.
     if (params->turb_model != TURB_MODEL_NONE ||
-        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL) {
+        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL ||
+        params->viscous_scheme != NS_VISCOUS_SCHEME_EXPLICIT) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "GPU projection solver does not support turbulence models or upwind "
-                      "convection; use a CPU, OMP, or AVX2 solver");
+                      "GPU projection solver does not support turbulence models, upwind "
+                      "convection or an implicit viscous scheme; use a CPU, OMP, or AVX2 "
+                      "solver");
         return CFD_ERROR_UNSUPPORTED;
     }
 

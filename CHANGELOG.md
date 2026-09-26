@@ -9,14 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Checkpoint format version 5.** `.cfdchk` files now carry `viscous_scheme`, validated on
+  read. Version-4 files are rejected as unsupported, as the format has always done on a
+  layout change.
+
 - **Checkpoints carry the eddy-viscosity correction setting**, so
   `CFD_CHECKPOINT_FORMAT_VERSION` goes 3 -> 4 and files written by earlier versions are
-  rejected. `ns_solver_params_t.turb_nut_correction` is now serialized; resuming a run that
-  used it no longer comes back with the correction silently off. The learned-closure context
-  `turb_closure` is a caller-owned pointer and still cannot be stored, but
-  `restore_simulation_checkpoint()` now carries it across an in-place restore alongside the
-  source callbacks, and the exclusion is documented on both load paths
-  (`lib/include/cfd/io/checkpoint.h`, `lib/src/io/checkpoint.c`,
+  rejected. `ns_solver_params_t.turb_nut_correction` is now serialized, and range-checked
+  when read back, so resuming a run that used it no longer comes back with the correction
+  silently off. The learned-closure context `turb_closure` is a caller-owned pointer and
+  still cannot be stored, but `restore_simulation_checkpoint()` now carries it across an
+  in-place restore alongside the source callbacks, and the exclusion is documented on both
+  load paths (`lib/include/cfd/io/checkpoint.h`, `lib/src/io/checkpoint.c`,
   `lib/src/api/simulation_api.c`, `tests/io/test_checkpoint.c`).
 
 - **The Poisson API no longer accepts configuration it cannot honour.** An audit found
@@ -159,6 +163,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Implicit viscous time integration** (`ns_solver_params_t.viscous_scheme`):
+  `NS_VISCOUS_SCHEME_BACKWARD_EULER` (θ = 1, L-stable) and `NS_VISCOUS_SCHEME_CRANK_NICOLSON`
+  (θ = ½) on the scalar `projection` and OpenMP `projection_omp` solvers. The predictor's
+  explicit increment is replaced by the solution of `(I − θν·dt·∇²)δ = b`, one shifted CG
+  solve per velocity component, which removes the diffusion limit on dt; `compute_time_step()`
+  leaves that limit out for an implicit scheme. The gain is stability, not overall order:
+  convection stays explicit and the projection is non-incremental, so a full step remains
+  O(dt). A viscous-bound cavity at 20× the explicit limit stays bounded where the explicit
+  scheme saturates. `explicit` (0) is the default and runs exactly as before.
+  - Refusals go through a new capability flag, `NS_SOLVER_CAP_IMPLICIT_VISCOUS`, checked in
+    `solver_init`, `solver_step` and `solver_solve`. The exported GPU entry points
+    (`solve_*_gpu`, `gpu_solver_step`) skip those wrappers, so they refuse it themselves.
+    Every other solver returns `CFD_ERROR_UNSUPPORTED`, including when the scheme is set on
+    params after init, as does an implicit scheme combined with a turbulence model. Unknown
+    values are `CFD_ERROR_INVALID`.
+  - The projection context owns a second Poisson solver for the viscous solve. It is rebuilt
+    when dt (and so the shift) changes.
+- **Helmholtz shift on the OpenMP CG solver.** `params.helmholtz_shift` is now honoured by
+  OpenMP CG as well as scalar CG, through the same guarded `axpy` at the same two call sites,
+  so σ = 0 runs exactly the old instructions. It matches scalar to 4e-15.
+
+- **Strain-rate correction to the k-epsilon eddy viscosity** (`NS_NUT_CORRECTION_S_STAR`,
+  `ns_solver_params_t.turb_nut_correction`). A two-constant power law in `S* = |S| k / eps`
+  -- a `C_mu` that varies with the local strain -- fitted against MKM channel DNS. It cuts the
+  channel TKE error from 14.96% to 6.23% at Re_tau 392 where it was fitted, and from 12.80% to
+  9.27% at a held-out Re_tau 587, with `u_tau` unmoved. Off by default and bit-identical when
+  off; k-epsilon only, refused with `CFD_ERROR_UNSUPPORTED` for any other model. Applied in
+  the scalar, OpenMP and AVX2 turbulence steps; GPU turbulence is already refused. Why this,
+  and why not an ML pressure guess, is in `docs/technical-notes/ml-integration-design.md`
+  (`tests/solvers/turbulence/test_nut_correction.c`).
+
 - **Helmholtz shift in the Poisson solvers** — new
   `poisson_solver_params_t.helmholtz_shift` (sigma; 0 = the existing pure-Poisson path).
   The solved equation becomes `nabla^2 x - sigma*x = rhs`, which is what implicit diffusion
@@ -177,7 +212,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Support is default-deny from one central table rather than a check per `*_init`: a
   backend that ignored the shift would silently solve the unshifted equation, which is a
   wrong answer rather than a slow one. Scalar CG implements it (with
-  `POISSON_PRECOND_JACOBI`); every other method, backend and the multigrid preconditioner
+  `POISSON_PRECOND_JACOBI`), as does OpenMP CG (see above); every other method,
+  backend and the multigrid preconditioner
   return `CFD_ERROR_UNSUPPORTED` at init, and negative or non-finite shifts return
   `CFD_ERROR_INVALID` — a negative shift is the indefinite Helmholtz operator, which is
   not SPD. Verified exact against a discrete manufactured solution to 3e-16 in 2D and
@@ -384,6 +420,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/solvers/turbulence/`, `examples/turbulent_channel.c`).
 
 ### Fixed
+
+- **The exported GPU Runge-Kutta entry points refused nothing on a small grid.**
+  `solve_explicit_euler_method_gpu`, `solve_rk2_method_gpu` and `solve_rk4_method_gpu` checked
+  whether the grid was large enough for the GPU before validating their parameters, so a
+  turbulence model, upwind convection, a prescribed pressure face or a host callback on a grid
+  below the GPU threshold came back as a bare `CFD_ERROR` instead of its refusal. The size
+  check now runs after validation, as it already did in `solve_projection_method_gpu`.
 
 - **Cavity validation now measures steady state as a rate, not a per-step change.** The
   harness stopped a run once the relative change in kinetic energy **per step** fell below

@@ -72,10 +72,41 @@ static void fill_rhs(double* rhs, size_t n, uint64_t seed) {
     }
 }
 
-/* The boundary stays at the zero it started with: a homogeneous Dirichlet wall */
+/*
+ * A homogeneous Dirichlet wall, written rather than assumed.
+ *
+ * The stationary SOR and Red-Black SOR solvers this example sweeps reach the
+ * hook through poisson_solver_apply_bc(), which calls it directly; only the
+ * Krylov path zeroes the halo first. An empty body therefore held nothing at
+ * zero and left whatever the iterate carried on the walls, while its mere
+ * presence still flipped poisson_solver_resolve_omega() to the Dirichlet
+ * formula -- so the sweep counts reported under --dirichlet described a
+ * different problem than the label. Mirrors tests/test_poisson_helpers.h.
+ */
 static void hold_walls_at_zero(poisson_solver_t* solver, double* x) {
-    (void)solver;
-    (void)x;
+    size_t nx = solver->nx;
+    size_t ny = solver->ny;
+    size_t nz = solver->nz;
+    size_t plane = nx * ny;
+
+    for (size_t k = 0; k < nz; k++) {
+        double* p = x + k * plane;
+        /* z faces: the whole plane, on a 3D grid. */
+        if (nz > 1 && (k == 0 || k == nz - 1)) {
+            for (size_t idx = 0; idx < plane; idx++) {
+                p[idx] = 0.0;
+            }
+            continue;
+        }
+        for (size_t i = 0; i < nx; i++) {
+            p[i] = 0.0;                       /* bottom */
+            p[(ny - 1) * nx + i] = 0.0;       /* top */
+        }
+        for (size_t j = 0; j < ny; j++) {
+            p[j * nx] = 0.0;                  /* left */
+            p[j * nx + (nx - 1)] = 0.0;       /* right */
+        }
+    }
 }
 
 /* Solve once from a zero start; returns the sweep count, or -1 if unavailable */

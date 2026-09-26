@@ -144,9 +144,7 @@ static double turb_strain_magnitude(const flow_field* field, const grid* grid, s
 }
 
 /** Dimensionless strain rate S* = |S| k / epsilon at cell n. */
-static double turb_s_star(const flow_field* field, const grid* grid,
-                          const ns_solver_params_t* params, size_t n) {
-    (void)params;
+static double turb_s_star(const flow_field* field, const grid* grid, size_t n) {
     const double k_c = fmax(field->turb_k[n], TURB_K_MIN);
     const double eps_c = fmax(field->turb_eps[n], TURB_EPS_MIN);
     return turb_strain_magnitude(field, grid, n) * k_c / eps_c;
@@ -167,7 +165,7 @@ static void turb_closure_features(const flow_field* field, const grid* grid,
         const double k_c = fmax(field->turb_k[n], TURB_K_MIN);
         const double eps_c = fmax(field->turb_eps[n], TURB_EPS_MIN);
 
-        double s_star = turb_s_star(field, grid, params, n);
+        double s_star = turb_s_star(field, grid, n);
         double re_t = k_c * k_c / (nu * eps_c);
         double nut_p = field->nu_t[n] / nu;
 
@@ -189,7 +187,7 @@ static void turb_apply_algebraic_correction(flow_field* field, const grid* grid,
                                             const ns_solver_params_t* params) {
     const size_t total = field->nx * field->ny * field->nz;
     for (size_t n = 0; n < total; n++) {
-        const double s_star = fmax(turb_s_star(field, grid, params, n), 1e-30);
+        const double s_star = fmax(turb_s_star(field, grid, n), 1e-30);
         double b = TURB_ALG_BETA_A * pow(s_star, TURB_ALG_BETA_B);
         b = fmin(fmax(b, TURB_CLOSURE_BETA_MIN), TURB_CLOSURE_BETA_MAX);
         const double nu = local_nu(params, field, n);
