@@ -53,6 +53,50 @@ static inline int bc_inlet_edge_to_index(bc_edge_t edge) {
 }
 
 /* ============================================================================
+ * Edge sub-range (bc_inlet_set_range)
+ * ============================================================================ */
+
+/* Slack on the range test, so a bound placed exactly on a node (0.5 on an odd
+ * node count) keeps that node despite the rounding in i/(n-1). */
+#define BC_INLET_RANGE_EPS 1e-9
+
+/**
+ * Check the range on a config, which may have been filled in by hand rather
+ * than by bc_inlet_set_range(). A z-face has no 1D position to restrict.
+ */
+static inline bool bc_inlet_range_is_valid(const bc_inlet_config_t* config, bool is_z_face) {
+    if (!config->range.enabled) {
+        return true;
+    }
+    return !is_z_face && config->range.start >= 0.0 &&
+           config->range.start < config->range.end && config->range.end <= 1.0;
+}
+
+/**
+ * Map node i of `count` along an x/y edge to its profile position.
+ *
+ * Returns false for a node outside the configured range, which the caller must
+ * leave untouched. Inside it, the position is rescaled so the profile spans the
+ * range rather than the whole edge.
+ */
+static inline bool bc_inlet_node_position(const bc_inlet_config_t* config,
+                                          size_t i, size_t count, double* position) {
+    double t = (count > 1) ? (double)i / (double)(count - 1) : 0.5;
+    if (!config->range.enabled) {
+        *position = t;
+        return true;
+    }
+    double start = config->range.start;
+    double end = config->range.end;
+    if (t < start - BC_INLET_RANGE_EPS || t > end + BC_INLET_RANGE_EPS) {
+        return false;
+    }
+    double s = (t - start) / (end - start);
+    *position = fmin(1.0, fmax(0.0, s));
+    return true;
+}
+
+/* ============================================================================
  * Table-driven edge configuration (indexed 0-5)
  * ============================================================================ */
 

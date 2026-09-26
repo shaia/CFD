@@ -28,6 +28,9 @@ cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, double* w,
 
     int edge_idx = bc_inlet_edge_to_index(config->edge);
     const bc_inlet_edge_loop_t* loop = &bc_inlet_edge_loops[edge_idx];
+    if (!bc_inlet_range_is_valid(config, loop->is_z_face)) {
+        return CFD_ERROR_INVALID;
+    }
 
     if (loop->is_z_face) {
         /* Z-face inlet (FRONT or BACK): loop over the full xy-plane */
@@ -56,12 +59,14 @@ cfd_status_t bc_apply_inlet_scalar_impl(double* u, double* v, double* w,
     } else {
         /* X/Y-face inlet: loop over each z-plane */
         size_t count = loop->use_ny_for_count ? ny : nx;
-        double pos_denom = (count > 1) ? (double)(count - 1) : 1.0;
 
         for (size_t k = 0; k < nz; k++) {
             size_t base = k * stride_z;
             for (size_t i = 0; i < count; i++) {
-                double position = (count > 1) ? (double)i / pos_denom : 0.5;
+                double position;
+                if (!bc_inlet_node_position(config, i, count, &position)) {
+                    continue;
+                }
                 double u_val, v_val;
                 bc_inlet_compute_velocity(config, position, &u_val, &v_val);
 

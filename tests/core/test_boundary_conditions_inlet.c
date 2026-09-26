@@ -1433,6 +1433,161 @@ void test_inlet_main_dispatch(void) {
 }
 
 /* ============================================================================
+ * Edge Sub-Range Tests (bc_inlet_set_range)
+ * ============================================================================ */
+
+void test_inlet_set_range_validation(void) {
+    bc_inlet_config_t config = bc_inlet_config_parabolic(1.0);
+
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, bc_inlet_set_range(NULL, 0.0, 1.0));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, bc_inlet_set_range(&config, -0.1, 0.5));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, bc_inlet_set_range(&config, 0.5, 1.1));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, bc_inlet_set_range(&config, 0.5, 0.5));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, bc_inlet_set_range(&config, 0.7, 0.2));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, bc_inlet_set_range(&config, NAN, 0.5));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, bc_inlet_set_range(&config, 0.0, NAN));
+    /* A refused range leaves the config as the factory made it: whole edge */
+    TEST_ASSERT_FALSE(config.range.enabled);
+
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, bc_inlet_set_range(&config, 0.25, 0.75));
+    TEST_ASSERT_TRUE(config.range.enabled);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.25, config.range.start);
+    TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.75, config.range.end);
+}
+
+/* The backward-facing-step inflow: a parabola over the upper half of the left
+ * edge, the lower half left to whatever was applied before. */
+static void check_left_upper_half(const double* u, const double* v, size_t nx, size_t ny) {
+    size_t j_step = (ny - 1) / 2;
+    for (size_t j = 0; j < ny; j++) {
+        size_t idx = IDX_2D(0, j, nx);
+        if (j < j_step) {
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[idx]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, v[idx]);
+        } else {
+            double s = (double)(j - j_step) / (double)(ny - 1 - j_step);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 2.0 * 4.0 * s * (1.0 - s), u[idx]);
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 0.0, v[idx]);
+        }
+    }
+    /* The rest of the domain is untouched */
+    for (size_t j = 0; j < ny; j++) {
+        for (size_t i = 1; i < nx; i++) {
+            TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[IDX_2D(i, j, nx)]);
+        }
+    }
+}
+
+void test_inlet_range_parabolic_left_all_backends(void) {
+    size_t nx = 8, ny = 17; /* odd: the step corner (0.5) sits on node 8 */
+    bc_inlet_config_t config = bc_inlet_config_parabolic(2.0);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, bc_inlet_set_range(&config, 0.5, 1.0));
+
+    typedef cfd_status_t (*apply_fn)(double*, double*, size_t, size_t, const bc_inlet_config_t*);
+    const apply_fn fns[] = {bc_apply_inlet_cpu, bc_apply_inlet_omp, bc_apply_inlet_simd};
+    for (size_t f = 0; f < sizeof(fns) / sizeof(fns[0]); f++) {
+        double* u = create_test_field(nx, ny);
+        double* v = create_test_field(nx, ny);
+        TEST_ASSERT_NOT_NULL(u);
+        TEST_ASSERT_NOT_NULL(v);
+        cfd_status_t status = fns[f](u, v, nx, ny, &config);
+        if (status != CFD_ERROR_UNSUPPORTED) {
+            TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
+            check_left_upper_half(u, v, nx, ny);
+        }
+        free(u);
+        free(v);
+    }
+}
+
+void test_inlet_range_bottom_between_nodes(void) {
+    /* nx = 16: node positions i/15 never land on 0.25 or 0.75 */
+    size_t nx = 16, ny = 6;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(0.0, 3.0);
+    bc_inlet_set_edge(&config, BC_EDGE_BOTTOM);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, bc_inlet_set_range(&config, 0.25, 0.75));
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, bc_apply_inlet_cpu(u, v, nx, ny, &config));
+
+    for (size_t i = 0; i < nx; i++) {
+        double t = (double)i / (double)(nx - 1);
+        double expected = (t >= 0.25 && t <= 0.75) ? 3.0 : 999.0;
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, expected, v[i]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_range_time_varying(void) {
+    size_t nx = 8, ny = 17;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    /* A ramp that has finished leaves the parabola at full strength */
+    bc_inlet_config_t config = bc_inlet_config_parabolic(2.0);
+    bc_inlet_set_time_ramp(&config, 0.0, 1.0, 0.0, 1.0);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, bc_inlet_set_range(&config, 0.5, 1.0));
+    bc_time_context_t ctx = {.time = 5.0, .dt = 0.01};
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, bc_apply_inlet_time(u, v, nx, ny, &config, &ctx));
+
+    check_left_upper_half(u, v, nx, ny);
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_range_invalid_when_set_by_hand(void) {
+    size_t nx = 8, ny = 8;
+    double* u = create_test_field(nx, ny);
+    double* v = create_test_field(nx, ny);
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.0);
+    config.range.enabled = true;
+    config.range.start = 0.8;
+    config.range.end = 0.2;
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, bc_apply_inlet_cpu(u, v, nx, ny, &config));
+    bc_time_context_t ctx = {.time = 0.0, .dt = 0.0};
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, bc_apply_inlet_time(u, v, nx, ny, &config, &ctx));
+    /* Nothing was written before the refusal */
+    for (size_t n = 0; n < nx * ny; n++) {
+        TEST_ASSERT_DOUBLE_WITHIN(TOLERANCE, 999.0, u[n]);
+    }
+
+    free(u);
+    free(v);
+}
+
+void test_inlet_range_z_face_refused(void) {
+    size_t nx = 5, ny = 5, nz = 5;
+    size_t total = nx * ny * nz;
+    double* u = (double*)calloc(total, sizeof(double));
+    double* v = (double*)calloc(total, sizeof(double));
+    double* w = (double*)calloc(total, sizeof(double));
+    TEST_ASSERT_NOT_NULL(u);
+    TEST_ASSERT_NOT_NULL(v);
+    TEST_ASSERT_NOT_NULL(w);
+
+    bc_inlet_config_t config = bc_inlet_config_uniform(1.0, 0.0);
+    bc_inlet_set_edge(&config, BC_EDGE_FRONT);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, bc_inlet_set_range(&config, 0.0, 0.5));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      bc_apply_inlet_3d(u, v, w, nx, ny, nz, nx * ny, &config));
+
+    free(u);
+    free(v);
+    free(w);
+}
+
+/* ============================================================================
  * Test Runner
  * ============================================================================ */
 
@@ -1516,6 +1671,14 @@ int main(void) {
 
     /* Main dispatch tests */
     RUN_TEST(test_inlet_main_dispatch);
+
+    /* Edge sub-range tests */
+    RUN_TEST(test_inlet_set_range_validation);
+    RUN_TEST(test_inlet_range_parabolic_left_all_backends);
+    RUN_TEST(test_inlet_range_bottom_between_nodes);
+    RUN_TEST(test_inlet_range_time_varying);
+    RUN_TEST(test_inlet_range_invalid_when_set_by_hand);
+    RUN_TEST(test_inlet_range_z_face_refused);
 
     return UNITY_END();
 }

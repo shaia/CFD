@@ -315,6 +315,7 @@ if(BUILD_TESTS)
 
     # Poiseuille flow validation test
     add_executable(test_poiseuille_flow tests/validation/test_poiseuille_flow.c)
+    add_executable(test_backward_facing_step tests/validation/test_backward_facing_step.c)
     add_executable(test_poiseuille_3d tests/validation/test_poiseuille_3d.c)
 
     # 3D validation tests
@@ -475,6 +476,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_taylor_green_3d PRIVATE CFD::Library unity)
     target_link_libraries(test_quiescent_3d PRIVATE CFD::Library unity)
     target_link_libraries(test_poiseuille_flow PRIVATE CFD::Library unity)
+    target_link_libraries(test_backward_facing_step PRIVATE CFD::Library unity)
     target_link_libraries(test_poiseuille_3d PRIVATE CFD::Library unity)
     target_link_libraries(test_energy_solver PRIVATE CFD::Library unity)
     target_link_libraries(test_natural_convection PRIVATE CFD::Library unity)
@@ -665,6 +667,11 @@ if(BUILD_TESTS)
 
     # Poiseuille flow validation tests
     add_test(NAME PoiseuilleFlowTest COMMAND test_poiseuille_flow)
+    # Backward-facing step reattachment length (docs/validation/backward-facing-step.md)
+    add_test(NAME BackwardFacingStepTest COMMAND test_backward_facing_step)
+    add_test(NAME BackwardFacingStepRe400Test COMMAND test_backward_facing_step re400)
+    set_tests_properties(BackwardFacingStepTest BackwardFacingStepRe400Test
+        PROPERTIES LABELS "validation" TIMEOUT 7200)
     add_test(NAME Poiseuille3DTest COMMAND test_poiseuille_3d)
 
     # Energy equation tests

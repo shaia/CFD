@@ -528,7 +528,14 @@ every push to master, about 50 minutes):
 
 **Other benchmarks (P2):**
 
-- [ ] Backward-facing step — compare to Armaly et al. (1983)
+- [x] Backward-facing step, laminar — lower-wall reattachment length at Re = 100 (scalar) and
+      Re = 400 (OpenMP) against Armaly et al. (1983) and 2D computations; the inflow uses the
+      new `bc_inlet_set_range()`. With the inlet at the step, as in Gartling (1990), the
+      solver converges above the channel-inlet references (Re = 100: 3.18 at 65 nodes across
+      H vs 3.00), the direction Barton (1997) predicts, so the test takes a band 2% below to
+      8% above. See `docs/validation/backward-facing-step.md`
+- [ ] Backward-facing step at Re = 800 against Gartling (1990), the one reference with this
+      exact inlet geometry — needs ~30H at 65+ nodes across H, too slow for the suite today
 - [ ] Flow over cylinder — compare to Williamson (1996)
 
 **CI vs Release parameters:**
@@ -603,7 +610,9 @@ Pure-C inference with no runtime Python dependency (embedded/HPC friendly).
       left on this case is `k+` at 9 and 14 nodes
 - [ ] Separated or adverse-pressure-gradient validation case — **prerequisite** for the
       learned closure: in channel flow the momentum balance pins the shear stress, so the
-      closure has little authority over the quantities the gate measures
+      closure has little authority over the quantities the gate measures. The laminar
+      backward-facing step now exists (6.1); a turbulent one still needs wall functions on
+      the step face and turbulence inflow values over part of an edge
 - [ ] Validation: must beat tuned-Cs Smagorinsky, and must vanish in laminar regions
       (the latter holds structurally and is asserted in `test_nut_correction.c`)
 

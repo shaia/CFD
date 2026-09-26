@@ -747,6 +747,7 @@ The reported L2 error compares methods and backends against a common reference f
 **What it demonstrates:**
 - `grid_initialize_stretched(g, beta)` with multiple beta values
 - `bc_inlet_config_parabolic(U_max)` + `bc_inlet_set_edge()` for parabolic inlet
+  (`bc_inlet_set_range()` would restrict it to part of the edge, as in a backward-facing step)
 - `bc_outlet_config_zero_gradient()` + `bc_outlet_set_edge()` for outlet
 - No-slip walls (manual loop)
 - `bc_apply_neumann()` for pressure
