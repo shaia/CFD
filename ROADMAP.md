@@ -225,6 +225,11 @@ Stencil tests, convergence-order, MMS, and divergence-free validation are done (
 - [ ] SIMPLEC / PISO variants
 - [ ] Pseudo-transient continuation
 - [ ] Convergence acceleration (relaxation)
+- [ ] Grid sequencing — start a fine-grid run from the converged coarse-grid solution
+      (prolong u, v, p with the multigrid transfer operators) instead of from rest. Steady
+      runs spend most of their steps crossing the startup transient: the 257×257 Re=1000
+      cavity in the §6.1 Richardson study needs ~75k steps from rest, and the coarse grids
+      of that study already hold a nearly converged answer
 
 ### 1.5 Time Integration (P1)
 
