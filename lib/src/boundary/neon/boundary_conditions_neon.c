@@ -17,7 +17,6 @@
 #define BC_SIMD_VEC_TYPE         float64x2_t
 #define BC_SIMD_WIDTH            2
 #define BC_SIMD_MASK             1
-#define BC_SIMD_THRESHOLD        256
 #define BC_SIMD_FUNC_PREFIX      neon
 
 #include "../boundary_conditions_simd_impl.h"

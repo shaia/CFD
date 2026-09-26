@@ -36,6 +36,7 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 | [Validation](validation/) | Benchmark results and validation | Researchers |
 | [Turbulent Channel DNS](validation/turbulent-channel-dns.md) | RANS closure validation against Moser-Kim-Mansour DNS | Researchers |
 | [SIMD Optimization](technical-notes/simd-optimization-analysis.md) | AVX2/NEON implementation details | Performance engineers |
+| [OpenMP vs Scalar](technical-notes/openmp-vs-scalar.md) | Why OpenMP kernels lose to scalar on MSVC, and how to benchmark and validate a fix | Performance engineers |
 | [ML Integration Design](technical-notes/ml-integration-design.md) | Why ML for pressure was rejected, the algebraic eddy-viscosity correction that shipped, and the design for a learned one | Contributors |
 
 ## Documentation by Role

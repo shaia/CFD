@@ -7,7 +7,6 @@
  *   BC_SIMD_LOAD(src)        - load SIMD vector from memory
  *   BC_SIMD_WIDTH            - number of doubles per SIMD vector (4 or 2)
  *   BC_SIMD_MASK             - low-bit mask for rounding down (3 for AVX2, 1 for NEON)
- *   BC_SIMD_THRESHOLD        - min width for OMP on SIMD loops
  *   BC_OUTLET_FUNC_NAME      - function name to define
  *
  * 3D support: all functions accept (nz, stride_z). When nz <= 1,
@@ -46,7 +45,7 @@ cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
                 case BC_EDGE_LEFT:
                     for (size_t k = 0; k < nz; k++) {
                         size_t base = k * stride_z;
-                        #pragma omp parallel for schedule(static)
+                        #pragma omp parallel for schedule(static) if(bc_omp_worth_threading(ny))
                         for (j = 0; j < bc_outlet_simd_size_to_int(ny); j++) {
                             size_t row = base + (size_t)j * nx;
                             field[row] = field[row + 1];
@@ -57,7 +56,7 @@ cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
                 case BC_EDGE_RIGHT:
                     for (size_t k = 0; k < nz; k++) {
                         size_t base = k * stride_z;
-                        #pragma omp parallel for schedule(static)
+                        #pragma omp parallel for schedule(static) if(bc_omp_worth_threading(ny))
                         for (j = 0; j < bc_outlet_simd_size_to_int(ny); j++) {
                             size_t row = base + (size_t)j * nx;
                             field[row + nx - 1] = field[row + nx - 2];
@@ -72,7 +71,7 @@ cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
                         double* src = field + base + nx;
                         size_t simd_end = nx & ~(size_t)BC_SIMD_MASK;
 
-                        if (nx >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
+                        if (bc_omp_worth_threading(nx) && simd_end <= (size_t)INT_MAX) {
                             #pragma omp parallel for schedule(static)
                             for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                                 BC_SIMD_STORE(dst + i, BC_SIMD_LOAD(src + i));
@@ -95,7 +94,7 @@ cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
                         double* src = field + base + ((ny - 2) * nx);
                         size_t simd_end = nx & ~(size_t)BC_SIMD_MASK;
 
-                        if (nx >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
+                        if (bc_omp_worth_threading(nx) && simd_end <= (size_t)INT_MAX) {
                             #pragma omp parallel for schedule(static)
                             for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                                 BC_SIMD_STORE(dst + i, BC_SIMD_LOAD(src + i));
@@ -129,7 +128,7 @@ cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
                     size_t plane_size = nx * ny;
                     size_t simd_end = plane_size & ~(size_t)BC_SIMD_MASK;
 
-                    if (plane_size >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
+                    if (bc_omp_worth_threading(plane_size) && simd_end <= (size_t)INT_MAX) {
                         #pragma omp parallel for schedule(static)
                         for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                             BC_SIMD_STORE(dst + i, BC_SIMD_LOAD(src + i));
@@ -161,5 +160,4 @@ cfd_status_t BC_OUTLET_FUNC_NAME(double* field, size_t nx, size_t ny,
 #undef BC_SIMD_LOAD
 #undef BC_SIMD_WIDTH
 #undef BC_SIMD_MASK
-#undef BC_SIMD_THRESHOLD
 #undef BC_OUTLET_FUNC_NAME

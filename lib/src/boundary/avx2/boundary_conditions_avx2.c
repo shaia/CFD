@@ -17,7 +17,6 @@
 #define BC_SIMD_VEC_TYPE         __m256d
 #define BC_SIMD_WIDTH            4
 #define BC_SIMD_MASK             3
-#define BC_SIMD_THRESHOLD        256
 #define BC_SIMD_FUNC_PREFIX      avx2
 
 #include "../boundary_conditions_simd_impl.h"

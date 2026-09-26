@@ -13,6 +13,25 @@
 #include <stddef.h>
 
 /* ============================================================================
+ * OpenMP Region Threshold
+ * ============================================================================ */
+
+/* Minimum boundary points one OpenMP region must write to use the thread team.
+ * Every OMP loop in the OMP and SIMD backends passes the points it writes
+ * (two per iteration for a face pair) to bc_omp_worth_threading() through the
+ * OpenMP if() clause, so smaller loops run on the calling thread. Entering a
+ * region costs ~12-15 us at 4 threads on MSVC, while copying a 2D edge pair of
+ * 8193 cells serially takes ~16 us: threaded 2D Neumann only beat serial at an
+ * edge of 16385 cells, and the per-plane edge loops made a threaded 129^3 call
+ * 77x slower than serial. Same value as MG_OMP_MIN_POINTS, measured the same
+ * way. In practice only the z-faces of large 3D grids use the team. */
+#define BC_OMP_MIN_POINTS 32768
+
+static inline int bc_omp_worth_threading(size_t points) {
+    return points >= BC_OMP_MIN_POINTS;
+}
+
+/* ============================================================================
  * Backend Implementation Function Types
  *
  * Each backend provides these functions. If a backend is not available,
