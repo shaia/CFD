@@ -35,6 +35,8 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 |----------|-------------|----------|
 | [Validation](validation/) | Benchmark results and validation | Researchers |
 | [Turbulent Channel DNS](validation/turbulent-channel-dns.md) | RANS closure validation against Moser-Kim-Mansour DNS | Researchers |
+| [Backward-Facing Step](validation/backward-facing-step.md) | Laminar reattachment length vs Armaly, Gartling and 2D computations | Researchers |
+| [Backward-Facing Step Design](technical-notes/backward-facing-step-design.md) | The partial-edge inlet, the case setup, and why results sit above the references | Contributors |
 | [SIMD Optimization](technical-notes/simd-optimization-analysis.md) | AVX2/NEON implementation details | Performance engineers |
 | [OpenMP vs Scalar](technical-notes/openmp-vs-scalar.md) | Why OpenMP kernels lose to scalar on MSVC, and how to benchmark and validate a fix | Performance engineers |
 | [ML Integration Design](technical-notes/ml-integration-design.md) | Why ML for pressure was rejected, the algebraic eddy-viscosity correction that shipped, and the design for a learned one | Contributors |
