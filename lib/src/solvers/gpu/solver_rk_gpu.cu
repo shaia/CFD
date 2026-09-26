@@ -5,22 +5,28 @@
  * CUDA port of the scalar RK2 (Heun) and RK4 (classical) integrators
  * (lib/src/solvers/navier_stokes/cpu/solver_rk{2,4}.c). The device RHS kernel
  * mirrors the shared scalar kernel ns_momentum_rhs_scalar.h exactly: periodic
- * stencil indexing (no ghost-cell reliance), the same derivative/divergence
+ * stencil indexing for RK2/RK4 (no ghost-cell reliance; explicit Euler reads the
+ * ghost cells, as solver_explicit_euler.c does), the same derivative/divergence
  * clamps, the default sinusoidal momentum source, and Boussinesq buoyancy. As
  * in the CPU path, boundary conditions are NOT applied between RK stages — only
  * after the full step — which is required to preserve RK temporal order.
  *
- * One driver, solve_rk_gpu(..., order), serves both RK2 (order=2, stages k1,k2)
- * and RK4 (order=4, stages k1..k4). The energy equation, thermal BCs, and
- * caller-set velocity-BC restoration reuse the shared device kernels in
+ * One driver, solve_rk_gpu(..., order), serves explicit Euler (order=1), RK2
+ * (order=2, stages k1,k2) and RK4 (order=4, stages k1..k4). The energy equation,
+ * thermal BCs and velocity-boundary restoration reuse the shared device kernels in
  * gpu_shared_kernels.cuh (the same ones used by the projection GPU backend).
  *
  * GPU-specific limitations vs the CPU reference (rejected, not silently wrong):
  *   - host source_func / heat_source_func callbacks cannot run on the device;
  *   - only uniform grid spacing is supported (the CPU path allows non-uniform x/y).
- * Like the projection GPU backend, caller-set velocity boundaries are restored
- * from their initial (upload-time) values rather than re-running the full host
- * apply_boundary_conditions() each step; GPU vs CPU is validated within tolerance.
+ *
+ * Boundaries follow the CPU solver each order ports, so the backends agree to
+ * rounding rather than to a tolerance:
+ *   - RK2/RK4 wrap the stencil and, after the full step, make every field
+ *     periodic (solver_rk{2,4}.c: apply_boundary_conditions()).
+ *   - Explicit Euler reads the ghost cells, and after the step makes p and T
+ *     periodic while keeping the caller's velocity boundaries
+ *     (solver_explicit_euler.c), which is what lets it drive a lid.
  *
  * Branch-free 3D: when nz==1, stride_z=0 and inv_2dz=inv_dz2=0 collapse all
  * z-terms, matching the 2D code path.
@@ -79,7 +85,7 @@ __global__ void kernel_rk_rhs(const double* __restrict__ u, const double* __rest
                               double mu, double beta, double T_ref,
                               double gx, double gy, double gz,
                               double amp_u, double amp_v, double decay,
-                              int iter, double dt) {
+                              int iter, double dt, int wrap) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     if (i < nx - 1 && j < ny - 1) {
@@ -91,14 +97,15 @@ __global__ void kernel_rk_rhs(const double* __restrict__ u, const double* __rest
                 continue;
             }
 
-            // Periodic stencil indices in x/y/z — avoids relying on ghost cells.
+            // wrap: periodic stencil indices in x/y/z, no ghost-cell reliance (RK).
+            // !wrap: plain neighbours that read the ghost cells (explicit Euler).
             // When nz==1: stride_z=0 so kd=ku=idx and the z-terms vanish.
-            size_t il = (i > 1)      ? idx - 1       : (size_t)k * stride_z + IDX_2D(nx - 2, j, nx);
-            size_t ir = (i < nx - 2) ? idx + 1       : (size_t)k * stride_z + IDX_2D(1, j, nx);
-            size_t jd = (j > 1)      ? idx - nx      : (size_t)k * stride_z + IDX_2D(i, ny - 2, nx);
-            size_t ju = (j < ny - 2) ? idx + nx      : (size_t)k * stride_z + IDX_2D(i, 1, nx);
-            size_t kd = (k > 1)      ? idx - stride_z : (size_t)(nz - 2) * stride_z + IDX_2D(i, j, nx);
-            size_t ku = (k < nz - 2) ? idx + stride_z : (size_t)1 * stride_z + IDX_2D(i, j, nx);
+            size_t il = (i > 1 || !wrap)      ? idx - 1        : (size_t)k * stride_z + IDX_2D(nx - 2, j, nx);
+            size_t ir = (i < nx - 2 || !wrap) ? idx + 1        : (size_t)k * stride_z + IDX_2D(1, j, nx);
+            size_t jd = (j > 1 || !wrap)      ? idx - nx       : (size_t)k * stride_z + IDX_2D(i, ny - 2, nx);
+            size_t ju = (j < ny - 2 || !wrap) ? idx + nx       : (size_t)k * stride_z + IDX_2D(i, 1, nx);
+            size_t kd = (k > 1 || !wrap)      ? idx - stride_z : (size_t)(nz - 2) * stride_z + IDX_2D(i, j, nx);
+            size_t ku = (k < nz - 2 || !wrap) ? idx + stride_z : (size_t)1 * stride_z + IDX_2D(i, j, nx);
 
             double inv_2dx = 1.0 / (2.0 * dx);
             double inv_2dy = 1.0 / (2.0 * dy);
@@ -236,6 +243,49 @@ __global__ void kernel_rk_combine(double* __restrict__ out, const double* __rest
         if (clamp_velocity)
             val = fmax(-MAX_VELOCITY_LIMIT, fmin(MAX_VELOCITY_LIMIT, val));
         out[n] = val;
+    }
+}
+
+// Periodic ghost copies, one axis per launch so the passes run in the CPU's
+// order (x, then y, then z): the y pass fills the corners from x-updated rows,
+// exactly as apply_boundary_conditions() does.
+__global__ void kernel_periodic_x(double* f, size_t nx, size_t ny, size_t nz) {
+    size_t n = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (n < ny * nz) {
+        size_t base = (n / ny) * nx * ny, j = n % ny;
+        f[base + IDX_2D(0, j, nx)] = f[base + IDX_2D(nx - 2, j, nx)];
+        f[base + IDX_2D(nx - 1, j, nx)] = f[base + IDX_2D(1, j, nx)];
+    }
+}
+
+__global__ void kernel_periodic_y(double* f, size_t nx, size_t ny, size_t nz) {
+    size_t n = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (n < nx * nz) {
+        size_t base = (n / nx) * nx * ny, i = n % nx;
+        f[base + i] = f[base + IDX_2D(i, ny - 2, nx)];
+        f[base + IDX_2D(i, ny - 1, nx)] = f[base + IDX_2D(i, 1, nx)];
+    }
+}
+
+__global__ void kernel_periodic_z(double* f, size_t nx, size_t ny, size_t nz) {
+    size_t n = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    size_t plane = nx * ny;
+    if (n < plane) {
+        f[n] = f[(nz - 2) * plane + n];
+        f[(nz - 1) * plane + n] = f[plane + n];
+    }
+}
+
+static void apply_periodic_gpu(double* d_f, size_t nx, size_t ny, size_t nz,
+                               cudaStream_t stream) {
+    const int block = 256;
+    kernel_periodic_x<<<(unsigned)((ny * nz + block - 1) / block), block, 0, stream>>>(
+        d_f, nx, ny, nz);
+    kernel_periodic_y<<<(unsigned)((nx * nz + block - 1) / block), block, 0, stream>>>(
+        d_f, nx, ny, nz);
+    if (nz > 1) {
+        kernel_periodic_z<<<(unsigned)((nx * ny + block - 1) / block), block, 0, stream>>>(
+            d_f, nx, ny, nz);
     }
 }
 
@@ -460,7 +510,7 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
                     params->beta, params->T_ref,
                     params->gravity[0], params->gravity[1], params->gravity[2],
                     params->source_amplitude_u, params->source_amplitude_v,
-                    params->source_decay_rate, iter, dt_eff);
+                    params->source_decay_rate, iter, dt_eff, order != 1);
             }
 
             // Final update Q^{n+1}.
@@ -507,12 +557,26 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
                 double* tmp_T = d_T;
                 d_T = d_T_new;
                 d_T_new = tmp_T;
-                apply_thermal_bcs_gpu(d_T, nx, ny, nz, &params->thermal_bc, stream);
             }
 
-            // Restore caller-set velocity boundaries (after the full step only).
-            kernel_copy_velocity_boundaries<<<bc_grid, bc_block, 0, stream>>>(
-                d_u, d_v, d_w, d_u_bc, d_v_bc, d_w_bc, nx, ny, nz);
+            // Boundaries after the full step only, as the CPU solver of this
+            // order does them: p and T periodic always; velocity periodic for
+            // RK2/RK4, the caller's boundaries for Euler. rho is constant on the
+            // device and never downloaded, so it needs no copy.
+            apply_periodic_gpu(d_p, nx, ny, nz, stream);
+            apply_periodic_gpu(d_T, nx, ny, nz, stream);
+            if (order == 1) {
+                kernel_copy_velocity_boundaries<<<bc_grid, bc_block, 0, stream>>>(
+                    d_u, d_v, d_w, d_u_bc, d_v_bc, d_w_bc, nx, ny, nz);
+            } else {
+                apply_periodic_gpu(d_u, nx, ny, nz, stream);
+                apply_periodic_gpu(d_v, nx, ny, nz, stream);
+                apply_periodic_gpu(d_w, nx, ny, nz, stream);
+            }
+            // Configured thermal BCs overwrite the periodic T, as on the CPU.
+            if (energy_on) {
+                apply_thermal_bcs_gpu(d_T, nx, ny, nz, &params->thermal_bc, stream);
+            }
         }
 
         // Sync the time-stepping loop before downloading; a failure here means

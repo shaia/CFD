@@ -407,14 +407,17 @@ static inline cavity_sim_result_t cavity_run_with_solver(
  * @param lid_velocity Lid velocity (typically 1.0)
  * @param max_steps    Maximum number of time steps
  * @param dt           Time step size
+ * @param pressure_solver  Pressure solve for the projection solvers
+ *                         (NS_PRESSURE_SOLVER_DEFAULT = each backend's CG)
  * @param out_ctx      Output: pointer to store the context (NULL on failure)
  * @return Simulation result with basic status info
  */
-static inline cavity_sim_result_t cavity_run_with_solver_ctx(
+static inline cavity_sim_result_t cavity_run_with_pressure_solver_ctx(
     const char* solver_type,
     size_t nx, size_t ny,
     double reynolds, double lid_velocity,
     int max_steps, double dt,
+    ns_pressure_solver_t pressure_solver,
     cavity_context_t** out_ctx)
 {
     cavity_sim_result_t result = {0};
@@ -445,6 +448,7 @@ static inline cavity_sim_result_t cavity_run_with_solver_ctx(
         .source_decay_rate = 0.0,
         .pressure_coupling = 0.1
     };
+    params.pressure_solver = pressure_solver;
 
     /* Create solver */
     ns_solver_registry_t* registry = cfd_registry_create();
@@ -558,6 +562,19 @@ static inline cavity_sim_result_t cavity_run_with_solver_ctx(
     }
 
     return result;
+}
+
+/** cavity_run_with_pressure_solver_ctx() with each backend's default pressure solve. */
+static inline cavity_sim_result_t cavity_run_with_solver_ctx(
+    const char* solver_type,
+    size_t nx, size_t ny,
+    double reynolds, double lid_velocity,
+    int max_steps, double dt,
+    cavity_context_t** out_ctx)
+{
+    return cavity_run_with_pressure_solver_ctx(solver_type, nx, ny, reynolds, lid_velocity,
+                                               max_steps, dt, NS_PRESSURE_SOLVER_DEFAULT,
+                                               out_ctx);
 }
 
 /**

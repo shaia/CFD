@@ -24,7 +24,15 @@ This document describes the comprehensive backend validation system for the lid-
 - **OpenMP** (`explicit_euler_omp`)
 
 ### Backend Consistency
-- Verifies projection backends (CPU, AVX2, OMP) produce consistent results (within 0.1%)
+- `test_backend_consistency` here compares the center values of the projection backends
+  (CPU, AVX2, OMP) within 0.1%.
+- The whole-field check across every family and backend is `test_solver_architecture.c`
+  (`SolverArchitectureTest`, label `cross-arch`). It runs projection and Explicit Euler on
+  the 33×33 cavity, and Explicit Euler, RK2 and RK4 on a periodic Taylor-Green vortex.
+  AVX2, OpenMP and CUDA are each compared with the scalar reference over every node except
+  the four corners: velocity relative to max |u|, pressure with its mean removed relative
+  to its range. All must agree within 0.1%. Measured agreement is at round-off, except
+  projection CUDA (about 1e-10) and Explicit Euler AVX2/OpenMP (about 3e-5).
 
 ### Reynolds Number Coverage
 - **Re=100** — CI 33×33 runs every backend, projection and Explicit Euler, including CPU-scalar. Full 129×129 runs the optimized **projection** backends only (AVX2/OMP/GPU): CPU-scalar is excluded per the long-validation scalar policy, and Explicit Euler is excluded for the reason given under [Explicit Euler coverage](#explicit-euler-coverage) below.
@@ -250,12 +258,17 @@ still exist in `test_cavity_backends` and can be run by hand.
 ## Next Steps
 
 ### Immediate (for v1.0)
-1. ROADMAP §6.1 cross-architecture consistency stays open: `CavityBackend_Consistency`
-   compares CPU, AVX2 and OpenMP center values at 33×33 without the GPU, and matching RMS
-   values at 129×129 are not a field-level 0.1% comparison.
+1. ROADMAP §6.1 cross-architecture consistency is closed by `SolverArchitectureTest`
+   (above). Bringing the CUDA Euler/RK2/RK4 path within 0.1% of the scalar reference
+   required a fix: the GPU port restored the caller's boundary values after every step.
+   The CPU solvers make RK2/RK4 fully periodic after the step, and Explicit Euler reads
+   the ghost cells, which is how it sees the lid. With the old behavior, CUDA Explicit
+   Euler differed from the scalar solver by 75% on the cavity, and CUDA RK2/RK4 by 0.18%
+   on the periodic vortex.
 
 ### Future Enhancements
-1. Add grid convergence study (33→65→129→257)
+1. The grid-convergence study (Richardson extrapolation at Re = 100, 400, 1000) is in
+   [cavity-grid-convergence.md](cavity-grid-convergence.md)
 2. Add backend performance comparison
 3. Add transient accuracy metrics (not just steady-state)
 

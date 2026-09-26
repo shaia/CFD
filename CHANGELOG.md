@@ -176,6 +176,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cross-architecture consistency across every solver family** (ROADMAP 6.1).
+  `test_solver_architecture.c` compares the whole field of every backend (AVX2, OpenMP,
+  CUDA) with the scalar reference for projection and Explicit Euler on the 33x33 cavity,
+  and for Explicit Euler, RK2 and RK4 on a periodic Taylor-Green vortex. All must agree
+  within 0.1% (velocity against max |u|; pressure with its mean removed against its range).
+  The test it replaces compared one center value, with absolute tolerances of 0.002 and
+  0.01, and never covered RK2/RK4 or CUDA Euler.
+- **Extended-time Taylor-Green decay rate** (`test_taylor_green_decay.c`, ROADMAP 6.1).
+  The kinetic-energy decay rate is fitted over t = 10 (t = 20 in full validation), during
+  which the energy falls by 86% (98%). The fit must match −4ν, with no drift between the
+  early and late thirds of the run, and converge at second order. It runs on one wall-bounded
+  vortex cell, because the projection's pressure solve has no periodic option.
+  `docs/validation/taylor-green-decay.md` records why the periodic vortex cannot serve: the
+  projection reaches 0.92 of the rate there, and the pseudo-compressible Euler/RK solvers 0.42.
+- **Multi-Reynolds grid-convergence study with Richardson extrapolation**
+  (`test_cavity_richardson.c`, ROADMAP 6.1). The steady cavity is solved on three grids at
+  Re = 100 (33/65/129), 400 (65/129/257) and 1000 (129/257/513), and the observed order,
+  extrapolated value and GCI are computed per Celik et al. (2008) for u at the centre and the
+  centreline extrema. CI runs Re = 100 on 17/33/65. It runs on the OpenMP projection with the
+  multigrid pressure solve (`NS_PRESSURE_SOLVER_MULTIGRID`): on a 257x257 Re=1000 cavity that
+  is 16 ms/step against 140 ms for the AVX2 CG solve, with the same velocity field to 5e-14.
+  The test harness gains `cavity_run_with_pressure_solver_ctx()` to select it. The observed order is about 1.3, not 2:
+  see `docs/validation/cavity-grid-convergence.md`.
+
 - **Implicit viscous time integration** (`ns_solver_params_t.viscous_scheme`):
   `NS_VISCOUS_SCHEME_BACKWARD_EULER` (θ = 1, L-stable) and `NS_VISCOUS_SCHEME_CRANK_NICOLSON`
   (θ = ½) on the scalar `projection` and OpenMP `projection_omp` solvers. The predictor's
@@ -433,6 +457,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/solvers/turbulence/`, `examples/turbulent_channel.c`).
 
 ### Fixed
+
+- **CUDA Explicit Euler, RK2 and RK4 now treat boundaries as their CPU counterparts do.**
+  The shared GPU driver (`solver_rk_gpu.cu`) restored the caller's boundary values after
+  every step, and ran Explicit Euler through the RK kernel's wrap-around stencil. The CPU
+  RK2/RK4 solvers instead make every field periodic after the step, and CPU Explicit Euler
+  reads the ghost cells, keeps the caller's velocity boundaries and makes p and T periodic.
+  As a result, CUDA Explicit Euler never saw a cavity lid (75% field difference from the
+  scalar solver), and CUDA RK2/RK4 lagged the scalar ghost values by one step (0.18%). Each
+  order now follows its CPU reference, and all three agree with the scalar solver to
+  round-off.
 
 - **The exported GPU Runge-Kutta entry points refused nothing on a small grid.**
   `solve_explicit_euler_method_gpu`, `solve_rk2_method_gpu` and `solve_rk4_method_gpu` checked
