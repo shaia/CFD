@@ -1,14 +1,17 @@
 /**
  * @file test_turbulence_wall_functions.c
- * @brief Unit tests for the log-law wall functions
+ * @brief Unit tests for the Spalding's-law wall functions
  *
  * Tests:
  * 1. turbulence_wall_u_tau recovers a known friction velocity from a
- *    log-law-consistent (u_p, y_p) pair at y+ = 30 and y+ = 100.
- * 2. Viscous sublayer branch (y+ = 5): u_tau = sqrt(nu*u_p/y_p).
- * 3. Full BC application on a small grid: equilibrium k/eps at the first
- *    interior node and a wall-face viscosity that reproduces the log-law
- *    wall shear exactly: (nu + 0.5*(nu_t_w + nu_t_p)) * u_p/y_p = u_tau^2.
+ *    Spalding-consistent (u_p, y_p) pair in the sublayer, buffer and log layer.
+ * 2. Limits: the linear law deep in the sublayer, the log law far out in the
+ *    log layer; degenerate inputs return 0.
+ * 3. Continuity across the buffer layer: u_tau rises smoothly through
+ *    y+ = 11.63, where the former linear/log switch made it jump 3.3%.
+ * 4. Full BC application on a small grid: equilibrium k/eps at the first
+ *    interior node and a wall-face viscosity that reproduces the wall-law
+ *    shear exactly: (nu + 0.5*(nu_t_w + nu_t_p)) * u_p/y_p = u_tau^2.
  * ============================================================================ */
 
 #include "cfd/core/cfd_init.h"
@@ -29,40 +32,56 @@
 void setUp(void) { cfd_init(); }
 void tearDown(void) { cfd_finalize(); }
 
+/* Spalding's law y+(u+), written out independently of the library */
+static double spalding_yplus(double uplus) {
+    double ku = WF_KAPPA * uplus;
+    return uplus + exp(-WF_KAPPA * WF_B) *
+                       (exp(ku) - 1.0 - ku - ku * ku / 2.0 - ku * ku * ku / 6.0);
+}
+
 /* ============================================================================
- * TEST 1: u_tau recovery in the log layer
+ * TEST 1: u_tau recovery across the sublayer, buffer and log layer
  * ============================================================================ */
 
-static void check_u_tau_recovery(double ut_exact, double yplus) {
+static void check_u_tau_recovery(double ut_exact, double uplus) {
     const double nu = 1.5e-5;
-    double y_p = yplus * nu / ut_exact;
-    double u_p = ut_exact * (log(yplus) / WF_KAPPA + WF_B);
+    double y_p = spalding_yplus(uplus) * nu / ut_exact;
+    double u_p = ut_exact * uplus;
 
     double ut = turbulence_wall_u_tau(u_p, y_p, nu);
-    TEST_ASSERT_DOUBLE_WITHIN(1e-8 * ut_exact, ut_exact, ut);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-10 * ut_exact, ut_exact, ut);
 }
 
-static void test_u_tau_recovery_log_layer(void) {
-    check_u_tau_recovery(0.05, 30.0);
-    check_u_tau_recovery(0.05, 100.0);
-    check_u_tau_recovery(1.0, 30.0);
-    check_u_tau_recovery(1.0, 100.0);
+static void test_u_tau_recovery(void) {
+    const double uplus[] = {3.0, 8.0, 11.63, 14.0, 17.0, 25.0}; /* y+ ~ 3 .. 1900 */
+    for (size_t n = 0; n < sizeof(uplus) / sizeof(uplus[0]); n++) {
+        check_u_tau_recovery(0.05, uplus[n]);
+        check_u_tau_recovery(1.0, uplus[n]);
+    }
 }
 
 /* ============================================================================
- * TEST 2: viscous sublayer branch
+ * TEST 2: linear-law and log-law limits, degenerate inputs
  * ============================================================================ */
 
-static void test_u_tau_sublayer(void) {
+static void test_u_tau_limits(void) {
     const double nu = 1.5e-5;
     const double ut_exact = 0.2;
-    const double yplus = 5.0;
-    double y_p = yplus * nu / ut_exact;
-    double u_p = ut_exact * yplus; /* linear law u+ = y+ */
 
-    double ut = turbulence_wall_u_tau(u_p, y_p, nu);
-    /* sqrt(nu*u_p/y_p) = sqrt(ut^2) = ut exactly */
-    TEST_ASSERT_DOUBLE_WITHIN(1e-12, ut_exact, ut);
+    /* Deep sublayer (y+ = 0.5): the linear law u+ = y+, to O((kappa u+)^4) */
+    double yplus = 0.5;
+    double y_p = yplus * nu / ut_exact;
+    double u_p = ut_exact * yplus;
+    TEST_ASSERT_DOUBLE_WITHIN(1e-4 * ut_exact, ut_exact,
+                              turbulence_wall_u_tau(u_p, y_p, nu));
+
+    /* Far out in the log layer (y+ = 1000): the log law. Spalding approaches
+     * it from above; the gap is ~1e-4 here, ~3% at y+ = 40. */
+    yplus = 1000.0;
+    y_p = yplus * nu / ut_exact;
+    u_p = ut_exact * (log(yplus) / WF_KAPPA + WF_B);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-3 * ut_exact, ut_exact,
+                              turbulence_wall_u_tau(u_p, y_p, nu));
 
     /* Degenerate inputs return 0 */
     TEST_ASSERT_EQUAL_DOUBLE(0.0, turbulence_wall_u_tau(0.0, y_p, nu));
@@ -71,7 +90,33 @@ static void test_u_tau_sublayer(void) {
 }
 
 /* ============================================================================
- * TEST 3: full wall-function BC application (bottom wall, k-epsilon)
+ * TEST 3: continuity through the buffer layer
+ *
+ * Sweep Re_p = u_p*y_p/nu across 11.63^2 (the former linear/log switch) in
+ * relative steps d. u_tau = u_p/u+ grows like Re_p^s with 1/2 <= s <= 1, so each
+ * step must raise it by at most ~d. The piecewise law jumped 3.3% at the switch.
+ * ============================================================================ */
+
+static void test_u_tau_continuous_through_buffer_layer(void) {
+    const double nu = 1e-5;
+    const double y_p = 1e-3;
+    const double d = 1e-3;
+
+    double prev = 0.0;
+    double max_step = 0.0;
+    for (double re = 100.0; re < 200.0; re *= 1.0 + d) {
+        double ut = turbulence_wall_u_tau(re * nu / y_p, y_p, nu);
+        if (prev > 0.0) {
+            TEST_ASSERT_TRUE_MESSAGE(ut > prev, "u_tau must increase with u_p");
+            max_step = fmax(max_step, ut / prev - 1.0);
+        }
+        prev = ut;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(max_step < 2.0 * d, "u_tau jumps in the buffer layer");
+}
+
+/* ============================================================================
+ * TEST 4: full wall-function BC application (bottom wall, k-epsilon)
  * ============================================================================ */
 
 static void test_wall_function_bc_application(void) {
@@ -105,8 +150,8 @@ static void test_wall_function_bc_application(void) {
     const double nu = mu; /* rho = 1 */
     const double ut = turbulence_wall_u_tau(u_p, y_p, nu);
     TEST_ASSERT_TRUE(ut > 0.0);
-    /* Sanity: this configuration must exercise the log-law branch */
-    TEST_ASSERT_TRUE(ut * y_p / nu > 11.63);
+    /* Sanity: this configuration puts the first node in the log layer */
+    TEST_ASSERT_TRUE(ut * y_p / nu > 30.0);
 
     size_t i = nx / 2;
     size_t idx_w = i;        /* wall node (j=0) */
@@ -119,7 +164,7 @@ static void test_wall_function_bc_application(void) {
     TEST_ASSERT_EQUAL_DOUBLE(0.0, field->turb_k[idx_w]);
     TEST_ASSERT_DOUBLE_WITHIN(1e-12, field->turb_eps[idx_p], field->turb_eps[idx_w]);
 
-    /* Discrete wall shear must reproduce the log law exactly:
+    /* Discrete wall shear must reproduce the wall law exactly:
      * (nu + 0.5*(nu_t_w + nu_t_p)) * u_p/y_p == u_tau^2 */
     double nu_face = nu + 0.5 * (field->nu_t[idx_w] + field->nu_t[idx_p]);
     double shear = nu_face * u_p / y_p;
@@ -130,7 +175,7 @@ static void test_wall_function_bc_application(void) {
 }
 
 /* ============================================================================
- * TEST 4: sublayer wall function degenerates to laminar shear
+ * TEST 5: sublayer wall function degenerates to laminar shear
  * ============================================================================ */
 
 static void test_wall_function_sublayer_laminar(void) {
@@ -160,11 +205,13 @@ static void test_wall_function_sublayer_laminar(void) {
 
     TEST_ASSERT_EQUAL(CFD_SUCCESS, turbulence_apply_bcs(field, g, &params));
 
-    /* In the sublayer u_tau^2 = nu*u_p/y_p, so the wall-face eddy viscosity
-     * must vanish (pure laminar shear) */
+    /* In the sublayer u_tau^2 -> nu*u_p/y_p, so the wall-face eddy viscosity
+     * falls to laminar: 2*nu*(y+/u+ - 1) ~ (kappa u+)^4, here u+ ~ 0.12 and
+     * nu_t_p ~ 4.8e-7 nu. */
     size_t i = nx / 2;
-    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 0.0, field->nu_t[i]);        /* wall node */
-    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 0.0, field->nu_t[i + nx]);   /* first interior */
+    TEST_ASSERT_EQUAL_DOUBLE(0.0, field->nu_t[i]);                /* wall node */
+    TEST_ASSERT_TRUE(field->nu_t[i + nx] >= 0.0);                 /* first interior */
+    TEST_ASSERT_TRUE(field->nu_t[i + nx] < 1e-6 * mu);
 
     flow_field_destroy(field);
     grid_destroy(g);
@@ -174,8 +221,9 @@ static void test_wall_function_sublayer_laminar(void) {
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_u_tau_recovery_log_layer);
-    RUN_TEST(test_u_tau_sublayer);
+    RUN_TEST(test_u_tau_recovery);
+    RUN_TEST(test_u_tau_limits);
+    RUN_TEST(test_u_tau_continuous_through_buffer_layer);
     RUN_TEST(test_wall_function_bc_application);
     RUN_TEST(test_wall_function_sublayer_laminar);
     return UNITY_END();

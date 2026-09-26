@@ -149,6 +149,29 @@ static int channel_scale_steps(int steps) {
 #define CH_KAPPA 0.41
 #define CH_B     5.2
 
+/*
+ * The yardstick: u_tau from the pure log law, u_p/u_tau = ln(u_tau*y_p/nu)/kappa + B,
+ * by Newton iteration. Deliberately NOT turbulence_wall_u_tau(): that is the
+ * model's own wall law (Spalding's), and measuring the model with the law it
+ * imposes would grade it against itself. The first node sits at 30 <= y+ <= 100,
+ * inside the log layer, so no sublayer branch is needed.
+ */
+static double log_law_u_tau(double u_p, double y_p, double nu) {
+    double ut = sqrt(nu * u_p / y_p);
+    for (int it = 0; it < 50; it++) {
+        double yplus = ut * y_p / nu;
+        double f = ut * (log(yplus) / CH_KAPPA + CH_B) - u_p;
+        double fp = (log(yplus) + 1.0) / CH_KAPPA + CH_B;
+        double next = ut - f / fp;
+        int converged = fabs(next - ut) < 1e-12 * ut;
+        ut = next;
+        if (converged) {
+            break;
+        }
+    }
+    return ut;
+}
+
 /* Constant streamwise body force f_x = u_tau^2/delta = 1 */
 static void channel_body_force(double x, double y, double z, double t, void* ctx,
                                double* su, double* sv, double* sw) {
@@ -277,8 +300,8 @@ static void run_channel(turbulence_model_t model, const char* label) {
     size_t i_mid = CH_NX / 2;
     double u_p_bot = fabs(field->u[1 * CH_NX + i_mid]);
     double u_p_top = fabs(field->u[(g_ny - 2) * CH_NX + i_mid]);
-    double ut_bot = turbulence_wall_u_tau(u_p_bot, y_p, nu);
-    double ut_top = turbulence_wall_u_tau(u_p_top, y_p, nu);
+    double ut_bot = log_law_u_tau(u_p_bot, y_p, nu);
+    double ut_top = log_law_u_tau(u_p_top, y_p, nu);
 
     printf("[%s] steps=%d converged=%d u_tau_bot=%.4f u_tau_top=%.4f "
            "u_p=%.3f y+=%.1f\n",

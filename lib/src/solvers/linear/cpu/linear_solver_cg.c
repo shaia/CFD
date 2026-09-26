@@ -391,7 +391,8 @@ static cfd_status_t cg_scalar_solve(
     }
 
     size_t n_total = nx * ny * solver->nz;
-    double initial_res = sqrt(dot_product(r, r, nx, ny, k_start, k_end, stride_z));
+    double rr0 = dot_product(r, r, nx, ny, k_start, k_end, stride_z);
+    double initial_res = sqrt(rr0);
 
     /* Initialize search direction and rho */
     double rho;
@@ -420,7 +421,7 @@ static cfd_status_t cg_scalar_solve(
         /* p_0 = r_0 */
         copy_vector(r, p, nx, ny, k_start, k_end, stride_z);
         /* rho_0 = (r_0, r_0) */
-        rho = dot_product(r, r, nx, ny, k_start, k_end, stride_z);
+        rho = rr0;
     }
 
     if (stats) {
@@ -492,12 +493,12 @@ static cfd_status_t cg_scalar_solve(
             }
             /* rho_new = (r_{k+1}, z_{k+1}) */
             rho_new = dot_product(r, z, nx, ny, k_start, k_end, stride_z);
+            res_norm = sqrt(dot_product(r, r, nx, ny, k_start, k_end, stride_z));
         } else {
-            /* rho_new = (r_{k+1}, r_{k+1}) */
+            /* rho_new = (r_{k+1}, r_{k+1}), which is also the squared residual norm */
             rho_new = dot_product(r, r, nx, ny, k_start, k_end, stride_z);
+            res_norm = sqrt(rho_new);
         }
-
-        res_norm = sqrt(dot_product(r, r, nx, ny, k_start, k_end, stride_z));
 
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {

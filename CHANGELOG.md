@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Wall functions solve Spalding's law of the wall.** `turbulence_wall_u_tau()` switched from
+  the linear law to the log law at y+ = 11.63, but with κ = 0.41, B = 5.2 the two cross at
+  y+ = 11.06, so u_τ jumped 3.3% at the switch (wall shear 6.6%, first-node ε 10%).
+  Spalding's single smooth y+(u+) removes the jump. It sits below the log law until
+  y+ ≈ 100, so the Re_τ = 395 channel's u_τ error, measured against the log law, moves from
+  2.9% to 5.9% (k-ε) and 3.1% to 6.0% (SA). `WALL_YPLUS_LAMINAR` is removed
+  (`lib/src/solvers/turbulence/cpu/turbulence_solver.c`,
+  `tests/solvers/turbulence/test_turbulence_wall_functions.c`,
+  `tests/validation/test_turbulent_channel.c`).
+
+- **Unpreconditioned CG computes the residual norm once per iteration.** `res_norm` reuses
+  `rho_new = (r,r)` instead of a second O(N) pass, in the scalar, AVX2, NEON and OMP backends.
+
 - **Checkpoint format version 5.** `.cfdchk` files now carry `viscous_scheme`, validated on
   read. Version-4 files are rejected as unsupported, as the format has always done on a
   layout change.

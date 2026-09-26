@@ -35,10 +35,9 @@
 #define SA_CW3   2.0
 #define SA_CV1   7.1
 
-/* --- Log-law wall function constants --- */
-#define WALL_KAPPA         0.41
-#define WALL_B             5.2
-#define WALL_YPLUS_LAMINAR 11.63  /* linear/log law crossover y+ */
+/* --- Wall function (Spalding's law) constants --- */
+#define WALL_KAPPA 0.41
+#define WALL_B     5.2
 
 /* --- Positivity floors and realizability limits --- */
 #define TURB_K_MIN             1e-10  /* floor for k */

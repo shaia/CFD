@@ -896,20 +896,23 @@ Part 3: Grid Refinement (Explicit Euler, dt=5e-04, T=0.5)
 
 **Expected output (k-ε):**
 ```
-  Converged at step 24183 (KE residual 9.98e-07)
+  Converged at step 23745 (KE residual 1.00e-06)
 
-Recovered u_tau = 0.9712 (exact force balance: 1.0000)
+Recovered u_tau = 0.9724 (exact force balance: 1.0000)
 
         y+        u+   log-law       err
-      39.5     14.10     14.17      0.5%
-      79.0     16.24     15.86      2.4%
-     118.5     17.26     16.85      2.5%
+      39.5     13.56     14.17      4.3%
+      79.0     15.71     15.86      0.9%
+     118.5     16.74     16.85      0.6%
      ...
-     395.0     20.10     19.78      1.6%
+     395.0     19.53     19.78      1.3%
 
 Wrote turbulent_channel.vtk (open in ParaView to inspect nu_t/k).
 ```
-The SA variant converges similarly (u_τ ≈ 0.969, u+ within ~4% of the log law).
+The SA variant converges similarly (u_τ ≈ 0.971, u+ within ~2% of the log law past the
+first node). The example recovers u_τ with `turbulence_wall_u_tau()`, the model's own
+Spalding's law, so the first node's 4.3% is the gap between Spalding's law and the log law at
+y+ = 39.5, not a model error. The validation test measures against the log law instead.
 
 ---
 

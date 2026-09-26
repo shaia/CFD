@@ -794,9 +794,11 @@ double turbulence_wall_u_tau(double u_p, double y_p, double nu);
 ```
 
 Compute the friction velocity u_τ from the first-node parallel velocity `u_p`, wall-normal
-distance `y_p`, and kinematic viscosity `nu` using the log-law (`u+ = ln(y+)/κ + B`) via
-Newton iteration.  Below y+ = 11.63 the linear viscous-sublayer law is used instead.  Used
-internally by the wall-function BC; exposed for testing and post-processing.
+distance `y_p`, and kinematic viscosity `nu` by solving Spalding's law of the wall
+(safeguarded Newton iteration).  One smooth law covers the viscous sublayer (`u+ → y+`), the
+buffer layer and the log layer (`u+ → ln(y+)/κ + B`), so u_τ is continuous and increasing in
+`u_p`.  Returns 0 for non-positive inputs.  Used internally by the wall-function BC; exposed
+for testing and post-processing.
 
 ### VTK and CSV turbulence output
 

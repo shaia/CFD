@@ -329,9 +329,10 @@ source via host callback). See CHANGELOG.
 - [x] Wall functions
 - [ ] Low-Reynolds number treatment
 
-**Done (2D, uniform grids):** standard k-ε and Spalart-Allmaras with log-law wall functions
-on scalar/OMP/AVX2 backends; validated against turbulent channel flow at Re_τ = 395
-(k-ε: u_τ error 2.9%; SA: 3.1%). GPU turbulence not yet implemented.
+**Done (2D, uniform grids):** standard k-ε and Spalart-Allmaras with Spalding's-law wall
+functions on scalar/OMP/AVX2 backends; validated against turbulent channel flow at Re_τ = 395
+(u_τ error against the log law, k-ε: 5.9%; SA: 6.0%; 2.9% / 3.1% with the earlier
+linear/log wall function). GPU turbulence not yet implemented.
 
 ### 2.3 Compressible Flow (P2)
 
@@ -629,16 +630,13 @@ already warm-starts.
 
 ### Redirected work (non-ML, surfaced by the Phase 7 investigation)
 
-- [ ] Remove the duplicated residual dot product in the unpreconditioned CG branch —
-      `rho_new = (r,r)` and `res_norm = sqrt((r,r))` are the same quantity computed by two
-      full O(N) passes, in all three CPU backends (`cpu/linear_solver_cg.c`,
-      `avx2/linear_solver_cg_avx2.c`, `omp/linear_solver_cg_omp.c` — grep
-      `rho_new = dot_product`). The preconditioned branch must keep its own `(r,r)`,
-      since `rho_new = (r,z)` there.
-- [ ] Blend the wall-function branches in `turbulence_wall_u_tau()` (Spalding's law). With
-      `WALL_KAPPA = 0.41` / `WALL_B = 5.2` the linear and log laws do not intersect exactly
-      at `WALL_YPLUS_LAMINAR`, so `u_tau` jumps at the switch. Measure the jump first.
-      Note `test_turbulent_channel` uses this function as its measurement instrument.
+- [x] Remove the duplicated residual dot product in the unpreconditioned CG branch —
+      `res_norm` now reuses `rho_new = (r,r)` in all four CPU backends (scalar, AVX2, NEON,
+      OMP), and `initial_res` reuses `rho_0`. The GPU CG already did.
+- [x] Blend the wall-function branches in `turbulence_wall_u_tau()` (Spalding's law). The
+      measured jump at y+ = 11.63 was 3.3% in u_tau (6.6% wall shear, 10% first-node eps);
+      the two laws cross at y+ = 11.06. `test_turbulent_channel` now keeps its own log-law
+      inversion as the yardstick; its u_tau error moved 2.9% → 5.9% (k-ε), 3.1% → 6.0% (SA).
 
 **References:** [GGML](https://github.com/ggerganov/ggml) ·
 [ONNX Runtime C API](https://onnxruntime.ai/) ·

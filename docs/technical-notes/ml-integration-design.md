@@ -445,7 +445,9 @@ worth its own investigation.
 **The correct gate is the turbulent channel, not the cavity.** `test_turbulent_channel` at
 Re_τ = 395 is the library's only genuinely turbulent validated case, and it is cheap: a
 16×21 grid, `dt = 0.002`, 5,000–40,000 steps, with a 600-second timeout. It also has a
-recorded baseline to beat — 2.9% (k-ε) and 3.1% (SA) `u_τ` error. Sweep `CH_RE_TAU` over
+recorded baseline to beat — 2.9% (k-ε) and 3.1% (SA) `u_τ` error with the original linear/log
+wall function; 5.9% and 6.0% since it moved to Spalding's law (see *Findings filed
+separately*). Sweep `CH_RE_TAU` over
 {180, 395, 1000} and read the log-law errors the test already prints. If the error curve is
 flat across Re_τ, the channel carries no training signal and a separated-flow benchmark is a
 prerequisite — which is an honest answer, obtainable in minutes rather than hours.
@@ -464,6 +466,10 @@ With y+ pinned near 39.4 and CFL pinned at its tuned value:
 | 1000   | 52  | 1.7%              | 1.7%           | 3.1% / 3.0%      | 181 s   |
 | 1500   | 77  | 1.7%              | 1.7%           | 3.3% / 2.7%      | 572 s   |
 | 2000   | 102 | 1.9%              | (timed out)    | 3.3%             | >900 s  |
+
+These runs, and the closure-correction results below, predate the move to Spalding's law in
+the wall function, which lowered the Re_tau = 395 `u_tau` by about 3%. Re-run them before
+comparing new results against these rows.
 
 **The gate fails, on its own terms.** It was written as: *"If the error curve is flat across
 Re_tau, the channel carries no training signal."* Beyond Re_tau = 590 the u_tau error is flat
@@ -776,7 +782,8 @@ reason DNS data was a prerequisite for measuring closure error at all.
 Two defects surfaced during this investigation that owe nothing to ML and should be fixed on
 their own merits.
 
-**The CG residual is computed twice per iteration.** In the unpreconditioned branch,
+**The CG residual is computed twice per iteration.** *Fixed: `res_norm` now reuses
+`rho_new`, in all four CPU backends (NEON had it too).* In the unpreconditioned branch,
 `rho_new = (r,r)` and `res_norm = sqrt((r,r))` are the same quantity computed by two separate
 full passes over the residual vector — one of roughly five O(N) passes per iteration is
 redundant. Present in all three CPU backends — `cpu/linear_solver_cg.c`,
@@ -794,6 +801,15 @@ filing this as a bug** — it is arithmetic, not a hypothesis, but it has not be
 yet, and the size determines whether it matters. Note also that `test_turbulent_channel` uses
 this same function as its measurement instrument, so an analytic copy must be retained as the
 yardstick if it is ever replaced.
+
+*Measured and fixed.* The laws cross at y+ = 11.06, so at the switch `u_tau` jumped 3.3%, the
+wall shear 6.6% and the first-node epsilon 10%, and y+ in (11.63, 12.01) was unreachable.
+`turbulence_wall_u_tau()` now solves Spalding's law, and the channel test keeps its own
+log-law inversion as the yardstick. The fix is not free on the channel: Spalding sits below
+the log law until y+ ~ 100, and at the first node (y+ = 39.5) that raises `u_tau` 3.1% for a
+given `u_p`, so the measured `u_tau` error moved from 2.9% to 5.9% (k-ε) and 3.1% to 6.0%
+(SA). It was kept for the separated-flow cases, where y+ crosses the buffer layer near
+reattachment.
 
 ## Explicitly not doing
 

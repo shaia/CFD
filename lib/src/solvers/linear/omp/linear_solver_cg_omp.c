@@ -221,8 +221,8 @@ static cfd_status_t cg_omp_solve(
         axpy_omp(-sigma, x, r, nx, ny, k_start, k_end, stride_z);
     }
 
-    double initial_res = sqrt(dot_product_omp(r, r, nx, ny,
-                                              k_start, k_end, stride_z));
+    double rr0 = dot_product_omp(r, r, nx, ny, k_start, k_end, stride_z);
+    double initial_res = sqrt(rr0);
 
     double rho;
     if (use_precond) {
@@ -246,7 +246,7 @@ static cfd_status_t cg_omp_solve(
         rho = dot_product_omp(r, z, nx, ny, k_start, k_end, stride_z);
     } else {
         copy_vector_omp(r, p, nx, ny, k_start, k_end, stride_z);
-        rho = dot_product_omp(r, r, nx, ny, k_start, k_end, stride_z);
+        rho = rr0;
     }
 
     if (stats) {
@@ -312,13 +312,14 @@ static cfd_status_t cg_omp_solve(
             }
             rho_new = dot_product_omp(r, z, nx, ny,
                                       k_start, k_end, stride_z);
+            res_norm = sqrt(dot_product_omp(r, r, nx, ny,
+                                            k_start, k_end, stride_z));
         } else {
+            /* (r,r) is both rho_new and the squared residual norm */
             rho_new = dot_product_omp(r, r, nx, ny,
                                       k_start, k_end, stride_z);
+            res_norm = sqrt(rho_new);
         }
-
-        res_norm = sqrt(dot_product_omp(r, r, nx, ny,
-                                        k_start, k_end, stride_z));
 
         if (iter % params->check_interval == 0) {
             if (params->verbose) {
