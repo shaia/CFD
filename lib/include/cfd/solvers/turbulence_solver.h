@@ -24,8 +24,10 @@
  * Boussinesq-stress transpose term and the -(2/3)k*delta_ij term are omitted
  * (the latter is absorbed into a modified pressure, standard practice).
  *
- * Wall functions (faces marked BC_TYPE_NOSLIP in params->turb_bc): standard
- * log-law treatment, u+ = ln(y+)/kappa + B above y+ = 11.63, linear below.
+ * Wall functions (faces marked BC_TYPE_NOSLIP in params->turb_bc): u_tau from
+ * Spalding's law of the wall, which is linear (u+ = y+) in the viscous
+ * sublayer, logarithmic (u+ = ln(y+)/kappa + B) in the log layer, and smooth
+ * through the buffer layer between them.
  */
 
 #ifndef CFD_TURBULENCE_SOLVER_H
@@ -92,13 +94,16 @@ CFD_LIBRARY_EXPORT cfd_status_t turbulence_init_uniform(flow_field* field,
                                                         double nu_tilde0);
 
 /**
- * Solve the log law for the friction velocity u_tau.
+ * Solve Spalding's law of the wall for the friction velocity u_tau.
  *
  * Given the wall-parallel speed u_p at wall distance y_p and kinematic
- * viscosity nu, returns u_tau such that u_p/u_tau = ln(u_tau*y_p/nu)/kappa + B
- * (Newton iteration), or the linear-law value sqrt(nu*u_p/y_p) when the
- * resulting y+ is below 11.63. Returns 0.0 for non-positive inputs.
- * Exposed for testing and diagnostics.
+ * viscosity nu, returns u_tau such that u+ = u_p/u_tau and y+ = u_tau*y_p/nu
+ * satisfy
+ *   y+ = u+ + e^{-kappa B} [e^{kappa u+} - 1 - kappa u+ - (kappa u+)^2/2 - (kappa u+)^3/6]
+ * (kappa = 0.41, B = 5.2; safeguarded Newton iteration). One smooth law covers
+ * the viscous sublayer (u+ -> y+), buffer layer and log layer
+ * (u+ -> ln(y+)/kappa + B), so u_tau is continuous and increasing in u_p.
+ * Returns 0.0 for non-positive inputs. Exposed for testing and diagnostics.
  */
 CFD_LIBRARY_EXPORT double turbulence_wall_u_tau(double u_p, double y_p, double nu);
 

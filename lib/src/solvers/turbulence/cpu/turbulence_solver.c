@@ -347,33 +347,87 @@ double turb_wall_distance(const grid* grid, const ns_turbulence_bc_config_t* tbc
     return d;
 }
 
+/* sum_{n >= n0} x^n / n!, the tail of e^x after its first n0 terms. Summed as
+ * a series for x <= 1, where e^x minus the partial sum would cancel and leave
+ * Spalding's sublayer correction as rounding noise. */
+static double exp_tail(double x, int n0) {
+    if (x > 1.0) {
+        double partial = 1.0;
+        double t = 1.0;
+        for (int n = 1; n < n0; n++) {
+            t *= x / n;
+            partial += t;
+        }
+        return exp(x) - partial;
+    }
+    double t = 1.0;
+    for (int n = 1; n <= n0; n++) {
+        t *= x / n;
+    }
+    double sum = 0.0;
+    for (int n = n0; n < n0 + 20; n++) {
+        sum += t;
+        t *= x / (n + 1);
+    }
+    return sum;
+}
+
+/*
+ * Spalding's law of the wall, one smooth y+(u+) through all three layers:
+ *   y+ = u+ + e^{-kappa B} [e^{kappa u+} - 1 - kappa u+ - (kappa u+)^2/2 - (kappa u+)^3/6]
+ * Linear (y+ -> u+) in the viscous sublayer, logarithmic (u+ -> ln(y+)/kappa + B)
+ * deep in the log layer, blended through the buffer layer. A piecewise
+ * linear/log switch jumps there instead: with kappa = 0.41, B = 5.2 the two laws
+ * cross at y+ = 11.06, not at a switch placed at 11.63, and u_tau jumped 3.3%.
+ *
+ * With u+ = u_p/u_tau and y+ = u_tau*y_p/nu, their product is the known wall
+ * Reynolds number Re_p = u_p*y_p/nu, so solve for u+ alone:
+ *   G(u+) = ln(u+) + ln(y+(u+)) - ln(Re_p) = 0.
+ * G increases with u+, so the root is unique. Since y+ >= u+, sqrt(Re_p) (the
+ * linear-law answer) bounds it above; Newton is safeguarded by bisection
+ * inside that bracket.
+ */
 double turbulence_wall_u_tau(double u_p, double y_p, double nu) {
     if (u_p <= 0.0 || y_p <= 0.0 || nu <= 0.0) {
         return 0.0;
     }
 
-    /* Viscous sublayer (linear law u+ = y+): u_tau = sqrt(nu*u_p/y_p) */
-    double ut = sqrt(nu * u_p / y_p);
-    if (ut * y_p / nu < WALL_YPLUS_LAMINAR) {
-        return ut;
+    const double c = exp(-WALL_KAPPA * WALL_B);
+    const double log_re = log(u_p) + log(y_p) - log(nu);
+
+    /* The cap keeps e^{kappa u+} finite; u+ reaches it only for Re_p ~ 1e300. */
+    double lo = 0.0;
+    double hi = fmin(exp(0.5 * log_re), 700.0 / WALL_KAPPA);
+    /* Log-law estimate: close wherever the linear-law bound is not. */
+    double up = fmin(hi, WALL_B + log_re / WALL_KAPPA);
+    if (!(up > 0.0)) {
+        up = hi;
     }
 
-    /* Log law: solve ut*(ln(ut*y_p/nu)/kappa + B) = u_p by Newton iteration */
-    for (int it = 0; it < 20; it++) {
-        double yplus = ut * y_p / nu;
-        double f = ut * (log(yplus) / WALL_KAPPA + WALL_B) - u_p;
-        double fp = (log(yplus) + 1.0) / WALL_KAPPA + WALL_B;
-        double ut_new = ut - f / fp;
-        if (ut_new < 1e-12) {
-            ut_new = 1e-12;
+    for (int it = 0; it < 100; it++) {
+        const double ku = WALL_KAPPA * up;
+        const double yplus = up + c * exp_tail(ku, 4);
+        const double dyplus = 1.0 + c * WALL_KAPPA * exp_tail(ku, 3);
+        const double g = log(up) + log(yplus) - log_re;
+        if (g == 0.0) {
+            break;
         }
-        double converged = fabs(ut_new - ut) < 1e-12 * fmax(ut, 1.0);
-        ut = ut_new;
+        if (g > 0.0) {
+            hi = up;
+        } else {
+            lo = up;
+        }
+        double next = up - g / (1.0 / up + dyplus / yplus);
+        if (!(next > lo && next <= hi)) {
+            next = 0.5 * (lo + hi);
+        }
+        const int converged = fabs(next - up) <= 1e-14 * up;
+        up = next;
         if (converged) {
             break;
         }
     }
-    return ut;
+    return u_p / up;
 }
 
 /* Validate uniform spacing (the transport stencils assume it, like energy). */
@@ -547,7 +601,7 @@ static int is_supported_turb_bc(bc_type_t type) {
 }
 
 /*
- * Standard log-law wall function at one wall node.
+ * Wall function at one wall node, u_tau from Spalding's law of the wall.
  *
  * idx_w: wall node, idx_p: first interior node at distance y_p, u_p: wall-
  * parallel speed at idx_p. Sets equilibrium turbulence values at the first
@@ -560,8 +614,9 @@ static int is_supported_turb_bc(bc_type_t type) {
  * makes it exactly u_tau^2. The equilibrium eddy viscosity kappa*u_tau*y_p is
  * deliberately NOT stored at idx_p: the coarse one-sided gradient u_p/y_p
  * cannot represent the log profile's curvature, and pairing it with the
- * physical nu_t would overpredict the wall shear several-fold. In the viscous
- * sublayer u_tau^2 = nu*u_p/y_p, so nu_t_p reduces to 0 (pure laminar shear).
+ * physical nu_t would overpredict the wall shear several-fold. Spalding's
+ * y+ >= u+ gives u_tau^2*y_p/u_p = nu*y+/u+ >= nu, so nu_t_p is never negative,
+ * and deep in the viscous sublayer it vanishes as (kappa*u+)^4 (laminar shear).
  */
 static void apply_wall_function_node(flow_field* field,
                                      const ns_solver_params_t* params,

@@ -976,14 +976,19 @@ Wall distance d is computed on the fly from faces marked `BC_TYPE_NOSLIP` in `tu
 
 Log-law wall treatment is applied at every face marked `BC_TYPE_NOSLIP` in `turb_bc`.
 
-**Log law:**
+**Spalding's law of the wall:**
 
 ```
-u+ = (1/κ) ln(y+) + B,    κ = 0.41,  B = 5.2
+y+ = u+ + e^(-κB) [e^(κu+) - 1 - κu+ - (κu+)²/2 - (κu+)³/6],    κ = 0.41,  B = 5.2
 ```
 
-Below y+ = 11.63 the linear viscous-sublayer law is used.  The friction velocity u_τ is
-recovered by Newton iteration on the log-law residual (`turbulence_wall_u_tau()`).
+It is linear (u+ = y+) in the viscous sublayer and approaches the log law
+u+ = (1/κ) ln(y+) + B far from the wall, blending smoothly through the buffer layer. Below
+y+ ≈ 100 it sits under the log law: u_τ for a given u_p is 3.1% above the log-law value at
+y+ = 40, 0.9% at y+ = 100. The friction velocity u_τ is recovered by safeguarded Newton
+iteration on u+ (`turbulence_wall_u_tau()`). An earlier linear/log switch at y+ = 11.63 made
+u_τ jump 3.3% there (wall shear 6.6%, ε 10%), because with these constants the two laws
+cross at y+ = 11.06.
 
 **Equilibrium values at the first interior node (distance y_p from the wall):**
 
