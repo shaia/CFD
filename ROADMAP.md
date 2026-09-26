@@ -612,8 +612,11 @@ Pure-C inference with no runtime Python dependency (embedded/HPC friendly).
 
 - [x] Binary weight format (`.cfdnn`) + loader API, modelled line-for-line on `.cfdchk`
 - [x] Layers: Dense + activations (Identity/ReLU/LeakyReLU/Tanh/Sigmoid/Softplus)
-- [ ] SIMD kernels: AVX2/NEON, vectorized across cells so OMP stays bit-identical to scalar
-      (the table exports a NULL kernel today; scalar and OMP are done, OMP bit-identical)
+- [x] SIMD kernels: AVX2/NEON from one template, vectorized across cells (lanes carry
+      samples, so there is no cross-lane reduction), selected at runtime; AVX2 within
+      3.4e-6 of scalar. NEON compiled but not yet run on hardware here
+- [ ] Vectorized `tanh`/`softplus`: at closure size the scalar transcendentals hold AVX2
+      to 1.36x over scalar, where the matrix work alone vectorizes 4.5x (design note §2.3)
 - [ ] Architectures: MLP (priority), Conv2D (future), Fourier Neural Operator (future)
 - [x] Inference API (`cfd_nn_predict_batch`) + model lifecycle
 - [x] Correction seam at `turb_update_nu_t()`, reaching all three CPU backends, with the

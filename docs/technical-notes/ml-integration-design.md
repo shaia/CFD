@@ -381,9 +381,41 @@ Consequences, all of which are contracts the tests enforce:
   tolerance is 1e-5 and the observed maximum is *printed*, so drift toward the tolerance is
   visible before it becomes a failure.
 - Vector loop plus scalar remainder tail, per the established SIMD rule.
-- Transcendental activations fall back to the scalar tail rather than growing a
-  polynomial-approximation dependency; they are a vanishing fraction of the FLOPs and
-  hand-rolled approximations would break cross-backend agreement for no measurable gain.
+- Transcendental activations run through the shared scalar `cfd_nn_apply_activation()`
+  rather than a vector polynomial approximation, so every backend computes exactly the
+  same activation function.
+
+**As built.** The input is sample-major, so each block of `SIMD_WIDTH` samples (8 on AVX2,
+4 on NEON) is first transposed into feature-major scratch. Every inner-loop load is then a
+contiguous vector load, where a strided gather per weight would be repeated for every
+output. The scratch is `SIMD_WIDTH × widest` floats owned by the context: the backend table
+declares `scratch_lanes`, and the kernel signature carries the pointer, so the kernel stays
+allocation-free and the model stays immutable. Measured differences from scalar: 8.0e-7 on
+the backend test, 3.4e-6 across batches 1–33 on a 300-wide layer, and 1.3e-7 against the
+Python float64 reference, all under the 1e-5 tolerance.
+
+**The activation cost was wrong, measured.** The claim above that transcendentals are "a
+vanishing fraction of the FLOPs" does not hold at closure size. Release/AVX2, the 3 → 16
+tanh → 16 tanh → 1 softplus model of §2.8, one process, best of seven, ns per cell:
+
+| backend | with activations | activations disabled |
+| ------- | ---------------- | -------------------- |
+| scalar  | 338 | 149 |
+| AVX2    | 249 | 33  |
+
+The matrix work vectorises 4.5×. The 33 scalar transcendentals per cell hold the whole
+network to 1.36×, and they are about 85% of AVX2's time. A vectorised `tanh`/`softplus`
+(an `exp` polynomial accurate to a few ulp) would stay far inside the 1e-5 cross-backend
+tolerance, so this design's reason for refusing one, "breaks agreement for no measurable
+gain", fails on both counts. It is filed as a follow-up rather than done here, because it
+adds a numerical approximation the scalar reference does not make, and that deserves its
+own decision.
+
+**OMP loses at the closure's tile size.** The closure calls `cfd_nn_predict_batch` in
+tiles of `TURB_CLOSURE_TILE` = 256 cells. At that size the OpenMP backend is slower than
+scalar (447 vs 338 ns per cell at 4 threads), because it opens a parallel region per layer
+per tile, and a region costs about 12 µs under MSVC. It wins only on large batches
+(170 ns per cell at 16,641). A closure context should be SIMD or scalar, not OMP.
 
 One deliberate deviation from existing code: the AVX2 file is guarded on `CFD_HAS_AVX2`
 **alone**. `linear_solver_bicgstab_avx2.c` couples its guard to `CFD_ENABLE_OPENMP`, which

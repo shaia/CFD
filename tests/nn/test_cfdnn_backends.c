@@ -14,7 +14,10 @@
  *   SIMD vs scalar  within 1e-5 relative, and the observed maximum is PRINTED
  *                   so drift toward the tolerance is visible before it becomes
  *                   a failure. Bit-exactness is not promised across vector
- *                   widths because of FMA contraction.
+ *                   widths because of FMA contraction. Checked at every batch
+ *                   size around the vector widths (4 and 8), where the full
+ *                   blocks meet the scalar tail, and on a layer far wider
+ *                   than a vector, which exercises the transpose scratch.
  *
  * Backends that are not built are skipped, not failed, per the project's
  * optional-backend policy.
@@ -205,9 +208,93 @@ void test_simd_matches_scalar_within_tolerance(void) {
     free(got);
 }
 
+/* A wide two-layer model (WIDE_IN -> WIDE_HID tanh -> 3 identity) for the
+ * block/tail boundary sweep. Identity output so no activation hides a
+ * difference, and three outputs so the per-output scatter is exercised. */
+#define WIDE_IN   37
+#define WIDE_HID  300
+#define WIDE_OUT  3
+#define MAX_SWEEP 33
+
+static float g_ww1[WIDE_HID * WIDE_IN];
+static float g_wb1[WIDE_HID];
+static float g_ww2[WIDE_OUT * WIDE_HID];
+static float g_wb2[WIDE_OUT];
+
+static cfd_status_t write_wide_model(void) {
+    uint32_t st = 777u;
+    for (int i = 0; i < WIDE_HID * WIDE_IN; i++) {
+        g_ww1[i] = next_weight(&st) * 0.2f;
+    }
+    for (int i = 0; i < WIDE_HID; i++) {
+        g_wb1[i] = next_weight(&st);
+    }
+    for (int i = 0; i < WIDE_OUT * WIDE_HID; i++) {
+        g_ww2[i] = next_weight(&st) * 0.1f;
+    }
+    for (int i = 0; i < WIDE_OUT; i++) {
+        g_wb2[i] = next_weight(&st);
+    }
+    cfd_nn_layer_desc_t layers[2] = {
+        {CFD_NN_LAYER_DENSE, CFD_NN_ACT_TANH, 0.0f, WIDE_IN, WIDE_HID, g_ww1, g_wb1},
+        {CFD_NN_LAYER_DENSE, CFD_NN_ACT_IDENTITY, 0.0f, WIDE_HID, WIDE_OUT, g_ww2, g_wb2},
+    };
+    cfd_nn_model_desc_t desc = {"backend-wide", layers, 2};
+    return cfd_nn_model_write(TMP_MODEL, &desc);
+}
+
+static void predict_with(cfd_nn_context_t* ctx, size_t batch, const double* in, double* out) {
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
+                          cfd_nn_predict_batch(ctx, batch, in, batch * WIDE_IN, out,
+                                               batch * WIDE_OUT));
+}
+
+void test_simd_matches_scalar_at_every_batch_size(void) {
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, write_wide_model());
+    cfd_nn_model_t* m = NULL;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, cfd_nn_model_load(TMP_MODEL, &m));
+
+    cfd_nn_context_t* ref_ctx = NULL;
+    cfd_nn_context_t* simd_ctx = NULL;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
+                          cfd_nn_context_create(m, MAX_SWEEP, CFD_NN_BACKEND_SCALAR, &ref_ctx));
+    if (cfd_nn_context_create(m, MAX_SWEEP, CFD_NN_BACKEND_SIMD, &simd_ctx) != CFD_SUCCESS) {
+        cfd_nn_context_destroy(ref_ctx);
+        cfd_nn_model_destroy(m);
+        TEST_IGNORE_MESSAGE("SIMD backend not built or not supported by this CPU");
+        return;
+    }
+
+    static double in[MAX_SWEEP * WIDE_IN];
+    static double ref[MAX_SWEEP * WIDE_OUT];
+    static double got[MAX_SWEEP * WIDE_OUT];
+    for (int k = 0; k < MAX_SWEEP * WIDE_IN; k++) {
+        in[k] = cos((double)k * 0.61) * (1.0 + (double)(k % 5));
+    }
+
+    double worst = 0.0;
+    for (size_t batch = 1; batch <= MAX_SWEEP; batch++) {
+        predict_with(ref_ctx, batch, in, ref);
+        predict_with(simd_ctx, batch, in, got);
+        for (size_t k = 0; k < batch * WIDE_OUT; k++) {
+            /* Absolute floor: identity outputs can pass near zero. */
+            double rel = fabs(got[k] - ref[k]) / fmax(fabs(ref[k]), 1e-2);
+            worst = fmax(worst, rel);
+        }
+    }
+    printf("    simd=%s batches 1..%d, %d-wide hidden layer: max difference %.3e\n",
+           cfd_nn_context_backend(simd_ctx), MAX_SWEEP, WIDE_HID, worst);
+    TEST_ASSERT_TRUE_MESSAGE(worst < 1e-5, "SIMD drifted from scalar beyond 1e-5");
+
+    cfd_nn_context_destroy(simd_ctx);
+    cfd_nn_context_destroy(ref_ctx);
+    cfd_nn_model_destroy(m);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_omp_is_bit_identical_to_scalar);
     RUN_TEST(test_simd_matches_scalar_within_tolerance);
+    RUN_TEST(test_simd_matches_scalar_at_every_batch_size);
     return UNITY_END();
 }

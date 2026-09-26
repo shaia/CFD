@@ -173,6 +173,8 @@ set(CFD_SIMD_SOURCES
     src/solvers/linear/neon/linear_solver_sor_neon.c
     src/solvers/linear/neon/linear_solver_gmres_neon.c
     src/nn/simd/cfdnn_simd_dispatch.c
+    src/nn/avx2/cfdnn_kernels_avx2.c
+    src/nn/neon/cfdnn_kernels_neon.c
 )
 
 # OpenMP sources

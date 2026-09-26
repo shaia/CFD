@@ -3,33 +3,28 @@
  * @brief Runtime SIMD backend selection for `.cfdnn` inference.
  *
  * Mirrors lib/src/solvers/linear/simd/linear_solver_simd_dispatch.c: this file
- * holds only the dispatch, while the actual AVX2 and NEON kernels live in
- * their own sibling directories.
+ * holds only the dispatch, while the AVX2 and NEON kernels live in their own
+ * sibling directories and share ../simd_template/cfdnn_kernels_simd_template.h.
  *
- * No SIMD kernels are implemented yet, so the table exports a NULL kernel and
- * the backend reports itself unavailable. That is deliberate rather than
- * provisional: an explicit CFD_NN_BACKEND_SIMD request returns
- * CFD_ERROR_UNSUPPORTED and AUTO resolves to OMP or scalar, per the project's
- * no-silent-fallback rule. Adding the kernels is a later change that only has
- * to populate this table.
- *
- * When they land, the vectorisation axis is fixed by the contract in
- * cfdnn_internal.h: each SIMD lane carries a distinct SAMPLE, never a distinct
- * input feature. Reducing across lanes would make the accumulation order
- * depend on vector width and break cross-backend reproducibility.
+ * Selection is by the CPU actually running, not only by what was compiled:
+ * a binary built with AVX2 enabled but run on a CPU without it gets NULL here,
+ * so an explicit CFD_NN_BACKEND_SIMD request returns CFD_ERROR_UNSUPPORTED and
+ * AUTO resolves to OMP or scalar -- the project's no-silent-fallback rule.
+ * cfd_detect_simd_arch() caches its answer and is thread-safe, so this is
+ * cheap enough to call at every context creation.
  */
 
 #include "../cfdnn_internal.h"
 
-bool cfd_nn_simd_available(void) {
-    return cfd_nn_impl_simd.dense != NULL;
-}
+#include "cfd/core/cpu_features.h"
 
-const char* cfd_nn_simd_arch_name(void) {
-    return cfd_nn_impl_simd.dense ? "simd" : "none";
+const cfd_nn_backend_impl_t* cfd_nn_simd_impl(void) {
+    switch (cfd_detect_simd_arch()) {
+        case CFD_SIMD_AVX2:
+            return cfd_nn_impl_avx2.dense ? &cfd_nn_impl_avx2 : NULL;
+        case CFD_SIMD_NEON:
+            return cfd_nn_impl_neon.dense ? &cfd_nn_impl_neon : NULL;
+        default:
+            return NULL;
+    }
 }
-
-const cfd_nn_backend_impl_t cfd_nn_impl_simd = {
-    "simd",
-    NULL, /* not implemented yet; reported as unavailable */
-};
