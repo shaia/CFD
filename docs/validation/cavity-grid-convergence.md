@@ -7,9 +7,15 @@ label `validation`)
 
 ## Method
 
-The steady cavity is solved on three grids per Reynolds number with the AVX2 projection
-(OpenMP if AVX2 is not compiled in). Each run must reach the harness's steady-state exit,
-|d ln KE/dt| < 1e-6. Four functionals are extracted:
+The steady cavity is solved on three grids per Reynolds number with the OpenMP projection
+and the multigrid pressure solve (`NS_PRESSURE_SOLVER_MULTIGRID`). Each run must reach the
+harness's steady-state exit, |d ln KE/dt| < 1e-6.
+
+**Why multigrid.** On a 257×257 Re=1000 cavity it costs 13.7 ms/step from rest and
+15.7 ms/step on a developed flow, against 135 and 140 ms/step for the AVX2 CG solve. After
+120 steps the velocity fields agree to 5e-14. `NS_PRESSURE_SOLVER_PCG_MG` is not faster than
+plain CG here (133 ms/step), because its V-cycle per CG iteration costs about what it saves.
+Multigrid needs 2^k+1 points per side, which fixes the grids below. Four functionals are extracted:
 
 | Functional | Definition |
 |---|---|
@@ -30,7 +36,7 @@ dt = min(0.25 h, 0.2 h²·Re, 1/Re).
 |---|---|---|
 | 100 | 17/33/65 | 33/65/129 |
 | 400 | — | 65/129/257 |
-| 1000 | — | 129/193/257 (ratios 1.5, 1.33) |
+| 1000 | — | 129/257/513 |
 
 Coarser grids are not in the asymptotic range at higher Re. At Re=400 a 33×33 grid gives
 u_min = −0.134 against −0.265 on 65×65. At Re=1000 a 33×33 grid settles to an almost

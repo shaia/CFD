@@ -537,7 +537,7 @@ every push to master, about 50 minutes):
 | Cavity Ghia Validation | 33×33, 5000 steps | 129×129; 50000 steps (Re=100), 60000 (Re=400), 100000 (Re=1000) |
 | Cavity Re=400 Stability | 25×25, 500 steps | 65×65, 20000 steps |
 | Grid Convergence (monotone RMS vs Ghia) | 17→25→33 | 17→25→33 |
-| Grid Convergence (Richardson) | Re=100: 17/33/65 | Re=100: 33/65/129; Re=400: 65/129/257; Re=1000: 129/193/257 |
+| Grid Convergence (Richardson) | Re=100: 17/33/65 | Re=100: 33/65/129; Re=400: 65/129/257; Re=1000: 129/257/513 |
 | Taylor-Green Vortex | 32×32, 200 steps | 128×128, 10000 steps |
 | Taylor-Green decay rate | 65×65, t=10 | 129×129, t=20 |
 

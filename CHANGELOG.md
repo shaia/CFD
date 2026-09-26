@@ -179,9 +179,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   projection reaches 0.92 of the rate there, and the pseudo-compressible Euler/RK solvers 0.42.
 - **Multi-Reynolds grid-convergence study with Richardson extrapolation**
   (`test_cavity_richardson.c`, ROADMAP 6.1). The steady cavity is solved on three grids at
-  Re = 100 (33/65/129), 400 (65/129/257) and 1000 (129/193/257), and the observed order,
+  Re = 100 (33/65/129), 400 (65/129/257) and 1000 (129/257/513), and the observed order,
   extrapolated value and GCI are computed per Celik et al. (2008) for u at the centre and the
-  centreline extrema. CI runs Re = 100 on 17/33/65. The observed order is about 1.3, not 2:
+  centreline extrema. CI runs Re = 100 on 17/33/65. It runs on the OpenMP projection with the
+  multigrid pressure solve (`NS_PRESSURE_SOLVER_MULTIGRID`): on a 257x257 Re=1000 cavity that
+  is 16 ms/step against 140 ms for the AVX2 CG solve, with the same velocity field to 5e-14.
+  The test harness gains `cavity_run_with_pressure_solver_ctx()` to select it. The observed order is about 1.3, not 2:
   see `docs/validation/cavity-grid-convergence.md`.
 
 - **Implicit viscous time integration** (`ns_solver_params_t.viscous_scheme`):

@@ -36,14 +36,17 @@
  *   CI:    Re=100   17/33/65
  *   Full:  Re=100   33/65/129
  *          Re=400   65/129/257
- *          Re=1000  129/193/257   (refinement ratios 1.5 and 1.33)
+ *          Re=1000  129/257/513
  *
  * Coarser grids are not in the asymptotic range at high Re: at Re=1000 a 33x33
  * grid settles to an almost motionless state, and 65 -> 129 still changes u_min
  * by 50%.
  *
- * Runs on the AVX2 projection, else OpenMP (scalar testing policy: no scalar
- * solver in a long-running test).
+ * Runs on the OpenMP projection with the multigrid pressure solve, which needs
+ * 2^k+1 points per side -- hence the grids above. On a 257x257 Re=1000 cavity it
+ * costs 16 ms/step against 140 ms for the AVX2 CG solve, with velocity fields
+ * that agree to 5e-14. The scalar projection also has multigrid but is excluded
+ * by the scalar testing policy (no scalar solver in a long-running test).
  */
 
 #include "cavity_reference_data.h"
@@ -115,7 +118,7 @@ typedef struct {
     double sim_time;
 } rich_grid_result_t;
 
-static rich_grid_result_t rich_solve(const char* solver_type, size_t n, double re, double t_max) {
+static rich_grid_result_t rich_solve(size_t n, double re, double t_max) {
     rich_grid_result_t r;
     memset(&r, 0, sizeof(r));
 
@@ -127,7 +130,8 @@ static rich_grid_result_t rich_solve(const char* solver_type, size_t n, double r
 
     cavity_context_t* ctx = NULL;
     cavity_sim_result_t sim =
-        cavity_run_with_solver_ctx(solver_type, n, n, re, 1.0, max_steps, dt, &ctx);
+        cavity_run_with_pressure_solver_ctx(NS_SOLVER_TYPE_PROJECTION_OMP, n, n, re, 1.0, max_steps,
+                                            dt, NS_PRESSURE_SOLVER_MULTIGRID, &ctx);
     if (!sim.success) {
         r.unavailable = sim.solver_unavailable;
         snprintf(r.error_msg, sizeof(r.error_msg), "%s", sim.error_msg);
@@ -219,24 +223,17 @@ static rich_estimate_t rich_estimate(double f1, double f2, double f3, double r21
  * ============================================================================ */
 
 static void rich_run_case(const rich_case_t* c, int full) {
-    const char* candidates[] = {NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, NS_SOLVER_TYPE_PROJECTION_OMP};
     rich_grid_result_t g[3];
-    const char* solver = NULL;
 
     printf("\n    %s on %zu/%zu/%zu\n", c->name, c->n[0], c->n[1], c->n[2]);
 
-    for (int s = 0; s < 2 && !solver; s++) {
-        g[0] = rich_solve(candidates[s], c->n[0], c->re, c->t_max);
-        if (!g[0].unavailable) {
-            solver = candidates[s];
-        }
-    }
-    if (!solver) {
-        TEST_IGNORE_MESSAGE("Neither the AVX2 nor the OpenMP projection is compiled in");
+    g[0] = rich_solve(c->n[0], c->re, c->t_max);
+    if (g[0].unavailable) {
+        TEST_IGNORE_MESSAGE("The OpenMP projection is not compiled in");
     }
     TEST_ASSERT_TRUE_MESSAGE(g[0].ok, g[0].error_msg);
     for (int k = 1; k < 3; k++) {
-        g[k] = rich_solve(solver, c->n[k], c->re, c->t_max);
+        g[k] = rich_solve(c->n[k], c->re, c->t_max);
         TEST_ASSERT_TRUE_MESSAGE(g[k].ok, g[k].error_msg);
     }
 
@@ -315,7 +312,7 @@ static const rich_case_t CASE_RE400 = {
 
 static const rich_case_t CASE_RE1000 = {"Re=1000",
                                         1000.0,
-                                        {129, 193, 257},
+                                        {129, 257, 513},
                                         RICH_T_MAX_HIGHRE,
                                         {0.0, -0.3885698, 0.3769447, -0.5270771},
                                         0.005,

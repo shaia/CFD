@@ -626,8 +626,8 @@ if(BUILD_TESTS)
         )
 
         # Richardson grid-convergence study, one test per Reynolds number so they
-        # run in parallel. Re=400/1000 need 257x257 grids to be in the asymptotic
-        # range, which is what makes them the longest tests here (ROADMAP 6.1).
+        # run in parallel. Re=400/1000 need 257x257 and 513x513 grids to be in the
+        # asymptotic range, which makes them the longest tests here (ROADMAP 6.1).
         add_test(NAME CavityRichardson_Re100 COMMAND test_cavity_richardson re100)
         add_test(NAME CavityRichardson_Re400 COMMAND test_cavity_richardson re400)
         add_test(NAME CavityRichardson_Re1000 COMMAND test_cavity_richardson re1000)
