@@ -517,6 +517,9 @@ static cfd_status_t cg_avx2_solve(
                               ctx->dx2_inv_vec, ctx->dy2_inv_vec, ctx->dz2_inv_vec,
                               ctx->two_vec, k_start, k_end, stride_z);
 
+    double rr0 = dot_product_avx2(r, r, nx, ny, k_start, k_end, stride_z);
+    double initial_res = sqrt(rr0);
+
     /* Initialize search direction and rho */
     double rho;
     if (use_precond) {
@@ -531,10 +534,8 @@ static cfd_status_t cg_avx2_solve(
         /* p_0 = r_0 */
         copy_vector(r, p, nx, ny, k_start, k_end, stride_z);
         /* rho_0 = (r_0, r_0) */
-        rho = dot_product_avx2(r, r, nx, ny, k_start, k_end, stride_z);
+        rho = rr0;
     }
-
-    double initial_res = sqrt(dot_product_avx2(r, r, nx, ny, k_start, k_end, stride_z));
 
     if (stats) {
         stats->initial_residual = initial_res;
@@ -592,12 +593,12 @@ static cfd_status_t cg_avx2_solve(
                                           k_start, k_end, stride_z);
             /* rho_new = (r_{k+1}, z_{k+1}) */
             rho_new = dot_product_avx2(r, z, nx, ny, k_start, k_end, stride_z);
+            res_norm = sqrt(dot_product_avx2(r, r, nx, ny, k_start, k_end, stride_z));
         } else {
-            /* rho_new = (r_{k+1}, r_{k+1}) */
+            /* rho_new = (r_{k+1}, r_{k+1}), which is also the squared residual norm */
             rho_new = dot_product_avx2(r, r, nx, ny, k_start, k_end, stride_z);
+            res_norm = sqrt(rho_new);
         }
-
-        res_norm = sqrt(dot_product_avx2(r, r, nx, ny, k_start, k_end, stride_z));
 
         /* Check convergence at intervals */
         if (iter % params->check_interval == 0) {
