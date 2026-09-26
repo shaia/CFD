@@ -111,7 +111,7 @@ Genuine constraints to be aware of (not backlog items):
 | 4 | Scalability & Performance | P1–P2 | MPI, GPU improvements, profiling tools (modular libs ✅) |
 | 5 | I/O & Post-processing | P1–P3 | HDF5, modern VTK XML, in-situ viz (CSV ✅) |
 | 6 | Validation & Documentation | P0–P1 | 129×129 release validation, convergence studies, docs |
-| 7 | ML Integration | P3 | Approach A chosen; algebraic ν_t correction shipped, inference engine held |
+| 7 | ML Integration | P3 | Approach A chosen; algebraic ν_t correction shipped, inference engine built here |
 
 ---
 
@@ -569,22 +569,15 @@ and on having unbounded failure modes where the algorithm has proven ones.
 
 Pure-C inference with no runtime Python dependency (embedded/HPC friendly).
 
-The inference engine below is built and tested on the `feature/cfdnn-inference` branch but
-**held, not merged**: it is public API with no trained model to run. It merges together
-with the first model that clears the two blocked items further down.
-
-- [ ] Binary weight format (`.cfdnn`) + loader API, modelled line-for-line on `.cfdchk`
-      *(held on branch)*
-- [ ] Layers: Dense + activations (Identity/ReLU/LeakyReLU/Tanh/Sigmoid/Softplus)
-      *(held on branch)*
+- [x] Binary weight format (`.cfdnn`) + loader API, modelled line-for-line on `.cfdchk`
+- [x] Layers: Dense + activations (Identity/ReLU/LeakyReLU/Tanh/Sigmoid/Softplus)
 - [ ] SIMD kernels: AVX2/NEON, vectorized across cells so OMP stays bit-identical to scalar
-      (on the branch the table exports a NULL kernel; scalar and OMP are done, OMP
-      bit-identical)
+      (the table exports a NULL kernel today; scalar and OMP are done, OMP bit-identical)
 - [ ] Architectures: MLP (priority), Conv2D (future), Fourier Neural Operator (future)
-- [ ] Inference API (`cfd_nn_predict_batch`) + model lifecycle *(held on branch)*
-- [x] Correction seam at `turb_update_nu_t()`, reaching all three CPU backends, carrying
-      the algebraic `NS_NUT_CORRECTION_S_STAR`; the learned `params.turb_closure` joins it
-      with the engine
+- [x] Inference API (`cfd_nn_predict_batch`) + model lifecycle
+- [x] Correction seam at `turb_update_nu_t()`, reaching all three CPU backends, with the
+      algebraic `NS_NUT_CORRECTION_S_STAR` and the learned `params.turb_closure` as
+      mutually exclusive alternatives on it
 - [x] **Algebraic competitor measured first, per the governing rule.** A two-constant
       strain-rate power law cuts channel TKE error 14.96% → 6.23% where it was fitted and
       12.80% → 9.27% at a held-out Re_tau, with `u_tau` unmoved (design note §2.7)

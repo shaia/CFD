@@ -103,14 +103,23 @@ double turb_wall_distance(const grid* grid, const ns_turbulence_bc_config_t* tbc
  *  (nu_t <= TURB_NU_T_MAX_FACTOR * nu). Used after transport and by BCs. */
 void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params);
 
-/* --- Optional eddy-viscosity correction --- */
+/* --- Optional eddy-viscosity corrections (algebraic or learned) --- */
 
-/** Bounds on the correction multiplier. Both directions matter: the correction
+/** Features per cell: ln S*, ln Re_t, ln(nu_t/nu). The model's input width must
+ *  equal this exactly; a model of any other shape is rejected at solver init. */
+#define TURB_CLOSURE_FEATURES 3
+/** The model predicts one multiplier per cell. */
+#define TURB_CLOSURE_OUTPUTS 1
+/** Bounds on the predicted multiplier. Both directions matter: the correction
  *  the channel DNS asks for is below 1 (k-epsilon over-predicts turbulent
  *  energy in the outer layer), so this is NOT a dissipation-only correction and
  *  the floor is what keeps a reduced nu_t away from zero. */
 #define TURB_CLOSURE_BETA_MIN 0.1
 #define TURB_CLOSURE_BETA_MAX 10.0
+/** Cells per inference call. The correction walks the grid in tiles so it needs
+ *  no per-step allocation and no context sized to the grid; a smaller context
+ *  just means smaller tiles. */
+#define TURB_CLOSURE_TILE 256
 
 /* --- Algebraic correction: beta = A * (S*)^B, i.e. a strain-dependent C_mu ---
  *
@@ -142,33 +151,38 @@ void turb_update_nu_t(flow_field* field, const ns_solver_params_t* params);
 #define TURB_ALG_BETA_B (-0.2778)
 
 /**
- * Apply the eddy-viscosity correction params->turb_nut_correction selects.
+ * Apply whichever optional eddy-viscosity correction params selects: the
+ * algebraic strain-rate power law, or the learned closure.
  *
  * Call immediately after turb_update_nu_t(). Returns CFD_SUCCESS and touches
- * nothing when no correction is configured, so the un-corrected path stays
+ * nothing when neither is configured, so the un-corrected path stays
  * bit-identical. Additive by design: turb_update_nu_t keeps its signature and
  * its behaviour.
  *
  * @return CFD_SUCCESS; CFD_ERROR_UNSUPPORTED if a correction is configured with
- *         any model other than k-epsilon (S* is built from k and epsilon, so it
- *         does not exist for Spalart-Allmaras); CFD_ERROR_INVALID for an
- *         unknown correction value, a NULL field/grid or a missing turbulence
- *         field. Never a silent skip: a caller that asked for a correction gets
- *         one or an error.
+ *         any model other than k-epsilon (S*, Re_t and nu_t/nu are built from k
+ *         and epsilon, so they do not exist for Spalart-Allmaras), or if both
+ *         corrections are configured at once; CFD_ERROR_INVALID for an unknown
+ *         correction value, a NULL field/grid, a missing turbulence field or a
+ *         model of the wrong shape; CFD_ERROR_DIVERGED if the model predicts a
+ *         non-finite value. Never a silent skip: a caller that asked for a
+ *         correction gets one or an error.
  */
 cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
                                         const ns_solver_params_t* params);
 
 /**
- * Validate params->turb_nut_correction against params->turb_model at solver
- * init.
+ * Validate params->turb_closure and params->turb_nut_correction against
+ * params->turb_model at solver init.
  *
  * Checked here rather than per step so a caller learns before init returns,
  * while they can still choose a different configuration.
  *
  * @return CFD_SUCCESS when no correction is set or the configuration is usable;
- *         CFD_ERROR_UNSUPPORTED when a correction is set without k-epsilon;
- *         CFD_ERROR_INVALID for a value no enum defines.
+ *         CFD_ERROR_UNSUPPORTED when a correction is set without k-epsilon, or
+ *         when both corrections are set at once;
+ *         CFD_ERROR_INVALID for a value no enum defines, or when the model's
+ *         input or output width does not match what the closure feeds it.
  */
 cfd_status_t turb_check_closure_config(const ns_solver_params_t* params);
 

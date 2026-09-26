@@ -86,6 +86,7 @@ set(CFD_CORE_SOURCES
     src/core/field_ops.c
     src/core/derived_fields.c
     src/core/cpu_features.c
+    src/nn/cfdnn_format.c
 )
 
 # API sources - these depend on solver backends and must link against all of them
@@ -97,6 +98,7 @@ set(CFD_API_SOURCES
     # Dispatcher files that select between backends at runtime
     src/boundary/boundary_conditions.c
     src/solvers/linear/linear_solver.c
+    src/nn/cfdnn.c
 )
 
 # I/O sources (part of core)
@@ -135,6 +137,7 @@ set(CFD_SCALAR_SOURCES
     src/solvers/linear/cpu/linear_solver_gmres.c
     src/solvers/linear/cpu/linear_solver_multigrid.c
     src/solvers/linear/cpu/multigrid_transfer.c
+    src/nn/cpu/cfdnn_kernels_scalar.c
 )
 
 # SIMD sources (AVX2/NEON optimized)
@@ -169,6 +172,7 @@ set(CFD_SIMD_SOURCES
     src/solvers/linear/neon/linear_solver_bicgstab_neon.c
     src/solvers/linear/neon/linear_solver_sor_neon.c
     src/solvers/linear/neon/linear_solver_gmres_neon.c
+    src/nn/simd/cfdnn_simd_dispatch.c
 )
 
 # OpenMP sources
@@ -192,6 +196,7 @@ set(CFD_OMP_SOURCES
     src/solvers/linear/omp/linear_solver_bicgstab_omp.c
     src/solvers/linear/omp/linear_solver_gmres_omp.c
     src/solvers/linear/omp/linear_solver_multigrid_omp.c
+    src/nn/omp/cfdnn_kernels_omp.c
 )
 
 # Note: API sources (solver_registry, simulation_api, output_registry) are in
@@ -355,6 +360,10 @@ else()
         src/boundary/omp/boundary_conditions_omp.c
         src/boundary/omp/boundary_conditions_outlet_omp.c
         src/solvers/turbulence/omp/turbulence_solver_omp.c
+        # cfdnn.c references cfd_nn_impl_omp unconditionally; this file guards
+        # its OpenMP use internally and exports a NULL kernel without it, so it
+        # must stay in the build or the library will not link.
+        src/nn/omp/cfdnn_kernels_omp.c
     )
     set(CFD_HAS_OMP FALSE)
 endif()
@@ -488,9 +497,11 @@ if(BUILD_SHARED_LIBS)
         ${CFD_SCALAR_SOURCES}
         ${CFD_SIMD_SOURCES}
     )
-    if(OpenMP_C_FOUND)
-        list(APPEND CFD_UNIFIED_SOURCES ${CFD_OMP_SOURCES})
-    endif()
+    # CFD_OMP_BUILD_SOURCES is the full OMP set when OpenMP is available and
+    # the serially-correct subset when it is not. The subset is not optional:
+    # the dispatchers reference bc_impl_omp and cfd_nn_impl_omp unconditionally,
+    # and the shared library links no cfd_omp to supply them.
+    list(APPEND CFD_UNIFIED_SOURCES ${CFD_OMP_BUILD_SOURCES})
     if(CFD_HAS_CUDA)
         list(APPEND CFD_UNIFIED_SOURCES ${CFD_CUDA_SOURCES})
     else()
@@ -628,6 +639,7 @@ set(CFD_LIBRARY_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/io/output_registry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/api/simulation_api.h
     ${CMAKE_CURRENT_BINARY_DIR}/include/cfd/cfd_export.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/cfd/nn/cfdnn.h
 )
 
 # Targets to install

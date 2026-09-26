@@ -30,10 +30,13 @@ extern "C" {
  * which reconstructs all scratch. The field at a step boundary is therefore the
  * complete dynamical state.
  *
- * Function-pointer parameters (`source_func`, `heat_source_func`, and their
- * contexts) cannot be serialized and are excluded; callers that use custom
- * callbacks must re-supply them after a restore. `turb_nut_correction` is a
- * plain enum and IS stored.
+ * Caller-owned pointers -- the callbacks (`source_func`, `heat_source_func`) and
+ * their contexts, and the learned-closure context `turb_closure` -- cannot be
+ * serialized and are excluded. `restore_simulation_checkpoint()` carries them
+ * across an in-place restore; `load_simulation_from_checkpoint()` builds a new
+ * simulation and leaves them NULL, so a caller using any of them must re-supply
+ * them on that path. Everything the correction needs besides the context, such
+ * as `turb_nut_correction`, IS stored.
  *
  * Portability: all multi-byte values are written little-endian with fixed-width
  * types and IEEE-754 doubles (no raw struct dumps). A header endianness marker

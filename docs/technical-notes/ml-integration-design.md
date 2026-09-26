@@ -8,17 +8,8 @@ This note makes that decision, records the reasoning, and corrects the roadmap w
 investigation showed it was wrong.
 
 **Audience:** library contributors and future maintainers. This is not user documentation —
-for the shipped API, see `ns_nut_correction_t` in
-`lib/include/cfd/solvers/navier_stokes_solver.h`.
-
-**Status — what is in the library and what is not.** Only the *algebraic* correction ships:
-`NS_NUT_CORRECTION_S_STAR` (§2.7), on the correction seam described in §2.4. The `.cfdnn`
-inference engine of §2.1–§2.3 and the learned `turb_closure` parameter were built and
-tested, but are held on the `feature/cfdnn-inference` branch, not merged. They add public
-API that has no trained model to run, and §2.7 and §3 set the conditions under which one is
-worth training: it must beat the algebraic correction at a held-out Reynolds number, on a
-separated or adverse-pressure-gradient case, not only on channel flow. Where Part 2
-describes the engine or `turb_closure`, read it as the design for that follow-up.
+for the API, see the public header `lib/include/cfd/nn/cfdnn.h` and, for the algebraic
+correction, `ns_nut_correction_t` in `lib/include/cfd/solvers/navier_stokes_solver.h`.
 
 **Why this note exists:** the most valuable output of the investigation was not the design
 that was chosen but the design that was *rejected*, and why. Without that written down, the
@@ -862,7 +853,8 @@ leaving it in the roadmap invites the rejected design back.
 
 ---
 
-**See also:** `docs/reference/api-reference.md` (`ns_nut_correction_t`) ·
+**See also:** `lib/include/cfd/nn/cfdnn.h` (inference API) ·
+`docs/reference/api-reference.md` (`ns_nut_correction_t`) ·
 `docs/reference/solvers.md` (turbulence models) ·
 `lib/src/io/checkpoint.c` (the binary-format precedent) ·
 `ROADMAP.md` Phase 7

@@ -17,8 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CFD_CHECKPOINT_FORMAT_VERSION` goes 3 -> 4 and files written by earlier versions are
   rejected. `ns_solver_params_t.turb_nut_correction` is now serialized, and range-checked
   when read back, so resuming a run that used it no longer comes back with the correction
-  silently off (`lib/include/cfd/io/checkpoint.h`, `lib/src/io/checkpoint.c`,
-  `tests/io/test_checkpoint.c`).
+  silently off. The learned-closure context `turb_closure` is a caller-owned pointer and
+  still cannot be stored, but `restore_simulation_checkpoint()` now carries it across an
+  in-place restore alongside the source callbacks, and the exclusion is documented on both
+  load paths (`lib/include/cfd/io/checkpoint.h`, `lib/src/io/checkpoint.c`,
+  `lib/src/api/simulation_api.c`, `tests/io/test_checkpoint.c`).
 
 - **The Poisson API no longer accepts configuration it cannot honour.** An audit found
   eleven places where a parameter could be set and then silently ignored. `poisson_solver_init`

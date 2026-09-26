@@ -340,8 +340,9 @@ static void write_params(chk_io* io, const ns_solver_params_t* p) {
     put_i32(io, (int32_t)p->turb_model);
     put_i32(io, (int32_t)p->pressure_solver);
     put_i32(io, (int32_t)p->convection_scheme);
-    /* A resume that dropped this would silently change the eddy viscosity
-     * while reporting success. */
+    /* turb_closure is a caller-owned context and cannot be stored; the enum
+     * beside it can be, and a resume that dropped it would silently change
+     * the eddy viscosity while reporting success. */
     put_i32(io, (int32_t)p->turb_nut_correction);
     put_i32(io, (int32_t)p->viscous_scheme);
     /* turb_bc: face types then k, epsilon and nu_tilde Dirichlet values */

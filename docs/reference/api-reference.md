@@ -267,7 +267,8 @@ typedef struct {
     ns_pressure_solver_t pressure_solver;  // NS_PRESSURE_SOLVER_DEFAULT (0) = backend's CG
     // Convective-term discretization (momentum and temperature advection)
     ns_convection_scheme_t convection_scheme;  // NS_CONVECTION_SCHEME_CENTRAL (0) = central
-    // Optional eddy-viscosity correction (k-epsilon only)
+    // Optional eddy-viscosity corrections (k-epsilon only, mutually exclusive)
+    cfd_nn_context_t*   turb_closure;          // NULL (default) = no learned correction
     ns_nut_correction_t turb_nut_correction;   // NS_NUT_CORRECTION_NONE (0) = standard model
     // Viscous-term time discretization (projection and projection_omp)
     ns_viscous_scheme_t viscous_scheme;  // NS_VISCOUS_SCHEME_EXPLICIT (0) = explicit
@@ -311,7 +312,9 @@ the dimensionless strain rate `S* = |S| k / epsilon` — equivalently, a `C_mu`
 that varies with the local strain — fitted against channel DNS (design note
 §2.7). The multiplier is clamped to `[0.1, 10]` and can lower `nu_t` as well as
 raise it. Setting it with any turbulence model other than k-epsilon fails
-solver init with `CFD_ERROR_UNSUPPORTED`:
+solver init with `CFD_ERROR_UNSUPPORTED`. It is the analytic competitor a
+learned closure has to beat, so it is kept alongside `turb_closure` rather than
+replaced by it; setting both fails solver init with `CFD_ERROR_UNSUPPORTED`:
 
 ```c
 params.turb_model          = TURB_MODEL_K_EPSILON;
