@@ -83,8 +83,8 @@ poisson_solver_t* create_multigrid_omp_solver(void);
 /**
  * Whether a (method, backend) pair implements params.helmholtz_shift.
  *
- * Default-deny. Currently: scalar CG only, and not with the multigrid
- * preconditioner, whose inner V-cycle is built from default params and would
+ * Default-deny. Currently: CG on the scalar and OpenMP backends, and not with
+ * the multigrid preconditioner, whose inner V-cycle is built from default params and would
  * precondition with the unshifted operator. POISSON_PRECOND_JACOBI is fine --
  * it is one diagonal term.
  *
@@ -96,7 +96,8 @@ static inline int poisson_solver_shift_supported(
     poisson_solver_method_t method,
     poisson_solver_backend_t backend,
     const poisson_solver_params_t* params) {
-    if (method != POISSON_METHOD_CG || backend != POISSON_BACKEND_SCALAR) {
+    if (method != POISSON_METHOD_CG
+        || (backend != POISSON_BACKEND_SCALAR && backend != POISSON_BACKEND_OMP)) {
         return 0;
     }
     if (params && params->krylov.preconditioner == POISSON_PRECOND_MULTIGRID) {

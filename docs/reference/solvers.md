@@ -68,6 +68,9 @@ Chorin's projection method - properly enforces incompressibility constraint.
 - Second-order accurate in space (central differences; first-order with
   [upwind convection](#convection-scheme))
 - First-order accurate in time
+- Viscous term explicit by default, or implicit (backward Euler / Crank–Nicolson)
+  on `projection` and `projection_omp` — see
+  [Viscous Time Discretization](#viscous-time-discretization)
 - Properly enforces ∇·u = 0
 - More expensive due to Poisson solve
 
@@ -169,6 +172,77 @@ cfd_status_t status = solver_init(slv, grid, &params);  // UNSUPPORTED on projec
 
 The upwind derivative itself is `stencil_upwind_deriv_x/y/z()` in
 `cfd/math/stencils.h`.
+
+## Viscous Time Discretization
+
+Every solver advances the viscous term explicitly by default, so the time step is
+bounded by the diffusion limit `dt < h² / (2ν·ndim)`. That limit scales as h²,
+against the convective limit's h, so it binds at low Reynolds number and on fine
+grids. `ns_solver_params_t.viscous_scheme` lets the projection solver advance the
+viscous term implicitly instead:
+
+| `viscous_scheme` value | θ | Viscous term | Stability |
+|------------------------|---|--------------|-----------|
+| `NS_VISCOUS_SCHEME_EXPLICIT` (0) | 0 | O(dt) | `dt < h²/(2ν·ndim)` |
+| `NS_VISCOUS_SCHEME_BACKWARD_EULER` | 1 | O(dt) | unconditional, L-stable |
+| `NS_VISCOUS_SCHEME_CRANK_NICOLSON` | ½ | O(dt²) | unconditional, A-stable only |
+
+The predictor's explicit increment `b = dt·(−(u·∇)u + f + ν∇²uⁿ)` becomes the
+right-hand side of
+
+```
+(I − θ·ν·dt·∇²) δ = b,    u* = uⁿ + δ,    δ = 0 on every boundary node
+```
+
+solved once per velocity component per step as the shifted Poisson problem
+`∇²δ − σδ = −σb` with `σ = 1/(θ·ν·dt)` (the Poisson solvers'
+`helmholtz_shift`), by CG at relative tolerance 1e-10. The shift makes the
+operator better conditioned than the pressure Poisson operator, so this costs
+a handful of CG iterations and barely grows with the grid. δ = 0 on the
+boundary is not a new assumption: the predictor already holds boundary values at
+their step-start values for the whole step, and the caller's boundary conditions
+apply after it.
+
+**What it buys is stability, not a higher overall order.** Convection stays
+forward Euler and the projection is Chorin's non-incremental splitting, so a
+full step is O(dt) under either scheme. Crank–Nicolson makes the viscous part
+second order, which is visible where diffusion dominates, but as `ν·dt·|λ|`
+grows its amplification tends to −1: stiff, high-wavenumber modes flip sign each
+step instead of decaying. Backward Euler damps them, which makes it the right
+choice for marching to a steady state with a large dt; prefer Crank–Nicolson for
+transients at a dt near the explicit limit.
+
+`compute_time_step()` leaves the diffusion limit out when the scheme is
+implicit. The convective CFL limit still applies, and so does the thermal
+diffusion limit when the energy equation is active, because temperature is
+still advanced explicitly.
+
+| Solver | Implicit viscous |
+|--------|------------------|
+| `projection` | Yes (scalar CG) |
+| `projection_omp` | Yes (OpenMP CG) |
+| All others | No: `CFD_ERROR_UNSUPPORTED` at init and at step |
+
+The two supporting solvers advertise `NS_SOLVER_CAP_IMPLICIT_VISCOUS`, which
+`solver_init`, `solver_step` and `solver_solve` check. An implicit scheme
+combined with a turbulence model is rejected with `CFD_ERROR_UNSUPPORTED`,
+because `ν + ν_t` varies in space and the implicit operator has constant
+coefficients. Values outside the enum are `CFD_ERROR_INVALID` on every solver.
+
+```c
+ns_solver_params_t params = ns_solver_params_default();
+params.viscous_scheme = NS_VISCOUS_SCHEME_BACKWARD_EULER;
+params.dt = 20.0 * h * h / (4.0 * params.mu);  // 20x the 2D explicit limit
+ns_solver_t* slv = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION);
+cfd_status_t status = solver_init(slv, grid, &params);  // UNSUPPORTED on rk4
+```
+
+Verified in `tests/solvers/navier_stokes/test_viscous_scheme.c`. On a discrete
+Laplacian eigenmode, one step reproduces the θ-method amplification
+`(1 + (1−θ)ν·dt·λ)/(1 − θ·ν·dt·λ)` to 1e-15. Temporal order measures 2.00 for
+Crank–Nicolson and 0.98 for backward Euler, at time steps all above the explicit
+limit. A viscous-bound cavity at 20× the explicit limit stays bounded by the lid
+speed, while the explicit scheme saturates at the velocity clamp.
 
 ## Linear Solvers (Poisson Equation)
 

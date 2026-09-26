@@ -341,8 +341,8 @@ typedef struct {
      *
      * Common to every method, like walls above, because it describes the
      * operator rather than the algorithm used to invert it -- even though only
-     * the scalar CG solver implements it today, which poisson_solver_init()
-     * refuses rather than ignores.
+     * the scalar and OpenMP CG solvers implement it today; every other method
+     * and backend has poisson_solver_init() refuse it rather than ignore it.
      *
      * For implicit diffusion, (I - nu*dt*nabla^2)u = b rearranges to sigma =
      * 1/(nu*dt) with rhs[i] = -b[i]/(nu*dt). Note the minus sign on the rhs.
@@ -686,7 +686,7 @@ CFD_LIBRARY_EXPORT poisson_solver_t* poisson_solver_create(
  *   asked: any preconditioner on BiCGSTAB or on a GPU backend (neither
  *   implements one), a multigrid preconditioner outside scalar and OpenMP CG,
  *   prescribed faces outside the CPU Krylov solvers, a nonzero helmholtz_shift
- *   outside scalar CG (or on scalar CG with a multigrid preconditioner), or a
+ *   outside scalar and OpenMP CG (or on either with a multigrid preconditioner), or a
  *   caller's apply_bc on multigrid or on any GPU solver (both apply their walls
  *   themselves and never call it).
  *

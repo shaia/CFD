@@ -119,6 +119,40 @@ static inline cfd_status_t ns_check_pressure_solver(const ns_solver_params_t* pa
 }
 
 /**
+ * Validate the viscous-scheme selection.
+ *
+ * Called from the solver_init / solver_step / solver_solve wrappers with the
+ * solver's capability flags rather than from each backend's init: one check then
+ * covers every solver, the CUDA ones included, and also catches a scheme set on
+ * params after init, which would otherwise run explicit silently at a dt the
+ * caller chose because it no longer had to be.
+ *
+ * @param params                   Solver parameters (NULL means defaults)
+ * @param supports_implicit        Nonzero if the solver has
+ *                                 NS_SOLVER_CAP_IMPLICIT_VISCOUS
+ * @return CFD_SUCCESS, CFD_ERROR_INVALID for an unknown value, or
+ *         CFD_ERROR_UNSUPPORTED
+ */
+static inline cfd_status_t ns_check_viscous_scheme(const ns_solver_params_t* params,
+                                                   int supports_implicit) {
+    if (!params || params->viscous_scheme == NS_VISCOUS_SCHEME_EXPLICIT) {
+        return CFD_SUCCESS;
+    }
+    if (params->viscous_scheme != NS_VISCOUS_SCHEME_BACKWARD_EULER &&
+        params->viscous_scheme != NS_VISCOUS_SCHEME_CRANK_NICOLSON) {
+        cfd_set_error(CFD_ERROR_INVALID, "Unknown ns_solver_params_t.viscous_scheme");
+        return CFD_ERROR_INVALID;
+    }
+    if (!supports_implicit) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "An implicit params.viscous_scheme is honoured by the scalar and "
+                      "OpenMP projection solvers only");
+        return CFD_ERROR_UNSUPPORTED;
+    }
+    return CFD_SUCCESS;
+}
+
+/**
  * Validate the turbulence model at solver init.
  *
  * The GPU backends have no RANS kernels and were rejecting this per step, from

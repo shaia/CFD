@@ -81,7 +81,8 @@ ns_solver_params_t ns_solver_params_default(void) {
                             .turb_model = TURB_MODEL_NONE,
                             .turb_bc = {0},
                             .pressure_solver = NS_PRESSURE_SOLVER_DEFAULT,
-                            .convection_scheme = NS_CONVECTION_SCHEME_CENTRAL};
+                            .convection_scheme = NS_CONVECTION_SCHEME_CENTRAL,
+                            .viscous_scheme = NS_VISCOUS_SCHEME_EXPLICIT};
     return params;
 }
 flow_field* flow_field_create(size_t nx, size_t ny, size_t nz) {
@@ -289,7 +290,10 @@ double ns_dt_thermal(const flow_field* field, const grid* grid,
 
 void compute_time_step(flow_field* field, const grid* grid, ns_solver_params_t* params) {
     double dt_stable = ns_dt_convective(field, grid, params);
-    dt_stable = min_double(dt_stable, ns_dt_viscous(field, grid, params));
+    /* An implicit viscous scheme removes the diffusion limit; that is its point */
+    if (params->viscous_scheme == NS_VISCOUS_SCHEME_EXPLICIT) {
+        dt_stable = min_double(dt_stable, ns_dt_viscous(field, grid, params));
+    }
     dt_stable = min_double(dt_stable, ns_dt_thermal(field, grid, params));
 
     // Limit time step to reasonable bounds

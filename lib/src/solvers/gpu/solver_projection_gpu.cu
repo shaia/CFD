@@ -525,6 +525,15 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
                              const ns_solver_params_t* params, gpu_solver_stats_t* stats) {
     if (!ctx_void || !grid || !params)
         return CFD_ERROR_INVALID;
+    // The kernels below advance the viscous term explicitly; an implicit scheme
+    // would otherwise run explicit at a dt chosen because it no longer had to be
+    // stable.
+    if (params->viscous_scheme != NS_VISCOUS_SCHEME_EXPLICIT) {
+        cfd_set_error(CFD_ERROR_UNSUPPORTED,
+                      "gpu_solver_step advances the viscous term explicitly; an implicit "
+                      "viscous_scheme needs the scalar or OpenMP projection solver");
+        return CFD_ERROR_UNSUPPORTED;
+    }
     struct gpu_solver_context_impl* ctx = (struct gpu_solver_context_impl*)ctx_void;
     size_t nx = ctx->nx, ny = ctx->ny, nz = ctx->nz;
     size_t stride_z = ctx->stride_z;
@@ -609,12 +618,15 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
-    // RANS turbulence models and upwind convection have no GPU kernels.
+    // RANS turbulence, upwind convection and implicit viscous terms have no GPU
+    // kernels. Repeated here because these entry points are exported and skip the
+    // solver_step() capability check.
     if (params->turb_model != TURB_MODEL_NONE ||
-        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL) {
+        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL ||
+        params->viscous_scheme != NS_VISCOUS_SCHEME_EXPLICIT) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "GPU NS solver does not support turbulence models or upwind convection; "
-                      "use a CPU, OMP, or AVX2 solver");
+                      "GPU NS solver does not support turbulence models, upwind convection "
+                      "or an implicit viscous scheme; use a CPU, OMP, or AVX2 solver");
         return CFD_ERROR_UNSUPPORTED;
     }
 
@@ -673,12 +685,16 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
                                          const ns_solver_params_t* params, const gpu_config_t* config) {
     if (!field || !grid || !params)
         return CFD_ERROR_INVALID;
-    // RANS turbulence models and upwind convection have no GPU kernels.
+    // RANS turbulence, upwind convection and implicit viscous terms have no GPU
+    // kernels. Repeated here because these entry points are exported and skip the
+    // solver_step() capability check.
     if (params->turb_model != TURB_MODEL_NONE ||
-        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL) {
+        params->convection_scheme != NS_CONVECTION_SCHEME_CENTRAL ||
+        params->viscous_scheme != NS_VISCOUS_SCHEME_EXPLICIT) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-                      "GPU projection solver does not support turbulence models or upwind "
-                      "convection; use a CPU, OMP, or AVX2 solver");
+                      "GPU projection solver does not support turbulence models, upwind "
+                      "convection or an implicit viscous scheme; use a CPU, OMP, or AVX2 "
+                      "solver");
         return CFD_ERROR_UNSUPPORTED;
     }
 

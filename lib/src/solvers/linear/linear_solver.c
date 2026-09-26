@@ -255,8 +255,8 @@ cfd_status_t poisson_solver_check_config(const poisson_solver_t* solver) {
     if (p->helmholtz_shift != 0.0
         && !poisson_solver_shift_supported(solver->method, solver->backend, p)) {
         cfd_set_error(CFD_ERROR_UNSUPPORTED,
-            "params.helmholtz_shift is implemented by the scalar CG solver only, and "
-            "not with the multigrid preconditioner");
+            "params.helmholtz_shift is implemented by the scalar and OpenMP CG solvers "
+            "only, and not with the multigrid preconditioner");
         return CFD_ERROR_UNSUPPORTED;
     }
 
