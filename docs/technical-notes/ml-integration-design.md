@@ -767,6 +767,37 @@ distribution, rather than one where the momentum balance pins it. A separated or
 adverse-pressure-gradient case is now a prerequisite for the learned closure, for the same
 reason DNS data was a prerequisite for measuring closure error at all.
 
+### 2.8 The exporter, and how the pipeline was verified without a model worth shipping
+
+`tools/cfdnn/` holds the Python side: `cfdnn.py` (writer, validating reader, float64
+reference forward pass, exact folding of input standardization and BatchNorm into Dense
+layers, and a PyTorch `Sequential` adapter that duck-types modules so the tooling needs
+numpy only), and `distill_algebraic.py`.
+
+The closure consumes raw features, and the format has no normalization layer and should
+not grow one. A network trained on standardized inputs therefore has its standardization
+folded into the first layer at export, `W' = W / std`, `b' = b - W' mean`, which is exact.
+
+**Verification by distilling a known answer.** §2.7 leaves no closure model worth shipping,
+but the pipeline still has to be proven, and the links most likely to break are the ones a
+format test cannot see: feature order, the folded normalization, and whether the output is
+the `nu_t` multiplier. §2.7 records one inversion on exactly that lever already. So the
+exporter's reference model is an MLP (3 → 16 tanh → 16 tanh → 1 softplus) trained on the
+incumbent itself, `beta = A (S*)^B`, over a box covering the channel runs. It has to learn
+to ignore `ln Re_t` and `ln nu_t/nu`, which is a useful property to see a closure network
+demonstrate.
+
+| check (`test_cfdnn_python_export`) | result |
+| ---------------------------------- | ------ |
+| fit, relative to the law, over the training box | max 0.53%, RMS 0.062% |
+| C scalar / OMP kernels vs Python float64 reference | 1.2e-7 relative |
+| C writer on the same weights | byte-identical (bar the library-version stamp and its CRC) |
+| one k-ε step, `params.turb_closure` vs `NS_NUT_CORRECTION_S_STAR` | `nu_t` within 2.7e-4 |
+
+A feature-order or sign error would show up as an O(1) difference in the last row, not a
+0.03% one. This model is a test fixture, not a closure. It adds nothing the algebraic law
+does not already provide, and it is not offered as one.
+
 ---
 
 ## Part 3 — Limitations, stated up front
@@ -782,10 +813,14 @@ reason DNS data was a prerequisite for measuring closure error at all.
    code before measuring it.
 3. **Cross-backend results are not bit-identical.** SIMD differs from scalar at FMA
    contraction (~1e-7). OMP *is* bit-identical by construction. Promise no more than that.
-4. **Nothing in CI proves the Python exporter matches the C reader.** The exporter is
+4. **CI checks one Python-exported model, not the exporter.** The exporter is
    developer tooling under `tools/cfdnn/`, outside the build and outside CI; adding a
    `setup-python` step would be a policy change needing its own discussion. The gap is
-   narrowed — not closed — by a manual `cfdnn_check` verifier, by the format matching
+   narrowed — not closed — by `tests/nn/test_cfdnn_python_export.c`, which embeds a model
+   the exporter wrote and asserts the C reader loads it, every kernel backend reproduces
+   the Python reference, the C writer emits the same bytes, and the model run as
+   `params.turb_closure` reproduces the algebraic correction it was distilled from (§2.8);
+   by the Python-side tests in `tools/cfdnn/test_cfdnn.py`; by the format matching
    PyTorch's native layout and dtype so the serialization has almost no logic to get wrong,
    and by the runtime clamp of §1.5.
 5. **Scope discipline.** This is not ONNX and must not grow into one. Every added op should

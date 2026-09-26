@@ -622,9 +622,13 @@ Pure-C inference with no runtime Python dependency (embedded/HPC friendly).
 - [x] **Algebraic competitor measured first, per the governing rule.** A two-constant
       strain-rate power law cuts channel TKE error 14.96% → 6.23% where it was fitted and
       12.80% → 9.27% at a held-out Re_tau, with `u_tau` unmoved (design note §2.7)
-- [ ] Trained model + Python exporter (`tools/cfdnn/`) — **blocked**: a network must now
-      beat the algebraic correction above, and §2.7 showed the only non-circular target
-      left on this case is `k+` at 9 and 14 nodes
+- [x] Python exporter (`tools/cfdnn/`, numpy only; PyTorch `Sequential` adapter with
+      exact BatchNorm and input-normalization folding). Pipeline verified end to end by
+      distilling the algebraic correction into an MLP and reproducing it through
+      `params.turb_closure` in CI (`test_cfdnn_python_export`; design note §2.8)
+- [ ] Trained closure model — **blocked**: a network must now beat the algebraic
+      correction above, and §2.7 showed the only non-circular target left on this case is
+      `k+` at 9 and 14 nodes
 - [ ] Separated or adverse-pressure-gradient validation case — **prerequisite** for the
       learned closure: in channel flow the momentum balance pins the shear stress, so the
       closure has little authority over the quantities the gate measures. The laminar
