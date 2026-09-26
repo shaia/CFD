@@ -28,11 +28,15 @@
 #if BC_CORE_USE_OMP
 #define BC_LOOP_VAR int
 #define BC_LOOP_LIMIT(n) ((n) > (size_t)INT_MAX ? INT_MAX : (int)(n))
-#define BC_OMP_FOR _Pragma("omp parallel for schedule(static)")
+/* points: boundary values the loop writes, gated by BC_OMP_MIN_POINTS. The if()
+ * clause calls a function, so the stringized pragma relies on no macro expansion. */
+#define BC_OMP_PRAGMA(x) _Pragma(#x)
+#define BC_OMP_FOR(points) \
+    BC_OMP_PRAGMA(omp parallel for schedule(static) if(bc_omp_worth_threading(points)))
 #else
 #define BC_LOOP_VAR size_t
 #define BC_LOOP_LIMIT(n) (n)
-#define BC_OMP_FOR
+#define BC_OMP_FOR(points)
 #endif
 
 /* --------------------------------------------------------------------
@@ -46,7 +50,7 @@ void BC_CORE_FN(neumann)(double* field, size_t nx, size_t ny,
     /* x-faces (left/right) for each z-plane */
     for (k = 0; k < nz; k++) {
         size_t base = k * stride_z;
-        BC_OMP_FOR
+        BC_OMP_FOR(2 * ny)
         for (j = 0; j < BC_LOOP_LIMIT(ny); j++) {
             field[base + IDX_2D(0, j, nx)] = field[base + IDX_2D(1, j, nx)];
             field[base + IDX_2D(nx - 1, j, nx)] = field[base + IDX_2D(nx - 2, j, nx)];
@@ -61,7 +65,7 @@ void BC_CORE_FN(neumann)(double* field, size_t nx, size_t ny,
         double* top_dst = field + base + ((ny - 1) * nx);
         double* top_src = field + base + ((ny - 2) * nx);
 
-        BC_OMP_FOR
+        BC_OMP_FOR(2 * nx)
         for (i = 0; i < BC_LOOP_LIMIT(nx); i++) {
             bottom_dst[i] = bottom_src[i];
             top_dst[i] = top_src[i];
@@ -76,7 +80,7 @@ void BC_CORE_FN(neumann)(double* field, size_t nx, size_t ny,
         double* front_src = field + ((nz - 2) * stride_z);  /* k=nz-2 plane */
         size_t plane_size = nx * ny;
 
-        BC_OMP_FOR
+        BC_OMP_FOR(2 * plane_size)
         for (i = 0; i < BC_LOOP_LIMIT(plane_size); i++) {
             back_dst[i] = back_src[i];
             front_dst[i] = front_src[i];
@@ -95,7 +99,7 @@ void BC_CORE_FN(periodic)(double* field, size_t nx, size_t ny,
     /* x-faces (left/right) for each z-plane */
     for (k = 0; k < nz; k++) {
         size_t base = k * stride_z;
-        BC_OMP_FOR
+        BC_OMP_FOR(2 * ny)
         for (j = 0; j < BC_LOOP_LIMIT(ny); j++) {
             field[base + IDX_2D(0, j, nx)] = field[base + IDX_2D(nx - 2, j, nx)];
             field[base + IDX_2D(nx - 1, j, nx)] = field[base + IDX_2D(1, j, nx)];
@@ -110,7 +114,7 @@ void BC_CORE_FN(periodic)(double* field, size_t nx, size_t ny,
         double* top_dst = field + base + ((ny - 1) * nx);
         double* top_src = field + base + nx;
 
-        BC_OMP_FOR
+        BC_OMP_FOR(2 * nx)
         for (i = 0; i < BC_LOOP_LIMIT(nx); i++) {
             bottom_dst[i] = bottom_src[i];
             top_dst[i] = top_src[i];
@@ -125,7 +129,7 @@ void BC_CORE_FN(periodic)(double* field, size_t nx, size_t ny,
         double* front_src = field + stride_z;                /* k=1 plane */
         size_t plane_size = nx * ny;
 
-        BC_OMP_FOR
+        BC_OMP_FOR(2 * plane_size)
         for (i = 0; i < BC_LOOP_LIMIT(plane_size); i++) {
             back_dst[i] = back_src[i];
             front_dst[i] = front_src[i];
@@ -149,7 +153,7 @@ void BC_CORE_FN(dirichlet)(double* field, size_t nx, size_t ny,
     /* x-faces (left/right) for each z-plane */
     for (k = 0; k < nz; k++) {
         size_t base = k * stride_z;
-        BC_OMP_FOR
+        BC_OMP_FOR(2 * ny)
         for (j = 0; j < BC_LOOP_LIMIT(ny); j++) {
             field[base + IDX_2D(0, j, nx)] = val_left;
             field[base + IDX_2D(nx - 1, j, nx)] = val_right;
@@ -162,7 +166,7 @@ void BC_CORE_FN(dirichlet)(double* field, size_t nx, size_t ny,
         double* bottom_row = field + base;
         double* top_row = field + base + ((ny - 1) * nx);
 
-        BC_OMP_FOR
+        BC_OMP_FOR(2 * nx)
         for (i = 0; i < BC_LOOP_LIMIT(nx); i++) {
             bottom_row[i] = val_bottom;
             top_row[i] = val_top;
@@ -177,7 +181,7 @@ void BC_CORE_FN(dirichlet)(double* field, size_t nx, size_t ny,
         double* front_plane = field + ((nz - 1) * stride_z); /* k=nz-1 plane */
         size_t plane_size = nx * ny;
 
-        BC_OMP_FOR
+        BC_OMP_FOR(2 * plane_size)
         for (i = 0; i < BC_LOOP_LIMIT(plane_size); i++) {
             back_plane[i] = val_back;
             front_plane[i] = val_front;
@@ -189,6 +193,7 @@ void BC_CORE_FN(dirichlet)(double* field, size_t nx, size_t ny,
 #undef BC_LOOP_VAR
 #undef BC_LOOP_LIMIT
 #undef BC_OMP_FOR
+#undef BC_OMP_PRAGMA
 #undef BC_CORE_FN
 #undef BC_CORE_PASTE
 #undef BC_CORE_PASTE2

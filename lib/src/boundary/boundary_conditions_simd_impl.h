@@ -9,7 +9,6 @@
  *   BC_SIMD_VEC_TYPE          - SIMD vector type (e.g., __m256d, float64x2_t)
  *   BC_SIMD_WIDTH             - number of doubles per SIMD vector (4 or 2)
  *   BC_SIMD_MASK              - low-bit mask for rounding down (3 for AVX2, 1 for NEON)
- *   BC_SIMD_THRESHOLD         - min width for OMP on SIMD loops
  *   BC_SIMD_FUNC_PREFIX       - function name prefix (e.g., avx2, neon)
  *
  * 3D support: all functions accept (nz, stride_z). When nz <= 1,
@@ -39,7 +38,7 @@ static void BC_SIMD_FN(neumann)(double* field, size_t nx, size_t ny,
     /* x-faces (left/right) for each z-plane */
     for (k = 0; k < nz; k++) {
         size_t base = k * stride_z;
-        #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static) if(bc_omp_worth_threading(2 * ny))
         for (j = 0; j < bc_simd_size_to_int(ny); j++) {
             size_t row = base + (size_t)j * nx;
             field[row] = field[row + 1];
@@ -57,7 +56,7 @@ static void BC_SIMD_FN(neumann)(double* field, size_t nx, size_t ny,
 
         size_t simd_end = nx & ~(size_t)BC_SIMD_MASK;
 
-        if (nx >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
+        if (bc_omp_worth_threading(2 * nx) && simd_end <= (size_t)INT_MAX) {
             #pragma omp parallel for schedule(static)
             for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                 BC_SIMD_STORE(bottom_dst + i, BC_SIMD_LOAD(bottom_src + i));
@@ -85,7 +84,7 @@ static void BC_SIMD_FN(neumann)(double* field, size_t nx, size_t ny,
         size_t plane_size = nx * ny;
         size_t simd_end = plane_size & ~(size_t)BC_SIMD_MASK;
 
-        if (plane_size >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
+        if (bc_omp_worth_threading(2 * plane_size) && simd_end <= (size_t)INT_MAX) {
             #pragma omp parallel for schedule(static)
             for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                 BC_SIMD_STORE(back_dst + i, BC_SIMD_LOAD(back_src + i));
@@ -116,7 +115,7 @@ static void BC_SIMD_FN(periodic)(double* field, size_t nx, size_t ny,
     /* x-faces (left/right) for each z-plane */
     for (k = 0; k < nz; k++) {
         size_t base = k * stride_z;
-        #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static) if(bc_omp_worth_threading(2 * ny))
         for (j = 0; j < bc_simd_size_to_int(ny); j++) {
             size_t row = base + (size_t)j * nx;
             field[row] = field[row + nx - 2];
@@ -134,7 +133,7 @@ static void BC_SIMD_FN(periodic)(double* field, size_t nx, size_t ny,
 
         size_t simd_end = nx & ~(size_t)BC_SIMD_MASK;
 
-        if (nx >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
+        if (bc_omp_worth_threading(2 * nx) && simd_end <= (size_t)INT_MAX) {
             #pragma omp parallel for schedule(static)
             for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                 BC_SIMD_STORE(bottom_dst + i, BC_SIMD_LOAD(bottom_src + i));
@@ -162,7 +161,7 @@ static void BC_SIMD_FN(periodic)(double* field, size_t nx, size_t ny,
         size_t plane_size = nx * ny;
         size_t simd_end = plane_size & ~(size_t)BC_SIMD_MASK;
 
-        if (plane_size >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
+        if (bc_omp_worth_threading(2 * plane_size) && simd_end <= (size_t)INT_MAX) {
             #pragma omp parallel for schedule(static)
             for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                 BC_SIMD_STORE(back_dst + i, BC_SIMD_LOAD(back_src + i));
@@ -199,7 +198,7 @@ static void BC_SIMD_FN(dirichlet)(double* field, size_t nx, size_t ny,
     /* x-faces (left/right) for each z-plane */
     for (k = 0; k < nz; k++) {
         size_t base = k * stride_z;
-        #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static) if(bc_omp_worth_threading(2 * ny))
         for (j = 0; j < bc_simd_size_to_int(ny); j++) {
             size_t row = base + (size_t)j * nx;
             field[row] = val_left;
@@ -217,7 +216,7 @@ static void BC_SIMD_FN(dirichlet)(double* field, size_t nx, size_t ny,
         double* top_row = field + base + ((ny - 1) * nx);
         size_t simd_end = nx & ~(size_t)BC_SIMD_MASK;
 
-        if (nx >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
+        if (bc_omp_worth_threading(2 * nx) && simd_end <= (size_t)INT_MAX) {
             #pragma omp parallel for schedule(static)
             for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                 BC_SIMD_STORE(bottom_row + i, bottom_broadcast);
@@ -247,7 +246,7 @@ static void BC_SIMD_FN(dirichlet)(double* field, size_t nx, size_t ny,
         size_t plane_size = nx * ny;
         size_t simd_end = plane_size & ~(size_t)BC_SIMD_MASK;
 
-        if (plane_size >= BC_SIMD_THRESHOLD && simd_end <= (size_t)INT_MAX) {
+        if (bc_omp_worth_threading(2 * plane_size) && simd_end <= (size_t)INT_MAX) {
             #pragma omp parallel for schedule(static)
             for (i = 0; i < (int)simd_end; i += BC_SIMD_WIDTH) {
                 BC_SIMD_STORE(back_plane + i, back_broadcast);
@@ -276,5 +275,4 @@ static void BC_SIMD_FN(dirichlet)(double* field, size_t nx, size_t ny,
 #undef BC_SIMD_VEC_TYPE
 #undef BC_SIMD_WIDTH
 #undef BC_SIMD_MASK
-#undef BC_SIMD_THRESHOLD
 #undef BC_SIMD_FUNC_PREFIX

@@ -13,7 +13,6 @@
 #define BC_SIMD_LOAD(src)       vld1q_f64((src))
 #define BC_SIMD_WIDTH           2
 #define BC_SIMD_MASK            1
-#define BC_SIMD_THRESHOLD       256
 #define BC_OUTLET_FUNC_NAME     bc_apply_outlet_neon_impl
 
 #include "../boundary_conditions_outlet_simd.h"

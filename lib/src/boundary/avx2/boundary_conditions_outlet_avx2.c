@@ -13,7 +13,6 @@
 #define BC_SIMD_LOAD(src)       _mm256_loadu_pd((src))
 #define BC_SIMD_WIDTH           4
 #define BC_SIMD_MASK            3
-#define BC_SIMD_THRESHOLD       256
 #define BC_OUTLET_FUNC_NAME     bc_apply_outlet_avx2_impl
 
 #include "../boundary_conditions_outlet_simd.h"

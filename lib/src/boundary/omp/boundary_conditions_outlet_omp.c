@@ -54,7 +54,7 @@ cfd_status_t bc_apply_outlet_omp_impl(double* field, size_t nx, size_t ny,
                 }
                 int plane_size_int = (int)(nx * ny);
                 int idx;
-                #pragma omp parallel for schedule(static)
+                #pragma omp parallel for schedule(static) if(bc_omp_worth_threading(nx * ny))
                 for (idx = 0; idx < plane_size_int; idx++) {
                     field[dst_plane + (size_t)idx] = field[src_plane + (size_t)idx];
                 }
@@ -65,7 +65,7 @@ cfd_status_t bc_apply_outlet_omp_impl(double* field, size_t nx, size_t ny,
                 for (size_t k = 0; k < nz; k++) {
                     size_t base = k * stride_z;
                     int i;
-                    #pragma omp parallel for schedule(static)
+                    #pragma omp parallel for schedule(static) if(bc_omp_worth_threading(count))
                     for (i = 0; i < count_int; i++) {
                         size_t dst_idx = base + loop->dst_fn((size_t)i, nx, ny);
                         size_t src_idx = base + loop->src_fn((size_t)i, nx, ny);
