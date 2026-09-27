@@ -9,15 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Wall functions solve Spalding's law of the wall.** `turbulence_wall_u_tau()` switched from
-  the linear law to the log law at y+ = 11.63, but with κ = 0.41, B = 5.2 the two cross at
-  y+ = 11.06, so u_τ jumped 3.3% at the switch (wall shear 6.6%, first-node ε 10%).
-  Spalding's single smooth y+(u+) removes the jump. It sits below the log law until
-  y+ ≈ 100, so the Re_τ = 395 channel's u_τ error, measured against the log law, moves from
-  2.9% to 5.9% (k-ε) and 3.1% to 6.0% (SA). `WALL_YPLUS_LAMINAR` is removed
+- **Selectable law of the wall, and no u_τ jump** (`ns_turbulence_bc_config_t.wall_law`,
+  `ns_wall_law_t`). `turbulence_wall_u_tau()` switched from the linear law to the log law at
+  y+ = 11.63, but with κ = 0.41, B = 5.2 the two cross at y+ = 11.06, so u_τ jumped 3.3% at
+  the switch (wall shear 6.6%, first-node ε 10%).
+  - `NS_WALL_LAW_LOG` (0, default) keeps the linear/log law and moves its switch to the
+    crossing, so u_τ is continuous. The Re_τ = 395 channel keeps its results: u_τ error
+    against the log law 2.9% (k-ε) and 3.3% (SA).
+  - `NS_WALL_LAW_SPALDING` selects Spalding's single smooth y+(u+). It sits below the log
+    law until y+ ≈ 100, so the same channel reads 5.9% (k-ε) and 6.0% (SA).
+  - Which is closer to reality depends on where the first node sits: against channel DNS,
+    Spalding is closer below y+ ≈ 17 and the log law from y+ ≈ 20 on (u+ 0.7% under DNS at
+    y+ = 40, against 4.4%). Hence the log law as the default for wall-function grids and
+    Spalding as the option for first nodes in the buffer layer.
+  - **Breaking:** `turbulence_wall_u_tau()` takes the law as its first argument, so callers
+    compute exactly what the wall function imposes. An unknown `wall_law` is
+    `CFD_ERROR_INVALID` from `turbulence_apply_bcs()`. `WALL_YPLUS_LAMINAR` is removed.
+  - `examples/turbulent_channel.c` takes an optional second argument, `spalding`, and
+    measures u_τ with its own log-law inversion, as `test_turbulent_channel` does, so both
+    laws are read with one yardstick
   (`lib/src/solvers/turbulence/cpu/turbulence_solver.c`,
   `tests/solvers/turbulence/test_turbulence_wall_functions.c`,
   `tests/validation/test_turbulent_channel.c`).
+- **Checkpoint format version 6.** `.cfdchk` files now carry `turb_bc.wall_law`, validated
+  on read, so a restart keeps the chosen law. Version-5 files are rejected as unsupported.
 
 - **Unpreconditioned CG computes the residual norm once per iteration.** `res_norm` reuses
   `rho_new = (r,r)` instead of a second O(N) pass, in the scalar, AVX2, NEON and OMP backends.

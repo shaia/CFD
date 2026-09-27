@@ -446,7 +446,7 @@ worth its own investigation.
 Re_τ = 395 is the library's only genuinely turbulent validated case, and it is cheap: a
 16×21 grid, `dt = 0.002`, 5,000–40,000 steps, with a 600-second timeout. It also has a
 recorded baseline to beat — 2.9% (k-ε) and 3.1% (SA) `u_τ` error with the original linear/log
-wall function; 5.9% and 6.0% since it moved to Spalding's law (see *Findings filed
+wall function, which is again the default; 5.9% and 6.0% with the Spalding option (see *Findings filed
 separately*). Sweep `CH_RE_TAU` over
 {180, 395, 1000} and read the log-law errors the test already prints. If the error curve is
 flat across Re_τ, the channel carries no training signal and a separated-flow benchmark is a
@@ -467,9 +467,9 @@ With y+ pinned near 39.4 and CFL pinned at its tuned value:
 | 1500   | 77  | 1.7%              | 1.7%           | 3.3% / 2.7%      | 572 s   |
 | 2000   | 102 | 1.9%              | (timed out)    | 3.3%             | >900 s  |
 
-These runs, and the closure-correction results below, predate the move to Spalding's law in
-the wall function, which lowered the Re_tau = 395 `u_tau` by about 3%. Re-run them before
-comparing new results against these rows.
+These runs, and the closure-correction results below, used the linear/log wall function,
+which is the default again. Selecting Spalding's law lowers the Re_tau = 395 `u_tau` by
+about 3%; re-run them before comparing Spalding results against these rows.
 
 **The gate fails, on its own terms.** It was written as: *"If the error curve is flat across
 Re_tau, the channel carries no training signal."* Beyond Re_tau = 590 the u_tau error is flat
@@ -804,12 +804,15 @@ yardstick if it is ever replaced.
 
 *Measured and fixed.* The laws cross at y+ = 11.06, so at the switch `u_tau` jumped 3.3%, the
 wall shear 6.6% and the first-node epsilon 10%, and y+ in (11.63, 12.01) was unreachable.
-`turbulence_wall_u_tau()` now solves Spalding's law, and the channel test keeps its own
-log-law inversion as the yardstick. The fix is not free on the channel: Spalding sits below
-the log law until y+ ~ 100, and at the first node (y+ = 39.5) that raises `u_tau` 3.1% for a
-given `u_p`, so the measured `u_tau` error moved from 2.9% to 5.9% (k-ε) and 3.1% to 6.0%
-(SA). It was kept for the separated-flow cases, where y+ crosses the buffer layer near
-reattachment.
+Spalding's law was tried first, and the channel test got its own log-law inversion as the
+yardstick. It was not free on the channel: Spalding sits below the log law until
+y+ ~ 100, and at the first node (y+ = 39.5) that raises `u_tau` 3.1% for a given `u_p`, so
+the measured `u_tau` error moved from 2.9% to 5.9% (k-ε) and 3.1% to 6.0% (SA). Against
+channel DNS the log law is the closer one from y+ ~ 20 on (u+ 0.7% under DNS at y+ = 40,
+Spalding 4.4%), and Spalding below y+ ~ 17. So the wall law is now a choice,
+`params.turb_bc.wall_law`: the log law is the default, with its switch moved to the
+crossing so the jump is gone, and Spalding's law is the option for separated-flow cases,
+where y+ crosses the buffer layer near reattachment.
 
 ## Explicitly not doing
 

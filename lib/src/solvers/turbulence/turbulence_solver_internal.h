@@ -35,7 +35,7 @@
 #define SA_CW3   2.0
 #define SA_CV1   7.1
 
-/* --- Wall function (Spalding's law) constants --- */
+/* --- Wall-function constants (log law and Spalding's law) --- */
 #define WALL_KAPPA 0.41
 #define WALL_B     5.2
 

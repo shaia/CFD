@@ -8,7 +8,7 @@
  *   - exact steady force balance: u_tau = sqrt(f_x * delta) = 1
  *
  * The flow is streamwise-uniform, so this exercises the wall-normal RANS
- * balance: 0 = d/dy[(nu + nu_t) du/dy] + f_x with log-law wall functions.
+ * balance: 0 = d/dy[(nu + nu_t) du/dy] + f_x with wall functions (the default log law).
  *
  * Assertions (for BOTH k-epsilon and Spalart-Allmaras, projection solver):
  *   1. First-node y+ lies in the wall-function validity window [30, 100]
@@ -152,8 +152,8 @@ static int channel_scale_steps(int steps) {
 /*
  * The yardstick: u_tau from the pure log law, u_p/u_tau = ln(u_tau*y_p/nu)/kappa + B,
  * by Newton iteration. Deliberately NOT turbulence_wall_u_tau(): that is the
- * model's own wall law (Spalding's), and measuring the model with the law it
- * imposes would grade it against itself. The first node sits at 30 <= y+ <= 100,
+ * model's own wall law (params.turb_bc.wall_law), and measuring the model with
+ * the law it imposes would grade it against itself. The first node sits at 30 <= y+ <= 100,
  * inside the log layer, so no sublayer branch is needed.
  */
 static double log_law_u_tau(double u_p, double y_p, double nu) {

@@ -2,8 +2,8 @@
  * @file turbulence_solver.c
  * @brief Scalar CPU implementation of the RANS turbulence solver
  *
- * Public entry points, model dispatch, boundary conditions, and the standard
- * log-law wall functions. The per-model transport kernels live in
+ * Public entry points, model dispatch, boundary conditions, and the wall
+ * functions (log law or Spalding's law of the wall). The per-model transport kernels live in
  * turbulence_kepsilon.c and turbulence_sa.c.
  */
 
@@ -376,9 +376,7 @@ static double exp_tail(double x, int n0) {
  * Spalding's law of the wall, one smooth y+(u+) through all three layers:
  *   y+ = u+ + e^{-kappa B} [e^{kappa u+} - 1 - kappa u+ - (kappa u+)^2/2 - (kappa u+)^3/6]
  * Linear (y+ -> u+) in the viscous sublayer, logarithmic (u+ -> ln(y+)/kappa + B)
- * deep in the log layer, blended through the buffer layer. A piecewise
- * linear/log switch jumps there instead: with kappa = 0.41, B = 5.2 the two laws
- * cross at y+ = 11.06, not at a switch placed at 11.63, and u_tau jumped 3.3%.
+ * deep in the log layer, blended through the buffer layer.
  *
  * With u+ = u_p/u_tau and y+ = u_tau*y_p/nu, their product is the known wall
  * Reynolds number Re_p = u_p*y_p/nu, so solve for u+ alone:
@@ -387,11 +385,7 @@ static double exp_tail(double x, int n0) {
  * linear-law answer) bounds it above; Newton is safeguarded by bisection
  * inside that bracket.
  */
-double turbulence_wall_u_tau(double u_p, double y_p, double nu) {
-    if (u_p <= 0.0 || y_p <= 0.0 || nu <= 0.0) {
-        return 0.0;
-    }
-
+static double wall_u_tau_spalding(double u_p, double y_p, double nu) {
     const double c = exp(-WALL_KAPPA * WALL_B);
     const double log_re = log(u_p) + log(y_p) - log(nu);
 
@@ -428,6 +422,69 @@ double turbulence_wall_u_tau(double u_p, double y_p, double nu) {
         }
     }
     return u_p / up;
+}
+
+/*
+ * y+ where the linear law u+ = y+ meets the log law u+ = ln(y+)/kappa + B:
+ * 11.06 at kappa = 0.41, B = 5.2. Solved rather than hard-coded so it follows
+ * the constants; a switch placed anywhere else (the former 11.63) makes u_tau
+ * jump, 3.3% there. f(y) = y - ln(y)/kappa - B has a second root below y = 1;
+ * Newton from 11 converges to this one in a few steps.
+ */
+static double wall_yplus_crossover(void) {
+    double y = 11.0;
+    for (int it = 0; it < 20; it++) {
+        double next = y - (y - log(y) / WALL_KAPPA - WALL_B) / (1.0 - 1.0 / (WALL_KAPPA * y));
+        const int converged = fabs(next - y) <= 1e-14 * y;
+        y = next;
+        if (converged) {
+            break;
+        }
+    }
+    return y;
+}
+
+/*
+ * Linear law below the crossover, log law above it. With u+ = u_p/u_tau and
+ * y+ = u_tau*y_p/nu, u+ * y+ = Re_p = u_p*y_p/nu, so the switch is
+ * Re_p <= y+_c^2, known before u_tau is. There the linear answer
+ * sqrt(nu*u_p/y_p) puts u+ = y+ = y+_c on both laws, so u_tau is continuous.
+ * Above it, Newton on ut*(ln(ut*y_p/nu)/kappa + B) = u_p from the linear value.
+ */
+static double wall_u_tau_log(double u_p, double y_p, double nu) {
+    const double yc = wall_yplus_crossover();
+    double ut = sqrt(nu * u_p / y_p);
+    if (u_p * y_p / nu <= yc * yc) {
+        return ut;
+    }
+    for (int it = 0; it < 50; it++) {
+        const double yplus = ut * y_p / nu;
+        const double f = ut * (log(yplus) / WALL_KAPPA + WALL_B) - u_p;
+        const double fp = (log(yplus) + 1.0) / WALL_KAPPA + WALL_B;
+        double next = ut - f / fp;
+        if (next < 1e-12) {
+            next = 1e-12;
+        }
+        const int converged = fabs(next - ut) <= 1e-14 * ut;
+        ut = next;
+        if (converged) {
+            break;
+        }
+    }
+    return ut;
+}
+
+double turbulence_wall_u_tau(ns_wall_law_t law, double u_p, double y_p, double nu) {
+    if (u_p <= 0.0 || y_p <= 0.0 || nu <= 0.0) {
+        return 0.0;
+    }
+    switch (law) {
+        case NS_WALL_LAW_LOG:
+            return wall_u_tau_log(u_p, y_p, nu);
+        case NS_WALL_LAW_SPALDING:
+            return wall_u_tau_spalding(u_p, y_p, nu);
+    }
+    return 0.0;
 }
 
 /* Validate uniform spacing (the transport stencils assume it, like energy). */
@@ -601,29 +658,30 @@ static int is_supported_turb_bc(bc_type_t type) {
 }
 
 /*
- * Wall function at one wall node, u_tau from Spalding's law of the wall.
+ * Wall function at one wall node, u_tau from the law in params->turb_bc.wall_law.
  *
  * idx_w: wall node, idx_p: first interior node at distance y_p, u_p: wall-
  * parallel speed at idx_p. Sets equilibrium turbulence values at the first
  * interior node (fixed-value wall-function variant):
  *   k_p  = u_tau^2 / sqrt(C_mu)      eps_p = u_tau^3 / (kappa*y_p)
  *   nt_p = kappa*u_tau*y_p
- * and imposes the log-law momentum sink through the wall-face viscosity: the
+ * and imposes the wall-law momentum sink through the wall-face viscosity: the
  * discrete wall shear is (nu + 0.5*(nu_t_w + nu_t_p)) * u_p/y_p, so storing
  *   nu_t_w = 0,   nu_t_p = max(2*(u_tau^2*y_p/u_p - nu), 0)
  * makes it exactly u_tau^2. The equilibrium eddy viscosity kappa*u_tau*y_p is
  * deliberately NOT stored at idx_p: the coarse one-sided gradient u_p/y_p
  * cannot represent the log profile's curvature, and pairing it with the
- * physical nu_t would overpredict the wall shear several-fold. Spalding's
- * y+ >= u+ gives u_tau^2*y_p/u_p = nu*y+/u+ >= nu, so nu_t_p is never negative,
- * and deep in the viscous sublayer it vanishes as (kappa*u+)^4 (laminar shear).
+ * physical nu_t would overpredict the wall shear several-fold. Both wall laws
+ * have y+ >= u+, so u_tau^2*y_p/u_p = nu*y+/u+ >= nu and nu_t_p is never
+ * negative. In the viscous sublayer it is exactly 0 on the log law's linear
+ * branch and vanishes as (kappa*u+)^4 on Spalding's (laminar shear).
  */
 static void apply_wall_function_node(flow_field* field,
                                      const ns_solver_params_t* params,
                                      size_t idx_w, size_t idx_p,
                                      double y_p, double u_p) {
     double nu = local_nu(params, field, idx_p);
-    double ut = turbulence_wall_u_tau(u_p, y_p, nu);
+    double ut = turbulence_wall_u_tau(params->turb_bc.wall_law, u_p, y_p, nu);
 
     if (params->turb_model == TURB_MODEL_K_EPSILON) {
         field->turb_k[idx_p] = fmax(ut * ut / sqrt(TURB_C_MU), TURB_K_MIN);
@@ -700,10 +758,12 @@ cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
     size_t ny = field->ny;
 
     if (!is_supported_turb_bc(tbc->left) || !is_supported_turb_bc(tbc->right) ||
-        !is_supported_turb_bc(tbc->bottom) || !is_supported_turb_bc(tbc->top)) {
+        !is_supported_turb_bc(tbc->bottom) || !is_supported_turb_bc(tbc->top) ||
+        (tbc->wall_law != NS_WALL_LAW_LOG && tbc->wall_law != NS_WALL_LAW_SPALDING)) {
         cfd_set_error(CFD_ERROR_INVALID,
                       "turbulence_apply_bcs: unsupported turbulence BC type on a face "
-                      "(only PERIODIC, NEUMANN, DIRICHLET, NOSLIP are valid)");
+                      "(only PERIODIC, NEUMANN, DIRICHLET, NOSLIP are valid) or unknown "
+                      "turb_bc.wall_law");
         return CFD_ERROR_INVALID;
     }
 

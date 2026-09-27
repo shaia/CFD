@@ -334,10 +334,11 @@ source via host callback). See CHANGELOG.
 - [x] Wall functions
 - [ ] Low-Reynolds number treatment
 
-**Done (2D, uniform grids):** standard k-ε and Spalart-Allmaras with Spalding's-law wall
-functions on scalar/OMP/AVX2 backends; validated against turbulent channel flow at Re_τ = 395
-(u_τ error against the log law, k-ε: 5.9%; SA: 6.0%; 2.9% / 3.1% with the earlier
-linear/log wall function). GPU turbulence not yet implemented.
+**Done (2D, uniform grids):** standard k-ε and Spalart-Allmaras with wall functions on
+scalar/OMP/AVX2 backends, on the log law (default) or Spalding's law
+(`params.turb_bc.wall_law`); validated against turbulent channel flow at Re_τ = 395
+(u_τ error against the log law, log-law wall function: k-ε 2.9%, SA 3.3%; Spalding's:
+5.9%, 6.0%). GPU turbulence not yet implemented.
 
 ### 2.3 Compressible Flow (P2)
 
@@ -649,10 +650,14 @@ already warm-starts.
 - [x] Remove the duplicated residual dot product in the unpreconditioned CG branch —
       `res_norm` now reuses `rho_new = (r,r)` in all four CPU backends (scalar, AVX2, NEON,
       OMP), and `initial_res` reuses `rho_0`. The GPU CG already did.
-- [x] Blend the wall-function branches in `turbulence_wall_u_tau()` (Spalding's law). The
-      measured jump at y+ = 11.63 was 3.3% in u_tau (6.6% wall shear, 10% first-node eps);
-      the two laws cross at y+ = 11.06. `test_turbulent_channel` now keeps its own log-law
-      inversion as the yardstick; its u_tau error moved 2.9% → 5.9% (k-ε), 3.1% → 6.0% (SA).
+- [x] Remove the u_tau jump in the wall function. The measured jump at y+ = 11.63 was 3.3%
+      in u_tau (6.6% wall shear, 10% first-node eps); the two laws cross at y+ = 11.06. The
+      default log law now switches at the crossing, and Spalding's smooth law is selectable
+      via `params.turb_bc.wall_law`. Spalding was not made the default: at the usual
+      first-node y+ ≈ 40 it puts u+ 4.4% under channel DNS against the log law's 0.7%, and
+      moves the channel u_tau error 2.9% → 5.9% (k-ε), 3.3% → 6.0% (SA). It is the better
+      model below y+ ≈ 17, e.g. near reattachment in separated flows.
+      `test_turbulent_channel` keeps its own log-law inversion as the yardstick
 
 **References:** [GGML](https://github.com/ggerganov/ggml) ·
 [ONNX Runtime C API](https://onnxruntime.ai/) ·
