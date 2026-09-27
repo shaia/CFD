@@ -578,7 +578,7 @@ typedef struct {
     poisson_walls_t walls;      // Per-face walls (zero-init = all zero-gradient)
     double helmholtz_shift;     // sigma in nabla^2 x - sigma*x = rhs (0 = pure Poisson)
     double tolerance;           // Relative tolerance (default: 1e-6)
-    double absolute_tolerance;  // Absolute tolerance (default: 1e-10)
+    double absolute_tolerance;  // Absolute tolerance (default: 1e-10); never below the round-off floor
     int max_iterations;         // Max iterations (default: 5000)
     int check_interval;         // Convergence check interval (default: 1; 0 is refused)
     bool verbose;               // Print convergence info (default: false)

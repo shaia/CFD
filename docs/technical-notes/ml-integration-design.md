@@ -91,6 +91,12 @@ cg_gpu_solve_params cgp = {cfg.poisson_tolerance, 0.0, cfg.poisson_max_iter};
 
 There is no floor at all there.
 
+*Update (2026-09-27):* every solver, GPU included, now also stops at the round-off floor of
+the residual, about `10 ε ‖x‖∞ (2/dx² + 2/dy² + 2/dz²)` (times √N for L2). Without it, a
+warm start near steady state on a fine grid began below its own reachable target and ran to
+`max_iterations`. The findings above are unchanged, but "the same absolute residual" in the
+corollary below now means `max(absolute_tolerance, floor)`.
+
 **The practical corollary, which applies to any future solver-acceleration claim:**
 comparing raw iteration counts between arms with different initial guesses measures the
 moving target, not the work. Every arm must be driven to the *same absolute* residual.

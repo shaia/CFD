@@ -1113,14 +1113,12 @@ cfd_status_t poisson_solver_solve_common(
     poisson_solver_params_t* params = &solver->params;
     double start_time = poisson_solver_get_time_ms();
 
-    /* Compute initial residual */
+    /* Compute initial residual. The target never sits below the round-off floor
+     * of the residual at x, which a warm start near steady state already reaches
+     * (poisson_solver_residual_floor). */
     double initial_res = poisson_solver_compute_residual(solver, x, rhs);
-    double tolerance = params->tolerance * initial_res;
-
-    /* Ensure minimum absolute tolerance */
-    if (tolerance < params->absolute_tolerance) {
-        tolerance = params->absolute_tolerance;
-    }
+    double floor_res = poisson_solver_residual_floor(solver, x, POISSON_NORM_MAX);
+    double tolerance = poisson_solver_stop_target(params, initial_res, floor_res);
 
     if (stats) {
         stats->initial_residual = initial_res;
@@ -1138,7 +1136,7 @@ cfd_status_t poisson_solver_solve_common(
     }
 
     /* Already converged? */
-    if (initial_res < params->absolute_tolerance) {
+    if (initial_res < poisson_solver_done_target(params, floor_res)) {
         if (stats) {
             stats->status = POISSON_CONVERGED;
             stats->iterations = 0;
@@ -1186,7 +1184,9 @@ cfd_status_t poisson_solver_solve_common(
                 CFD_LOG_DEBUG("poisson", "Iter %d: residual = %.6e", iter, res);
             }
 
-            if (res < tolerance || res < params->absolute_tolerance) {
+            /* x has moved since the start, and the floor with it */
+            floor_res = poisson_solver_residual_floor(solver, x, POISSON_NORM_MAX);
+            if (res < tolerance || res < poisson_solver_done_target(params, floor_res)) {
                 converged = 1;
                 break;
             }

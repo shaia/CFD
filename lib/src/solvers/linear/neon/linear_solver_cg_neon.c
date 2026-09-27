@@ -537,12 +537,12 @@ static cfd_status_t cg_neon_solve(
     }
 
     /* Check if already converged */
-    double tolerance = params->tolerance * initial_res;
-    if (tolerance < params->absolute_tolerance) {
-        tolerance = params->absolute_tolerance;
-    }
+    /* Never below the round-off floor of the residual at the initial guess:
+     * a warm start near steady state begins there (poisson_solver_residual_floor) */
+    double floor_res = poisson_solver_residual_floor(solver, x, POISSON_NORM_L2);
+    double tolerance = poisson_solver_stop_target(params, initial_res, floor_res);
 
-    if (initial_res < params->absolute_tolerance) {
+    if (initial_res < poisson_solver_done_target(params, floor_res)) {
         if (stats) {
             stats->status = POISSON_CONVERGED;
             stats->iterations = 0;

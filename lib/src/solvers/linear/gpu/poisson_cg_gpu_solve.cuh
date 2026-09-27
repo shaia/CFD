@@ -181,10 +181,17 @@ static cfd_status_t cg_gpu_solve_device(
     double tol = params->tolerance * initial_res;
     if (tol < params->absolute_tolerance)
         tol = params->absolute_tolerance;
+    /* Never below the round-off floor of the residual at the initial guess: a
+     * warm start near steady state begins there (poisson_solver_residual_floor) */
+    double floor_res = lin_gpu_residual_floor_l2(d_x, d_scalar, nx, ny, d.stride_z, d.k_start,
+                                                 d.k_end, d.factor, grid, block, stream);
+    if (tol < floor_res)
+        tol = floor_res;
+    double done = (params->absolute_tolerance < floor_res) ? floor_res : params->absolute_tolerance;
 
     double res = initial_res;
     int iter = 0;
-    int converged = (initial_res <= params->absolute_tolerance);
+    int converged = (initial_res <= done);
     int stagnated = 0;
 
     while (!converged && iter < params->max_iterations) {

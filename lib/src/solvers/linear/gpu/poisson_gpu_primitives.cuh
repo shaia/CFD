@@ -22,8 +22,14 @@
 
 #include "cfd/core/indexing.h"
 
+#include "../linear_solver_internal.h"
+
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+
+#include <cfloat>
+#include <cstring>
+#include <cmath>
 
 /* ============================================================================
  * DEVICE KERNELS
@@ -334,6 +340,75 @@ static __global__ void lin_gpu_kernel_dot(const double* __restrict__ a,
     lin_gpu_block_reduce(sdata, tid, blockDim.x * blockDim.y);
     if (tid == 0)
         atomicAdd(out_sum, sdata[0]);
+}
+
+/**
+ * Interior max |f|, written as the bit pattern of a non-negative double into
+ * *out_bits via block reduction + atomicMax. Non-negative doubles order the same
+ * as their bit patterns read as unsigned integers, which is what makes the
+ * integer atomicMax a max over doubles. *out_bits must be zeroed before launch.
+ * Shared mem: blockDim.x*blockDim.y doubles.
+ */
+static __global__ void lin_gpu_kernel_abs_max(const double* __restrict__ f,
+                                              unsigned long long* __restrict__ out_bits,
+                                              size_t nx, size_t ny,
+                                              size_t stride_z, int k_start, int k_end) {
+    extern __shared__ double sdata[];
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
+    int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
+
+    double local = 0.0;
+    if (i < (int)nx - 1 && j < (int)ny - 1) {
+        for (int k = k_start; k <= k_end; k++) {
+            double a = fabs(f[(size_t)k * stride_z + IDX_2D(i, j, nx)]);
+            local = (a > local) ? a : local;
+        }
+    }
+    sdata[tid] = local;
+    __syncthreads();
+    unsigned int nthreads = blockDim.x * blockDim.y;
+    unsigned int s = 1;
+    while (s < nthreads)
+        s <<= 1;
+    for (s >>= 1; s > 0; s >>= 1) {
+        if ((unsigned int)tid < s && (unsigned int)tid + s < nthreads && sdata[tid + s] > sdata[tid])
+            sdata[tid] = sdata[tid + s];
+        __syncthreads();
+    }
+    if (tid == 0)
+        atomicMax(out_bits, (unsigned long long)__double_as_longlong(sdata[0]));
+}
+
+/**
+ * Round-off floor of the L2 residual at the device field d_x: the GPU twin of
+ * poisson_solver_residual_floor(..., POISSON_NORM_L2), with `factor` the
+ * operator's diagonal 2*(1/dx^2 + 1/dy^2 + 1/dz^2). d_scratch is one device
+ * double of scratch (the solvers' d_scalar). Returns -1.0 if the reduction
+ * failed, which callers treat as a floor of 0 -- the previous behavior.
+ */
+static inline double lin_gpu_residual_floor_l2(const double* d_x, double* d_scratch,
+                                               size_t nx, size_t ny, size_t stride_z,
+                                               int k_start, int k_end, double factor,
+                                               dim3 grid, dim3 block, cudaStream_t stream) {
+    unsigned long long* d_bits = reinterpret_cast<unsigned long long*>(d_scratch);
+    if (cudaMemsetAsync(d_bits, 0, sizeof(*d_bits), stream) != cudaSuccess)
+        return -1.0;
+    size_t shmem = (size_t)block.x * block.y * sizeof(double);
+    lin_gpu_kernel_abs_max<<<grid, block, shmem, stream>>>(d_x, d_bits, nx, ny, stride_z,
+                                                          k_start, k_end);
+    if (cudaGetLastError() != cudaSuccess)
+        return -1.0;
+    unsigned long long bits = 0;
+    if (cudaMemcpyAsync(&bits, d_bits, sizeof(bits), cudaMemcpyDeviceToHost, stream)
+            != cudaSuccess
+        || cudaStreamSynchronize(stream) != cudaSuccess)
+        return -1.0;
+    double x_max;
+    memcpy(&x_max, &bits, sizeof(x_max));
+    size_t nzi = (size_t)(k_end - k_start + 1);
+    double interior = (double)(nx - 2) * (double)(ny - 2) * (double)nzi;
+    return POISSON_ROUNDOFF_FACTOR * DBL_EPSILON * x_max * factor * sqrt(interior);
 }
 
 /**
