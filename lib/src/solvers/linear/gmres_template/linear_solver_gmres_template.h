@@ -347,12 +347,12 @@ static cfd_status_t GMRES_FUNC(gmres_solve)(
         stats->initial_residual = initial_res;
     }
 
-    double tolerance = params->tolerance * initial_res;
-    if (tolerance < params->absolute_tolerance) {
-        tolerance = params->absolute_tolerance;
-    }
+    /* Never below the round-off floor of the residual at the initial guess:
+     * a warm start near steady state begins there (poisson_solver_residual_floor) */
+    double floor_res = poisson_solver_residual_floor(solver, x, POISSON_NORM_L2);
+    double tolerance = poisson_solver_stop_target(params, initial_res, floor_res);
 
-    if (initial_res < params->absolute_tolerance) {
+    if (initial_res < poisson_solver_done_target(params, floor_res)) {
         poisson_solver_apply_bc(solver, x);
         if (stats) {
             stats->status = POISSON_CONVERGED;
@@ -461,6 +461,11 @@ static cfd_status_t GMRES_FUNC(gmres_solve)(
         GMRES_RESIDUAL(x, rhs, Vblock, nx, ny, dx2, dy2, inv_dz2, k_start, k_end, stride_z);
         beta = GMRES_FUNC(gmres_norm)(Vblock, nx, ny, k_start, k_end, stride_z);
         final_res = beta;
+        /* A restart forms the true residual again; x has moved, and its floor with it */
+        floor_res = poisson_solver_residual_floor(solver, x, POISSON_NORM_L2);
+        if (tolerance < floor_res) {
+            tolerance = floor_res;
+        }
         if (beta < tolerance || beta < params->absolute_tolerance) {
             converged = 1;
         }

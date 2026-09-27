@@ -281,9 +281,17 @@ static cfd_status_t bicgstab_gpu_solve(poisson_solver_t* solver,
     double tol = p->tolerance * initial_res;
     if (tol < p->absolute_tolerance)
         tol = p->absolute_tolerance;
+    /* Never below the round-off floor of the residual at the initial guess: a
+     * warm start near steady state begins there (poisson_solver_residual_floor) */
+    double floor_res = lin_gpu_residual_floor_l2(c->d_x, c->d_scalar, c->nx, c->ny, d.stride_z,
+                                                 d.k_start, d.k_end, c->factor, d.grid,
+                                                 d.block, stream);
+    if (tol < floor_res)
+        tol = floor_res;
+    double done = (p->absolute_tolerance < floor_res) ? floor_res : p->absolute_tolerance;
 
     int iter = 0;
-    int converged = (initial_res < p->absolute_tolerance);
+    int converged = (initial_res < done);
     int stagnated = 0;
     double res = initial_res;
 

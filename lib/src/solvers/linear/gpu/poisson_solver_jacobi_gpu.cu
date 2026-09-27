@@ -191,6 +191,14 @@ static cfd_status_t jacobi_gpu_solve(poisson_solver_t* solver,
     double tol_target = can_check ? p->tolerance * r0 : 0.0;
     if (tol_target < tol_abs)
         tol_target = tol_abs;
+    /* Never below the round-off floor of the residual at x, which a warm start
+     * near steady state already sits on (poisson_solver_residual_floor). A failed
+     * reduction returns -1 and leaves both targets as they were. */
+    double floor_res = lin_gpu_residual_floor_l2(ctx->d_x, ctx->d_scalar, nx, ny, ctx->stride_z, ctx->k_start, ctx->k_end, ctx->factor, grid_dim, block, ctx->stream);
+    if (tol_target < floor_res)
+        tol_target = floor_res;
+    if (tol_abs < floor_res)
+        tol_abs = floor_res;
 
     int max_iter = p->max_iterations;
     /* Each convergence check is a device-side reduction + stream sync, so never
@@ -229,6 +237,10 @@ static cfd_status_t jacobi_gpu_solve(poisson_solver_t* solver,
                         iter++;
                         break;
                     }
+                    /* x has moved since the start, and the floor with it */
+                    floor_res = lin_gpu_residual_floor_l2(src, ctx->d_scalar, nx, ny, ctx->stride_z, ctx->k_start, ctx->k_end, ctx->factor, grid_dim, block, ctx->stream);
+                    if (tol_target < floor_res)
+                        tol_target = floor_res;
                     if (rnorm <= tol_target || rnorm <= RES_FLOOR) {
                         converged = 1;
                         iter++;

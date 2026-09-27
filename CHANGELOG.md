@@ -473,6 +473,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A Poisson solve started at its own solution no longer runs to `max_iterations`.** The
+  residual of a converged field cannot be measured below round-off, about
+  ε·|x|·(2/dx² + 2/dy²), and that floor grows as |x|/h² while `absolute_tolerance` is fixed
+  at 1e-10. Near steady state, where each pressure solve warm-starts from the last one, the
+  stopping target fell below anything the solver could reach. Stationary solvers and
+  multigrid then spun to the cap and returned `CFD_ERROR_MAX_ITER`, which is how a 513×513
+  Re=1000 cavity on the multigrid pressure solve failed at step 60,895. Krylov solvers
+  chased noise for up to 125 iterations, and in the worst cases moved the field: SIMD and
+  GPU CG by 2.5% and 3.6%, and GPU BiCGSTAB diverged. Every stopping rule, on every backend,
+  now stops at max(tolerance·r₀, absolute_tolerance, floor), where the floor is ten times
+  that round-off estimate (`poisson_solver_residual_floor`,
+  `lin_gpu_residual_floor_l2`). A solve started from a cold guess is unaffected, since its
+  floor is zero. `tests/math/test_poisson_roundoff_floor.c` starts all 27 method/backend
+  pairs from a converged 129×129 field whose floor is ten times `absolute_tolerance`.
+  Before this fix none returned at once; now all return after 0 iterations.
+
 - **CUDA Explicit Euler, RK2 and RK4 now treat boundaries as their CPU counterparts do.**
   The shared GPU driver (`solver_rk_gpu.cu`) restored the caller's boundary values after
   every step, and ran Explicit Euler through the RK kernel's wrap-around stencil. The CPU

@@ -323,9 +323,16 @@ typedef struct {
      * honours these walls or refuses the configuration at init. */
     poisson_walls_t walls;     /**< Per-face walls (zero-init = all zero-gradient) */
 
-    /* Convergence control, every method. */
+    /* Convergence control, every method. A solve stops at
+     * max(tolerance * r0, absolute_tolerance, floor), where floor is the smallest
+     * residual round-off lets the solver measure at x -- about
+     * 10 * eps * |x|_max * (2/dx^2 + 2/dy^2 + 2/dz^2), times sqrt(interior points)
+     * for the L2 norm the Krylov and GPU solvers use. The floor grows as |x|/h^2,
+     * so on a fine grid or with a large solution it, not absolute_tolerance, is
+     * what stops a warm-started solve; without it such a solve could not meet its
+     * target and ran to max_iterations. */
     double tolerance;          /**< Relative convergence tolerance (default: 1e-6) */
-    double absolute_tolerance; /**< Absolute tolerance (default: 1e-10) */
+    double absolute_tolerance; /**< Absolute tolerance (default: 1e-10); never below the round-off floor */
     int max_iterations;        /**< Maximum iterations (default: 5000) */
     int check_interval;        /**< Check convergence every N iterations. Must be at
                                     least 1: poisson_solver_init() returns
@@ -720,7 +727,9 @@ CFD_LIBRARY_EXPORT void poisson_solver_destroy(poisson_solver_t* solver);
  * @param x_temp Temporary buffer (required for Jacobi, may be NULL for SOR)
  * @param rhs Right-hand side vector
  * @param stats Output statistics (may be NULL)
- * @return CFD_SUCCESS on convergence, CFD_ERROR_MAX_ITER if not converged.
+ * @return CFD_SUCCESS on convergence -- including a residual already at the
+ *         round-off floor of x (see poisson_solver_params_t), which returns after
+ *         0 iterations -- CFD_ERROR_MAX_ITER if not converged.
  *         Jacobi, SOR, Red-Black SOR and multigrid, on every backend, return
  *         CFD_ERROR_DIVERGED when the residual is not finite at the start or at a
  *         convergence check; the Krylov solvers (CG, BiCGSTAB, GMRES) do not report

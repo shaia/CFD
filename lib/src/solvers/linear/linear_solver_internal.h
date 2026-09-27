@@ -9,6 +9,7 @@
 #define CFD_LINEAR_SOLVER_INTERNAL_H
 
 #include "cfd/solvers/poisson_solver.h"
+#include <float.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -385,6 +386,80 @@ static inline void poisson_solver_compute_3d_bounds(
  */
 static inline double poisson_solver_compute_inv_dz2(double dz) {
     return (dz > 0.0) ? (1.0 / (dz * dz)) : 0.0;
+}
+
+/* ============================================================================
+ * ROUND-OFF FLOOR OF THE RESIDUAL
+ * ============================================================================ */
+
+/**
+ * Margin of the stopping floor over the round-off it stands for. The measured
+ * max-norm floor of a converged multigrid solve is 0.6-1.3 times
+ * eps * |x|_inf * (2/dx^2 + 2/dy^2), from 129^2 to 1025^2; a residual ten times
+ * that still pins x to a few eps * |x|.
+ */
+#define POISSON_ROUNDOFF_FACTOR 10.0
+
+/** The norm a solver measures its residual in. */
+typedef enum {
+    POISSON_NORM_MAX = 0, /**< max |r|: poisson_solver_compute_residual() */
+    POISSON_NORM_L2 = 1   /**< sqrt(sum r^2) over the interior: the Krylov solvers */
+} poisson_norm_t;
+
+/**
+ * Smallest residual that can be told apart from round-off at x.
+ *
+ * The stencil adds terms of size |x|/h^2 that cancel, so no evaluation of
+ * lap(x) - rhs is more accurate than about eps * |x| * (2/dx^2 + 2/dy^2 +
+ * 2/dz^2 + |sigma|). That floor grows as |x|/h^2 while absolute_tolerance is
+ * fixed, so on a fine grid, or with a large pressure, a stopping target set by
+ * absolute_tolerance can lie below anything the solver is able to measure: it
+ * then iterates until max_iterations and reports CFD_ERROR_MAX_ITER on a field
+ * that was already converged. Every stopping rule takes the larger of its
+ * target and this floor.
+ *
+ * In the L2 norm the per-point errors add in quadrature over the interior,
+ * hence the sqrt of its size.
+ */
+static inline double poisson_solver_residual_floor(const poisson_solver_t* solver,
+                                                   const double* x, poisson_norm_t norm)
+{
+    size_t nz = (solver->nz > 1) ? solver->nz : 1;
+    size_t total = solver->nx * solver->ny * nz;
+    double x_max = 0.0;
+    for (size_t k = 0; k < total; k++) {
+        double a = fabs(x[k]);
+        if (a > x_max) {
+            x_max = a;
+        }
+    }
+    double stencil = (2.0 / (solver->dx * solver->dx)) + (2.0 / (solver->dy * solver->dy)) +
+                     (2.0 * poisson_solver_compute_inv_dz2(solver->dz)) +
+                     fabs(solver->params.helmholtz_shift);
+    double floor_res = POISSON_ROUNDOFF_FACTOR * DBL_EPSILON * x_max * stencil;
+    if (norm == POISSON_NORM_L2) {
+        size_t interior = (solver->nx - 2) * (solver->ny - 2) * ((nz > 1) ? (nz - 2) : 1);
+        floor_res *= sqrt((double)interior);
+    }
+    return floor_res;
+}
+
+/** The residual a solve must reach: max(tolerance * r0, absolute_tolerance, floor). */
+static inline double poisson_solver_stop_target(const poisson_solver_params_t* params,
+                                                double initial_res, double floor_res)
+{
+    double target = params->tolerance * initial_res;
+    if (target < params->absolute_tolerance) {
+        target = params->absolute_tolerance;
+    }
+    return (target < floor_res) ? floor_res : target;
+}
+
+/** A start this close to the solution needs no iteration: max(absolute_tolerance, floor). */
+static inline double poisson_solver_done_target(const poisson_solver_params_t* params,
+                                                double floor_res)
+{
+    return (params->absolute_tolerance < floor_res) ? floor_res : params->absolute_tolerance;
 }
 
 /* ============================================================================

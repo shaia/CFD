@@ -505,13 +505,13 @@ static cfd_status_t SIMD_FUNC(bicgstab_solve)(
     }
 
     /* Compute convergence tolerance (relative + absolute) */
-    double tolerance = params->tolerance * r_norm_init;
-    if (tolerance < params->absolute_tolerance) {
-        tolerance = params->absolute_tolerance;
-    }
+    /* Never below the round-off floor of the residual at the initial guess:
+     * a warm start near steady state begins there (poisson_solver_residual_floor) */
+    double floor_res = poisson_solver_residual_floor(solver, x, POISSON_NORM_L2);
+    double tolerance = poisson_solver_stop_target(params, r_norm_init, floor_res);
 
     /* Check if already converged */
-    if (r_norm_init < params->absolute_tolerance) {
+    if (r_norm_init < poisson_solver_done_target(params, floor_res)) {
         if (stats) {
             stats->status = POISSON_CONVERGED;
             stats->iterations = 0;
