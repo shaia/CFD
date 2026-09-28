@@ -9,7 +9,7 @@ label `validation`)
 
 The steady cavity is solved on three grids per Reynolds number with the OpenMP projection
 and the multigrid pressure solve (`NS_PRESSURE_SOLVER_MULTIGRID`). Each run must reach the
-harness's steady-state exit, |d ln KE/dt| < 1e-6.
+harness's steady-state exit, max |u^{n+1} − u^n| / (dt · U_lid) < 1e-6 over the whole field.
 
 **Why multigrid.** On a 257×257 Re=1000 cavity it costs 13.7 ms/step from rest and
 15.7 ms/step on a developed flow, against 135 and 140 ms/step for the AVX2 CG solve. After
@@ -64,14 +64,54 @@ yardstick for an extrapolated value.
 Observed order 0.96–1.22 on u_c, u_min, v_max and v_min, with convergence monotone. The CI
 test asserts monotone convergence and an order in [0.8, 3.0], not accuracy.
 
-### Re = 400 and Re = 1000
+### Re = 400, 65/129/257 (measured)
 
-Measured so far at Re=400: 65×65 is steady at t = 54.9 (u_min = −0.26529, v_max = 0.23531,
-v_min = −0.35917), and 129×129 at t = 51.0 (u_min = −0.30435, v_max = 0.27789,
-v_min = −0.41900). The 257×257 runs at Re=400, and the Re=1000 runs, were still in progress
-when this was written. Their gates (GCI ≤ 10%, and the Re=1000 extrapolation within
-max(GCI, 0.5%) of Botella & Peyret) are provisional until the first full-validation run
-records them here.
+| | 65 | 129 | 257 | p | extrapolated | GCI |
+|---|---|---|---|---|---|---|
+| u_c | −0.128752 | −0.117745 | −0.115296 | 2.17 | −0.114597 | 0.76% |
+| u_min | −0.265294 | −0.304350 | −0.318569 | 1.46 | −0.326709 | 3.19% |
+| v_max | 0.235312 | 0.277892 | 0.293162 | 1.48 | 0.301700 | 3.64% |
+| v_min | −0.359166 | −0.418996 | −0.439914 | 1.52 | −0.451160 | 3.20% |
+
+No benchmark gate: there is no grid-converged Re=400 reference in the repository. As a
+sanity check, the extrapolated extrema are within 0.1–0.3% of Ghia et al. (1982).
+
+### Re = 1000, 129/257/513 (measured)
+
+| | 129 | 257 | 513 | p | extrapolated | GCI | Botella & Peyret | extrap. vs benchmark |
+|---|---|---|---|---|---|---|---|---|
+| u_c | −0.05734 | −0.05990 | −0.061083 | 1.11 | −0.062106 | 2.09% | — | — |
+| u_min | −0.33280 | −0.36681 | −0.379945 | 1.37 | −0.388204 | 2.72% | −0.3885698 | 0.09% |
+| v_max | 0.31938 | 0.35441 | 0.367975 | 1.37 | 0.376544 | 2.91% | 0.3769447 | 0.11% |
+| v_min | −0.45538 | −0.49927 | −0.516088 | 1.38 | −0.526540 | 2.53% | −0.5270771 | 0.10% |
+
+Extrapolated from three finite-difference grids, the extrema land within 0.11% of the
+spectral benchmark. The grids reached steady state at t = 106.6, 94.9 and 107.5. Single-threaded
+on the OpenMP multigrid projection, the whole Re=1000 case took about 4.4 hours, most of it on
+513×513.
+
+### u_c at Re=1000: a false steady state, not slow convergence
+
+The first Re=1000 run reported u_c with an observed order of 0.62, below the gate. The cause
+was the harness's steady-state exit at the time, `|d(ln KE)/dt| < 1e-6`. Kinetic energy
+overshoots before it settles, and at the top of the overshoot its rate passes through zero. On
+129×129 the test fired there, at t = 45.2, with u at the centre still moving:
+
+| t | u_c (129×129) | KE rate |
+|---|---|---|
+| 45.2 | −0.058074 | 9.9e-7 (harness stopped here) |
+| 60 | −0.057519 | 6.5e-5 |
+| 100 | −0.057340 | 4.7e-6 |
+| 200 | −0.057330 | 3.9e-9 |
+
+The 7.4e-4 still to go was as large as the grid-to-grid differences, so the "order" measured
+where each grid happened to stop. On 257×257 the KE approach was monotone and the stop at
+t = 110 was genuine (u_c 2e-6 from settled). The lid-driven extrema had already settled on every
+grid, which is why they converged cleanly throughout.
+
+The exit is now a field residual, `max |u^{n+1} − u^n| / (dt · U_lid) < 1e-6`, which cannot
+vanish while any part of the field still moves. With it, 129×129 runs to t = 106.6 and u_c
+converges at p = 1.11, like the other functionals.
 
 ## Observed order is about 1.3, not 2
 
@@ -91,9 +131,9 @@ claim of second order.
 | 1000 | −0.3885698 | 0.3769447 | −0.5270771 | Botella & Peyret (1998), Chebyshev spectral |
 
 These values were entered from the literature without a copy of the papers at hand.
-Confirm them against the original tables before relying on the full-validation gate. At
-Re=100 the independent agreement of the extrapolated values (0.08–0.38%) is strong evidence
-that they are right.
+Confirm them against the original tables. The independent agreement of the extrapolated
+values, 0.08–0.38% at Re=100 and 0.09–0.11% at Re=1000, is strong evidence that they are
+right: three wrong numbers would not all be matched to a tenth of a percent.
 
 ## References
 

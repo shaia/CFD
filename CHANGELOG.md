@@ -489,6 +489,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The cavity test harness no longer declares steady state at a kinetic-energy overshoot.**
+  Its exit, `|d(ln KE)/dt| < 1e-6`, passes through zero wherever KE has a turning point, and
+  the cavity's KE overshoots before settling. A 129x129 Re=1000 run stopped at t = 45.2, with
+  u at the centre still 7.4e-4 from its settled value. That is as large as the differences
+  between grids, and it gave the Richardson study an observed order of 0.62 for that
+  quantity. The exit is now a field residual, `max |u^{n+1} - u^n| / (dt * U_lid) < 1e-6`
+  (`tests/validation/lid_driven_cavity_common.h`), which every cavity test shares. The same
+  run now continues to t = 106.6, and u_c converges at p = 1.11. The Richardson study's high-Re
+  time budget rises from 120 to 200, since 513x513 at Re=1000 settles at t = 107.5. This
+  completes ROADMAP 6.1's grid-convergence study at Re = 100, 400 and 1000: at Re=1000 the
+  extrapolated extrema are within 0.11% of Botella & Peyret (1998).
+  `examples/turbulent_channel.c` stops on a related per-step KE residual. It is left as is:
+  a channel spinning up from rest may not overshoot, but that is unmeasured.
+
 - **A Poisson solve started at its own solution no longer runs to `max_iterations`.** The
   residual of a converged field cannot be measured below round-off, about
   ε·|x|·(2/dx² + 2/dy²), and that floor grows as |x|/h² while `absolute_tolerance` is fixed

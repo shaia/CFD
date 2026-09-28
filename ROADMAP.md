@@ -508,12 +508,20 @@ every push to master, about 50 minutes):
 - [x] Explicit Euler cavity cases stopped at 11,300–11,800 steps (t ≈ 1.1–1.2) through the
   harness's kinetic-energy exit. The exit compared the change in kinetic energy **per step**
   against a fixed threshold, which scales with dt and so measured the step size as much as
-  the flow; it is now a rate, `|d(ln KE)/dt| < 1e-6`, taken from the step the solver
-  actually used. The 129×129 Euler cases are dropped (the "or" of this item): they cost
+  the flow; it became a rate, `|d(ln KE)/dt| < 1e-6`, taken from the step the solver
+  actually used. That rate in turn fired at the kinetic-energy overshoot of high-Re runs,
+  so the exit is now a field residual, `max |Δu| / (dt · U_lid) < 1e-6`. The 129×129 Euler cases are dropped (the "or" of this item): they cost
   ~1 h of EC2 to hold a non-production solver to a relaxed target, and were never evidence
   of 129×129 accuracy. Euler stays validated at 33×33. See
   `docs/validation/cavity-backends-validation.md`
-- [ ] Multi-Reynolds grid-convergence study (Richardson extrapolation)
+- [x] Multi-Reynolds grid-convergence study (Richardson extrapolation) — `test_cavity_richardson.c`
+  solves the steady cavity on three grids at Re = 100 (33/65/129), 400 (65/129/257) and
+  1000 (129/257/513) with the OpenMP multigrid projection, and reports observed order,
+  extrapolated value and GCI (Celik et al. 2008). All functionals converge monotonically at
+  p ≈ 1.1–1.5 (not 2: first-order pressure wall, corner singularities). At Re=1000 the
+  extrapolated extrema are within 0.11% of Botella & Peyret (1998). Closing it took two
+  fixes: a round-off floor in every Poisson stopping rule (#231), and a steady-state exit that
+  stopped at the kinetic-energy overshoot. See `docs/validation/cavity-grid-convergence.md`
 - [x] Extended-time Taylor-Green decay-rate verification — `test_taylor_green_decay.c` fits the
   kinetic-energy decay rate over t = 10 (86% of the energy gone; t = 20 in full validation)
   on every projection backend: within 0.04% of −4ν at 65×65, no early/late drift, second-order
