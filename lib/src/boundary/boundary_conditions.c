@@ -607,6 +607,17 @@ void bc_inlet_set_edge(bc_inlet_config_t* config, bc_edge_t edge) {
     }
 }
 
+cfd_status_t bc_inlet_set_range(bc_inlet_config_t* config, double start, double end) {
+    /* Written as the negation of the valid case so a NaN bound is refused too */
+    if (!config || !(start >= 0.0 && start < end && end <= 1.0)) {
+        return CFD_ERROR_INVALID;
+    }
+    config->range.enabled = true;
+    config->range.start = start;
+    config->range.end = end;
+    return CFD_SUCCESS;
+}
+
 /* Inlet BC application functions (2D) */
 
 cfd_status_t bc_apply_inlet(double* u, double* v, size_t nx, size_t ny,

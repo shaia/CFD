@@ -824,7 +824,11 @@ GPU available and grid >200×200?
 2. **Neumann** - Fixed gradient: ∂u/∂n(boundary) = g_bc
 3. **Periodic** - u(0) = u(L)
 4. **No-slip** - u = 0, v = 0 (walls)
-5. **Inlet** - Specified velocity profile
+5. **Inlet** - Specified velocity profile. `bc_inlet_set_range(&cfg, start, end)` restricts
+   it to part of its edge, in the same normalized edge position the profile uses (node `i`
+   of `n` at `i/(n-1)`); nodes outside are left untouched and the profile spans the range,
+   so a parabola is zero at both ends. Apply the wall first and the inlet last. This is the
+   backward-facing-step inflow; see `docs/validation/backward-facing-step.md`
 6. **Outlet** - Zero-gradient: ∂u/∂n = 0
 
 ### Implementation

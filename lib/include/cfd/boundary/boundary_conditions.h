@@ -270,6 +270,14 @@ typedef struct {
     // Time-varying custom profile (overrides custom_profile when set)
     bc_inlet_profile_time_fn custom_profile_time;
     void* custom_profile_time_user_data;
+
+    // Part of the edge the inlet covers (optional, zero-initialized = whole edge).
+    // Set with bc_inlet_set_range(); see there for the semantics.
+    struct {
+        bool enabled;
+        double start;                  // Normalized edge position where the inlet begins
+        double end;                    // Normalized edge position where it ends
+    } range;
 } bc_inlet_config_t;
 
 /**
@@ -858,6 +866,33 @@ CFD_LIBRARY_EXPORT void bc_inlet_set_time_step(
  * @param edge    Which boundary edge to apply inlet to
  */
 CFD_LIBRARY_EXPORT void bc_inlet_set_edge(bc_inlet_config_t* config, bc_edge_t edge);
+
+/**
+ * Restrict an inlet to part of its edge.
+ *
+ * Positions are normalized along the edge exactly as the profile position is:
+ * node i of n sits at i/(n-1), running left-to-right on the bottom/top edges
+ * and bottom-to-top on the left/right edges. Only nodes with a position in
+ * [start, end] are written; every other node of the edge is left as it was,
+ * so apply the neighbouring condition (e.g. no-slip) first and the inlet last.
+ *
+ * The profile is laid over the sub-range, not the whole edge: position 0 of
+ * the profile is at `start` and 1 at `end`, so a parabolic inlet peaks midway
+ * between them and is zero at both ends. This is the inflow of a
+ * backward-facing step, an inlet over the upper part of the left edge above
+ * a wall.
+ *
+ * Applies to the left, right, bottom and top edges (every z-plane in 3D); an
+ * inlet on a z-face with a range set is refused with CFD_ERROR_INVALID.
+ *
+ * @param config  Pointer to inlet configuration to modify
+ * @param start   Normalized edge position where the inlet begins, in [0, 1)
+ * @param end     Normalized edge position where it ends, in (start, 1]
+ * @return CFD_SUCCESS, or CFD_ERROR_INVALID for a NULL config or a range that
+ *         is not 0 <= start < end <= 1 (the config is then left unchanged)
+ */
+CFD_LIBRARY_EXPORT cfd_status_t bc_inlet_set_range(bc_inlet_config_t* config,
+                                                   double start, double end);
 
 /**
  * Apply inlet velocity boundary condition to velocity fields.
