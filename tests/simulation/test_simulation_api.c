@@ -240,6 +240,46 @@ void test_run_simulation_step_advances_time(void) {
     TEST_ASSERT_TRUE(test_sim->current_time > initial_time);
 }
 
+/* The step is the caller's params.dt. run_simulation_step() and
+ * run_simulation_solve() used to overwrite it with 0.005 on every call, which
+ * made the documented `sim->params.dt = ...` a no-op and broke the diffusive
+ * stability limit on fine grids. Projection, because the explicit Euler solvers
+ * clamp their own step. */
+void test_run_simulation_step_uses_params_dt(void) {
+    simulation_data* sim =
+        init_simulation_with_solver(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, "projection");
+    TEST_ASSERT_NOT_NULL(sim);
+
+    sim->params.dt = 3e-4;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, run_simulation_step(sim));
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, 3e-4, sim->last_stats.dt_used);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, 3e-4, sim->current_time);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, 3e-4, sim->params.dt);
+
+    /* A change between steps takes effect on the next one */
+    sim->params.dt = 7e-4;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, run_simulation_step(sim));
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, 7e-4, sim->last_stats.dt_used);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, 1e-3, sim->current_time);
+
+    free_simulation(sim);
+}
+
+void test_run_simulation_solve_uses_params_dt(void) {
+    simulation_data* sim =
+        init_simulation_with_solver(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, "projection");
+    TEST_ASSERT_NOT_NULL(sim);
+
+    sim->params.dt = 3e-4;
+    sim->params.max_iter = 3;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, run_simulation_solve(sim));
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, 3e-4, sim->last_stats.dt_used);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, 3e-4 * sim->last_stats.iterations, sim->current_time);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-15, 3e-4, sim->params.dt);
+
+    free_simulation(sim);
+}
+
 void test_run_simulation_step_updates_stats(void) {
     cfd_status_t status = run_simulation_step(test_sim);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
@@ -501,6 +541,8 @@ int main(void) {
 
     // Simulation execution tests
     RUN_TEST(test_run_simulation_step_advances_time);
+    RUN_TEST(test_run_simulation_step_uses_params_dt);
+    RUN_TEST(test_run_simulation_solve_uses_params_dt);
     RUN_TEST(test_run_simulation_step_updates_stats);
     RUN_TEST(test_run_simulation_step_null_sim_no_crash);
     RUN_TEST(test_simulation_get_stats_returns_stats);

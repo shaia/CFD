@@ -473,6 +473,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`run_simulation_step()` and `run_simulation_solve()` now step with the caller's
+  `params.dt`.** Both overwrote it with a hard-coded 0.005 on every call ("for animation
+  stability"), so the documented `sim->params.dt = ...` had no effect. On a fine grid that
+  fixed step breaks the diffusive stability limit: a 129x129 Re=100 cavity, whose explicit
+  limit is about 1.2e-3, diverged to the velocity clamp. `init_simulation()` still defaults
+  dt to 0.001, so a simulation that never sets it now steps at 0.001, not 0.005.
+  `tests/simulation/test_simulation_api.c` checks that both entry points advance by exactly
+  the dt set, including a change between steps; against the old code both checks fail
+  (`Expected 0.0003 Was 0.005`). `examples/turbulent_channel.c` no longer claims the API
+  overrides dt, and the Taylor-Green output quoted in `docs/guides/examples.md` is refreshed.
+
 - **A Poisson solve started at its own solution no longer runs to `max_iterations`.** The
   residual of a converged field cannot be measured below round-off, about
   ε·|x|·(2/dx² + 2/dy²), and that floor grows as |x|/h² while `absolute_tolerance` is fixed
