@@ -19,7 +19,7 @@
  * not be constant), the Richardson-extrapolated value, and the fine-grid
  * convergence index GCI (safety factor 1.25). It then requires:
  *
- *   - every grid reached steady state (the harness's |d ln KE/dt| < 1e-6 exit);
+ *   - every grid reached steady state (the harness's max |du|/(dt U) < 1e-6 exit);
  *   - monotone convergence: successive changes have the same sign and shrink;
  *   - the observed order inside a band around what the scheme delivers;
  *   - (full validation) a fine-grid GCI below RICH_GCI_MAX, and the extrapolated
@@ -75,7 +75,8 @@ void tearDown(void) {}
 
 /* Physical time budget; the run stops earlier at steady state. */
 #define RICH_T_MAX_RE100  40.0
-#define RICH_T_MAX_HIGHRE 120.0
+/* Re=1000 on 257x257 reached steady state only at t = 110; 200 leaves margin */
+#define RICH_T_MAX_HIGHRE 200.0
 
 typedef struct {
     const char* name;
@@ -139,7 +140,7 @@ static rich_grid_result_t rich_solve(size_t n, double re, double t_max) {
     }
     if (!sim.converged) {
         snprintf(r.error_msg, sizeof(r.error_msg),
-                 "%zux%zu Re=%.0f not steady by t=%.1f (d ln KE/dt = %.2e)", n, n, re, sim.sim_time,
+                 "%zux%zu Re=%.0f not steady by t=%.1f (max |du|/(dt U) = %.2e)", n, n, re, sim.sim_time,
                  sim.final_residual);
         cavity_context_destroy(ctx);
         return r;

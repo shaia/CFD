@@ -94,6 +94,28 @@ __device__ void inlet_compute_velocity_gpu(bc_edge_t edge, bc_inlet_profile_t pr
     }
 }
 
+/**
+ * Map node i of `count` along the edge to its profile position; false for a
+ * node outside the bc_inlet_set_range() range, which is left untouched.
+ * Mirrors bc_inlet_node_position() in boundary_conditions_inlet_common.h.
+ */
+__device__ bool inlet_node_position_gpu(int i, size_t count, int range_on,
+                                        double range_start, double range_end,
+                                        double* position) {
+    double t = (count > 1) ? (double)i / (double)(count - 1) : 0.5;
+    if (!range_on) {
+        *position = t;
+        return true;
+    }
+    const double eps = 1e-9;
+    if (t < range_start - eps || t > range_end + eps) {
+        return false;
+    }
+    double s = (t - range_start) / (range_end - range_start);
+    *position = fmin(1.0, fmax(0.0, s));
+    return true;
+}
+
 // ============================================================================
 // CUDA Kernels - Inlet Boundary Conditions
 // ============================================================================
@@ -106,11 +128,16 @@ __global__ void kernel_bc_inlet_left(double* u, double* v, size_t nx, size_t ny,
                                       bc_inlet_profile_t profile,
                                       bc_inlet_spec_type_t spec_type,
                                       double u_spec, double v_spec,
-                                      double magnitude, double direction) {
+                                      double magnitude, double direction,
+                                      int range_on, double range_start, double range_end) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < (int)ny) {
-        double position = (ny > 1) ? (double)idx / (double)(ny - 1) : 0.5;
+        double position;
+        if (!inlet_node_position_gpu(idx, ny, range_on, range_start, range_end,
+                                     &position)) {
+            return;
+        }
         double u_val, v_val;
         inlet_compute_velocity_gpu(BC_EDGE_LEFT, profile, spec_type,
                                     u_spec, v_spec, magnitude, direction,
@@ -128,11 +155,16 @@ __global__ void kernel_bc_inlet_right(double* u, double* v, size_t nx, size_t ny
                                        bc_inlet_profile_t profile,
                                        bc_inlet_spec_type_t spec_type,
                                        double u_spec, double v_spec,
-                                       double magnitude, double direction) {
+                                       double magnitude, double direction,
+                                       int range_on, double range_start, double range_end) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < (int)ny) {
-        double position = (ny > 1) ? (double)idx / (double)(ny - 1) : 0.5;
+        double position;
+        if (!inlet_node_position_gpu(idx, ny, range_on, range_start, range_end,
+                                     &position)) {
+            return;
+        }
         double u_val, v_val;
         inlet_compute_velocity_gpu(BC_EDGE_RIGHT, profile, spec_type,
                                     u_spec, v_spec, magnitude, direction,
@@ -150,11 +182,16 @@ __global__ void kernel_bc_inlet_bottom(double* u, double* v, size_t nx, size_t n
                                         bc_inlet_profile_t profile,
                                         bc_inlet_spec_type_t spec_type,
                                         double u_spec, double v_spec,
-                                        double magnitude, double direction) {
+                                        double magnitude, double direction,
+                                        int range_on, double range_start, double range_end) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < (int)nx) {
-        double position = (nx > 1) ? (double)idx / (double)(nx - 1) : 0.5;
+        double position;
+        if (!inlet_node_position_gpu(idx, nx, range_on, range_start, range_end,
+                                     &position)) {
+            return;
+        }
         double u_val, v_val;
         inlet_compute_velocity_gpu(BC_EDGE_BOTTOM, profile, spec_type,
                                     u_spec, v_spec, magnitude, direction,
@@ -172,11 +209,16 @@ __global__ void kernel_bc_inlet_top(double* u, double* v, size_t nx, size_t ny,
                                      bc_inlet_profile_t profile,
                                      bc_inlet_spec_type_t spec_type,
                                      double u_spec, double v_spec,
-                                     double magnitude, double direction) {
+                                     double magnitude, double direction,
+                                     int range_on, double range_start, double range_end) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < (int)nx) {
-        double position = (nx > 1) ? (double)idx / (double)(nx - 1) : 0.5;
+        double position;
+        if (!inlet_node_position_gpu(idx, nx, range_on, range_start, range_end,
+                                     &position)) {
+            return;
+        }
         double u_val, v_val;
         inlet_compute_velocity_gpu(BC_EDGE_TOP, profile, spec_type,
                                     u_spec, v_spec, magnitude, direction,
@@ -205,6 +247,13 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
     /* Validate edge early for consistency with CPU backends */
     if (config->edge != BC_EDGE_LEFT && config->edge != BC_EDGE_RIGHT &&
         config->edge != BC_EDGE_BOTTOM && config->edge != BC_EDGE_TOP) {
+        return CFD_ERROR_INVALID;
+    }
+
+    /* Same range check as the CPU inlet (bc_inlet_range_is_valid) */
+    int range_on = config->range.enabled ? 1 : 0;
+    if (range_on && !(config->range.start >= 0.0 && config->range.start < config->range.end &&
+                      config->range.end <= 1.0)) {
         return CFD_ERROR_INVALID;
     }
 
@@ -269,7 +318,8 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
             num_blocks = (num_threads + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE;
             kernel_bc_inlet_left<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(
                 d_u, d_v, nx, ny, config->profile, config->spec_type,
-                u_spec, v_spec, magnitude, direction);
+                u_spec, v_spec, magnitude, direction,
+                range_on, config->range.start, config->range.end);
             break;
 
         case BC_EDGE_RIGHT:
@@ -277,7 +327,8 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
             num_blocks = (num_threads + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE;
             kernel_bc_inlet_right<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(
                 d_u, d_v, nx, ny, config->profile, config->spec_type,
-                u_spec, v_spec, magnitude, direction);
+                u_spec, v_spec, magnitude, direction,
+                range_on, config->range.start, config->range.end);
             break;
 
         case BC_EDGE_BOTTOM:
@@ -285,7 +336,8 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
             num_blocks = (num_threads + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE;
             kernel_bc_inlet_bottom<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(
                 d_u, d_v, nx, ny, config->profile, config->spec_type,
-                u_spec, v_spec, magnitude, direction);
+                u_spec, v_spec, magnitude, direction,
+                range_on, config->range.start, config->range.end);
             break;
 
         case BC_EDGE_TOP:
@@ -293,7 +345,8 @@ extern "C" cfd_status_t bc_apply_inlet_gpu(double* d_u, double* d_v, size_t nx, 
             num_blocks = (num_threads + BC_BLOCK_SIZE - 1) / BC_BLOCK_SIZE;
             kernel_bc_inlet_top<<<num_blocks, BC_BLOCK_SIZE, 0, stream>>>(
                 d_u, d_v, nx, ny, config->profile, config->spec_type,
-                u_spec, v_spec, magnitude, direction);
+                u_spec, v_spec, magnitude, direction,
+                range_on, config->range.start, config->range.end);
             break;
 
         default:

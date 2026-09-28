@@ -99,16 +99,25 @@ Re=400:   Grid 129×129, 60000 steps  (projection only),           dt 0.0005
 Re=1000:  Grid 129×129, 100000 steps (projection only),           dt 0.0005
 ```
 
-Step counts are budgets: the harness stops a run early once the kinetic energy settles, and
-each backend prints a `Steps run:` line with the steps it actually ran and the physical
+Step counts are budgets: the harness stops a run early once the velocity field is steady,
+and each backend prints a `Steps run:` line with the steps it actually ran and the physical
 time reached.
 
-The settling test is a **rate**, `|d(ln KE)/dt| < 1e-6` in units of 1/time, evaluated only
-after `t > 1.0`. It previously compared the relative change in kinetic energy **per step**
-against 1e-8, which scales with dt and so measured the step size as much as the flow; that
-is what ended the Explicit Euler runs at t ≈ 1.2. The rate is computed from the step the
-solver actually took (`ns_solver_stats_t.dt_used`), not from `params.dt`, because the
-Explicit Euler solvers clamp their own step to `NS_EULER_DT_LIMIT`.
+The settling test is a **field residual**, `max |u^{n+1} − u^n| / (dt · U_lid) < 1e-6` over
+u and v at every node, evaluated only after `t > 1.0`. Two earlier tests were wrong in
+different ways:
+
+- The relative change in kinetic energy **per step** against 1e-8 scaled with dt, so it
+  measured the step size as much as the flow. It ended the Explicit Euler runs at t ≈ 1.2.
+- Its replacement, the rate `|d(ln KE)/dt| < 1e-6`, passes through zero wherever kinetic
+  energy has a turning point. The cavity's KE overshoots before settling, so the test fired
+  at the top of the overshoot: a 129×129 Re=1000 run stopped at t = 45.2 with the centre
+  velocity still 7.4e-4 from its settled value, reached by t ≈ 100. A pointwise residual
+  cannot vanish while any part of the field still moves.
+
+The residual uses the step the solver actually took (`ns_solver_stats_t.dt_used`), not
+`params.dt`, because the Explicit Euler solvers clamp their own step to
+`NS_EULER_DT_LIMIT`.
 
 Higher-Reynolds cases run the **projection backends only** (the production solver)
 and require the finer 129×129 grid to resolve the stronger primary vortex and the

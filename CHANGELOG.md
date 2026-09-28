@@ -214,6 +214,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is 16 ms/step against 140 ms for the AVX2 CG solve, with the same velocity field to 5e-14.
   The test harness gains `cavity_run_with_pressure_solver_ctx()` to select it. The observed order is about 1.3, not 2:
   see `docs/validation/cavity-grid-convergence.md`.
+- **Inlet on part of an edge** — `bc_inlet_set_range(&cfg, start, end)` restricts an inlet
+  to the nodes whose normalized edge position lies in `[start, end]`, leaves every other node
+  of the edge untouched, and lays the profile over the range, so a parabola is zero at both
+  ends. A new `range` member of `bc_inlet_config_t`; zero-initialized (every factory) means
+  the whole edge, exactly as before. Honoured by the shared CPU inlet (scalar, OpenMP, AVX2,
+  NEON), the time-varying inlet and the GPU inlet kernels. A range that is not
+  `0 <= start < end <= 1`, or one on a z-face, is `CFD_ERROR_INVALID`
+  (`tests/core/test_boundary_conditions_inlet.c`).
+- **Laminar backward-facing step validation** (`tests/validation/test_backward_facing_step.c`,
+  `validation` label). Gartling's geometry, expansion ratio 2, inflow over the upper half of
+  the left edge through the range above, outlet at `p = 0`. Lower-wall reattachment length at
+  Re = 100 (scalar projection, 3.12 at 33 nodes across H) and Re = 400 (OpenMP) against
+  Armaly et al. and 2D computations. With the inlet at the step the solver converges about
+  6% above the channel-inlet references at Re = 100, as Barton (1997) predicts for this
+  geometry. Time step and domain length are shown not to matter. See
+  `docs/validation/backward-facing-step.md`.
 
 - **Implicit viscous time integration** (`ns_solver_params_t.viscous_scheme`):
   `NS_VISCOUS_SCHEME_BACKWARD_EULER` (θ = 1, L-stable) and `NS_VISCOUS_SCHEME_CRANK_NICOLSON`
@@ -483,6 +499,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the dt set, including a change between steps; against the old code both checks fail
   (`Expected 0.0003 Was 0.005`). `examples/turbulent_channel.c` no longer claims the API
   overrides dt, and the Taylor-Green output quoted in `docs/guides/examples.md` is refreshed.
+
+- **The cavity test harness no longer declares steady state at a kinetic-energy overshoot.**
+  Its exit, `|d(ln KE)/dt| < 1e-6`, passes through zero wherever KE has a turning point, and
+  the cavity's KE overshoots before settling. A 129x129 Re=1000 run stopped at t = 45.2, with
+  u at the centre still 7.4e-4 from its settled value. That is as large as the differences
+  between grids, and it gave the Richardson study an observed order of 0.62 for that
+  quantity. The exit is now a field residual, `max |u^{n+1} - u^n| / (dt * U_lid) < 1e-6`
+  (`tests/validation/lid_driven_cavity_common.h`), which every cavity test shares. The same
+  run now continues to t = 106.6, and u_c converges at p = 1.11. The Richardson study's high-Re
+  time budget rises from 120 to 200, since 513x513 at Re=1000 settles at t = 107.5. This
+  completes ROADMAP 6.1's grid-convergence study at Re = 100, 400 and 1000: at Re=1000 the
+  extrapolated extrema are within 0.11% of Botella & Peyret (1998).
+  `examples/turbulent_channel.c` stops on a related per-step KE residual. It is left as is:
+  a channel spinning up from rest may not overshoot, but that is unmeasured.
 
 - **A Poisson solve started at its own solution no longer runs to `max_iterations`.** The
   residual of a converged field cannot be measured below round-off, about

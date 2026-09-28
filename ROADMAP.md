@@ -508,12 +508,20 @@ every push to master, about 50 minutes):
 - [x] Explicit Euler cavity cases stopped at 11,300–11,800 steps (t ≈ 1.1–1.2) through the
   harness's kinetic-energy exit. The exit compared the change in kinetic energy **per step**
   against a fixed threshold, which scales with dt and so measured the step size as much as
-  the flow; it is now a rate, `|d(ln KE)/dt| < 1e-6`, taken from the step the solver
-  actually used. The 129×129 Euler cases are dropped (the "or" of this item): they cost
+  the flow; it became a rate, `|d(ln KE)/dt| < 1e-6`, taken from the step the solver
+  actually used. That rate in turn fired at the kinetic-energy overshoot of high-Re runs,
+  so the exit is now a field residual, `max |Δu| / (dt · U_lid) < 1e-6`. The 129×129 Euler cases are dropped (the "or" of this item): they cost
   ~1 h of EC2 to hold a non-production solver to a relaxed target, and were never evidence
   of 129×129 accuracy. Euler stays validated at 33×33. See
   `docs/validation/cavity-backends-validation.md`
-- [ ] Multi-Reynolds grid-convergence study (Richardson extrapolation)
+- [x] Multi-Reynolds grid-convergence study (Richardson extrapolation) — `test_cavity_richardson.c`
+  solves the steady cavity on three grids at Re = 100 (33/65/129), 400 (65/129/257) and
+  1000 (129/257/513) with the OpenMP multigrid projection, and reports observed order,
+  extrapolated value and GCI (Celik et al. 2008). All functionals converge monotonically at
+  p ≈ 1.1–1.5 (not 2: first-order pressure wall, corner singularities). At Re=1000 the
+  extrapolated extrema are within 0.11% of Botella & Peyret (1998). Closing it took two
+  fixes: a round-off floor in every Poisson stopping rule (#231), and a steady-state exit that
+  stopped at the kinetic-energy overshoot. See `docs/validation/cavity-grid-convergence.md`
 - [x] Extended-time Taylor-Green decay-rate verification — `test_taylor_green_decay.c` fits the
   kinetic-energy decay rate over t = 10 (86% of the energy gone; t = 20 in full validation)
   on every projection backend: within 0.04% of −4ν at 65×65, no early/late drift, second-order
@@ -529,7 +537,14 @@ every push to master, about 50 minutes):
 
 **Other benchmarks (P2):**
 
-- [ ] Backward-facing step — compare to Armaly et al. (1983)
+- [x] Backward-facing step, laminar — lower-wall reattachment length at Re = 100 (scalar) and
+      Re = 400 (OpenMP) against Armaly et al. (1983) and 2D computations; the inflow uses the
+      new `bc_inlet_set_range()`. With the inlet at the step, as in Gartling (1990), the
+      solver converges above the channel-inlet references (Re = 100: 3.18 at 65 nodes across
+      H vs 3.00), the direction Barton (1997) predicts, so the test takes a band 2% below to
+      8% above. See `docs/validation/backward-facing-step.md`
+- [ ] Backward-facing step at Re = 800 against Gartling (1990), the one reference with this
+      exact inlet geometry — needs ~30H at 65+ nodes across H, too slow for the suite today
 - [ ] Flow over cylinder — compare to Williamson (1996)
 
 **CI vs Release parameters:**
@@ -604,7 +619,9 @@ Pure-C inference with no runtime Python dependency (embedded/HPC friendly).
       left on this case is `k+` at 9 and 14 nodes
 - [ ] Separated or adverse-pressure-gradient validation case — **prerequisite** for the
       learned closure: in channel flow the momentum balance pins the shear stress, so the
-      closure has little authority over the quantities the gate measures
+      closure has little authority over the quantities the gate measures. The laminar
+      backward-facing step now exists (6.1); a turbulent one still needs wall functions on
+      the step face and turbulence inflow values over part of an edge
 - [ ] Validation: must beat tuned-Cs Smagorinsky, and must vanish in laminar regions
       (the latter holds structurally and is asserted in `test_nut_correction.c`)
 
