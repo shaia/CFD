@@ -22,6 +22,10 @@ int main() {
         return 1;
     }
 
+    /* The time step. The simulation API steps with params.dt as set here;
+     * init_simulation() defaults it to 0.001. */
+    sim_data->params.dt = 0.005;
+
     // Configure output directory (optional)
     simulation_set_output_dir(sim_data, "../../artifacts");
 

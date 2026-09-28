@@ -19,6 +19,10 @@ int main(int argc, char* argv[]) {
     // Initialize simulation
     simulation_data* sim_data = init_simulation(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0);
 
+    /* The time step. The simulation API steps with params.dt as set here;
+     * init_simulation() defaults it to 0.001. */
+    sim_data->params.dt = 0.005;
+
     // Configure output directory (optional)
     simulation_set_output_dir(sim_data, "../../artifacts");
     simulation_set_run_prefix(sim_data, "basic_sim");

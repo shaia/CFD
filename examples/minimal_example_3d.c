@@ -21,6 +21,10 @@ int main() {
         return 1;
     }
 
+    /* The time step. The simulation API steps with params.dt as set here;
+     * init_simulation() defaults it to 0.001. */
+    sim->params.dt = 0.005;
+
     printf("  Simulation initialized (%zux%zux%zu grid)\n", nx, ny, nz);
     printf("  Domain: [0,1] x [0,1] x [0,1]\n");
 
