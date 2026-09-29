@@ -1,19 +1,26 @@
 # Worker for Start-LongRun.ps1: runs one executable and maintains its status file. Not for direct use.
 param([Parameter(Mandatory)][string]$SpecFile)
 $ErrorActionPreference = 'Continue'
-$spec = Get-Content -LiteralPath $SpecFile -Raw | ConvertFrom-Json
+$specText = Get-Content -LiteralPath $SpecFile -Raw
+$spec = $specText | ConvertFrom-Json
+
+# Arguments and environment values are read as raw JSON strings. ConvertFrom-Json turns a string
+# that looks like an ISO date into a DateTime, which would reach the executable reformatted.
+$root = [System.Text.Json.JsonDocument]::Parse($specText).RootElement
+$exeArgs = @($root.GetProperty('args').EnumerateArray() | ForEach-Object { $_.ToString() })
+$envElement = $root.GetProperty('env')
+if ($envElement.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
+    foreach ($p in $envElement.EnumerateObject()) { Set-Item -Path "Env:$($p.Name)" -Value $p.Value.ToString() }
+}
 
 function Write-Status($extra) {
     $s = [ordered]@{
-        name = $spec.name; exe = $spec.exe; args = @($spec.args); workDir = $spec.workDir; log = $spec.log
+        name = $spec.name; exe = $spec.exe; args = $exeArgs; workDir = $spec.workDir; log = $spec.log
     }
     foreach ($k in $extra.Keys) { $s[$k] = $extra[$k] }
     $s | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $spec.status -Encoding UTF8
 }
 
-if ($spec.env) {
-    foreach ($prop in $spec.env.PSObject.Properties) { Set-Item -Path "Env:$($prop.Name)" -Value $prop.Value }
-}
 Set-Location -LiteralPath $spec.workDir
 $start = Get-Date
 
@@ -23,13 +30,13 @@ $stream = [IO.FileStream]::new($spec.log, [IO.FileMode]::Create, [IO.FileAccess]
 $writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false))
 $writer.AutoFlush = $true
 $log = [IO.TextWriter]::Synchronized($writer)
-$log.WriteLine("[$($start.ToString('s'))] start: $($spec.exe) $(@($spec.args) -join ' ')")
+$log.WriteLine("[$($start.ToString('s'))] start: $($spec.exe) $($exeArgs -join ' ')")
 
 $exit = -1
 try {
     $psi = [Diagnostics.ProcessStartInfo]::new($spec.exe)
     # ArgumentList quotes each element, so an argument that contains spaces stays one argument.
-    foreach ($a in @($spec.args)) { if ($null -ne $a) { $psi.ArgumentList.Add([string]$a) } }
+    foreach ($a in $exeArgs) { $psi.ArgumentList.Add($a) }
     $psi.WorkingDirectory = $spec.workDir
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true

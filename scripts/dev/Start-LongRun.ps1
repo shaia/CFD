@@ -30,6 +30,9 @@ if ($Name -notmatch '^[A-Za-z0-9._-]+$') { throw "Name must be [A-Za-z0-9._-]+ (
 $repo = (git -C $WorkDir rev-parse --show-toplevel 2>$null)
 if (-not $RunDir) { $RunDir = Join-Path ($(if ($repo) { $repo.Trim() } else { $WorkDir })) 'output\runs' }
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
+# Absolute from here on: the worker changes to -WorkDir before it writes, so a relative run
+# directory would give the launcher and the worker two different status files.
+$RunDir = (Resolve-Path -LiteralPath $RunDir).Path
 
 $status = Join-Path $RunDir "$Name.status.json"
 if ((Test-Path -LiteralPath $status) -and -not $Force) {
