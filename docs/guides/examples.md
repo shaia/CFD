@@ -1001,7 +1001,9 @@ Steady after 5835 steps (t* = 0.456, residual 1.00e-04)
   Reference at Ra = 1000: u_max 3.649, v_max 3.697, Nu 1.117
   Differences: 1.1%, 0.0%, 0.4%
 ```
-The VTK file it writes includes the temperature field.
+The VTK file it writes includes the temperature field. The example exits with status 1 if the
+run does not reach steady state, or if a tabulated Rayleigh number lands more than 5% from
+the benchmark.
 
 ---
 
@@ -1043,7 +1045,9 @@ Steady u at the cavity centre: -0.20322
 With several threads the restarted run agrees to round-off rather than bitwise, because threaded
 reductions do not sum in a fixed order. The multigrid speed-up depends on the grid and on the
 threading runtime: with MSVC OpenMP at full thread count the CG solve is slowed far more than
-multigrid, so the printed ratio is much larger.
+multigrid, so the printed ratio is much larger. The example exits with status 1 if the run does
+not converge or the restarted run differs by more than 1e-10. Without OpenMP it uses the scalar
+projection, which also implements multigrid.
 
 ---
 
@@ -1073,7 +1077,9 @@ dt limits: diffusive (explicit viscous only) 2.44e-03, advective 7.81e-03
 ```
 The implicit run reaches steady state in 3.5x fewer steps, but its profile is further from
 Poiseuille: the projection method is non-incremental, so its steady state carries a splitting
-error that grows with dt. Implicit viscous stepping buys stability, not accuracy.
+error that grows with dt. Implicit viscous stepping buys stability, not accuracy. The example
+exits with status 1 unless both runs settle, the L2 errors stay below 1e-2 (explicit) and 5e-2
+(Crank-Nicolson), and the implicit run takes fewer steps.
 
 ---
 

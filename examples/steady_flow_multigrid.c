@@ -246,6 +246,11 @@ int main(int argc, char* argv[]) {
     } else {
         printf("   round-off: with several threads, reductions do not sum in a fixed order\n");
     }
+    /* Self-check: a restart must reproduce the run, to round-off at most */
+    int pass = diff < 1e-10;
+    if (!pass) {
+        fprintf(stderr, "FAILED: the restarted run differs from the uninterrupted one\n");
+    }
 
     size_t c = n / 2;
     printf("\nSteady u at the cavity centre: %.5f\n", sim->field->u[c * n + c]);
@@ -254,5 +259,5 @@ int main(int argc, char* argv[]) {
     free(v_prev);
     free_simulation(restarted);
     free_simulation(sim);
-    return 0;
+    return pass ? 0 : 1;
 }

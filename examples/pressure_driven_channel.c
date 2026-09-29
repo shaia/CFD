@@ -44,6 +44,12 @@
 #define U_MAX      1.0 /* centerline velocity the pressure drop is chosen to give */
 #define STEADY_TOL 1e-6
 
+/* The example fails unless the profiles match Poiseuille this closely. Measured at
+ * the default 33 points across: 2.0e-3 explicit, 1.24e-2 Crank-Nicolson (whose
+ * larger dt carries a larger projection splitting error). About 5x margin. */
+#define MAX_L2_EXPLICIT 1e-2
+#define MAX_L2_IMPLICIT 5e-2
+
 /* Pressure gradient that gives centerline velocity U_MAX: u_max = G H^2 / (8 nu) */
 #define GRAD_P (8.0 * NU * U_MAX / (H * H))
 #define P_IN   (GRAD_P * LENGTH)
@@ -221,5 +227,16 @@ int main(int argc, char* argv[]) {
                "and its dt is %.1fx larger.\n",
                (double)ex.steps / cn.steps, dt_implicit / dt_explicit);
     }
-    return (ex.ok && cn.ok) ? 0 : 1;
+
+    /* Self-check: both runs settled, both profiles are Poiseuille, and the implicit
+     * run needed fewer steps -- the claims above, not just that the runs stopped. */
+    int pass = ex.ok && cn.ok && ex.l2_error < MAX_L2_EXPLICIT && cn.l2_error < MAX_L2_IMPLICIT &&
+               cn.steps < ex.steps;
+    if (!pass) {
+        fprintf(stderr,
+                "\nFAILED: expected L2 < %.0e (explicit) and < %.0e (implicit), and fewer "
+                "implicit steps\n",
+                MAX_L2_EXPLICIT, MAX_L2_IMPLICIT);
+    }
+    return pass ? 0 : 1;
 }
