@@ -15,10 +15,21 @@ if ($envElement.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
 
 function Write-Status($extra) {
     $s = [ordered]@{
-        name = $spec.name; exe = $spec.exe; args = $exeArgs; workDir = $spec.workDir; log = $spec.log
+        name = $spec.name; runId = $spec.runId; exe = $spec.exe; args = $exeArgs
+        workDir = $spec.workDir; log = $spec.log
     }
     foreach ($k in $extra.Keys) { $s[$k] = $extra[$k] }
     $s | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $spec.status -Encoding UTF8
+}
+
+# True unless the status file now belongs to a later launch under the same name.
+function Test-StatusIsMine {
+    try {
+        $cur = Get-Content -LiteralPath $spec.status -Raw | ConvertFrom-Json
+        return (-not $cur.runId) -or ($cur.runId -eq $spec.runId)
+    } catch {
+        return $true
+    }
 }
 
 Set-Location -LiteralPath $spec.workDir
@@ -43,7 +54,8 @@ try {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $proc = [Diagnostics.Process]::Start($psi)
-    Write-Status @{ state = 'running'; pid = $proc.Id; start = $start.ToString('o') }
+    # pidStarted lets readers tell this process from a later one that was given the same id.
+    Write-Status @{ state = 'running'; pid = $proc.Id; pidStarted = $proc.StartTime.ToString('o'); start = $start.ToString('o') }
 
     # stderr is drained on its own thread while stdout is read here; reading only one of the two
     # pipes would block the child as soon as the other fills.
@@ -69,4 +81,6 @@ $elapsed = [int]($end - $start).TotalSeconds
 $log.WriteLine("[$($end.ToString('s'))] exit: $exit  elapsed: ${elapsed}s")
 $log.Dispose()
 $state = if ($exit -eq 0) { 'done' } else { 'failed' }
-Write-Status @{ state = $state; pid = $null; start = $start.ToString('o'); end = $end.ToString('o'); exit = $exit; elapsedSeconds = $elapsed }
+if (Test-StatusIsMine) {
+    Write-Status @{ state = $state; pid = $null; start = $start.ToString('o'); end = $end.ToString('o'); exit = $exit; elapsedSeconds = $elapsed }
+}

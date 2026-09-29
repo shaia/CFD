@@ -4,7 +4,10 @@ Show the state of detached runs started with Start-LongRun.ps1.
 
 .DESCRIPTION
 States: starting (launched, worker not up yet), running, done (exit 0), failed (non-zero exit), and
-lost (the status says starting or running but no such process exists, so no exit was recorded).
+lost (the status says starting or running but that process is gone, so no exit was recorded).
+
+The default run directory is output\runs under the repository of the current directory, the same
+place Start-LongRun.ps1 writes to.
 
 .EXAMPLE
 .\scripts\dev\Get-LongRun.ps1            # one line per job
@@ -16,8 +19,8 @@ param(
     [string]$RunDir,
     [int]$Tail = 30
 )
-$repo = (git rev-parse --show-toplevel 2>$null)
-if (-not $RunDir) { $RunDir = Join-Path ($(if ($repo) { $repo.Trim() } else { (Get-Location).Path })) 'output\runs' }
+. (Join-Path $PSScriptRoot 'LongRun-Common.ps1')
+$RunDir = Get-LongRunDir $RunDir
 if (-not (Test-Path -LiteralPath $RunDir)) { Write-Host "no runs ($RunDir does not exist)"; return }
 
 $files = @(Get-ChildItem -LiteralPath $RunDir -Filter '*.status.json' | Sort-Object LastWriteTime -Descending)
@@ -28,8 +31,7 @@ foreach ($f in $files) {
     $s = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json
     $state = $s.state
     if ($state -eq 'running') {
-        $alive = $s.pid -and (Get-Process -Id $s.pid -ErrorAction SilentlyContinue)
-        if (-not $alive) { $state = 'lost' }
+        if (-not (Test-LongRunAlive $s)) { $state = 'lost' }
         $elapsed = [int]((Get-Date) - [datetime]$s.start).TotalSeconds
     } elseif ($state -eq 'starting') {
         $elapsed = [int]((Get-Date) - [datetime]$s.start).TotalSeconds

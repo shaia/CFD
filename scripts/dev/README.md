@@ -10,6 +10,7 @@ use `build.ps1` / `build.sh` for that. Every script has comment-based help
 | `Start-LongRun.ps1` | Launches an executable detached from the current shell and tracks it in `output/runs/<name>.status.json` with its log beside it. Use it for anything longer than about ten minutes. | `.\scripts\dev\Start-LongRun.ps1 -Name rich257 -Exe build-rel\Release\test_cavity_richardson.exe -ExeArgs 257` |
 | `Get-LongRun.ps1` | Lists detached runs, or shows one with the tail of its log. | `.\scripts\dev\Get-LongRun.ps1 rich257` |
 | `LongRun-Worker.ps1` | Worker process started by `Start-LongRun.ps1`. Not called directly. | |
+| `LongRun-Common.ps1` | Default run directory and the liveness check, shared by the two scripts above. Not called directly. | |
 | `New-Worktree.ps1` | Creates a git worktree on a new or existing branch and links the local tooling directory into it. `-Existing <path>` retrofits a worktree made with plain `git worktree add`. | `.\scripts\dev\New-Worktree.ps1 -Branch feat/x` |
 | `Prune-Merged.ps1` | Lists local branches whose pull request has merged and whose tip is exactly the merged commit. Deletes them only with `-Delete`. | `.\scripts\dev\Prune-Merged.ps1` |
 
