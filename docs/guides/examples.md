@@ -798,22 +798,23 @@ The reported L2 error compares methods and backends against a common reference f
 **Expected Output:**
 ```
 Part 1: Velocity Decay (Projection, 32x32, dt=5e-04)
-  Time        max|u|  Analytical          KE    KE_exact
-  t=0.000   0.993592    1.000000    0.249722    0.250000
-  t=0.100   0.968325    0.998002    0.222092    0.249002
+  Time          max|u|  Analytical          KE    KE_exact
+  t=0.000     0.994344    1.000000    0.249756    0.250000
+  t=0.050     0.988576    0.999000    0.236618    0.249500
+  t=0.100     0.987451    0.998002    0.234571    0.249002
   ...
 
 Part 2: Solver Comparison (32x32, dt=5e-04, T=0.5)
   Solver                    L2 Error      max|u|
-  Projection               6.403e-02    0.894924
-  RK2 (Heun)               4.200e-02    0.951252
-  Explicit Euler           6.107e-03    0.991708
+  Projection               2.819e-02    0.978457
+  RK2 (Heun)               1.904e-02    0.983619
+  Explicit Euler           5.971e-03    0.992435
 
 Part 3: Grid Refinement (Explicit Euler, dt=5e-04, T=0.5)
   Resolution        L2 Error
-   16 x 16      9.276e-03
-   32 x 32      6.107e-03
-   64 x 64      5.030e-03
+   16 x 16      8.402e-03
+   32 x 32      5.971e-03
+   64 x 64      4.999e-03
 ```
 
 ---

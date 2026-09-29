@@ -126,6 +126,7 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
             fprintf(stderr, "Failed to create SIMD simulation\n");
             return result;
         }
+        sim->params.dt = 0.005; /* the step this example has always run at */
 
         // Warmup
         for (int i = 0; i < WARMUP_STEPS; i++) {
@@ -135,6 +136,7 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
         // Reset for actual benchmark
         free_simulation(sim);
         sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, simd_solver);
+        if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
 
         // Timed run (average over repeats)
         double total_time = 0.0;
@@ -142,6 +144,7 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
             // Reset simulation
             free_simulation(sim);
             sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, simd_solver);
+            if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
 
             double start = get_time_ms();
             for (int i = 0; i < iterations; i++) {
@@ -170,6 +173,7 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
             fprintf(stderr, "Failed to create GPU simulation\n");
             return result;
         }
+        sim->params.dt = 0.005; /* the step this example has always run at */
 
         // Warmup
         for (int i = 0; i < WARMUP_STEPS; i++) {
@@ -179,6 +183,7 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
         // Reset for actual benchmark
         free_simulation(sim);
         sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, gpu_solver);
+        if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
 
         // Timed run (average over repeats)
         double total_time = 0.0;
@@ -186,6 +191,7 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
             // Reset simulation
             free_simulation(sim);
             sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, gpu_solver);
+            if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
 
             double start = get_time_ms();
             for (int i = 0; i < iterations; i++) {
@@ -332,6 +338,7 @@ static void test_all_solvers(void) {
         if (!sim) {
             continue;
         }
+        sim->params.dt = 0.005; /* the step this example has always run at */
 
         // Warmup
         for (int i = 0; i < WARMUP_STEPS; i++) {
@@ -341,6 +348,7 @@ static void test_all_solvers(void) {
         // Reset
         free_simulation(sim);
         sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, all_solvers[s]);
+        if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
 
         // Timed run
         double start = get_time_ms();

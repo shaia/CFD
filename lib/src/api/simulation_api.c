@@ -196,9 +196,6 @@ cfd_status_t run_simulation_step(simulation_data* sim_data) {
         return CFD_ERROR_INVALID;
     }
 
-    // Use fixed time step for animation stability
-    sim_data->params.dt = 0.005;
-
     cfd_status_t status = solver_step(sim_data->solver, sim_data->field, sim_data->grid,
                                        &sim_data->params, &sim_data->last_stats);
     if (status != CFD_SUCCESS) {
@@ -219,9 +216,6 @@ cfd_status_t run_simulation_solve(simulation_data* sim_data) {
     if (!sim_data || !sim_data->solver) {
         return CFD_ERROR_INVALID;
     }
-
-    // Use fixed time step for animation stability
-    sim_data->params.dt = 0.005;
 
     cfd_status_t status = solver_solve(sim_data->solver, sim_data->field, sim_data->grid,
                                         &sim_data->params, &sim_data->last_stats);

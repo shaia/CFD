@@ -110,6 +110,7 @@ void run_solver_comparison(void) {
             printf("  ERROR: Failed to create simulation\n");
             continue;
         }
+        sim->params.dt = 0.005; /* the step this example has always run at */
 
         // Print solver info
         struct NSSolver* solver = simulation_get_solver(sim);
@@ -149,6 +150,7 @@ void run_dynamic_solver_switch(void) {
     // Start with default solver (explicit_euler)
     printf("\n1. Creating simulation with default solver...\n");
     simulation_data* sim = init_simulation(NX, NY, 1, XMIN, XMAX, YMIN, YMAX, 0.0, 0.0);
+    if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
     simulation_set_run_prefix(sim, "dynamic_switch");
     simulation_set_output_dir(sim, "../../artifacts");
 

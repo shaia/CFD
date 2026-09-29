@@ -15,7 +15,7 @@
  *   - Comparing the computed u+ profile against the log law
  *
  * Uses the direct solver interface (registry + solver_step) with a fixed time
- * step; run_simulation_step is not used because it overrides params.dt.
+ * step.
  *
  * Usage: turbulent_channel [model] [wall-law]
  *   model    = "ke" (k-epsilon, default) or "sa" (Spalart-Allmaras)
