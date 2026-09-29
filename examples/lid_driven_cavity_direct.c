@@ -132,7 +132,9 @@ int main(int argc, char* argv[]) {
     }
 
     /* Configure output directory */
-    cfd_set_output_base_dir("output");
+    /* The run directory is <base>/output/<run>, so the base is the current
+     * directory: a base of "output" would nest output/output/<run>. */
+    cfd_set_output_base_dir(".");
     char run_dir[512];
     cfd_create_run_directory_ex(run_dir, sizeof(run_dir), "lid_cavity_direct", nx, ny);
     if (run_dir[0] == '\0') {

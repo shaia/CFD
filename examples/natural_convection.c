@@ -241,7 +241,9 @@ int main(int argc, char* argv[]) {
     }
 
     /* Temperature and velocity for ParaView */
-    cfd_set_output_base_dir("output");
+    /* The run directory is <base>/output/<run>, so the base is the current
+     * directory: a base of "output" would nest output/output/<run>. */
+    cfd_set_output_base_dir(".");
     char run_dir[512];
     cfd_create_run_directory_ex(run_dir, sizeof(run_dir), "natural_convection", n, n);
     if (run_dir[0] != '\0') {
@@ -252,7 +254,13 @@ int main(int argc, char* argv[]) {
         snprintf(path, sizeof(path), "%s/natural_convection.vtk", run_dir);
 #endif
         write_vtk_flow_field(path, field, n, n, 1, 0.0, L, 0.0, L, 0.0, 0.0);
-        printf("\nOutput: %s (includes the temperature field)\n", path);
+        FILE* check = fopen(path, "rb"); /* the writer reports failure only in the log */
+        if (check) {
+            fclose(check);
+            printf("\nOutput: %s (includes the temperature field)\n", path);
+        } else {
+            fprintf(stderr, "\nCould not write %s\n", path);
+        }
     }
 
     free(u_prev);

@@ -143,7 +143,9 @@ int main(int argc, char* argv[]) {
     fflush(stdout);
 
     /* ---- 2. A steady run, checkpointed halfway ---- */
-    cfd_set_output_base_dir("output");
+    /* The run directory is <base>/output/<run>, so the base is the current
+     * directory: a base of "output" would nest output/output/<run>. */
+    cfd_set_output_base_dir(".");
     char run_dir[512];
     cfd_create_run_directory_ex(run_dir, sizeof(run_dir), "steady_flow_multigrid", n, n);
     if (run_dir[0] == '\0') {
