@@ -8,7 +8,8 @@
  *
  * This example demonstrates:
  *   - Selecting the multigrid pressure solve (params.pressure_solver) on the
- *     OpenMP projection solver, and timing it against the default CG solve
+ *     projection solver -- OpenMP when it is built, scalar otherwise; both
+ *     implement multigrid -- and timing it against the default CG solve
  *   - Running a lid-driven cavity to steady state on a velocity residual
  *   - Saving a checkpoint mid-run (save_simulation_checkpoint)
  *   - Restarting from it in a fresh simulation (load_simulation_from_checkpoint)
@@ -48,10 +49,10 @@ static double wall_seconds(void) {
     return (double)ts.tv_sec + (1e-9 * (double)ts.tv_nsec);
 }
 
-static simulation_data* create_cavity(size_t n, double re, double dt,
+static simulation_data* create_cavity(const char* solver, size_t n, double re, double dt,
                                       ns_pressure_solver_t pressure_solver) {
-    simulation_data* sim = init_simulation_with_solver(n, n, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0,
-                                                       NS_SOLVER_TYPE_PROJECTION_OMP);
+    simulation_data* sim =
+        init_simulation_with_solver(n, n, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, solver);
     if (!sim) {
         return NULL;
     }
@@ -89,8 +90,9 @@ static cfd_status_t step_with_residual(simulation_data* sim, double* u_prev, dou
 }
 
 /* Average wall time per step over `steps` steps. */
-static double time_per_step(size_t n, double re, double dt, ns_pressure_solver_t ps, int steps) {
-    simulation_data* sim = create_cavity(n, re, dt, ps);
+static double time_per_step(const char* solver, size_t n, double re, double dt,
+                            ns_pressure_solver_t ps, int steps) {
+    simulation_data* sim = create_cavity(solver, n, re, dt, ps);
     if (!sim) {
         return -1.0;
     }
@@ -126,16 +128,20 @@ int main(int argc, char* argv[]) {
 
     printf("Fast Steady Flow: Multigrid + Checkpoint/Restart\n");
     printf("================================================\n");
-    printf("Lid-driven cavity, %zu x %zu, Re = %.0f, dt <= %.3e, solver projection_omp\n\n", n, n,
-           re, dt);
+    /* OpenMP projection when it is built, else the scalar one: both implement multigrid */
+    const char* solver = simulation_has_solver(NS_SOLVER_TYPE_PROJECTION_OMP)
+                             ? NS_SOLVER_TYPE_PROJECTION_OMP
+                             : NS_SOLVER_TYPE_PROJECTION;
+    printf("Lid-driven cavity, %zu x %zu, Re = %.0f, dt <= %.3e, solver %s\n\n", n, n, re, dt,
+           solver);
 
     /* ---- 1. What the pressure solve costs ---- */
     printf("1. Pressure solve cost (after 50 steps of start-up)\n");
     int timed = 200;
-    double t_cg = time_per_step(n, re, dt, NS_PRESSURE_SOLVER_DEFAULT, timed);
-    double t_mg = time_per_step(n, re, dt, NS_PRESSURE_SOLVER_MULTIGRID, timed);
+    double t_cg = time_per_step(solver, n, re, dt, NS_PRESSURE_SOLVER_DEFAULT, timed);
+    double t_mg = time_per_step(solver, n, re, dt, NS_PRESSURE_SOLVER_MULTIGRID, timed);
     if (t_cg < 0.0 || t_mg < 0.0) {
-        fprintf(stderr, "Timing run failed (is the OpenMP backend built?)\n");
+        fprintf(stderr, "Timing run failed\n");
         return 1;
     }
     printf("   CG (default):  %8.2f ms/step\n", 1e3 * t_cg);
@@ -162,7 +168,7 @@ int main(int argc, char* argv[]) {
     size_t total = n * n;
     double* u_prev = malloc(total * sizeof(double));
     double* v_prev = malloc(total * sizeof(double));
-    simulation_data* sim = create_cavity(n, re, dt, NS_PRESSURE_SOLVER_MULTIGRID);
+    simulation_data* sim = create_cavity(solver, n, re, dt, NS_PRESSURE_SOLVER_MULTIGRID);
     if (!u_prev || !v_prev || !sim) {
         fprintf(stderr, "Allocation failed\n");
         return 1;
