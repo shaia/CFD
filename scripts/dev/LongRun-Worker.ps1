@@ -1,44 +1,65 @@
 # Worker for Start-LongRun.ps1: runs one executable and maintains its status file. Not for direct use.
 param([Parameter(Mandatory)][string]$SpecFile)
 $ErrorActionPreference = 'Continue'
-$spec = Get-Content $SpecFile -Raw | ConvertFrom-Json
+$spec = Get-Content -LiteralPath $SpecFile -Raw | ConvertFrom-Json
 
 function Write-Status($extra) {
     $s = [ordered]@{
         name = $spec.name; exe = $spec.exe; args = @($spec.args); workDir = $spec.workDir; log = $spec.log
     }
     foreach ($k in $extra.Keys) { $s[$k] = $extra[$k] }
-    $s | ConvertTo-Json -Depth 4 | Set-Content -Path $spec.status -Encoding UTF8
+    $s | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $spec.status -Encoding UTF8
 }
 
 if ($spec.env) {
     foreach ($prop in $spec.env.PSObject.Properties) { Set-Item -Path "Env:$($prop.Name)" -Value $prop.Value }
 }
-Set-Location $spec.workDir
+Set-Location -LiteralPath $spec.workDir
 $start = Get-Date
-"[$($start.ToString('s'))] start: $($spec.exe) $($spec.args -join ' ')" | Set-Content -Path $spec.log -Encoding UTF8
 
-$outFile = "$($spec.log).out"
-$errFile = "$($spec.log).err"
+# One writer for the whole run, flushed line by line and shared for reading, so Get-LongRun.ps1 can
+# tail the log while the job runs and a killed worker leaves everything written so far.
+$stream = [IO.FileStream]::new($spec.log, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+$writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false))
+$writer.AutoFlush = $true
+$log = [IO.TextWriter]::Synchronized($writer)
+$log.WriteLine("[$($start.ToString('s'))] start: $($spec.exe) $(@($spec.args) -join ' ')")
+
+$exit = -1
 try {
-    $startArgs = @{
-        FilePath = $spec.exe; NoNewWindow = $true; PassThru = $true
-        RedirectStandardOutput = $outFile; RedirectStandardError = $errFile
-    }
-    if ($spec.args.Count -gt 0) { $startArgs.ArgumentList = @($spec.args) }
-    $proc = Start-Process @startArgs
+    $psi = [Diagnostics.ProcessStartInfo]::new($spec.exe)
+    # ArgumentList quotes each element, so an argument that contains spaces stays one argument.
+    foreach ($a in @($spec.args)) { if ($null -ne $a) { $psi.ArgumentList.Add([string]$a) } }
+    $psi.WorkingDirectory = $spec.workDir
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $proc = [Diagnostics.Process]::Start($psi)
     Write-Status @{ state = 'running'; pid = $proc.Id; start = $start.ToString('o') }
+
+    # stderr is drained on its own thread while stdout is read here; reading only one of the two
+    # pipes would block the child as soon as the other fills.
+    $errJob = $null; $errTask = $null
+    if (Get-Command Start-ThreadJob -ErrorAction SilentlyContinue) {
+        $errJob = Start-ThreadJob -ScriptBlock {
+            param($p, $w)
+            while ($null -ne ($l = $p.StandardError.ReadLine())) { $w.WriteLine($l) }
+        } -ArgumentList $proc, $log
+    } else {
+        $errTask = $proc.StandardError.ReadToEndAsync()
+    }
+    while ($null -ne ($line = $proc.StandardOutput.ReadLine())) { $log.WriteLine($line) }
     $proc.WaitForExit()
+    if ($errJob) { $errJob | Wait-Job | Remove-Job }
+    if ($errTask) { $rest = $errTask.GetAwaiter().GetResult(); if ($rest) { $log.Write($rest) } }
     $exit = $proc.ExitCode
 } catch {
-    "[error] $($_.Exception.Message)" | Add-Content -Path $spec.log
-    $exit = -1
+    $log.WriteLine("[error] $($_.Exception.Message)")
 }
 $end = Get-Date
-foreach ($f in $outFile, $errFile) {
-    if (Test-Path $f) { Get-Content $f | Add-Content -Path $spec.log; Remove-Item $f -ErrorAction SilentlyContinue }
-}
 $elapsed = [int]($end - $start).TotalSeconds
-"[$($end.ToString('s'))] exit: $exit  elapsed: ${elapsed}s" | Add-Content -Path $spec.log
+$log.WriteLine("[$($end.ToString('s'))] exit: $exit  elapsed: ${elapsed}s")
+$log.Dispose()
 $state = if ($exit -eq 0) { 'done' } else { 'failed' }
 Write-Status @{ state = $state; pid = $null; start = $start.ToString('o'); end = $end.ToString('o'); exit = $exit; elapsedSeconds = $elapsed }
