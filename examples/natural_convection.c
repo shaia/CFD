@@ -159,6 +159,8 @@ int main(int argc, char* argv[]) {
 
     int max_steps = 200000;
     int step = 0;
+    int steps_run = 0; /* steps completed, whichever way the loop ends */
+    int failed = 0;
     double residual = 0.0;
     ns_solver_stats_t stats = ns_solver_stats_default();
     printf("Running to steady state...\n");
@@ -171,8 +173,10 @@ int main(int argc, char* argv[]) {
         status = solver_step(solver, field, g, &params, &stats);
         if (status != CFD_SUCCESS) {
             fprintf(stderr, "Solver failed at step %d (status=%d)\n", step, status);
+            failed = 1;
             break;
         }
+        steps_run = step;
 
         double change = 0.0;
         for (size_t k = 0; k < total; k++) {
@@ -191,6 +195,16 @@ int main(int argc, char* argv[]) {
         }
     }
     apply_wall_velocity(field);
+    if (failed) {
+        free(u_prev);
+        free(v_prev);
+        free(T_prev);
+        solver_destroy(solver);
+        cfd_registry_destroy(registry);
+        flow_field_destroy(field);
+        grid_destroy(g);
+        return 1;
+    }
 
     /* Benchmark quantities, velocities scaled by alpha/L */
     double u_max = 0.0, v_max = 0.0;
@@ -205,7 +219,8 @@ int main(int argc, char* argv[]) {
     double nusselt = hot_wall_nusselt(field, h);
 
     printf("\n%s after %d steps (t* = %.3f, residual %.2e)\n\n",
-           residual < STEADY_TOL ? "Steady" : "NOT steady", step, step * dt / t_scale, residual);
+           residual < STEADY_TOL ? "Steady" : "NOT steady", steps_run, steps_run * dt / t_scale,
+           residual);
 
     /* de Vahl Davis (1983): peak centerline velocities and Nu_0, the mean Nusselt
      * number on the hot wall -- the quantity computed above */

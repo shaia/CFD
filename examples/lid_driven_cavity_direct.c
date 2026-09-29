@@ -60,12 +60,15 @@ int main(int argc, char* argv[]) {
     int output_interval = 500;
     int print_interval = 500;
 
-    /* Parse command-line Re and convection scheme */
-    if (argc > 1) {
-        double arg = atof(argv[1]);
-        if (arg > 0) Re = arg;
+    /* Parse command-line Re and convection scheme, in either order */
+    int upwind = 0;
+    for (int a = 1; a < argc; a++) {
+        if (strcmp(argv[a], "upwind") == 0) {
+            upwind = 1;
+        } else if (atof(argv[a]) > 0) {
+            Re = atof(argv[a]);
+        }
     }
-    int upwind = (argc > 2 && strcmp(argv[2], "upwind") == 0);
 
     double nu = U * L / Re;
 

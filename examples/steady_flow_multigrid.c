@@ -195,6 +195,15 @@ int main(int argc, char* argv[]) {
     }
     steps--;
     apply_cavity_bc(sim->field);
+    if (residual >= STEADY_TOL) {
+        fprintf(stderr, "Not steady within %d steps (residual %.2e); try a finer dt or lower Re\n",
+                steps, residual);
+        return 1;
+    }
+    if (checkpoint_step < 0) {
+        fprintf(stderr, "The run converged before the checkpoint threshold was reached\n");
+        return 1;
+    }
     printf("   steady at step %d, t = %.2f, %.1f s wall time\n\n", steps, sim->current_time,
            wall_seconds() - t0);
 
