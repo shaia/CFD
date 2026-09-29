@@ -577,11 +577,14 @@ every push to master, about 50 minutes):
 
 ### 6.4 Examples (P1)
 
-12 examples implemented (minimal, basic simulation, animated flow, visualization,
-performance comparison, solver selection, custom BCs/source terms, CSV export, cavity).
+24 examples implemented, from minimal and basic simulation through the validation cases
+(cavity, Taylor-Green, Poiseuille), solver and Poisson tuning, and output. See
+`docs/guides/examples.md`.
 
-- [ ] Heat transfer examples
-- [ ] Turbulent flow examples
+- [x] Heat transfer examples — `natural_convection.c`: energy equation, Boussinesq
+  buoyancy and per-face thermal BCs, within 1.1% of de Vahl Davis at Ra = 1000
+- [x] Turbulent flow examples — `turbulent_channel.c` (k-epsilon and Spalart-Allmaras with
+  wall functions)
 - [ ] Parallel computing examples (MPI)
 
 ---

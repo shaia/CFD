@@ -10,9 +10,14 @@
  *   - Applying Dirichlet BCs explicitly each time step
  *   - Monitoring solver statistics (max velocity, CFL, timing)
  *   - Manual VTK output with write_vtk_flow_field()
+ *   - Choosing the convection scheme (params.convection_scheme): central
+ *     differences are second order but can oscillate once the cell Reynolds
+ *     number U h / nu exceeds 2; first-order upwind cannot, at the cost of
+ *     numerical diffusion
  *
- * Usage: lid_driven_cavity_direct [Re]
- *   Re = Reynolds number (default: 100)
+ * Usage: lid_driven_cavity_direct [Re] [upwind]
+ *   Re     = Reynolds number (default: 100)
+ *   upwind = use first-order upwind convection instead of central differences
  */
 
 #include "cfd/boundary/boundary_conditions.h"
@@ -24,6 +29,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static void apply_cavity_bc(flow_field* field, double lid_velocity) {
     bc_dirichlet_values_t u_bc = {
@@ -54,11 +60,12 @@ int main(int argc, char* argv[]) {
     int output_interval = 500;
     int print_interval = 500;
 
-    /* Parse command-line Re */
+    /* Parse command-line Re and convection scheme */
     if (argc > 1) {
         double arg = atof(argv[1]);
         if (arg > 0) Re = arg;
     }
+    int upwind = (argc > 2 && strcmp(argv[2], "upwind") == 0);
 
     double nu = U * L / Re;
 
@@ -67,7 +74,10 @@ int main(int argc, char* argv[]) {
     printf("Grid:       %zu x %zu\n", nx, ny);
     printf("Re:         %.1f\n", Re);
     printf("Viscosity:  %.6f\n", nu);
-    printf("Solver:     projection\n\n");
+    printf("Solver:     projection\n");
+    printf("Convection: %s (cell Reynolds number %.1f)\n\n",
+           upwind ? "first-order upwind" : "central differences",
+           U * (L / (double)(nx - 1)) / nu);
 
     /* Create grid and flow field */
     grid* g = grid_create(nx, ny, 1, 0.0, L, 0.0, L, 0.0, 0.0);
@@ -105,6 +115,8 @@ int main(int argc, char* argv[]) {
     params.max_iter = 1;
     params.source_amplitude_u = 0.0;  /* No artificial forcing for cavity flow */
     params.source_amplitude_v = 0.0;
+    params.convection_scheme = upwind ? NS_CONVECTION_SCHEME_UPWIND
+                                      : NS_CONVECTION_SCHEME_CENTRAL;
 
     cfd_status_t status = solver_init(solver, g, &params);
     if (status != CFD_SUCCESS) {
@@ -168,6 +180,16 @@ int main(int argc, char* argv[]) {
                    stats_out.elapsed_time_ms);
         }
     }
+
+    /* The strength of the primary vortex: the most negative u on the vertical
+     * centerline. Run once with and once without "upwind" to compare the two
+     * convection schemes at the same point in the flow's development. */
+    double u_min = 0.0;
+    for (size_t j = 0; j < ny; j++) {
+        double u = field->u[j * nx + nx / 2];
+        if (u < u_min) u_min = u;
+    }
+    printf("\nMinimum u on the vertical centerline: %.4f\n", u_min);
 
     printf("\nSimulation completed!\n");
     printf("Output: %s/cavity_*.vtk\n", run_dir);
