@@ -607,11 +607,14 @@ Grid 500x500, 100 iterations:
 - Applying Dirichlet BCs explicitly each time step
 - Monitoring solver statistics (max velocity, CFL, timing)
 - Manual VTK output with `write_vtk_flow_field()`
+- Choosing the convection scheme: central differences (default) or first-order upwind
+  (`params.convection_scheme`), and the resulting strength of the primary vortex
 
 **Usage:**
 ```bash
-./lid_driven_cavity_direct [Re]
-# Default Re=100
+./lid_driven_cavity_direct [Re] [upwind]
+# Default Re=100, central differences
+./lid_driven_cavity_direct 1000 upwind
 ```
 
 ---
@@ -781,13 +784,13 @@ The reported L2 error compares methods and backends against a common reference f
 
 **What it demonstrates:**
 - Periodic boundary conditions (`bc_apply_periodic` macro)
-- Three NS solver types: `projection`, `rk2`, `explicit_euler`
+- Four NS solver types: `projection`, `rk2`, `rk4`, `explicit_euler`
 - Analytical solution comparison (velocity decay exp(-2νt))
 - Grid refinement showing error reduction with resolution
 
 **Sections:**
 1. **Velocity decay tracking** — Run with projection solver, print max|u| and kinetic energy at intervals alongside analytical predictions
-2. **Solver comparison** — Same problem with projection, RK2, and explicit Euler at a single resolution
+2. **Solver comparison** — Same problem with projection, RK2, RK4 and explicit Euler at a single resolution
 3. **Grid refinement** — Explicit Euler at 16×16, 32×32, 64×64 showing error decreases with resolution
 
 **Run:**
@@ -808,6 +811,7 @@ Part 2: Solver Comparison (32x32, dt=5e-04, T=0.5)
   Solver                    L2 Error      max|u|
   Projection               2.819e-02    0.978457
   RK2 (Heun)               1.904e-02    0.983619
+  RK4 (classical)          1.904e-02    0.983619
   Explicit Euler           5.971e-03    0.992435
 
 Part 3: Grid Refinement (Explicit Euler, dt=5e-04, T=0.5)
@@ -964,6 +968,112 @@ auto,117,converged,9.625996e-07
 ```
 Over the full range the sweeps form a U whose lowest point moves towards 2 as the grid grows; the
 automatic ω sits just below it (1.863 on this grid, where the fewest sweeps, 104, come at 1.866).
+
+---
+
+### 19. natural_convection.c
+
+**Purpose:** Buoyancy-driven flow in a differentially heated cavity, checked against the de Vahl Davis (1983) benchmark
+
+**What it demonstrates:**
+- The energy equation (`params.alpha`, thermal diffusivity)
+- Boussinesq buoyancy (`params.beta`, `params.T_ref`, `params.gravity`)
+- Per-face thermal boundary conditions (`params.thermal_bc`): Dirichlet on the heated walls, Neumann (adiabatic) on the others
+- Deriving the diffusivities from the Rayleigh and Prandtl numbers
+- Running to steady state on a residual that covers velocity and temperature
+- Comparing the peak centerline velocities and the hot-wall Nusselt number with the benchmark
+
+**Run:**
+```bash
+./natural_convection            # Ra = 1000, 41x41
+./natural_convection 10000 81   # Ra = 1e4 on a finer grid
+```
+
+**Expected output (Ra = 1000):**
+```
+Steady after 5835 steps (t* = 0.456, residual 1.00e-04)
+
+  quantity                     computed de Vahl Davis
+  u_max (vertical centerline)      3.610
+  v_max (horiz. centerline)       3.698
+  Nu (hot wall)                   1.121
+
+  Reference at Ra = 1000: u_max 3.649, v_max 3.697, Nu 1.117
+  Differences: 1.1%, 0.0%, 0.4%
+```
+The VTK file it writes includes the temperature field.
+
+---
+
+### 20. steady_flow_multigrid.c
+
+**Purpose:** Run a steady flow quickly with the multigrid pressure solve, and stop and resume a long run with checkpoints
+
+**What it demonstrates:**
+- Selecting the pressure solve on the projection solver (`params.pressure_solver = NS_PRESSURE_SOLVER_MULTIGRID`) and timing it against the default CG
+- Running a lid-driven cavity to steady state on a velocity residual
+- `save_simulation_checkpoint()` mid-run and `load_simulation_from_checkpoint()` into a fresh simulation
+- Checking that the restarted run finishes where the uninterrupted one does
+
+Multigrid needs 2^k+1 points per side (17, 33, 65, 129, 257, ...).
+
+**Run:**
+```bash
+./steady_flow_multigrid          # 129x129, Re = 100
+./steady_flow_multigrid 65 400   # n, Re
+```
+
+**Expected output** (129x129, `OMP_NUM_THREADS=1`; timings are machine-dependent):
+```
+1. Pressure solve cost (after 50 steps of start-up)
+   CG (default):     36.48 ms/step
+   Multigrid:         5.08 ms/step   (7.2x)
+
+2. Running to steady state with multigrid...
+   checkpoint written at step 7387 (t = 9.02): ...halfway.cfdchk
+   steady at step 17903, t = 21.85
+
+3. Restarting from the checkpoint in a fresh simulation...
+   loaded: t = 9.02, solver projection_omp, pressure solve multigrid
+   after the same 10516 steps: t = 21.85, max |velocity difference| = 0.0e+00
+   bit-identical to the uninterrupted run
+
+Steady u at the cavity centre: -0.20322
+```
+With several threads the restarted run agrees to round-off rather than bitwise, because threaded
+reductions do not sum in a fixed order. The multigrid speed-up depends on the grid and on the
+threading runtime: with MSVC OpenMP at full thread count the CG solve is slowed far more than
+multigrid, so the printed ratio is much larger.
+
+---
+
+### 21. pressure_driven_channel.c
+
+**Purpose:** Drive a channel flow with a pressure difference alone, and compare explicit and implicit viscous time stepping
+
+**What it demonstrates:**
+- Prescribing the pressure on the inlet and outlet faces (`params.pressure_bc` with `POISSON_WALL_DIRICHLET`); no inlet velocity anywhere
+- Zero-gradient velocity at the open ends, no-slip on the plates
+- Implicit viscous time integration (`params.viscous_scheme = NS_VISCOUS_SCHEME_CRANK_NICOLSON`), which removes the diffusion limit on dt
+- Comparing the steady profile with the exact Poiseuille solution
+
+**Run:**
+```bash
+./pressure_driven_channel       # 129x33
+./pressure_driven_channel 65    # ny; the channel is 4x longer
+```
+
+**Expected output:**
+```
+dt limits: diffusive (explicit viscous only) 2.44e-03, advective 7.81e-03
+
+  viscous term        steps        t  wall [s]     u_center     L2 error
+  explicit             6391    14.04     14.83      1.00202     2.02e-03
+  Crank-Nicolson       1813    14.16      5.63      1.01153     1.24e-02
+```
+The implicit run reaches steady state in 3.5x fewer steps, but its profile is further from
+Poiseuille: the projection method is non-incremental, so its steady state carries a splitting
+error that grows with dt. Implicit viscous stepping buys stability, not accuracy.
 
 ---
 

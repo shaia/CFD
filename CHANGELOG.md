@@ -191,6 +191,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Examples for features that had none.** `natural_convection.c` (energy equation,
+  Boussinesq buoyancy, thermal BCs; within 1.1% of de Vahl Davis at Ra = 1000),
+  `steady_flow_multigrid.c` (the multigrid pressure solve, timed against CG, plus
+  checkpoint/restart that finishes bit-identical to an uninterrupted run), and
+  `pressure_driven_channel.c` (Dirichlet pressure faces and implicit viscous stepping,
+  against the exact Poiseuille profile). `taylor_green_convergence.c` adds RK4 to its
+  solver comparison; `lid_driven_cavity_direct.c` takes an `upwind` argument for
+  `params.convection_scheme`.
+
 - **Cross-architecture consistency across every solver family** (ROADMAP 6.1).
   `test_solver_architecture.c` compares the whole field of every backend (AVX2, OpenMP,
   CUDA) with the scalar reference for projection and Explicit Euler on the 33x33 cavity,
