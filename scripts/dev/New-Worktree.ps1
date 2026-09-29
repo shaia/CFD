@@ -66,10 +66,18 @@ if (-not $Path) {
 }
 if (-not $PSCmdlet.ShouldProcess($Path, "git worktree add for branch $Branch")) { return }
 git fetch origin --quiet
-if (git branch --list $Branch) {
+# An existing local branch is used as is; a branch that exists only on origin is tracked, not
+# recreated from $Base; only a new name branches from $Base.
+git show-ref --verify --quiet "refs/heads/$Branch"
+if ($LASTEXITCODE -eq 0) {
     git worktree add $Path $Branch
 } else {
-    git worktree add -b $Branch $Path $Base
+    git show-ref --verify --quiet "refs/remotes/origin/$Branch"
+    if ($LASTEXITCODE -eq 0) {
+        git worktree add --track -b $Branch $Path "origin/$Branch"
+    } else {
+        git worktree add -b $Branch $Path $Base
+    }
 }
 if ($LASTEXITCODE -ne 0) { throw 'git worktree add failed' }
 $wt = (Resolve-Path -LiteralPath $Path).Path
