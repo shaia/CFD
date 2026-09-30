@@ -12,7 +12,7 @@ use `build.ps1` / `build.sh` for that. Every script has comment-based help
 | `LongRun-Worker.ps1` | Worker process started by `Start-LongRun.ps1`. Not called directly. | |
 | `LongRun-Common.ps1` | Default run directory and the liveness check, shared by the two scripts above. Not called directly. | |
 | `New-Worktree.ps1` | Creates a git worktree on a new or existing branch and links the local tooling directory into it. `-Existing <path>` retrofits a worktree made with plain `git worktree add`. | `.\scripts\dev\New-Worktree.ps1 -Branch feat/x` |
-| `Prune-Merged.ps1` | Lists local branches whose pull request has merged and whose tip is exactly the merged commit. Deletes them only with `-Delete`. | `.\scripts\dev\Prune-Merged.ps1` |
+| `Prune-Merged.ps1` | Lists local branches whose tip is the last commit of a merged pull request, the commit the PR was merged from (with a squash merge this is not the commit that landed on `master`). Deletes them only with `-Delete`. | `.\scripts\dev\Prune-Merged.ps1` |
 
 ## Notes
 
