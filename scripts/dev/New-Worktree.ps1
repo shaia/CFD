@@ -66,12 +66,17 @@ if (-not $Path) {
 }
 if (-not $PSCmdlet.ShouldProcess($Path, "git worktree add for branch $Branch")) { return }
 git fetch origin --quiet
+$fetched = ($LASTEXITCODE -eq 0)
+if (-not $fetched) { Write-Warning 'git fetch origin failed; remote refs may be stale' }
 # An existing local branch is used as is; a branch that exists only on origin is tracked, not
 # recreated from $Base; only a new name branches from $Base, and without an upstream: git would
 # otherwise make $Base the upstream, so a pull would merge it and a plain push would be refused.
+# Both remote-based paths need fresh refs, so without a successful fetch only a local branch is used.
 git show-ref --verify --quiet "refs/heads/$Branch"
 if ($LASTEXITCODE -eq 0) {
     git worktree add $Path $Branch
+} elseif (-not $fetched) {
+    throw "cannot create '$Branch' after a failed fetch: origin/$Branch and $Base may be stale"
 } else {
     git show-ref --verify --quiet "refs/remotes/origin/$Branch"
     if ($LASTEXITCODE -eq 0) {
