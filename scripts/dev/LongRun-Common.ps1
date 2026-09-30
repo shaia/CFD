@@ -12,14 +12,16 @@ function Get-LongRunDir([string]$RunDir) {
 
 # A recorded process id alone is not proof of life: ids are reused after a kill or a reboot. The run
 # is alive only if a process with that id exists and started when the status says the job started.
+# When that cannot be verified (no recorded start, or a start time that cannot be read because the
+# process is gone or belongs to someone else), the run is reported as not alive.
 function Test-LongRunAlive($Status) {
-    if (-not $Status.pid) { return $false }
+    if (-not $Status.pid -or -not $Status.pidStarted) { return $false }
     $p = Get-Process -Id $Status.pid -ErrorAction SilentlyContinue
     if (-not $p) { return $false }
-    if (-not $Status.pidStarted) { return $true }
     try {
-        return ([math]::Abs(($p.StartTime - [datetime]$Status.pidStarted).TotalSeconds) -lt 2)
+        $started = $p.StartTime
     } catch {
-        return $true
+        return $false
     }
+    return ([math]::Abs(($started - [datetime]$Status.pidStarted).TotalSeconds) -lt 2)
 }

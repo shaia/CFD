@@ -32,6 +32,13 @@ function Test-StatusIsMine {
     }
 }
 
+# A launch that was superseded while this worker was starting must not run the job at all: two
+# workers would truncate the same log and fight over the status file.
+if (-not (Test-StatusIsMine)) {
+    Remove-Item -LiteralPath $SpecFile -ErrorAction SilentlyContinue
+    exit 0
+}
+
 Set-Location -LiteralPath $spec.workDir
 $start = Get-Date
 
@@ -84,3 +91,4 @@ $state = if ($exit -eq 0) { 'done' } else { 'failed' }
 if (Test-StatusIsMine) {
     Write-Status @{ state = $state; pid = $null; start = $start.ToString('o'); end = $end.ToString('o'); exit = $exit; elapsedSeconds = $elapsed }
 }
+Remove-Item -LiteralPath $SpecFile -ErrorAction SilentlyContinue

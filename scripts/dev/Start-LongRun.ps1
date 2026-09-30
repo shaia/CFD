@@ -66,7 +66,10 @@ $spec = [ordered]@{
     status  = $status
     env     = $Env
 }
-$specFile = Join-Path $RunDir "$Name.spec.json"
+# One spec file per launch, never overwritten: a relaunch under the same name must not replace the
+# spec a delayed worker has yet to read, or both workers would run the new job. The worker deletes
+# its spec when it exits.
+$specFile = Join-Path $RunDir "$Name.$($spec.runId).spec.json"
 $spec | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $specFile -Encoding UTF8
 
 # Replace any earlier run's status before the worker starts, so a reused name never reports the
