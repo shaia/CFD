@@ -226,7 +226,12 @@ typedef enum {
  * The scheme applies to the momentum convection u.grad(u) and to temperature
  * advection u.grad(T). Pressure gradients, viscous terms and the divergence stay
  * central; turbulence transport is always upwind. Explicit time steps must
- * still satisfy both the convective CFL limit and the diffusion limit.
+ * still satisfy both the convective CFL limit and the diffusion limit. Central
+ * convection with the explicit predictor has a third limit, dt below about
+ * 2*nu_eff/|u|^2, that neither covers and that ns_dt_* does not compute: where
+ * the cell Peclet number is high it can be the tightest. The Re_tau = 395
+ * RANS channel (nu_t ~ 0.1, u ~ 19.5) grows an asymmetric mode from roundoff
+ * at dt = 1.8e-3 and is stable at 1.5e-3; upwind is stable at 2e-3.
  *
  * Implemented on the scalar, OpenMP and AVX2 backends of every solver.
  * GPU solvers reject NS_CONVECTION_SCHEME_UPWIND with CFD_ERROR_UNSUPPORTED at

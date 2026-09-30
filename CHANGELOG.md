@@ -14,10 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   y+ = 11.63, but with κ = 0.41, B = 5.2 the two cross at y+ = 11.06, so u_τ jumped 3.3% at
   the switch (wall shear 6.6%, first-node ε 10%).
   - `NS_WALL_LAW_LOG` (0, default) keeps the linear/log law and moves its switch to the
-    crossing, so u_τ is continuous. The Re_τ = 395 channel keeps its results: u_τ error
-    against the log law 2.9% (k-ε) and 3.3% (SA).
+    crossing, so u_τ is continuous. The Re_τ = 395 channel, run to steady state, reads a
+    u_τ error against the log law of 2.6% for both k-ε and SA.
   - `NS_WALL_LAW_SPALDING` selects Spalding's single smooth y+(u+). It sits below the log
-    law until y+ ≈ 100, so the same channel reads 5.9% (k-ε) and 6.0% (SA).
+    law until y+ ≈ 100, so the same channel reads 5.7% for both.
   - Which is closer to reality depends on where the first node sits: against channel DNS,
     Spalding is closer below y+ ≈ 17 and the log law from y+ ≈ 20 on (u+ 0.7% under DNS at
     y+ = 40, against 4.4%). Hence the log law as the default for wall-function grids and
@@ -499,6 +499,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The turbulent channel runs at a stable step, to a real steady state.**
+  `test_turbulent_channel` and `examples/turbulent_channel.c` stepped at dt = 2e-3, past the
+  limit forward Euler with central convection needs, dt below about 2ν_eff/|u|² (ν_t ≈ 0.1,
+  u ≈ 19.5 at the centreline). A sinuous mode grew from roundoff as about e^{0.86 t} and
+  broke the profile's symmetry by t ≈ 44; the per-step kinetic-energy stop fired at t ≈ 45,
+  just before it showed. Run on, k-ε failed the 2% symmetry check and SA's u_τ reached 1.16.
+  The threshold lies between 1.5e-3 and 1.8e-3; both now step at 1e-3 and stop when no
+  velocity changes faster than 1e-3 per unit time (t ≈ 64). At that state u_τ is 0.9742 for
+  both models (log law; 0.9427 with Spalding), and the DNS comparison in
+  `docs/validation/turbulent-channel-dns.md` is re-measured. The convection-scheme doc in
+  `navier_stokes_solver.h` now names the limit; the `ns_dt_*` helpers do not compute it.
 - **`run_simulation_step()` and `run_simulation_solve()` now step with the caller's
   `params.dt`.** Both overwrote it with a hard-coded 0.005 on every call ("for animation
   stability"), so the documented `sim->params.dt = ...` had no effect. On a fine grid that
@@ -521,8 +532,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time budget rises from 120 to 200, since 513x513 at Re=1000 settles at t = 107.5. This
   completes ROADMAP 6.1's grid-convergence study at Re = 100, 400 and 1000: at Re=1000 the
   extrapolated extrema are within 0.11% of Botella & Peyret (1998).
-  `examples/turbulent_channel.c` stops on a related per-step KE residual. It is left as is:
-  a channel spinning up from rest may not overshoot, but that is unmeasured.
+  `examples/turbulent_channel.c` and `test_turbulent_channel` stopped on a related per-step
+  KE residual; see the channel entry below.
 
 - **A Poisson solve started at its own solution no longer runs to `max_iterations`.** The
   residual of a converged field cannot be measured below round-off, about

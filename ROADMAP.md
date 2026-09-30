@@ -675,7 +675,7 @@ already warm-starts.
       default log law now switches at the crossing, and Spalding's smooth law is selectable
       via `params.turb_bc.wall_law`. Spalding was not made the default: at the usual
       first-node y+ ≈ 40 it puts u+ 4.4% under channel DNS against the log law's 0.7%, and
-      moves the channel u_tau error 2.9% → 5.9% (k-ε), 3.3% → 6.0% (SA). It is the better
+      moves the channel u_tau error from 2.6% to 5.7% for both k-ε and SA. It is the better
       model below y+ ≈ 17, e.g. near reattachment in separated flows.
       `test_turbulent_channel` keeps its own log-law inversion as the yardstick
 
