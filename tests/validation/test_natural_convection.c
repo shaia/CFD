@@ -9,7 +9,7 @@
  *   - No-slip velocity on all walls
  *   - Boussinesq buoyancy couples temperature to the momentum equations.
  *
- * The cavity is run to steady state (detected via a kinetic-energy residual)
+ * The cavity is run to steady state (every field stops changing; see below)
  * and the measured benchmark quantities are compared to the published de Vahl
  * Davis reference values:
  *
@@ -35,10 +35,13 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/indexing.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "steady_state.h"
 #include "unity.h"
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef CAVITY_FULL_VALIDATION
 #define CAVITY_FULL_VALIDATION 0
@@ -57,8 +60,12 @@
 #define DVD_G       9.81
 #define DVD_PR      0.71     /* Prandtl number (air) */
 
-/* Steady-state detection: relative kinetic-energy change per step */
-#define DVD_STEADY_TOL 1e-6
+/* Steady-state detection: no velocity or temperature changes faster than this,
+ * with velocity in units of alpha/L, temperature in units of T_hot - T_cold and
+ * time in units of L^2/alpha. The previous test, a relative kinetic-energy change
+ * per step below 1e-6, fired at t* = 0.11 with the hot-wall Nusselt number still
+ * rising (1.089 against 1.117); this one runs to t* ~ 0.46. */
+#define DVD_STEADY_TOL 1e-4
 #define DVD_MIN_STEPS  200
 
 /* ============================================================================
@@ -86,19 +93,6 @@ static void apply_cavity_velocity_bcs(flow_field* field, size_t nx, size_t ny) {
         field->u[IDX_2D(i, ny - 1, nx)] = 0.0;
         field->v[IDX_2D(i, ny - 1, nx)] = 0.0;
     }
-}
-
-/* ============================================================================
- * Domain kinetic energy (steady-state metric, no density weighting needed).
- * ============================================================================ */
-
-static double compute_kinetic_energy(const flow_field* field) {
-    double ke = 0.0;
-    size_t total = field->nx * field->ny;
-    for (size_t n = 0; n < total; n++) {
-        ke += field->u[n] * field->u[n] + field->v[n] * field->v[n];
-    }
-    return 0.5 * ke;
 }
 
 /* ============================================================================
@@ -219,26 +213,41 @@ static void run_dvd_benchmark(const char* solver_name, double Ra, size_t n,
     }
     TEST_ASSERT_EQUAL(CFD_SUCCESS, init_status);
 
-    /* March to steady state via kinetic-energy residual */
+    /* March to steady state: every field stops changing (DVD_STEADY_TOL) */
     ns_solver_stats_t stats = ns_solver_stats_default();
-    double prev_ke = compute_kinetic_energy(field);
+    size_t total = n * n;
+    double* u_prev = malloc(total * sizeof(double));
+    double* v_prev = malloc(total * sizeof(double));
+    double* T_prev = malloc(total * sizeof(double));
+    TEST_ASSERT_NOT_NULL(u_prev);
+    TEST_ASSERT_NOT_NULL(v_prev);
+    TEST_ASSERT_NOT_NULL(T_prev);
+    double u_scale = alpha / DVD_L;
+    double time_scale = DVD_L * DVD_L / alpha;
     int steps_done = 0;
     int converged = 0;
     for (int step = 0; step < max_steps; step++) {
         apply_cavity_velocity_bcs(field, n, n);
+        memcpy(u_prev, field->u, total * sizeof(double));
+        memcpy(v_prev, field->v, total * sizeof(double));
+        memcpy(T_prev, field->T, total * sizeof(double));
         cfd_status_t status = solver_step(solver, field, g, &params, &stats);
         TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, status, "Solver step should succeed");
         apply_cavity_velocity_bcs(field, n, n);
 
-        double ke = compute_kinetic_energy(field);
-        double residual = fabs(ke - prev_ke) / (prev_ke + 1e-10);
-        prev_ke = ke;
+        double change = fmax(steady_max_change(field->u, u_prev, total) / u_scale,
+                             steady_max_change(field->v, v_prev, total) / u_scale);
+        change = fmax(change, steady_max_change(field->T, T_prev, total) / DVD_DT_TEMP);
+        double residual = change / (dt / time_scale);
         steps_done = step + 1;
         if (step > DVD_MIN_STEPS && residual < DVD_STEADY_TOL) {
             converged = 1;
             break;
         }
     }
+    free(u_prev);
+    free(v_prev);
+    free(T_prev);
 
     /* ---- Compute benchmark quantities ---- */
     double vel_scale = DVD_L / alpha; /* non-dimensionalize by alpha/L */

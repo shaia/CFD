@@ -499,6 +499,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Natural-convection validation stops at a steady state.** It stopped when the relative
+  kinetic-energy change per step fell below 1e-6, which happened at t* = 0.11 with the
+  hot-wall Nusselt number still rising (1.089 against 1.117). It now waits until no velocity
+  or temperature changes faster than 1e-4 in diffusive units (shared helper
+  `tests/validation/steady_state.h`): errors against de Vahl Davis drop from 0.9 / 1.5 / 2.5%
+  (u, v, Nu) to 1.0 / 0.0 / 0.4%.
 - **`run_simulation_step()` and `run_simulation_solve()` now step with the caller's
   `params.dt`.** Both overwrote it with a hard-coded 0.005 on every call ("for animation
   stability"), so the documented `sim->params.dt = ...` had no effect. On a fine grid that
