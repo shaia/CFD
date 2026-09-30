@@ -9,6 +9,7 @@
 
 #ifdef _WIN32
 #include <direct.h>
+#include <io.h>
 #else
 #include <sys/stat.h>
 #include <unistd.h>
@@ -18,19 +19,70 @@
 // FILE SYSTEM
 //=============================================================================
 
-int ensure_directory_exists(const char* path) {
+/* Create one directory level; true if it exists afterwards. */
+static int make_one_directory(const char* path) {
 #ifdef _WIN32
     if (_access(path, 0) == 0) {
         return 1;  // Directory exists
     }
-    return _mkdir(path) == 0;
+    return _mkdir(path) == 0 || _access(path, 0) == 0;
 #else
     struct stat st = {0};
     if (stat(path, &st) == 0) {
         return 1;  // Directory exists
     }
-    return mkdir(path, 0755) == 0;
+    return mkdir(path, 0755) == 0 || stat(path, &st) == 0;
 #endif
+}
+
+/* Creates every missing level of path, like `mkdir -p`. Creating only the last
+ * level made a nested path such as ../../artifacts/output/<run> fail whenever
+ * an intermediate directory was absent. A level that already exists, or appears
+ * concurrently, is not an error. */
+int ensure_directory_exists(const char* path) {
+    if (!path || path[0] == '\0') {
+        return 0;
+    }
+    char buf[1024];
+    size_t len = strlen(path);
+    if (len >= sizeof(buf)) {
+        return 0;
+    }
+    memcpy(buf, path, len + 1);
+
+    /* Skip what names a root rather than a directory to create: a drive ("C:"),
+     * leading separators ("/"), or a UNC server and share ("\\server\share"). */
+    size_t start = 0;
+    int unc = (len >= 2 && (buf[0] == '/' || buf[0] == '\\') && (buf[1] == '/' || buf[1] == '\\'));
+    if (len >= 2 && buf[1] == ':') {
+        start = 2;
+    }
+    while (buf[start] == '/' || buf[start] == '\\') {
+        start++;
+    }
+    if (unc) {
+        for (int part = 0; part < 2; part++) { /* server, then share */
+            while (buf[start] != '\0' && buf[start] != '/' && buf[start] != '\\') {
+                start++;
+            }
+            while (buf[start] == '/' || buf[start] == '\\') {
+                start++;
+            }
+        }
+    }
+
+    for (size_t i = start; i < len; i++) {
+        if (buf[i] == '/' || buf[i] == '\\') {
+            char sep = buf[i];
+            buf[i] = '\0';
+            int ok = make_one_directory(buf);
+            buf[i] = sep;
+            if (!ok) {
+                return 0;
+            }
+        }
+    }
+    return make_one_directory(buf);
 }
 
 //=============================================================================

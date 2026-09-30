@@ -85,6 +85,34 @@ void test_output_directory_creation(void) {
     rmdir(test_dir);
 }
 
+/* Every missing parent is created, as with mkdir -p: the examples write under
+ * ../../artifacts and failed when that directory did not exist yet. */
+void test_ensure_directory_creates_missing_parents(void) {
+    char base[256];
+    char level1[sizeof(base) + 16];
+    char level2[sizeof(base) + 32];
+    char level3[sizeof(base) + 48];
+    make_artifacts_path(base, sizeof(base), "mkdir_p");
+    snprintf(level1, sizeof(level1), "%s/a", base);
+    snprintf(level2, sizeof(level2), "%s/a/b", base);
+    snprintf(level3, sizeof(level3), "%s/a/b/c/", base); /* trailing separator */
+
+    rmdir(level3);
+    rmdir(level2);
+    rmdir(level1);
+    rmdir(base);
+    TEST_ASSERT_FALSE(file_exists(base));
+
+    TEST_ASSERT_TRUE(ensure_directory_exists(level3));
+    TEST_ASSERT_TRUE(file_exists(level3));
+    TEST_ASSERT_TRUE(ensure_directory_exists(level3)); /* existing is success */
+
+    rmdir(level3);
+    rmdir(level2);
+    rmdir(level1);
+    rmdir(base);
+}
+
 // Test that VTK output files are created in correct locations
 void test_vtk_output_paths(void) {
     // Create a small simulation
@@ -339,6 +367,7 @@ void test_run_directory_rejects_cache_overflow(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_output_directory_creation);
+    RUN_TEST(test_ensure_directory_creates_missing_parents);
     RUN_TEST(test_vtk_output_paths);
     RUN_TEST(test_solver_output_paths);
     RUN_TEST(test_no_scattered_output);
