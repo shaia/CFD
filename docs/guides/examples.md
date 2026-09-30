@@ -1037,16 +1037,19 @@ Multigrid needs 2^k+1 points per side (17, 33, 65, 129, 257, ...).
 
 3. Restarting from the checkpoint in a fresh simulation...
    loaded: t = 9.02, solver projection_omp, pressure solve multigrid
-   after the same 10516 steps: t = 21.85, max |velocity difference| = 0.0e+00
+   after the same 10516 steps: t = 21.85, max |velocity difference| = 0.0e+00, pressure 0.0e+00
    bit-identical to the uninterrupted run
 
-Steady u at the cavity centre: -0.20322
+Steady u at the cavity centre: -0.203223
+   reference -0.203223 (129x129 grid-convergence study): matches
 ```
 With several threads the restarted run agrees to round-off rather than bitwise, because threaded
 reductions do not sum in a fixed order. The multigrid speed-up depends on the grid and on the
 threading runtime: with MSVC OpenMP at full thread count the CG solve is slowed far more than
 multigrid, so the printed ratio is much larger. The example exits with status 1 if the run does
-not converge or the restarted run differs by more than 1e-10. Without OpenMP it uses the scalar
+not converge, if the restarted run's velocity or pressure differs by more than 1e-10, or, in
+the default 129x129 Re = 100 case, if the steady centre velocity is more than 1e-4 from the
+grid-convergence study's -0.203223. Without OpenMP it uses the scalar
 projection, which also implements multigrid.
 
 ---

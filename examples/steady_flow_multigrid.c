@@ -234,26 +234,44 @@ int main(int argc, char* argv[]) {
     }
     apply_cavity_bc(restarted->field);
 
-    double diff = 0.0;
+    /* Velocity and pressure are both restored and both evolved, so both must match.
+     * Pressure is compared relative to its size: the lid corners make it large. */
+    double diff = 0.0, dp = 0.0, p_max = 0.0;
     for (size_t k = 0; k < total; k++) {
         diff = fmax(diff, fabs(restarted->field->u[k] - sim->field->u[k]));
         diff = fmax(diff, fabs(restarted->field->v[k] - sim->field->v[k]));
+        dp = fmax(dp, fabs(restarted->field->p[k] - sim->field->p[k]));
+        p_max = fmax(p_max, fabs(sim->field->p[k]));
     }
-    printf("   after the same %d steps: t = %.2f, max |velocity difference| = %.1e\n",
-           steps - checkpoint_step, restarted->current_time, diff);
-    if (diff == 0.0) {
+    dp /= fmax(p_max, 1.0);
+    printf("   after the same %d steps: t = %.2f, max |velocity difference| = %.1e, "
+           "pressure %.1e\n",
+           steps - checkpoint_step, restarted->current_time, diff, dp);
+    if (diff == 0.0 && dp == 0.0) {
         printf("   bit-identical to the uninterrupted run\n");
     } else {
         printf("   round-off: with several threads, reductions do not sum in a fixed order\n");
     }
     /* Self-check: a restart must reproduce the run, to round-off at most */
-    int pass = diff < 1e-10;
+    int pass = diff < 1e-10 && dp < 1e-10;
     if (!pass) {
         fprintf(stderr, "FAILED: the restarted run differs from the uninterrupted one\n");
     }
 
     size_t c = n / 2;
-    printf("\nSteady u at the cavity centre: %.5f\n", sim->field->u[c * n + c]);
+    double u_centre = sim->field->u[c * n + c];
+    printf("\nSteady u at the cavity centre: %.6f\n", u_centre);
+    /* The default case also checks the answer, not just the restart: the 129x129
+     * Re=100 grid-convergence run (test_cavity_richardson, same dt rule and the same
+     * 1e-6 steady tolerance) settles at u = -0.203223. Neighbouring grids differ by
+     * about 1e-2, so 1e-4 tells a right answer from a regression. */
+    if (n == 129 && re == 100.0) {
+        const double u_reference = -0.203223;
+        int ok = fabs(u_centre - u_reference) < 1e-4;
+        printf("   reference %.6f (129x129 grid-convergence study): %s\n", u_reference,
+               ok ? "matches" : "DOES NOT MATCH");
+        pass = pass && ok;
+    }
 
     free(u_prev);
     free(v_prev);
