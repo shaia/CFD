@@ -82,7 +82,9 @@ int main(int argc, char* argv[]) {
     sim->params.source_amplitude_v = 0.0;
 
     /* Configure output */
-    simulation_set_output_dir(sim, "output");
+    /* The run directory is <base>/output/<run>, so the base is the current
+     * directory: a base of "output" would nest output/output/<run>. */
+    simulation_set_output_dir(sim, ".");
     simulation_set_run_prefix(sim, "lid_cavity");
     simulation_register_output(sim, OUTPUT_VELOCITY_MAGNITUDE, 500, "vmag");
     simulation_register_output(sim, OUTPUT_VELOCITY, 500, "velocity");

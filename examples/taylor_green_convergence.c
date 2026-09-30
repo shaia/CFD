@@ -10,7 +10,7 @@
  *
  * This example demonstrates:
  *   - Periodic boundary conditions (bc_apply_periodic macro)
- *   - Three NS solver types: projection, rk2, explicit_euler
+ *   - Four NS solver types: projection, rk2, rk4, explicit_euler
  *   - Analytical solution comparison (velocity decay)
  *   - Grid refinement showing error reduction with resolution
  */
@@ -228,7 +228,7 @@ int main(void) {
     free_simulation(sim);
 
     /* === Part 2: Solver Type Comparison ===
-     * Run the same problem with three different solver types */
+     * Run the same problem with four different solver types */
     printf("\nPart 2: Solver Comparison (%zux%zu, dt=%.0e, T=%.1f)\n",
            n, n, dt, t_end);
     printf("  %-20s  %12s  %10s\n", "Solver", "L2 Error", "max|u|");
@@ -236,15 +236,17 @@ int main(void) {
     const char* solver_types[] = {
         NS_SOLVER_TYPE_PROJECTION,
         NS_SOLVER_TYPE_RK2,
+        NS_SOLVER_TYPE_RK4,
         NS_SOLVER_TYPE_EXPLICIT_EULER
     };
     const char* solver_labels[] = {
         "Projection",
         "RK2 (Heun)",
+        "RK4 (classical)",
         "Explicit Euler"
     };
 
-    for (int s = 0; s < 3; s++) {
+    for (int s = 0; s < 4; s++) {
         tg_result_t res = run_case(n, solver_types[s], dt, t_end);
         if (res.l2_error < 0) {
             printf("  %-20s  %12s\n", solver_labels[s], "FAILED");

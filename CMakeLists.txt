@@ -199,6 +199,18 @@ if(BUILD_EXAMPLES)
     # Platform diagnostics, derived fields, and error handling
     add_executable(platform_diagnostics examples/platform_diagnostics.c)
     target_link_libraries(platform_diagnostics PRIVATE CFD::Library)
+
+    # Natural convection: energy equation, Boussinesq buoyancy, thermal BCs
+    add_executable(natural_convection examples/natural_convection.c)
+    target_link_libraries(natural_convection PRIVATE CFD::Library)
+
+    # Steady flow: multigrid pressure solve, checkpoint and restart
+    add_executable(steady_flow_multigrid examples/steady_flow_multigrid.c)
+    target_link_libraries(steady_flow_multigrid PRIVATE CFD::Library)
+
+    # Pressure-driven channel: Dirichlet pressure faces, implicit viscous term
+    add_executable(pressure_driven_channel examples/pressure_driven_channel.c)
+    target_link_libraries(pressure_driven_channel PRIVATE CFD::Library)
 endif()
 
 # Optionally build tests
