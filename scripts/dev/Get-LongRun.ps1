@@ -40,7 +40,9 @@ foreach ($f in $files) {
         $elapsed = $s.elapsedSeconds
     }
     $exitTxt = if ($null -ne $s.exit) { " exit=$($s.exit)" } else { '' }
-    '{0,-20} {1,-8} pid={2,-7} elapsed={3,6}s{4}  log={5}' -f $s.name, $state, $s.pid, $elapsed, $exitTxt, $s.log
+    # The name comes from the file name: ConvertFrom-Json would turn a name like 2026-09-30 into a date.
+    $runName = $f.Name -replace '\.status\.json$', ''
+    '{0,-20} {1,-8} pid={2,-7} elapsed={3,6}s{4}  log={5}' -f $runName, $state, $s.pid, $elapsed, $exitTxt, $s.log
 }
 if ($Name) {
     $s = Get-Content -LiteralPath $files[0].FullName -Raw | ConvertFrom-Json

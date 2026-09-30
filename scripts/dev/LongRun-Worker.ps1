@@ -2,11 +2,13 @@
 param([Parameter(Mandatory)][string]$SpecFile)
 $ErrorActionPreference = 'Continue'
 $specText = Get-Content -LiteralPath $SpecFile -Raw
-$spec = $specText | ConvertFrom-Json
 
-# Arguments and environment values are read as raw JSON strings. ConvertFrom-Json turns a string
-# that looks like an ISO date into a DateTime, which would reach the executable reformatted.
+# Every spec field is read as a raw JSON string. ConvertFrom-Json turns a string that looks like an
+# ISO date into a DateTime, and a run name such as 2026-09-30, an argument, an environment value or
+# a path would then be reformatted before it reaches the status file or the executable.
 $root = [System.Text.Json.JsonDocument]::Parse($specText).RootElement
+$spec = [ordered]@{}
+foreach ($k in 'name', 'runId', 'exe', 'workDir', 'log', 'status') { $spec[$k] = $root.GetProperty($k).GetString() }
 $exeArgs = @($root.GetProperty('args').EnumerateArray() | ForEach-Object { $_.ToString() })
 $envElement = $root.GetProperty('env')
 if ($envElement.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
