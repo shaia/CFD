@@ -525,6 +525,8 @@ cfd_status_t gpu_solver_step(gpu_solver_context_t* ctx_void, const grid* grid,
                              const ns_solver_params_t* params, gpu_solver_stats_t* stats) {
     if (!ctx_void || !grid || !params)
         return CFD_ERROR_INVALID;
+    if (ns_check_dt(params) != CFD_SUCCESS)
+        return CFD_ERROR_INVALID;
     // The kernels below advance the viscous term explicitly; an implicit scheme
     // would otherwise run explicit at a dt chosen because it no longer had to be
     // stable.
@@ -643,6 +645,10 @@ cfd_status_t solve_navier_stokes_gpu(flow_field* field, const grid* grid,
     if (bc_status != CFD_SUCCESS) {
         return bc_status;
     }
+    cfd_status_t dt_status = ns_check_dt(params);
+    if (dt_status != CFD_SUCCESS) {
+        return dt_status;
+    }
     cfd_status_t ps_status = ns_check_pressure_solver(params, 0);
     if (ps_status != CFD_SUCCESS) {
         return ps_status;
@@ -707,6 +713,10 @@ cfd_status_t solve_projection_method_gpu(flow_field* field, const grid* grid,
     cfd_status_t bc_status = ns_check_pressure_bc(params, 0);
     if (bc_status != CFD_SUCCESS) {
         return bc_status;
+    }
+    cfd_status_t dt_status = ns_check_dt(params);
+    if (dt_status != CFD_SUCCESS) {
+        return dt_status;
     }
     cfd_status_t ps_status = ns_check_pressure_solver(params, 0);
     if (ps_status != CFD_SUCCESS) {

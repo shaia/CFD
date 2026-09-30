@@ -499,6 +499,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A step of zero, a negative step or a non-finite step is refused.** `solver_step()`,
+  `solver_solve()` (and through them `run_simulation_step()` / `run_simulation_solve()`)
+  and the exported GPU entry points (`solve_*_gpu`, `gpu_solver_step`) return
+  `CFD_ERROR_INVALID` unless `params.dt` is finite and positive. Before, `dt = 0` succeeded
+  with `current_time` frozen, a negative `dt` integrated backwards, and NaN filled every field
+  without an error.
 - **Natural-convection validation stops at a steady state.** It stopped when the relative
   kinetic-energy change per step fell below 1e-6, which happened at t* = 0.11 with the
   hot-wall Nusselt number still rising (1.089 against 1.117). It now waits until no velocity
