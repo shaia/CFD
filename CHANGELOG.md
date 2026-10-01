@@ -504,7 +504,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the exported GPU entry points (`solve_*_gpu`, `gpu_solver_step`) return
   `CFD_ERROR_INVALID` unless `params.dt` is finite and positive. Before, `dt = 0` succeeded
   with `current_time` frozen, a negative `dt` integrated backwards, and NaN filled every field
-  without an error.
+  without an error. `run_simulation_step()` and `run_simulation_solve()` also reset
+  `last_stats` before each call: a solve refused before it ran (a bad `dt` or viscous scheme)
+  advanced `current_time` again by the previous call's `dt_used * iterations`.
 - **`ensure_directory_exists()` creates missing parents, like `mkdir -p`.** It made only the
   last level, so run directories under a base such as `../../artifacts` failed whenever that
   base did not exist yet, which is how the examples ran from a fresh checkout.

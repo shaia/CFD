@@ -293,12 +293,18 @@ void test_run_simulation_rejects_bad_dt(void) {
         init_simulation_with_solver(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, "projection");
     TEST_ASSERT_NOT_NULL(sim);
 
+    /* A good solve first, so a refused call has earlier stats it could reuse */
+    sim->params.dt = 1e-3;
+    sim->params.max_iter = 3;
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, run_simulation_solve(sim));
+    const double t0 = sim->current_time;
+    TEST_ASSERT_TRUE(t0 > 0.0);
+
     for (size_t k = 0; k < NUM_BAD_DTS; k++) {
         sim->params.dt = BAD_DTS[k];
-        sim->params.max_iter = 3;
         TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, run_simulation_step(sim));
         TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, run_simulation_solve(sim));
-        TEST_ASSERT_EQUAL_DOUBLE(0.0, sim->current_time);
+        TEST_ASSERT_EQUAL_DOUBLE(t0, sim->current_time);
     }
     free_simulation(sim);
 }
