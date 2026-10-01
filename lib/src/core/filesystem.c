@@ -35,6 +35,16 @@ static int make_one_directory(const char* path) {
 #endif
 }
 
+/* Path separator. Only Windows treats a backslash as one; on POSIX it is an
+ * ordinary filename character. */
+static int is_path_sep(char c) {
+#ifdef _WIN32
+    return c == '/' || c == '\\';
+#else
+    return c == '/';
+#endif
+}
+
 /* Creates every missing level of path, like `mkdir -p`. Creating only the last
  * level made a nested path such as ../../artifacts/output/<run> fail whenever
  * an intermediate directory was absent. A level that already exists, or appears
@@ -50,29 +60,34 @@ int ensure_directory_exists(const char* path) {
     }
     memcpy(buf, path, len + 1);
 
-    /* Skip what names a root rather than a directory to create: a drive ("C:"),
-     * leading separators ("/"), or a UNC server and share ("\\server\share"). */
+    /* Skip what names a root rather than a directory to create: leading
+     * separators ("/") and, on Windows, a drive ("C:") or a UNC server and
+     * share ("\\server\share"). */
     size_t start = 0;
-    int unc = (len >= 2 && (buf[0] == '/' || buf[0] == '\\') && (buf[1] == '/' || buf[1] == '\\'));
+#ifdef _WIN32
+    int unc = (len >= 2 && is_path_sep(buf[0]) && is_path_sep(buf[1]));
     if (len >= 2 && buf[1] == ':') {
         start = 2;
     }
-    while (buf[start] == '/' || buf[start] == '\\') {
+#endif
+    while (is_path_sep(buf[start])) {
         start++;
     }
+#ifdef _WIN32
     if (unc) {
         for (int part = 0; part < 2; part++) { /* server, then share */
-            while (buf[start] != '\0' && buf[start] != '/' && buf[start] != '\\') {
+            while (buf[start] != '\0' && !is_path_sep(buf[start])) {
                 start++;
             }
-            while (buf[start] == '/' || buf[start] == '\\') {
+            while (is_path_sep(buf[start])) {
                 start++;
             }
         }
     }
+#endif
 
     for (size_t i = start; i < len; i++) {
-        if (buf[i] == '/' || buf[i] == '\\') {
+        if (is_path_sep(buf[i])) {
             char sep = buf[i];
             buf[i] = '\0';
             int ok = make_one_directory(buf);

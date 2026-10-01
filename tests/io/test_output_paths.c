@@ -113,6 +113,31 @@ void test_ensure_directory_creates_missing_parents(void) {
     rmdir(base);
 }
 
+/* On POSIX a backslash is part of a name, not a separator: "base/a\b" is one
+ * directory "a\b" under base, and no "base/a" may appear. */
+void test_ensure_directory_backslash_is_a_name_on_posix(void) {
+#ifdef _WIN32
+    TEST_IGNORE_MESSAGE("backslash is a separator on Windows");
+#else
+    char base[256];
+    char named[sizeof(base) + 16];
+    char split[sizeof(base) + 16];
+    make_artifacts_path(base, sizeof(base), "mkdir_bs");
+    snprintf(named, sizeof(named), "%s/a\\b", base);
+    snprintf(split, sizeof(split), "%s/a", base);
+    rmdir(named);
+    rmdir(split);
+    rmdir(base);
+
+    TEST_ASSERT_TRUE(ensure_directory_exists(named));
+    TEST_ASSERT_TRUE(file_exists(named));
+    TEST_ASSERT_FALSE(file_exists(split));
+
+    rmdir(named);
+    rmdir(base);
+#endif
+}
+
 // Test that VTK output files are created in correct locations
 void test_vtk_output_paths(void) {
     // Create a small simulation
@@ -368,6 +393,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_output_directory_creation);
     RUN_TEST(test_ensure_directory_creates_missing_parents);
+    RUN_TEST(test_ensure_directory_backslash_is_a_name_on_posix);
     RUN_TEST(test_vtk_output_paths);
     RUN_TEST(test_solver_output_paths);
     RUN_TEST(test_no_scattered_output);
