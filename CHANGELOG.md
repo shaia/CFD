@@ -533,7 +533,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   completes ROADMAP 6.1's grid-convergence study at Re = 100, 400 and 1000: at Re=1000 the
   extrapolated extrema are within 0.11% of Botella & Peyret (1998).
   `examples/turbulent_channel.c` and `test_turbulent_channel` stopped on a related per-step
-  KE residual; see the channel entry below.
+  KE residual; see the channel entry above.
 
 - **A Poisson solve started at its own solution no longer runs to `max_iterations`.** The
   residual of a converged field cannot be measured below round-off, about

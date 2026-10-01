@@ -476,6 +476,12 @@ With y+ pinned near 39.4 and CFL pinned at its tuned value:
 | 1500   | 77  | 1.7%              | 1.7%           | 3.3% / 2.7%      | 572 s   |
 | 2000   | 102 | 1.9%              | (timed out)    | 3.3%             | >900 s  |
 
+*Later correction.* These rows were taken at the stock `dt = 0.002` (scaled with `dy`) and the
+old kinetic-energy stop. At Re_tau = 395 that step was explicitly unstable and the stop fired
+at t ≈ 45 as the unstable mode set in; at steady state with `dt = 0.001` the `u_tau` error is
+2.6% for both models there, and 1.7% for both at Re_tau = 587. The rows above 590 were not
+re-run. The conclusion below, a flat error beyond Re_tau = 590, is unchanged.
+
 These runs, and the closure-correction results below, used the linear/log wall function,
 which is the default again. Selecting Spalding's law lowers the Re_tau = 395 `u_tau` by
 about 3%; re-run them before comparing Spalding results against these rows.

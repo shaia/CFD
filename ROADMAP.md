@@ -342,8 +342,8 @@ source via host callback). See CHANGELOG.
 **Done (2D, uniform grids):** standard k-ε and Spalart-Allmaras with wall functions on
 scalar/OMP/AVX2 backends, on the log law (default) or Spalding's law
 (`params.turb_bc.wall_law`); validated against turbulent channel flow at Re_τ = 395
-(u_τ error against the log law, log-law wall function: k-ε 2.9%, SA 3.3%; Spalding's:
-5.9%, 6.0%). GPU turbulence not yet implemented.
+(u_τ error against the log law at steady state: 2.6% for both k-ε and SA with the log-law
+wall function, 5.7% for both with Spalding's). GPU turbulence not yet implemented.
 
 ### 2.3 Compressible Flow (P2)
 
