@@ -79,7 +79,8 @@ CFD_LIBRARY_EXPORT int simulation_has_solver(const char* solver_type);
 // SIMULATION EXECUTION
 //=============================================================================
 
-// Run a single simulation time step
+// Run a single simulation time step of sim_data->params.dt. Both run functions
+// return CFD_ERROR_INVALID, and leave current_time alone, unless dt is finite and > 0.
 CFD_LIBRARY_EXPORT cfd_status_t run_simulation_step(simulation_data* sim_data);
 
 // Run simulation until convergence or max iterations

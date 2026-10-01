@@ -196,6 +196,9 @@ cfd_status_t run_simulation_step(simulation_data* sim_data) {
         return CFD_ERROR_INVALID;
     }
 
+    /* Stats describe this call only: a call refused before dispatch would
+     * otherwise leave the previous one's behind. */
+    sim_data->last_stats = ns_solver_stats_default();
     cfd_status_t status = solver_step(sim_data->solver, sim_data->field, sim_data->grid,
                                        &sim_data->params, &sim_data->last_stats);
     if (status != CFD_SUCCESS) {
@@ -217,6 +220,11 @@ cfd_status_t run_simulation_solve(simulation_data* sim_data) {
         return CFD_ERROR_INVALID;
     }
 
+    /* Reset first: current_time advances below even on failure, by the
+     * iterations a failed solve did run, and a call refused before dispatch
+     * (a bad dt or viscous scheme) runs none, so the previous call's stats
+     * must not be counted again. */
+    sim_data->last_stats = ns_solver_stats_default();
     cfd_status_t status = solver_solve(sim_data->solver, sim_data->field, sim_data->grid,
                                         &sim_data->params, &sim_data->last_stats);
 

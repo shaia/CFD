@@ -217,6 +217,15 @@ void test_gpu_solver_step_direct(void) {
     status = gpu_solver_step(ctx, g, &params, &stats);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
 
+    // A zero, negative or non-finite dt is refused: this entry point bypasses
+    // solver_step(), so it has its own check
+    const double bad_dts[] = {0.0, -1e-4, NAN, INFINITY};
+    for (size_t k = 0; k < sizeof(bad_dts) / sizeof(bad_dts[0]); k++) {
+        ns_solver_params_t bad = params;
+        bad.dt = bad_dts[k];
+        TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, gpu_solver_step(ctx, g, &bad, &stats));
+    }
+
     // Download results
     status = gpu_solver_download(ctx, field);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);

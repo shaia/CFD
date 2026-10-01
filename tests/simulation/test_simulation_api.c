@@ -1,5 +1,7 @@
 #include "cfd/api/simulation_api.h"
 #include "cfd/core/cfd_init.h"
+#include "cfd/core/gpu_device.h"
+#include "cfd/core/grid.h"
 #include "cfd/io/output_registry.h"
 #include "unity.h"
 #include <math.h>
@@ -280,6 +282,111 @@ void test_run_simulation_solve_uses_params_dt(void) {
     free_simulation(sim);
 }
 
+/* A step of zero, a negative step or a NaN step is refused before it reaches
+ * a solver: zero left current_time frozen, a negative dt integrated backwards
+ * and NaN poisoned every field without an error. */
+static const double BAD_DTS[] = {0.0, -1e-3, NAN, INFINITY};
+#define NUM_BAD_DTS (sizeof(BAD_DTS) / sizeof(BAD_DTS[0]))
+
+void test_run_simulation_rejects_bad_dt(void) {
+    simulation_data* sim =
+        init_simulation_with_solver(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, "projection");
+    TEST_ASSERT_NOT_NULL(sim);
+
+    sim->params.max_iter = 3;
+    for (size_t k = 0; k < NUM_BAD_DTS; k++) {
+        /* A good solve immediately before each refused one, so the refused call
+         * has earlier stats it could reuse; nothing in between resets them. */
+        sim->params.dt = 1e-3;
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, run_simulation_solve(sim));
+        const double t0 = sim->current_time;
+        TEST_ASSERT_TRUE(sim->last_stats.iterations > 0);
+
+        sim->params.dt = BAD_DTS[k];
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, run_simulation_solve(sim));
+        TEST_ASSERT_EQUAL_DOUBLE(t0, sim->current_time);
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, run_simulation_step(sim));
+        TEST_ASSERT_EQUAL_DOUBLE(t0, sim->current_time);
+    }
+    free_simulation(sim);
+}
+
+/* Every registered solver, since solver_step() and solver_solve() are the
+ * dispatchers each of them is reached through. */
+void test_solver_step_and_solve_reject_bad_dt(void) {
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+    grid* g = grid_create(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(9, 9, 1);
+    TEST_ASSERT_NOT_NULL(g);
+    TEST_ASSERT_NOT_NULL(field);
+    grid_initialize_uniform(g);
+
+    const char* names[32];
+    int count = cfd_registry_list(registry, names, 32);
+    int checked = 0;
+    for (int s = 0; s < count; s++) {
+        ns_solver_t* slv = cfd_solver_create(registry, names[s]);
+        if (!slv) {
+            continue;
+        }
+        ns_solver_params_t params = ns_solver_params_default();
+        cfd_status_t init_status = solver_init(slv, g, &params);
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
+            solver_destroy(slv); /* backend not available here */
+            continue;
+        }
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, init_status, names[s]);
+        for (size_t k = 0; k < NUM_BAD_DTS; k++) {
+            params.dt = BAD_DTS[k];
+            ns_solver_stats_t stats = ns_solver_stats_default();
+            TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_ERROR_INVALID,
+                                          solver_step(slv, field, g, &params, &stats), names[s]);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_ERROR_INVALID,
+                                          solver_solve(slv, field, g, &params, &stats), names[s]);
+        }
+        solver_destroy(slv);
+        checked++;
+    }
+    TEST_ASSERT_TRUE(checked > 0);
+    flow_field_destroy(field);
+    grid_destroy(g);
+    cfd_registry_destroy(registry);
+}
+
+/* The exported GPU entry points reach the kernels without solver_step(). Without
+ * CUDA the stubs refuse everything, so only "not a success" can be asserted. */
+void test_exported_gpu_entry_points_reject_bad_dt(void) {
+    grid* g = grid_create(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    flow_field* field = flow_field_create(9, 9, 1);
+    TEST_ASSERT_NOT_NULL(g);
+    TEST_ASSERT_NOT_NULL(field);
+    grid_initialize_uniform(g);
+    gpu_config_t config = gpu_config_default();
+    int have_gpu = gpu_is_available();
+
+    for (size_t k = 0; k < NUM_BAD_DTS; k++) {
+        ns_solver_params_t params = ns_solver_params_default();
+        params.dt = BAD_DTS[k];
+        cfd_status_t results[] = {
+            solve_navier_stokes_gpu(field, g, &params, &config),
+            solve_projection_method_gpu(field, g, &params, &config),
+            solve_rk2_method_gpu(field, g, &params, &config),
+            solve_rk4_method_gpu(field, g, &params, &config),
+        };
+        for (size_t r = 0; r < sizeof(results) / sizeof(results[0]); r++) {
+            if (have_gpu) {
+                TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, results[r]);
+            } else {
+                TEST_ASSERT_NOT_EQUAL(CFD_SUCCESS, results[r]);
+            }
+        }
+    }
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
 void test_run_simulation_step_updates_stats(void) {
     cfd_status_t status = run_simulation_step(test_sim);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
@@ -543,6 +650,9 @@ int main(void) {
     RUN_TEST(test_run_simulation_step_advances_time);
     RUN_TEST(test_run_simulation_step_uses_params_dt);
     RUN_TEST(test_run_simulation_solve_uses_params_dt);
+    RUN_TEST(test_run_simulation_rejects_bad_dt);
+    RUN_TEST(test_solver_step_and_solve_reject_bad_dt);
+    RUN_TEST(test_exported_gpu_entry_points_reject_bad_dt);
     RUN_TEST(test_run_simulation_step_updates_stats);
     RUN_TEST(test_run_simulation_step_null_sim_no_crash);
     RUN_TEST(test_simulation_get_stats_returns_stats);

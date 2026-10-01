@@ -8,6 +8,7 @@
 #include "cfd/io/vtk_output.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -83,6 +84,129 @@ void test_output_directory_creation(void) {
     // Clean up
     rmdir(nested_test_dir);
     rmdir(test_dir);
+}
+
+/* Every missing parent is created, as with mkdir -p: the examples write under
+ * ../../artifacts and failed when that directory did not exist yet. */
+void test_ensure_directory_creates_missing_parents(void) {
+    char base[256];
+    char level1[sizeof(base) + 16];
+    char level2[sizeof(base) + 32];
+    char level3[sizeof(base) + 48];
+    make_artifacts_path(base, sizeof(base), "mkdir_p");
+    snprintf(level1, sizeof(level1), "%s/a", base);
+    snprintf(level2, sizeof(level2), "%s/a/b", base);
+    snprintf(level3, sizeof(level3), "%s/a/b/c/", base); /* trailing separator */
+
+    rmdir(level3);
+    rmdir(level2);
+    rmdir(level1);
+    rmdir(base);
+    TEST_ASSERT_FALSE(file_exists(base));
+
+    TEST_ASSERT_TRUE(ensure_directory_exists(level3));
+    TEST_ASSERT_TRUE(file_exists(level3));
+    TEST_ASSERT_TRUE(ensure_directory_exists(level3)); /* existing is success */
+
+    rmdir(level3);
+    rmdir(level2);
+    rmdir(level1);
+    rmdir(base);
+}
+
+/* On POSIX a backslash is part of a name, not a separator: "base/a\b" is one
+ * directory "a\b" under base, and no "base/a" may appear. */
+void test_ensure_directory_backslash_is_a_name_on_posix(void) {
+#ifdef _WIN32
+    TEST_IGNORE_MESSAGE("backslash is a separator on Windows");
+#else
+    char base[256];
+    char named[sizeof(base) + 16];
+    char split[sizeof(base) + 16];
+    make_artifacts_path(base, sizeof(base), "mkdir_bs");
+    snprintf(named, sizeof(named), "%s/a\\b", base);
+    snprintf(split, sizeof(split), "%s/a", base);
+    rmdir(named);
+    rmdir(split);
+    rmdir(base);
+
+    TEST_ASSERT_TRUE(ensure_directory_exists(named));
+    TEST_ASSERT_TRUE(file_exists(named));
+    TEST_ASSERT_FALSE(file_exists(split));
+
+    rmdir(named);
+    rmdir(base);
+#endif
+}
+
+#ifdef _WIN32
+/* Absolute path of an artifacts subdirectory, "C:\...\<name>". */
+static int windows_abs_artifacts(char* out, size_t n, const char* name) {
+    char rel[256];
+    make_artifacts_path(rel, sizeof(rel), name);
+    return _fullpath(out, rel, n) != NULL;
+}
+#endif
+
+/* An absolute drive path ("C:\...") creates every level below the root. This
+ * checks the result, not the skip itself: "C:" names the drive's current
+ * directory, which exists, so the call would succeed without the skip too. */
+void test_ensure_directory_drive_letter_root(void) {
+#ifndef _WIN32
+    TEST_IGNORE_MESSAGE("drive letters exist only on Windows");
+#else
+    char base[512];
+    char mid[sizeof(base) + 8];
+    char leaf[sizeof(base) + 8];
+    TEST_ASSERT_TRUE(windows_abs_artifacts(base, sizeof(base), "mkdir_drive"));
+    TEST_ASSERT_TRUE_MESSAGE(base[1] == ':', base);
+    snprintf(mid, sizeof(mid), "%s\\a", base);
+    snprintf(leaf, sizeof(leaf), "%s\\a\\b", base);
+    rmdir(leaf);
+    rmdir(mid);
+    rmdir(base);
+    TEST_ASSERT_FALSE(file_exists(base));
+
+    TEST_ASSERT_TRUE(ensure_directory_exists(leaf));
+    TEST_ASSERT_TRUE(file_exists(leaf));
+
+    rmdir(leaf);
+    rmdir(mid);
+    rmdir(base);
+#endif
+}
+
+/* A UNC server and share ("\\localhost\C$") are skipped: neither can be made
+ * with mkdir, so treating either as a level to create fails the whole call. */
+void test_ensure_directory_unc_root(void) {
+#ifndef _WIN32
+    TEST_IGNORE_MESSAGE("UNC paths exist only on Windows");
+#else
+    char base[512];
+    char mid[sizeof(base) + 8];
+    char leaf[sizeof(base) + 8];
+    char share[32];
+    char unc_leaf[sizeof(base) + 32];
+    TEST_ASSERT_TRUE(windows_abs_artifacts(base, sizeof(base), "mkdir_unc"));
+    snprintf(share, sizeof(share), "\\\\localhost\\%c$", base[0]);
+    if (!file_exists(share)) {
+        TEST_IGNORE_MESSAGE("administrative share \\\\localhost\\<drive>$ not reachable");
+    }
+    snprintf(mid, sizeof(mid), "%s\\a", base);
+    snprintf(leaf, sizeof(leaf), "%s\\a\\b", base);
+    snprintf(unc_leaf, sizeof(unc_leaf), "%s%s\\a\\b", share, base + 2); /* drop "C:" */
+    rmdir(leaf);
+    rmdir(mid);
+    rmdir(base);
+    TEST_ASSERT_FALSE(file_exists(base));
+
+    TEST_ASSERT_TRUE(ensure_directory_exists(unc_leaf));
+    TEST_ASSERT_TRUE(file_exists(leaf));
+
+    rmdir(leaf);
+    rmdir(mid);
+    rmdir(base);
+#endif
 }
 
 // Test that VTK output files are created in correct locations
@@ -339,6 +463,10 @@ void test_run_directory_rejects_cache_overflow(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_output_directory_creation);
+    RUN_TEST(test_ensure_directory_creates_missing_parents);
+    RUN_TEST(test_ensure_directory_backslash_is_a_name_on_posix);
+    RUN_TEST(test_ensure_directory_drive_letter_root);
+    RUN_TEST(test_ensure_directory_unc_root);
     RUN_TEST(test_vtk_output_paths);
     RUN_TEST(test_solver_output_paths);
     RUN_TEST(test_no_scattered_output);
