@@ -252,6 +252,11 @@ stays O(dt), from explicit convection and non-incremental Chorin splitting. See
 - [ ] Second order overall: AB2/CN with incremental pressure correction
 - [ ] BDF2 (backward differentiation)
 - [ ] Adaptive time stepping with error control
+- [ ] Central-convection stability limit in the `ns_dt_*` helpers. Forward Euler with central
+      convection needs dt below about 2 nu_eff/|u|^2, which neither the CFL nor the diffusion
+      bound covers; the Re_tau = 395 channel went unstable at 1.8e-3 with both satisfied. The
+      plain bound is about 3x too strict there (wall damping), so it needs a sharper estimate
+      before it can gate dt
 
 ### 1.6 Restart / Checkpoint (P1)
 
