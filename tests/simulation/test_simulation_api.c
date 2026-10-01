@@ -293,17 +293,19 @@ void test_run_simulation_rejects_bad_dt(void) {
         init_simulation_with_solver(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, "projection");
     TEST_ASSERT_NOT_NULL(sim);
 
-    /* A good solve first, so a refused call has earlier stats it could reuse */
-    sim->params.dt = 1e-3;
     sim->params.max_iter = 3;
-    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, run_simulation_solve(sim));
-    const double t0 = sim->current_time;
-    TEST_ASSERT_TRUE(t0 > 0.0);
-
     for (size_t k = 0; k < NUM_BAD_DTS; k++) {
+        /* A good solve immediately before each refused one, so the refused call
+         * has earlier stats it could reuse; nothing in between resets them. */
+        sim->params.dt = 1e-3;
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, run_simulation_solve(sim));
+        const double t0 = sim->current_time;
+        TEST_ASSERT_TRUE(sim->last_stats.iterations > 0);
+
         sim->params.dt = BAD_DTS[k];
-        TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, run_simulation_step(sim));
         TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, run_simulation_solve(sim));
+        TEST_ASSERT_EQUAL_DOUBLE(t0, sim->current_time);
+        TEST_ASSERT_EQUAL_INT(CFD_ERROR_INVALID, run_simulation_step(sim));
         TEST_ASSERT_EQUAL_DOUBLE(t0, sim->current_time);
     }
     free_simulation(sim);
@@ -330,10 +332,12 @@ void test_solver_step_and_solve_reject_bad_dt(void) {
             continue;
         }
         ns_solver_params_t params = ns_solver_params_default();
-        if (solver_init(slv, g, &params) != CFD_SUCCESS) {
+        cfd_status_t init_status = solver_init(slv, g, &params);
+        if (init_status == CFD_ERROR_UNSUPPORTED) {
             solver_destroy(slv); /* backend not available here */
             continue;
         }
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_SUCCESS, init_status, names[s]);
         for (size_t k = 0; k < NUM_BAD_DTS; k++) {
             params.dt = BAD_DTS[k];
             ns_solver_stats_t stats = ns_solver_stats_default();
