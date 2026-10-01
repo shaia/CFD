@@ -86,11 +86,16 @@ static void channel_body_force(double x, double y, double z, double t, void* ctx
     *sw = 0.0;
 }
 
-/* Largest |cur[k] - prev[k]| over n points. */
+/* Largest |cur[k] - prev[k]| over n points; INFINITY if any difference is not
+ * finite, which fmax() would otherwise drop in favour of the finite operand. */
 static double max_change(const double* cur, const double* prev, size_t n) {
     double change = 0.0;
     for (size_t k = 0; k < n; k++) {
-        change = fmax(change, fabs(cur[k] - prev[k]));
+        double d = fabs(cur[k] - prev[k]);
+        if (!isfinite(d)) {
+            return INFINITY;
+        }
+        change = fmax(change, d);
     }
     return change;
 }
@@ -211,6 +216,10 @@ int main(int argc, char* argv[]) {
 
         double residual = fmax(max_change(field->u, u_prev, total),
                                max_change(field->v, v_prev, total)) / dt;
+        if (!isfinite(residual)) {
+            fprintf(stderr, "Velocity became non-finite at step %d\n", step);
+            break;
+        }
         if (step % print_interval == 0) {
             printf("  Step %6d: max |du/dt| = %.2e, time = %.2f s\n",
                    step, residual, step * dt);

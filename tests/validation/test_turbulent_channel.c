@@ -200,11 +200,16 @@ static void apply_channel_bc(flow_field* field) {
     }
 }
 
-/* Largest |cur[k] - prev[k]| over n points. */
+/* Largest |cur[k] - prev[k]| over n points; INFINITY if any difference is not
+ * finite, which fmax() would otherwise drop in favour of the finite operand. */
 static double max_change(const double* cur, const double* prev, size_t n) {
     double change = 0.0;
     for (size_t k = 0; k < n; k++) {
-        change = fmax(change, fabs(cur[k] - prev[k]));
+        double d = fabs(cur[k] - prev[k]);
+        if (!isfinite(d)) {
+            return INFINITY;
+        }
+        change = fmax(change, d);
     }
     return change;
 }
@@ -295,6 +300,7 @@ static void run_channel(turbulence_model_t model, const char* label) {
 
         residual = fmax(max_change(field->u, u_prev, total),
                         max_change(field->v, v_prev, total)) / params.dt;
+        TEST_ASSERT_TRUE_MESSAGE(isfinite(residual), "velocity became non-finite");
         if (residual < CH_STEADY_RATE && step > min_steps) {
             converged = 1;
             break;
