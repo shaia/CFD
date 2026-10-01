@@ -194,6 +194,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     int step = 0;
+    int converged = 0;
     for (step = 0; step < max_steps; step++) {
         apply_channel_bc(field);
         memcpy(u_prev, field->u, total * sizeof(double));
@@ -216,11 +217,16 @@ int main(int argc, char* argv[]) {
         }
         if (residual < steady_rate && step > min_steps) {
             printf("  Converged at step %d (max |du/dt| %.2e)\n", step, residual);
+            converged = 1;
             break;
         }
     }
     free(u_prev);
     free(v_prev);
+    if (!converged) {
+        fprintf(stderr, "\nNo steady state after %d steps: the profile below is NOT "
+                        "converged, and the exit status is 1.\n", step);
+    }
 
     /* Report u+ vs the log law along the bottom half of the channel */
     size_t i_mid = nx / 2;
@@ -249,5 +255,5 @@ int main(int argc, char* argv[]) {
     flow_field_destroy(field);
     grid_destroy(g);
     cfd_finalize();
-    return 0;
+    return converged ? 0 : 1;
 }

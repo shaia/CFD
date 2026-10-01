@@ -302,6 +302,9 @@ static void run_channel(turbulence_model_t model, const char* label) {
     }
     free(u_prev);
     free(v_prev);
+    /* Everything below grades the steady state; a run cut off by max_steps has
+     * not reached it, and the profile checks are loose enough to pass anyway. */
+    TEST_ASSERT_TRUE_MESSAGE(converged, "no steady state within max_steps");
 
     /* Assertion 2: recovered u_tau from both walls within 10% of exact 1.0 */
     size_t i_mid = CH_NX / 2;
