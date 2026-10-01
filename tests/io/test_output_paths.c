@@ -8,6 +8,7 @@
 #include "cfd/io/vtk_output.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -134,6 +135,76 @@ void test_ensure_directory_backslash_is_a_name_on_posix(void) {
     TEST_ASSERT_FALSE(file_exists(split));
 
     rmdir(named);
+    rmdir(base);
+#endif
+}
+
+#ifdef _WIN32
+/* Absolute path of an artifacts subdirectory, "C:\...\<name>". */
+static int windows_abs_artifacts(char* out, size_t n, const char* name) {
+    char rel[256];
+    make_artifacts_path(rel, sizeof(rel), name);
+    return _fullpath(out, rel, n) != NULL;
+}
+#endif
+
+/* An absolute drive path ("C:\...") creates every level below the root. This
+ * checks the result, not the skip itself: "C:" names the drive's current
+ * directory, which exists, so the call would succeed without the skip too. */
+void test_ensure_directory_drive_letter_root(void) {
+#ifndef _WIN32
+    TEST_IGNORE_MESSAGE("drive letters exist only on Windows");
+#else
+    char base[512];
+    char mid[sizeof(base) + 8];
+    char leaf[sizeof(base) + 8];
+    TEST_ASSERT_TRUE(windows_abs_artifacts(base, sizeof(base), "mkdir_drive"));
+    TEST_ASSERT_TRUE_MESSAGE(base[1] == ':', base);
+    snprintf(mid, sizeof(mid), "%s\\a", base);
+    snprintf(leaf, sizeof(leaf), "%s\\a\\b", base);
+    rmdir(leaf);
+    rmdir(mid);
+    rmdir(base);
+    TEST_ASSERT_FALSE(file_exists(base));
+
+    TEST_ASSERT_TRUE(ensure_directory_exists(leaf));
+    TEST_ASSERT_TRUE(file_exists(leaf));
+
+    rmdir(leaf);
+    rmdir(mid);
+    rmdir(base);
+#endif
+}
+
+/* A UNC server and share ("\\localhost\C$") are skipped: neither can be made
+ * with mkdir, so treating either as a level to create fails the whole call. */
+void test_ensure_directory_unc_root(void) {
+#ifndef _WIN32
+    TEST_IGNORE_MESSAGE("UNC paths exist only on Windows");
+#else
+    char base[512];
+    char mid[sizeof(base) + 8];
+    char leaf[sizeof(base) + 8];
+    char share[32];
+    char unc_leaf[sizeof(base) + 32];
+    TEST_ASSERT_TRUE(windows_abs_artifacts(base, sizeof(base), "mkdir_unc"));
+    snprintf(share, sizeof(share), "\\\\localhost\\%c$", base[0]);
+    if (!file_exists(share)) {
+        TEST_IGNORE_MESSAGE("administrative share \\\\localhost\\<drive>$ not reachable");
+    }
+    snprintf(mid, sizeof(mid), "%s\\a", base);
+    snprintf(leaf, sizeof(leaf), "%s\\a\\b", base);
+    snprintf(unc_leaf, sizeof(unc_leaf), "%s%s\\a\\b", share, base + 2); /* drop "C:" */
+    rmdir(leaf);
+    rmdir(mid);
+    rmdir(base);
+    TEST_ASSERT_FALSE(file_exists(base));
+
+    TEST_ASSERT_TRUE(ensure_directory_exists(unc_leaf));
+    TEST_ASSERT_TRUE(file_exists(leaf));
+
+    rmdir(leaf);
+    rmdir(mid);
     rmdir(base);
 #endif
 }
@@ -394,6 +465,8 @@ int main(void) {
     RUN_TEST(test_output_directory_creation);
     RUN_TEST(test_ensure_directory_creates_missing_parents);
     RUN_TEST(test_ensure_directory_backslash_is_a_name_on_posix);
+    RUN_TEST(test_ensure_directory_drive_letter_root);
+    RUN_TEST(test_ensure_directory_unc_root);
     RUN_TEST(test_vtk_output_paths);
     RUN_TEST(test_solver_output_paths);
     RUN_TEST(test_no_scattered_output);
