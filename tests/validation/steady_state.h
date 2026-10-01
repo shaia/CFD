@@ -15,11 +15,15 @@
 #include <math.h>
 #include <stddef.h>
 
-/* Largest |cur[k] - prev[k]| over n points. */
+/* Largest |cur[k] - prev[k]| over n points; INFINITY if any difference is not
+ * finite, since a NaN fails every comparison and would otherwise be skipped. */
 static inline double steady_max_change(const double* cur, const double* prev, size_t n) {
     double change = 0.0;
     for (size_t k = 0; k < n; k++) {
         double d = fabs(cur[k] - prev[k]);
+        if (!isfinite(d)) {
+            return INFINITY;
+        }
         if (d > change) {
             change = d;
         }
