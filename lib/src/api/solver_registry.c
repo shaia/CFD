@@ -475,6 +475,10 @@ cfd_status_t solver_step(ns_solver_t* solver, flow_field* field, const grid* gri
     if (scheme_status != CFD_SUCCESS) {
         return scheme_status;
     }
+    cfd_status_t dt_status = ns_check_dt(params);
+    if (dt_status != CFD_SUCCESS) {
+        return dt_status;
+    }
 
     /* Default; a solver that advances by a different step overrides it. */
     if (stats) {
@@ -510,6 +514,10 @@ cfd_status_t solver_solve(ns_solver_t* solver, flow_field* field, const grid* gr
         params, (solver->capabilities & NS_SOLVER_CAP_IMPLICIT_VISCOUS) != 0);
     if (scheme_status != CFD_SUCCESS) {
         return scheme_status;
+    }
+    cfd_status_t dt_status = ns_check_dt(params);
+    if (dt_status != CFD_SUCCESS) {
+        return dt_status;
     }
 
     /* Default; a solver that advances by a different step overrides it. */

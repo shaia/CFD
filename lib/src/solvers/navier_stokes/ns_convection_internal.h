@@ -153,6 +153,27 @@ static inline cfd_status_t ns_check_viscous_scheme(const ns_solver_params_t* par
 }
 
 /**
+ * Validate the time step.
+ *
+ * Every step and solve entry point takes dt from params, and none can do
+ * anything sensible with one that is not finite and positive: zero stalls the
+ * clock (and the projection's rho/dt pressure scaling divides by it), a negative
+ * step runs time backwards, and NaN poisons the field. Called from the
+ * solver_step / solver_solve dispatchers and from each exported GPU entry point,
+ * which bypass them.
+ *
+ * @param params  Solver parameters (NULL is left to the caller's own check)
+ * @return CFD_SUCCESS, or CFD_ERROR_INVALID
+ */
+static inline cfd_status_t ns_check_dt(const ns_solver_params_t* params) {
+    if (params && !(isfinite(params->dt) && params->dt > 0.0)) {
+        cfd_set_error(CFD_ERROR_INVALID, "params.dt must be finite and positive");
+        return CFD_ERROR_INVALID;
+    }
+    return CFD_SUCCESS;
+}
+
+/**
  * Validate the turbulence model at solver init.
  *
  * The GPU backends have no RANS kernels and were rejecting this per step, from

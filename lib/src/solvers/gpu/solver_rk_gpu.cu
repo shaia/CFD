@@ -347,6 +347,10 @@ static cfd_status_t solve_rk_gpu(flow_field* field, const grid* g,
     if (bc_status != CFD_SUCCESS) {
         return bc_status;
     }
+    cfd_status_t dt_status = ns_check_dt(params);
+    if (dt_status != CFD_SUCCESS) {
+        return dt_status;
+    }
     cfd_status_t ps_status = ns_check_pressure_solver(params, 0);
     if (ps_status != CFD_SUCCESS) {
         return ps_status;

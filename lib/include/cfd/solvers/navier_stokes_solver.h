@@ -595,7 +595,8 @@ CFD_LIBRARY_EXPORT void solver_destroy(ns_solver_t* solver);
 CFD_LIBRARY_EXPORT cfd_status_t solver_init(ns_solver_t* solver, const grid* grid,
                                             const ns_solver_params_t* params);
 
-/** Perform a single time step */
+/** Perform a single time step. Returns CFD_ERROR_INVALID unless params->dt is
+ * finite and positive; so does solver_solve(). */
 CFD_LIBRARY_EXPORT cfd_status_t solver_step(ns_solver_t* solver, flow_field* field, const grid* grid,
                                             const ns_solver_params_t* params, ns_solver_stats_t* stats);
 

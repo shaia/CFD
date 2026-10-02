@@ -22,7 +22,8 @@ extern "C" {
 #define PATH_SEPARATOR_CHAR '/'
 #endif
 
-// Create directory if it doesn't exist (returns 1 on success)
+// Create a directory and any missing parents, like `mkdir -p` (returns 1 if it
+// exists afterwards, 0 on failure or a path of 1024 characters or more)
 CFD_LIBRARY_EXPORT int ensure_directory_exists(const char* path);
 
 //=============================================================================

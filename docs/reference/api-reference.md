@@ -99,7 +99,7 @@ simulation_data* init_simulation_with_solver(size_t nx, size_t ny, size_t nz,
                                               double zmin, double zmax,
                                               const char* solver_type);
 
-// Simulate (dt is in sim_data->params.dt)
+// Simulate (dt is in sim_data->params.dt; CFD_ERROR_INVALID unless finite and > 0)
 cfd_status_t run_simulation_step(simulation_data* sim_data);
 cfd_status_t run_simulation_solve(simulation_data* sim_data);
 
@@ -238,7 +238,8 @@ if (cfd_backend_is_available(NS_SOLVER_BACKEND_CUDA)) {
 // Initialize solver
 cfd_status_t solver_init(ns_solver_t* solver, grid_t* grid, ns_solver_params_t* params);
 
-// Solve one step
+// Solve one step (CFD_ERROR_INVALID unless params->dt is finite and > 0,
+// here, in solver_solve() and in the exported GPU entry points)
 cfd_status_t solver_step(ns_solver_t* solver, flow_field* field, grid_t* grid,
                          ns_solver_params_t* params, ns_solver_stats_t* stats);
 
