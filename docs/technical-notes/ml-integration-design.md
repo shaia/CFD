@@ -450,10 +450,13 @@ worth its own investigation.
 
 **The correct gate is the turbulent channel, not the cavity.** `test_turbulent_channel` at
 Re_τ = 395 is the library's only genuinely turbulent validated case, and it is cheap: a
-16×21 grid, `dt = 0.002`, 5,000–40,000 steps, with a 600-second timeout. It also has a
-recorded baseline to beat — 2.9% (k-ε) and 3.1% (SA) `u_τ` error with the original linear/log
-wall function, which is again the default; 5.9% and 6.0% with the Spalding option (see *Findings filed
-separately*). Sweep `CH_RE_TAU` over
+16×21 grid, `dt = 0.001`, 10,000–100,000 steps, with a 600-second timeout. It also has a
+recorded baseline to beat — 2.6% `u_τ` error for both k-ε and SA with the original linear/log
+wall function, which is again the default; 5.7% for both with the Spalding option (see *Findings filed
+separately*). These are steady-state values: the figures first recorded here (2.9% and 3.1%;
+5.9% and 6.0%) were read at t ≈ 45 from a run at `dt = 0.002`, where the explicit scheme was
+unstable and the old kinetic-energy stop fired as the unstable mode set in
+(`docs/validation/turbulent-channel-dns.md`). Sweep `CH_RE_TAU` over
 {180, 395, 1000} and read the log-law errors the test already prints. If the error curve is
 flat across Re_τ, the channel carries no training signal and a separated-flow benchmark is a
 prerequisite — which is an honest answer, obtainable in minutes rather than hours.
@@ -472,6 +475,12 @@ With y+ pinned near 39.4 and CFL pinned at its tuned value:
 | 1000   | 52  | 1.7%              | 1.7%           | 3.1% / 3.0%      | 181 s   |
 | 1500   | 77  | 1.7%              | 1.7%           | 3.3% / 2.7%      | 572 s   |
 | 2000   | 102 | 1.9%              | (timed out)    | 3.3%             | >900 s  |
+
+*Later correction.* These rows were taken at the stock `dt = 0.002` (scaled with `dy`) and the
+old kinetic-energy stop. At Re_tau = 395 that step was explicitly unstable and the stop fired
+at t ≈ 45 as the unstable mode set in; at steady state with `dt = 0.001` the `u_tau` error is
+2.6% for both models there, and 1.7% for both at Re_tau = 587. The rows above 590 were not
+re-run. The conclusion below, a flat error beyond Re_tau = 590, is unchanged.
 
 These runs, and the closure-correction results below, used the linear/log wall function,
 which is the default again. Selecting Spalding's law lowers the Re_tau = 395 `u_tau` by
@@ -813,7 +822,8 @@ wall shear 6.6% and the first-node epsilon 10%, and y+ in (11.63, 12.01) was unr
 Spalding's law was tried first, and the channel test got its own log-law inversion as the
 yardstick. It was not free on the channel: Spalding sits below the log law until
 y+ ~ 100, and at the first node (y+ = 39.5) that raises `u_tau` 3.1% for a given `u_p`, so
-the measured `u_tau` error moved from 2.9% to 5.9% (k-ε) and 3.1% to 6.0% (SA). Against
+the measured `u_tau` error moved from 2.9% to 5.9% (k-ε) and 3.1% to 6.0% (SA); at steady
+state, with the stable step, it is 2.6% to 5.7% for both. Against
 channel DNS the log law is the closer one from y+ ~ 20 on (u+ 0.7% under DNS at y+ = 40,
 Spalding 4.4%), and Spalding below y+ ~ 17. So the wall law is now a choice,
 `params.turb_bc.wall_law`: the log law is the default, with its switch moved to the

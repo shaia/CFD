@@ -23,9 +23,10 @@ node**. The model is then graded on reproducing the thing it was constructed to 
 Two observations show this concretely:
 
 - k-epsilon and Spalart-Allmaras — a two-equation and a one-equation model, structurally
-  very different — agreed on `u_tau` to **four significant figures** (0.9794 and 0.9834 at
-  Re_tau >= 590). When the choice of closure does not move the metric, the metric is not
-  measuring the closure.
+  very different — agree on `u_tau` to **four significant figures** at every Re_tau run
+  (0.9742 at 392.24, 0.9827 at 587.19). At steady state the first-node velocity is set by
+  the wall function, which both share. When the choice of closure does not move the
+  metric, the metric is not measuring the closure.
 - The residual deviation from the log law grew toward the outer edge of the probe window,
   which is exactly where the log law itself stops being valid and the wake region begins.
   Part of that "error" is real physics the log law does not describe, and cannot honestly
@@ -106,16 +107,28 @@ silently produced invalid results when it changed:
   Re_tau = 1000 it sat at `y+ = 100`, at the very top of it. `ny` now scales to hold
   `y+_first` at the stock grid's own value.
 - **`CH_DT` (time step).** Refining the grid shrinks `dy`, so a fixed `dt` drives the
-  convective CFL up with it — from ~0.3 at `ny = 21` to ~1.5 at `ny = 102`, where the
-  explicit scheme simply fails. `dt` now scales with `dy`, and the step budgets scale
-  inversely so physical time is preserved.
-- **`CH_STEADY_TOL`** follows from the second: the steady-state test compares a *per-step*
-  relative change in kinetic energy, so scaling `dt` would have made it easier to satisfy
-  and stopped refined runs less converged. The threshold scales with `dt` to remain a bound
-  on the rate of change.
+  convective CFL up with it — at the former 2e-3 step, from ~0.3 at `ny = 21` to ~1.5 at
+  `ny = 102`, where the explicit scheme simply fails. `dt` now scales with `dy`, and the
+  step budgets scale inversely so physical time is preserved.
 
-All three reduce to exactly their previous values at the default Reynolds number, so the
-stock run is bit-identical.
+Both reduce to their stock values at the default Reynolds number.
+
+### The stock step was unstable
+
+The stock `CH_DT` itself was 2e-3, and that is past a limit neither the CFL nor the
+diffusion bound covers: forward Euler with central convection needs dt below about
+2ν_eff/|u|², and here ν_t ≈ 0.1 with u ≈ 19.5 at the centreline. A sinuous mode (v
+largest on the centreline, u antisymmetric about it) grows from roundoff as about
+e^{0.86 t}: the top/bottom asymmetry is 1e-14 at t = 10 and 1e-5 at t = 36, and by t ≈ 44
+the profile is gone. It is numerical: at half or a quarter of the step the asymmetry stays
+at roundoff and both runs reach the same state, and upwind convection at 2e-3 is stable.
+The threshold lies between 1.5e-3 (stable) and 1.8e-3 (grows); `CH_DT` is now 1e-3.
+
+It went unseen because the old steady-state test, a per-step relative change in kinetic
+energy below 1e-6, fired near t = 45 just as the mode reached the profile. The test now
+stops when no velocity changes faster than 1e-3 per unit time (`CH_STEADY_RATE`), a rate
+that needs no rescaling with `dt`, and runs to t ≈ 64 at Re_tau = 395. Every figure below
+was measured at that state.
 
 This matters beyond tidiness: before these were fixed, a naive `Re_tau` sweep produced an
 apparent 3% -> 15% growth in closure error that was **entirely a numerical artifact** of
@@ -127,18 +140,18 @@ Measured in Release with AVX2, each case driven at its data set's true `Re_tau`:
 
 | Re_tau | model | `u+` RMS | `-uv+` RMS | `k+` RMS | nodes |
 | ------ | ----- | -------- | ---------- | -------- | ----- |
-| 392.24 | k-epsilon | 1.30% | 15.47% | 14.96% | 9 |
-| 392.24 | SA | 1.76% | 16.41% | n/a | 9 |
-| 587.19 | k-epsilon | 1.24% | 13.06% | 12.80% | 14 |
-| 587.19 | SA | 1.60% | 12.48% | n/a | 14 |
+| 392.24 | k-epsilon | 1.22% | 15.49% | 14.84% | 9 |
+| 392.24 | SA | 2.03% | 14.56% | n/a | 9 |
+| 587.19 | k-epsilon | 1.25% | 13.08% | 12.85% | 14 |
+| 587.19 | SA | 1.61% | 12.50% | n/a | 14 |
 
-> These figures were re-measured after #218 ("Fix the Krylov pressure operator,
-> and refuse Poisson configuration that cannot be honoured"), which changed the
-> converged velocity field and therefore the turbulence statistics. The effect is
-> confined to Re_tau = 392.24; the 587.19 rows are unchanged. Most striking is
-> Spalart-Allmaras at 392.24, whose shear-stress error fell from 28.73% to
-> 16.41% -- that outlier was a symptom of the pressure-operator defect, not of
-> the closure.
+> Re-measured at steady state with the stable step (above). The 392.24 rows had
+> been read at t ≈ 45, as the unstable mode set in: SA moves most, u+ 1.76% to
+> 2.03% and -uv+ 16.41% to 14.56%. The 587.19 rows move by at most 0.05 points.
+> Earlier, #218 ("Fix the Krylov pressure operator, and refuse Poisson
+> configuration that cannot be honoured") had brought SA's shear-stress error at
+> 392.24 down from 28.73%, a symptom of the pressure-operator defect, not of the
+> closure.
 
 **Reynolds-stress error is roughly ten times the mean-velocity error.** That is the headline
 and it is not a defect in this library — it is the well-known behaviour of linear
@@ -167,8 +180,8 @@ rather than being synthesised from something else.
    node falls below the wall function's valid band on any grid this coarse, so it is not
    usable here without a low-Re treatment.
 5. **Cost grows steeply with Re_tau**, because refining the grid shrinks `dt` and multiplies
-   the step count: roughly 9 s at Re_tau = 395 against several minutes by Re_tau = 1500. A
-   routine sweep should stop at Re_tau = 1000.
+   the step count: about 11 s for both models at Re_tau = 395 (64,000 steps each) and
+   105,000 steps each at Re_tau = 587. A routine sweep should stop at Re_tau = 1000.
 
 ## See Also
 

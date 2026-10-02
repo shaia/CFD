@@ -252,6 +252,11 @@ stays O(dt), from explicit convection and non-incremental Chorin splitting. See
 - [ ] Second order overall: AB2/CN with incremental pressure correction
 - [ ] BDF2 (backward differentiation)
 - [ ] Adaptive time stepping with error control
+- [ ] Central-convection stability limit in the `ns_dt_*` helpers. Forward Euler with central
+      convection needs dt below about 2 nu_eff/|u|^2, which neither the CFL nor the diffusion
+      bound covers; the Re_tau = 395 channel went unstable at 1.8e-3 with both satisfied. The
+      plain bound is about 3x too strict there (wall damping), so it needs a sharper estimate
+      before it can gate dt
 
 ### 1.6 Restart / Checkpoint (P1)
 
@@ -337,8 +342,8 @@ source via host callback). See CHANGELOG.
 **Done (2D, uniform grids):** standard k-ε and Spalart-Allmaras with wall functions on
 scalar/OMP/AVX2 backends, on the log law (default) or Spalding's law
 (`params.turb_bc.wall_law`); validated against turbulent channel flow at Re_τ = 395
-(u_τ error against the log law, log-law wall function: k-ε 2.9%, SA 3.3%; Spalding's:
-5.9%, 6.0%). GPU turbulence not yet implemented.
+(u_τ error against the log law at steady state: 2.6% for both k-ε and SA with the log-law
+wall function, 5.7% for both with Spalding's). GPU turbulence not yet implemented.
 
 ### 2.3 Compressible Flow (P2)
 
@@ -675,7 +680,7 @@ already warm-starts.
       default log law now switches at the crossing, and Spalding's smooth law is selectable
       via `params.turb_bc.wall_law`. Spalding was not made the default: at the usual
       first-node y+ ≈ 40 it puts u+ 4.4% under channel DNS against the log law's 0.7%, and
-      moves the channel u_tau error 2.9% → 5.9% (k-ε), 3.3% → 6.0% (SA). It is the better
+      moves the channel u_tau error from 2.6% to 5.7% for both k-ε and SA. It is the better
       model below y+ ≈ 17, e.g. near reattachment in separated flows.
       `test_turbulent_channel` keeps its own log-law inversion as the yardstick
 

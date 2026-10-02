@@ -1061,15 +1061,18 @@ of the model's own wall law, so the yardstick does not move with the model it gr
 
 | Model | Wall law | u_τ (recovered) | u_τ error | u+ at y+ = 39.5 | u+ at y+ = 79 |
 |-------|----------|-----------------|-----------|-----------------|---------------|
-| k-ε | log (default) | 0.971 | 2.9% | 0.5% | 2.4% |
-| SA  | log (default) | 0.967 | 3.3% | 0.6% | 3.5% |
-| k-ε | Spalding | 0.941 | 5.9% | 1.0% | 2.4% |
-| SA  | Spalding | 0.940 | 6.0% | 1.1% | 3.4% |
+| k-ε | log (default) | 0.974 | 2.6% | 0.4% | 2.5% |
+| SA  | log (default) | 0.974 | 2.6% | 0.4% | 3.5% |
+| k-ε | Spalding | 0.943 | 5.7% | 1.0% | 2.4% |
+| SA  | Spalding | 0.943 | 5.7% | 1.0% | 3.4% |
 
 Spalding's law sits below the log law at the first node (y+ = 39.5), imposing a 3.1% higher
-u_τ for a given u_p, so the steady first-node velocity drops 3.6% and the log-law yardstick
-reads it as a larger u_τ deficit. The test runs the default. The SA log-law figure was
-recorded as 3.1% before, from a Debug build; this Release build reads 3.3%.
+u_τ for a given u_p, so the steady first-node velocity drops 3.8% and the log-law yardstick
+reads it as a larger u_τ deficit. The test runs the default. The two closures recover the
+same u_τ because at steady state the first-node velocity is set by the wall function they
+share, not by the closure. These figures are at steady state (dt = 1e-3, no velocity
+changing faster than 1e-3 per unit time); the earlier 2.9% / 3.3% / 5.9% / 6.0% were read at
+t ≈ 45 from an unstable run at dt = 2e-3 (`docs/validation/turbulent-channel-dns.md`).
 
 Source: `tests/validation/test_turbulent_channel.c` (ctest label `validation`).
 

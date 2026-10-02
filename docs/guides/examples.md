@@ -893,8 +893,10 @@ Part 3: Grid Refinement (Explicit Euler, dt=5e-04, T=0.5)
   exact steady friction velocity is u_τ = 1
 - Grid: 16×21 uniform, first-node y+ ≈ 40 (wall-function window 30–100)
 - Bottom/top faces: `BC_TYPE_NOSLIP` (wall functions); left/right periodic
-- Direct solver interface (registry + `solver_step`), marched to a
-  kinetic-energy residual below 1e-6
+- Direct solver interface (registry + `solver_step`) at dt = 1e-3, marched until
+  no velocity changes faster than 1e-3 per unit time. At 2e-3 forward Euler with
+  central convection is unstable here (dt must stay below about 2ν_eff/|u|²), and an
+  asymmetric mode grown from roundoff wrecks the profile by t ≈ 44
 
 **Run:**
 ```bash
@@ -906,25 +908,26 @@ Part 3: Grid Refinement (Explicit Euler, dt=5e-04, T=0.5)
 
 **Expected output (k-ε, log law):**
 ```
-  Converged at step 22815 (KE residual 9.89e-07)
+  Converged at step 64165 (max |du/dt| 1.00e-03)
 
-Log-law u_tau at the first node = 0.9709 (exact force balance: 1.0000)
+Log-law u_tau at the first node = 0.9742 (exact force balance: 1.0000)
 
         y+        u+   log-law       err
-      39.5     14.09     14.17      0.5%
-      79.0     16.24     15.86      2.4%
-     118.5     17.26     16.85      2.5%
+      39.5     14.10     14.17      0.4%
+      79.0     16.25     15.86      2.5%
+     118.5     17.29     16.85      2.6%
      ...
-     395.0     20.08     19.78      1.5%
+     395.0     20.07     19.78      1.5%
 
 Wrote turbulent_channel.vtk (open in ParaView to inspect nu_t/k).
 ```
-The SA variant converges similarly (u_τ ≈ 0.967, u+ within ~5% of the log law).
+The SA variant prints the same u_τ = 0.9742, with u+ within 4.7% of the log law: at
+steady state the first-node speed is set by the shared wall function, not the closure.
 
-With `spalding` the k-ε run prints u_τ = 0.9409 and u+ up to 4.2% above the log law.
+With `spalding` the k-ε run prints u_τ = 0.9427 and u+ up to 4.2% above the log law.
 Spalding's law sits below the log law for y+ < ~100, so the same wall shear needs a
-lower first-node speed (u_p 13.19 against 13.68). Against Moser-Kim-Mansour DNS, whose
-u+ is 14.27 at y+ = 39.5, that is 7.6% low where the log law is 4.1% low, which is why
+lower first-node speed (u_p 13.22 against 13.74). Against Moser-Kim-Mansour DNS, whose
+u+ is 14.27 at y+ = 39.5, that is 7.4% low where the log law is 3.7% low, which is why
 the log law is the default for first nodes at 30 ≤ y+ ≤ 100.
 
 ---

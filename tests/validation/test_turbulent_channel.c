@@ -49,10 +49,21 @@ static double g_re_tau = CH_RE_TAU;
 #define CH_NY     21
 #define CH_LX     4.0
 #define CH_LY     2.0
-#define CH_DT     0.002
-#define CH_MIN_STEPS   5000
-#define CH_MAX_STEPS   40000
-#define CH_STEADY_TOL  1e-6
+/* Forward Euler with central convection is unstable once dt passes about
+ * 2*nu_eff/|u|^2, a limit neither the CFL nor the diffusion bound covers. On the
+ * stock grid (nu_t ~ 0.1, u ~ 19.5 at the centreline) a sinuous mode grows from
+ * roundoff at dt = 1.8e-3 and breaks the profile's symmetry by t ~ 44 at 2e-3;
+ * 1.5e-3 is stable. 1e-3 keeps a margin. */
+#define CH_DT     0.001
+#define CH_MIN_STEPS   10000
+#define CH_MAX_STEPS   100000
+/* Steady when no velocity changes faster than this, in wall units (u_tau = 1,
+ * delta = 1) per unit time. The slowest mode relaxes as exp(-0.094 t), so the
+ * drift left at the stop is about CH_STEADY_RATE / 0.094, under 0.1% of u_p.
+ * A per-step relative kinetic-energy change was used before; it is small at
+ * any turning point of the energy, and stopped the 2e-3 run as the unstable
+ * mode set in. */
+#define CH_STEADY_RATE 1e-3
 
 /* Wall-function validity requires the first interior node to sit in 30 < y+ < 100.
  * On a uniform grid y+_first = (CH_LY / (ny - 1)) * Re_tau, so a FIXED ny makes y+
@@ -107,11 +118,11 @@ static void channel_select_dns(double re_tau) {
     }
 }
 
-/* CH_DT is the stable step for the stock 21-point grid (convective CFL ~0.3 at
- * u_bulk ~15). dy shrinks as ny grows with Re_tau, so a FIXED dt drives CFL up
- * with it -- 0.77 at ny=52, 1.14 at ny=77, 1.5 at ny=102, where the explicit
- * scheme simply fails. Scaling dt with dy holds CFL at the value the stock grid
- * was tuned for. Step budgets scale inversely so physical time is preserved.
+/* CH_DT is the step for the stock 21-point grid (see its definition). dy shrinks
+ * as ny grows with Re_tau, so a FIXED dt drives the convective CFL up with it
+ * -- at the former 2e-3 step, 0.77 at ny=52, 1.14 at ny=77, 1.5 at ny=102,
+ * where the explicit scheme simply fails. Scaling dt with dy holds CFL at the
+ * stock grid's value. Step budgets scale inversely so physical time is preserved.
  *
  * At the default ny the ratio is exactly 1, so dt and both step counts are
  * unchanged. */
@@ -122,17 +133,6 @@ static double channel_dy(void) {
 static double channel_dt(void) {
     const double dy_default = CH_LY / (double)(CH_NY - 1);
     return CH_DT * (channel_dy() / dy_default);
-}
-
-/* The steady-state test compares a PER-STEP relative change in kinetic energy
- * against CH_STEADY_TOL, so its meaning is tied to dt. Scaling dt with the grid
- * (above) shrinks the per-step change proportionally, which would make the
- * criterion easier -- a refined run would stop LESS converged than the stock
- * one, silently. Scaling the threshold the same way keeps it a bound on the
- * rate of change rather than on the change per step. At the default dt the
- * ratio is exactly 1, so the stock run is unaffected. */
-static double channel_steady_tol(void) {
-    return CH_STEADY_TOL * (channel_dt() / CH_DT);
 }
 
 static int channel_scale_steps(int steps) {
@@ -200,13 +200,18 @@ static void apply_channel_bc(flow_field* field) {
     }
 }
 
-static double compute_ke(const flow_field* field) {
-    double ke = 0.0;
-    size_t total = field->nx * field->ny;
-    for (size_t n = 0; n < total; n++) {
-        ke += field->u[n] * field->u[n] + field->v[n] * field->v[n];
+/* Largest |cur[k] - prev[k]| over n points; INFINITY if any difference is not
+ * finite, which fmax() would otherwise drop in favour of the finite operand. */
+static double max_change(const double* cur, const double* prev, size_t n) {
+    double change = 0.0;
+    for (size_t k = 0; k < n; k++) {
+        double d = fabs(cur[k] - prev[k]);
+        if (!isfinite(d)) {
+            return INFINITY;
+        }
+        change = fmax(change, d);
     }
-    return 0.5 * ke;
+    return change;
 }
 
 /* Eddy-viscosity correction under test, selected by argv[2]. The default keeps
@@ -273,28 +278,39 @@ static void run_channel(turbulence_model_t model, const char* label) {
     TEST_ASSERT_NOT_NULL(slv);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, solver_init(slv, g, &params));
 
-    /* March to steady state (kinetic-energy residual) */
-    double prev_ke = compute_ke(field);
+    /* March to steady state: no velocity changes faster than CH_STEADY_RATE */
+    size_t total = field->nx * field->ny;
+    double* u_prev = malloc(total * sizeof(double));
+    double* v_prev = malloc(total * sizeof(double));
+    TEST_ASSERT_NOT_NULL(u_prev);
+    TEST_ASSERT_NOT_NULL(v_prev);
+    double residual = 0.0;
     int converged = 0;
     int step = 0;
-    const double steady_tol = channel_steady_tol();
     const int max_steps = channel_scale_steps(CH_MAX_STEPS);
     const int min_steps = channel_scale_steps(CH_MIN_STEPS);
     for (step = 0; step < max_steps; step++) {
         apply_channel_bc(field);
+        memcpy(u_prev, field->u, total * sizeof(double));
+        memcpy(v_prev, field->v, total * sizeof(double));
         ns_solver_stats_t stats;
         cfd_status_t status = solver_step(slv, field, g, &params, &stats);
         TEST_ASSERT_EQUAL_MESSAGE(CFD_SUCCESS, status, "solver step failed");
+        apply_channel_bc(field); /* both sides of the difference after the BCs */
 
-        double ke = compute_ke(field);
-        double residual = fabs(ke - prev_ke) / (prev_ke + 1e-10);
-        prev_ke = ke;
-        if (residual < steady_tol && step > min_steps) {
+        residual = fmax(max_change(field->u, u_prev, total),
+                        max_change(field->v, v_prev, total)) / params.dt;
+        TEST_ASSERT_TRUE_MESSAGE(isfinite(residual), "velocity became non-finite");
+        if (residual < CH_STEADY_RATE && step > min_steps) {
             converged = 1;
             break;
         }
     }
-    apply_channel_bc(field);
+    free(u_prev);
+    free(v_prev);
+    /* Everything below grades the steady state; a run cut off by max_steps has
+     * not reached it, and the profile checks are loose enough to pass anyway. */
+    TEST_ASSERT_TRUE_MESSAGE(converged, "no steady state within max_steps");
 
     /* Assertion 2: recovered u_tau from both walls within 10% of exact 1.0 */
     size_t i_mid = CH_NX / 2;
@@ -303,9 +319,9 @@ static void run_channel(turbulence_model_t model, const char* label) {
     double ut_bot = log_law_u_tau(u_p_bot, y_p, nu);
     double ut_top = log_law_u_tau(u_p_top, y_p, nu);
 
-    printf("[%s] steps=%d converged=%d u_tau_bot=%.4f u_tau_top=%.4f "
+    printf("[%s] steps=%d converged=%d residual=%.2e u_tau_bot=%.4f u_tau_top=%.4f "
            "u_p=%.3f y+=%.1f\n",
-           label, step, converged, ut_bot, ut_top, u_p_bot, yplus_first);
+           label, step, converged, residual, ut_bot, ut_top, u_p_bot, yplus_first);
 
     TEST_ASSERT_TRUE_MESSAGE(fabs(ut_bot - 1.0) < 0.10,
                              "bottom-wall u_tau deviates >10% from force balance");

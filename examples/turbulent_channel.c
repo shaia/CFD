@@ -86,13 +86,18 @@ static void channel_body_force(double x, double y, double z, double t, void* ctx
     *sw = 0.0;
 }
 
-static double compute_ke(const flow_field* field) {
-    double ke = 0.0;
-    size_t total = field->nx * field->ny;
-    for (size_t n = 0; n < total; n++) {
-        ke += field->u[n] * field->u[n] + field->v[n] * field->v[n];
+/* Largest |cur[k] - prev[k]| over n points; INFINITY if any difference is not
+ * finite, which fmax() would otherwise drop in favour of the finite operand. */
+static double max_change(const double* cur, const double* prev, size_t n) {
+    double change = 0.0;
+    for (size_t k = 0; k < n; k++) {
+        double d = fabs(cur[k] - prev[k]);
+        if (!isfinite(d)) {
+            return INFINITY;
+        }
+        change = fmax(change, d);
     }
-    return 0.5 * ke;
+    return change;
 }
 
 int main(int argc, char* argv[]) {
@@ -101,11 +106,14 @@ int main(int argc, char* argv[]) {
     double Lx = 4.0, H = 2.0, delta = 1.0;
     double Re_tau = 395.0;
     double nu = 1.0 / Re_tau;
-    double dt = 0.002;
-    int max_steps = 40000;
-    int min_steps = 5000;
-    int print_interval = 2000;
-    double steady_tol = 1e-6;
+    /* Forward Euler with central convection also needs dt below about
+     * 2*nu_eff/|u|^2, which neither the CFL nor the diffusion limit covers:
+     * at 2e-3 this channel grows an asymmetric mode and loses its profile. */
+    double dt = 0.001;
+    int max_steps = 100000;
+    int min_steps = 10000;
+    int print_interval = 10000;
+    double steady_rate = 1e-3; /* max |du/dt| in wall units at steady state */
 
     turbulence_model_t model = TURB_MODEL_K_EPSILON;
     const char* model_name = "k-epsilon";
@@ -181,12 +189,21 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    /* March to steady state (kinetic-energy residual) */
+    /* March to steady state: no velocity changes faster than steady_rate */
     printf("Running simulation...\n");
-    double prev_ke = compute_ke(field);
+    size_t total = nx * ny;
+    double* u_prev = malloc(total * sizeof(double));
+    double* v_prev = malloc(total * sizeof(double));
+    if (!u_prev || !v_prev) {
+        fprintf(stderr, "Failed to allocate steady-state buffers\n");
+        return 1;
+    }
     int step = 0;
+    int converged = 0;
     for (step = 0; step < max_steps; step++) {
         apply_channel_bc(field);
+        memcpy(u_prev, field->u, total * sizeof(double));
+        memcpy(v_prev, field->v, total * sizeof(double));
 
         ns_solver_stats_t stats;
         cfd_status_t status = solver_step(slv, field, g, &params, &stats);
@@ -195,20 +212,30 @@ int main(int argc, char* argv[]) {
             break;
         }
 
-        double ke = compute_ke(field);
-        double residual = fabs(ke - prev_ke) / (prev_ke + 1e-10);
-        prev_ke = ke;
+        apply_channel_bc(field); /* compare both fields after the BCs */
 
+        double residual = fmax(max_change(field->u, u_prev, total),
+                               max_change(field->v, v_prev, total)) / dt;
+        if (!isfinite(residual)) {
+            fprintf(stderr, "Velocity became non-finite at step %d\n", step);
+            break;
+        }
         if (step % print_interval == 0) {
-            printf("  Step %6d: KE residual = %.2e, time = %.2f s\n",
+            printf("  Step %6d: max |du/dt| = %.2e, time = %.2f s\n",
                    step, residual, step * dt);
         }
-        if (residual < steady_tol && step > min_steps) {
-            printf("  Converged at step %d (KE residual %.2e)\n", step, residual);
+        if (residual < steady_rate && step > min_steps) {
+            printf("  Converged at step %d (max |du/dt| %.2e)\n", step, residual);
+            converged = 1;
             break;
         }
     }
-    apply_channel_bc(field);
+    free(u_prev);
+    free(v_prev);
+    if (!converged) {
+        fprintf(stderr, "\nNo steady state after %d steps: the profile below is NOT "
+                        "converged, and the exit status is 1.\n", step);
+    }
 
     /* Report u+ vs the log law along the bottom half of the channel */
     size_t i_mid = nx / 2;
@@ -237,5 +264,5 @@ int main(int argc, char* argv[]) {
     flow_field_destroy(field);
     grid_destroy(g);
     cfd_finalize();
-    return 0;
+    return converged ? 0 : 1;
 }
