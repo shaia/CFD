@@ -27,9 +27,13 @@
  * the scalar arithmetic unchanged, per the vector-loop + scalar-tail rule.
  *
  * Activations reuse the shared scalar cfd_nn_apply_activation() over the
- * finished outputs. They are elementwise and a vanishing fraction of the
- * FLOPs, and hand-vectorised transcendentals would add an approximation the
- * scalar backend does not make -- breaking agreement for no measurable gain.
+ * finished outputs, so every backend evaluates exactly the same activation
+ * function and the only cross-backend difference stays FMA rounding in the
+ * dense sums. That exactness has a measured cost: at closure size (3 -> 16
+ * tanh -> 16 tanh -> 1 softplus) the scalar transcendentals take about 85% of
+ * AVX2 inference time. Vectorising them would mean an approximation the
+ * scalar backend does not make; that trade is an open decision, recorded in
+ * docs/technical-notes/ml-integration-design.md section 2.3 and ROADMAP.md.
  */
 
 #define CFDNN_SIMD_CAT_(a, b) a##_##b
