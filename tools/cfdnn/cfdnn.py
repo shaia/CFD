@@ -344,8 +344,11 @@ def from_torch_sequential(model) -> list[Dense]:
     C side would not run, and dropping it silently is the "loads, runs, and
     predicts garbage" failure the format was designed against.
 
-    Call model.eval() first; it is asserted, because a training-mode
-    BatchNorm1d uses batch statistics the file cannot record.
+    Call model.eval() first. It is asserted on the container AND on every
+    child, because eval() sets the flag recursively but a caller can flip one
+    child back afterwards: a training-mode BatchNorm1d uses batch statistics
+    the file cannot record, and a training-mode Dropout masks randomly, so
+    either would export a model that differs from the one being run.
     """
     if getattr(model, "training", False):
         raise CfdnnError("CFD_ERROR_INVALID", "call model.eval() before export")
@@ -353,8 +356,11 @@ def from_torch_sequential(model) -> list[Dense]:
             "Softplus": ACT_SOFTPLUS, "LeakyReLU": ACT_LEAKY_RELU}
     layers: list[Dense] = []
     pending_act_ok = False  # True while the last Linear has no activation yet
-    for m in model:
+    for i, m in enumerate(model):
         kind = type(m).__name__
+        if getattr(m, "training", False):
+            raise CfdnnError("CFD_ERROR_INVALID",
+                             f"module {i} ({kind}) is in training mode; call model.eval()")
         if kind == "Linear":
             b = _np(m.bias) if getattr(m, "bias", None) is not None else None
             layers.append(Dense(_np(m.weight), b))

@@ -218,6 +218,17 @@ class TorchAdapterTests(unittest.TestCase):
         self.assertEqual(status_of(lambda: cfdnn.from_torch_sequential(seq)),
                          "CFD_ERROR_INVALID")
 
+    def test_a_child_left_in_training_mode_is_refused(self):
+        # eval() on the parent, then one child flipped back: the parent flag
+        # alone would pass, and the export would fold running stats the live
+        # model is not using, or drop a Dropout that is still masking.
+        rng = np.random.default_rng(6)
+        for child in (BatchNorm1d(2, rng), Dropout()):
+            child.training = True
+            seq = Seq([Linear(rng.normal(size=(2, 3))), child, ReLU()])
+            self.assertEqual(status_of(lambda: cfdnn.from_torch_sequential(seq)),
+                             "CFD_ERROR_INVALID", type(child).__name__)
+
     def test_batchnorm_after_activation_cannot_be_folded(self):
         rng = np.random.default_rng(5)
         seq = Seq([Linear(rng.normal(size=(2, 3))), ReLU(), BatchNorm1d(2, rng)])
