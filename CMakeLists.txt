@@ -337,6 +337,7 @@ if(BUILD_TESTS)
     # Energy equation tests
     add_executable(test_energy_solver tests/solvers/energy/test_energy_solver.c)
     add_executable(test_natural_convection tests/validation/test_natural_convection.c)
+    add_executable(test_steady_state tests/validation/test_steady_state.c)
 
     # Turbulence model tests
     add_executable(test_turbulence_kepsilon tests/solvers/turbulence/test_turbulence_kepsilon.c)
@@ -493,6 +494,7 @@ if(BUILD_TESTS)
     target_link_libraries(test_poiseuille_3d PRIVATE CFD::Library unity)
     target_link_libraries(test_energy_solver PRIVATE CFD::Library unity)
     target_link_libraries(test_natural_convection PRIVATE CFD::Library unity)
+    target_link_libraries(test_steady_state PRIVATE unity $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
     target_link_libraries(test_turbulence_kepsilon PRIVATE CFD::Library unity)
     target_link_libraries(test_turbulence_sa PRIVATE CFD::Library unity)
     target_link_libraries(test_turbulence_wall_functions PRIVATE CFD::Library unity)
@@ -691,6 +693,7 @@ if(BUILD_TESTS)
     # Energy equation tests
     add_test(NAME EnergySolverTest COMMAND test_energy_solver)
     add_test(NAME NaturalConvectionTest COMMAND test_natural_convection)
+    add_test(NAME SteadyStateHelperTest COMMAND test_steady_state)
 
     # Turbulence model tests
     add_test(NAME TurbulenceKEpsilonTest COMMAND test_turbulence_kepsilon)
