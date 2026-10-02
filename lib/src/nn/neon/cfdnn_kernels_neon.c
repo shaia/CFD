@@ -7,13 +7,16 @@
  *
  * Guarded on the architecture alone, not on CFD_ENABLE_OPENMP: the kernel is
  * single-threaded (see the matching note in avx2/cfdnn_kernels_avx2.c).
- * Elsewhere the table exports a NULL kernel and the dispatcher reports the
- * backend unavailable.
+ *
+ * AArch64 only. vfmaq_f32 is an AArch64 intrinsic, so a 32-bit ARM build with
+ * NEON (__ARM_NEON alone) takes the NULL-kernel branch instead of failing to
+ * compile; the dispatcher then reports the backend unavailable, as it does on
+ * every non-ARM platform. The build targets arm64 only, so this costs nothing.
  */
 
 #include "../cfdnn_internal.h"
 
-#if defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON) || defined(__ARM_NEON__)
+#if defined(__aarch64__) || defined(_M_ARM64)
 
 #include <arm_neon.h>
 
