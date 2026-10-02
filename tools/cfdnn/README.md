@@ -48,10 +48,20 @@ On the C side:
 
 ```c
 cfd_nn_model_t* model;   cfd_nn_model_load("closure.cfdnn", &model);
-cfd_nn_context_t* ctx;   cfd_nn_context_create(model, 4096, CFD_NN_BACKEND_AUTO, &ctx);
+cfd_nn_context_t* ctx;
+/* SIMD where the CPU has it, else scalar -- deliberately not AUTO, which would
+ * pick OpenMP on a build without AVX2/NEON. */
+if (cfd_nn_context_create(model, 256, CFD_NN_BACKEND_SIMD, &ctx) == CFD_ERROR_UNSUPPORTED) {
+    cfd_nn_context_create(model, 256, CFD_NN_BACKEND_SCALAR, &ctx);
+}
 params.turb_model   = TURB_MODEL_K_EPSILON;
 params.turb_closure = ctx;               /* not together with turb_nut_correction */
 ```
+
+The closure evaluates the network in tiles of 256 cells, so a larger capacity
+buys nothing. At that size an OpenMP context is slower than scalar: it opens a
+parallel region per layer per tile, and the region costs more than the work
+(design note §2.3).
 
 ## Regenerating the test fixture
 

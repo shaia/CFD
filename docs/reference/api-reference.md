@@ -329,6 +329,16 @@ typedef enum {
 } ns_nut_correction_t;
 ```
 
+`turb_closure` is a `cfd_nn_context_t*` from `cfd/nn/cfdnn.h`, built from a
+`.cfdnn` model with 3 inputs (`ln S*`, `ln Re_t`, `ln nu_t/nu`) and 1 output,
+the multiplier on `nu_t`. Models come from the Python exporter in
+`tools/cfdnn/`. The closure evaluates the network in tiles of 256 cells, so
+create the context with `CFD_NN_BACKEND_SIMD` (AVX2 or NEON, picked at runtime)
+and fall back to `CFD_NN_BACKEND_SCALAR` on `CFD_ERROR_UNSUPPORTED`. Avoid
+`CFD_NN_BACKEND_OMP` and `CFD_NN_BACKEND_AUTO`, which resolves to OMP on a
+build without SIMD: at a 256-cell tile the OpenMP region costs more than the
+work it parallelizes.
+
 `ns_viscous_scheme_t` selects how the momentum viscous term is advanced in time.
 The implicit schemes solve `(I − θ·ν·dt·∇²)δ = b` once per velocity component
 per step. That removes the diffusion limit on dt, and `compute_time_step()`
