@@ -258,12 +258,15 @@ void test_simd_matches_scalar_at_every_batch_size(void) {
     cfd_nn_context_t* simd_ctx = NULL;
     TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
                           cfd_nn_context_create(m, MAX_SWEEP, CFD_NN_BACKEND_SCALAR, &ref_ctx));
-    if (cfd_nn_context_create(m, MAX_SWEEP, CFD_NN_BACKEND_SIMD, &simd_ctx) != CFD_SUCCESS) {
+    /* Only an unavailable backend skips; any other failure is a regression. */
+    cfd_status_t st = cfd_nn_context_create(m, MAX_SWEEP, CFD_NN_BACKEND_SIMD, &simd_ctx);
+    if (st == CFD_ERROR_UNSUPPORTED) {
         cfd_nn_context_destroy(ref_ctx);
         cfd_nn_model_destroy(m);
         TEST_IGNORE_MESSAGE("SIMD backend not built or not supported by this CPU");
         return;
     }
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, st);
 
     static double in[MAX_SWEEP * WIDE_IN];
     static double ref[MAX_SWEEP * WIDE_OUT];
