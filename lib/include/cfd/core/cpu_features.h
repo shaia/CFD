@@ -21,20 +21,22 @@ extern "C" {
  */
 typedef enum {
     CFD_SIMD_NONE = 0,   /**< No SIMD or unknown architecture */
-    CFD_SIMD_AVX2 = 1,   /**< x86-64 AVX2 (256-bit, 4 doubles) */
+    CFD_SIMD_AVX2 = 1,   /**< x86-64 AVX2 + FMA3 (256-bit, 4 doubles) */
     CFD_SIMD_NEON = 2    /**< ARM NEON (128-bit, 2 doubles) */
 } cfd_simd_arch_t;
 
 /**
  * Detect the best available SIMD architecture at runtime.
  *
- * On x86/x64: Verifies both CPU and OS support for AVX2:
+ * On x86/x64: Verifies both CPU and OS support for AVX2 with FMA3:
  *   1. CPUID leaf 7 EBX bit 5 for CPU AVX2 support
- *   2. OSXSAVE enabled (CPUID leaf 1 ECX bit 27)
- *   3. XCR0 bits 1-2 set (OS saves AVX state on context switch)
- *   AVX2 is only reported if all three conditions are met. This prevents
- *   illegal instruction exceptions on systems where the OS hasn't enabled
- *   AVX state saving.
+ *   2. CPUID leaf 1 ECX bit 12 for FMA3, a separate capability that the
+ *      AVX2 kernels and the AVX2 build's compiler flags both rely on
+ *   3. OSXSAVE enabled (CPUID leaf 1 ECX bit 27)
+ *   4. XCR0 bits 1-2 set (OS saves AVX state on context switch)
+ *   AVX2 is only reported if all four conditions are met. This prevents
+ *   illegal instruction exceptions on CPUs or VMs that expose AVX2 without
+ *   FMA, and on systems where the OS hasn't enabled AVX state saving.
  *
  * On ARM64: NEON is always available (mandatory in ARMv8-A).
  *
@@ -47,9 +49,10 @@ typedef enum {
 CFD_LIBRARY_EXPORT cfd_simd_arch_t cfd_detect_simd_arch(void);
 
 /**
- * Check if AVX2 SIMD is available on the current CPU.
+ * Check if AVX2 SIMD, with the FMA3 it is paired with, is available on the
+ * current CPU.
  *
- * @return true if AVX2 is supported, false otherwise
+ * @return true if AVX2 and FMA3 are both supported, false otherwise
  */
 CFD_LIBRARY_EXPORT bool cfd_has_avx2(void);
 

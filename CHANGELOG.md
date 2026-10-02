@@ -518,6 +518,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **AVX2 is only reported when FMA3 is present too.** `cfd_detect_simd_arch()` checked the
+  AVX2 bit alone, but FMA3 is a separate CPUID capability: the AVX2 CG, BiCGSTAB, GMRES and
+  `.cfdnn` kernels call `_mm256_fmadd_*`, and GCC builds the AVX2 library with `-mfma`. A CPU
+  or VM exposing AVX2 without FMA would have selected those kernels and faulted with an
+  illegal instruction. It now reports `CFD_SIMD_NONE`, so SIMD requests return
+  `CFD_ERROR_UNSUPPORTED` and AUTO falls back. Pre-existing; found in review of the `.cfdnn`
+  SIMD kernels (`lib/src/core/cpu_features.c`).
+
 - **The turbulent channel runs at a stable step, to a real steady state.**
   `test_turbulent_channel` and `examples/turbulent_channel.c` stepped at dt = 2e-3, past the
   limit forward Euler with central convection needs, dt below about 2ν_eff/|u|² (ν_t ≈ 0.1,

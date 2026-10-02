@@ -165,8 +165,12 @@ static cfd_simd_arch_t detect_simd_arch_impl(void) {
         /* First check CPUID leaf 1 for OSXSAVE support (ECX bit 27) */
         __cpuid(cpuInfo, 1);
         int osxsave = (cpuInfo[2] & (1 << 27)) != 0;
+        /* FMA3 (ECX bit 12) is a separate capability from AVX2, and the AVX2
+         * build relies on it: kernels call _mm256_fmadd_* and the library is
+         * compiled with FMA enabled. */
+        int fma = (cpuInfo[2] & (1 << 12)) != 0;
 
-        if (osxsave) {
+        if (osxsave && fma) {
             /* OSXSAVE is enabled, now check XCR0 for AVX state support */
             /* XCR0 bits: bit 1 = SSE state, bit 2 = AVX state */
             /* Both must be set for AVX to work */
@@ -192,8 +196,10 @@ static cfd_simd_arch_t detect_simd_arch_impl(void) {
     /* First check CPUID leaf 1 for OSXSAVE support (ECX bit 27) */
     if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
         int osxsave = (ecx & (1 << 27)) != 0;
+        /* FMA3 (ECX bit 12): see the MSVC branch above. */
+        int fma = (ecx & (1 << 12)) != 0;
 
-        if (osxsave) {
+        if (osxsave && fma) {
             /* OSXSAVE is enabled, now check XCR0 for AVX state support */
             /* XCR0 bits: bit 1 = SSE state, bit 2 = AVX state */
             /* Both must be set for AVX to work */
