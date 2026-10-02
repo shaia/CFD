@@ -239,6 +239,7 @@ static void run_dvd_benchmark(const char* solver_name, double Ra, size_t n,
                              steady_max_change(field->v, v_prev, total) / u_scale);
         change = fmax(change, steady_max_change(field->T, T_prev, total) / DVD_DT_TEMP);
         double residual = change / (dt / time_scale);
+        TEST_ASSERT_TRUE_MESSAGE(isfinite(residual), "velocity or temperature became non-finite");
         steps_done = step + 1;
         if (step > DVD_MIN_STEPS && residual < DVD_STEADY_TOL) {
             converged = 1;
