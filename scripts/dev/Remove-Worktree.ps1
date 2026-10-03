@@ -12,9 +12,11 @@ This script removes the junction itself first (a non-recursive delete of the lin
 shared directory still has its contents, and only then runs `git worktree remove` (from the main
 worktree, so the script works from any directory). Before touching the link it refuses what git would
 refuse afterwards -- local changes without -Force, a locked worktree -- so a refusal never leaves a
-worktree without its tooling. It also refuses the main worktree, and any worktree containing another
-directory link at any depth, ignored or not, since git would follow that one too. -Force is passed
-through to `git worktree remove` (uncommitted or untracked changes are discarded).
+worktree without its tooling. It also refuses the main worktree, any worktree containing another
+directory link at any depth, ignored or not, since git would follow that one too, and a .claude link
+whose resolved target lies inside the worktree (git would delete it as ordinary contents) or contains
+it. -Force is passed through to `git worktree remove` (uncommitted or untracked changes are
+discarded).
 
 Paths are compared by identity (GetFinalPathNameByHandle), so aliases of the worktree or of the
 current directory are seen through, and the path given must be the worktree root itself. Before
@@ -182,12 +184,43 @@ $gitArgs = @('-C', $main, 'worktree', 'remove')
 if ($Force) { $gitArgs += '--force' }
 $gitArgs += $wt
 
+# Where the link really points, resolved through the link itself, so a relative or differently
+# spelled recorded target cannot hide it. Only "not found" means the target is gone; any other
+# failure refuses, since an unresolved target could not be protected. A target at or beneath the
+# worktree root survives the unlink but not git, which deletes it as ordinary worktree contents
+# (New-Worktree.ps1 -HarnessDir accepts such a path, and an ignored one passes the clean check);
+# a worktree inside its own target would take part of the target with it.
+$target = $null
+if ($isLink) {
+    $recorded = @($item.Target)[0]
+    try { $target = & $final $link }
+    catch {
+        $e = $_.Exception
+        while ($e.InnerException) { $e = $e.InnerException }
+        if (-not ($e -is [System.ComponentModel.Win32Exception] -and $e.NativeErrorCode -in 2, 3)) {
+            throw "refusing: cannot resolve where $link points ($($e.Message)); nothing was touched"
+        }
+    }
+    if ($target) {
+        $t = & $norm $target
+        if ($t -eq $w -or $t.StartsWith("$w/")) {
+            throw ("refusing: $link points inside the worktree being removed ($target), so git would " +
+                   "delete it as ordinary worktree contents; move that directory outside $wt and " +
+                   "re-link first. Nothing was touched")
+        }
+        if ($w.StartsWith("$t/")) {
+            throw ("refusing: $wt lies inside the directory its link points at ($target), so removing " +
+                   "the worktree would delete part of that directory. Nothing was touched")
+        }
+    }
+}
+
 # One confirmation for the whole operation, before either step: confirming the removal but not the
 # unlink would run git through the junction, and the reverse would strand the worktree untooled.
 $plan = "git $($gitArgs -join ' ')"
 if ($isLink) {
-    $target = @($item.Target)[0]
-    $plan = "remove the $($item.LinkType) $link (link only; $target is kept), then $plan"
+    $kept = if ($target) { "$target is kept" } else { "its target $recorded no longer exists" }
+    $plan = "remove the $($item.LinkType) $link (link only; $kept), then $plan"
 }
 if (-not $PSCmdlet.ShouldProcess($wt, $plan)) { return }
 
@@ -201,7 +234,7 @@ function Get-Inventory([string]$Dir) {
 
 if ($isLink) {
     # A link whose target is gone protects nothing and endangers nothing: just remove it.
-    $live = Test-Path -LiteralPath $target -PathType Container
+    $live = [bool]$target
     if ($live) {
         try { $before = Get-Inventory $target }
         catch { throw "refusing: $($_.Exception.Message); nothing was touched" }
@@ -226,7 +259,7 @@ if ($isLink) {
         Write-Host "unlinked: $link (target $target untouched, all $($before.Count) paths present)"
     }
     else {
-        Write-Host "unlinked: $link (its target $target no longer exists)"
+        Write-Host "unlinked: $link (its target $recorded no longer exists)"
     }
 }
 
