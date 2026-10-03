@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-03
+
 The turbulence release. RANS k-ε and Spalart-Allmaras models with wall functions, validated
 against channel DNS at Re_τ = 392 and 587, together with what they needed: geometric multigrid
 and GMRES(m) Poisson solvers, implicit viscous time integration, first-order upwind convection,
@@ -1044,7 +1046,8 @@ _Note: v0.0.4 was skipped due to release pipeline testing._
 - Basic boundary condition support
 - Unity testing framework integration
 
-[Unreleased]: https://github.com/shaia/CFD/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/shaia/CFD/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/shaia/CFD/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/shaia/CFD/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/shaia/CFD/compare/v0.1.6...v0.2.0
 [0.1.6]: https://github.com/shaia/CFD/compare/v0.1.5...v0.1.6

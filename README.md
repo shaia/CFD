@@ -6,7 +6,7 @@ A production-grade computational fluid dynamics (CFD) library in C for solving 2
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/shaia/CFD/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.x-orange)](https://github.com/shaia/CFD/releases)
+[![Version](https://img.shields.io/badge/version-0.4.x-orange)](https://github.com/shaia/CFD/releases)
 
 ## Features
 

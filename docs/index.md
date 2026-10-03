@@ -227,9 +227,9 @@ See [Architecture Guide](architecture/architecture.md) for:
 ## Version Information
 
 Current documentation corresponds to:
-- **Version:** 0.3.x
+- **Version:** 0.4.x
 - **Status:** Pre-release (approaching v1.0)
-- **Last Updated:** 2026-07-25
+- **Last Updated:** 2026-10-03
 
 ## Getting Help
 
