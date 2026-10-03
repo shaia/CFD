@@ -31,7 +31,40 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-$wt = (Resolve-Path -LiteralPath $Path).Path
+# Path identity, not spelling: the final path Windows reports for an open handle, with every
+# junction, symlink and differently spelled alias -- in the leaf or any ancestor -- resolved.
+if (-not ('CfdWorktreePath' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+public static class CfdWorktreePath {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security,
+                                             uint disposition, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern uint GetFinalPathNameByHandleW(SafeFileHandle handle, StringBuilder path, uint size,
+                                                 uint flags);
+    public static string Final(string path) {
+        // No access rights needed for the query; BACKUP_SEMANTICS lets CreateFile open a directory.
+        using (var h = CreateFileW(path, 0, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero)) {
+            if (h.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), path);
+            var sb = new StringBuilder(32768);
+            uint n = GetFinalPathNameByHandleW(h, sb, (uint)sb.Capacity, 0);
+            if (n == 0 || n >= sb.Capacity) throw new Win32Exception(Marshal.GetLastWin32Error(), path);
+            string s = sb.ToString();
+            if (s.StartsWith(@"\\?\UNC\")) return @"\\" + s.Substring(8);
+            return s.StartsWith(@"\\?\") ? s.Substring(4) : s;
+        }
+    }
+}
+'@
+}
+$final = { param($p) [CfdWorktreePath]::Final($p) }
+
+$wt = & $final (Resolve-Path -LiteralPath $Path).Path
 $gitDir = (git -C $wt rev-parse --absolute-git-dir 2>$null)
 $common = (git -C $wt rev-parse --path-format=absolute --git-common-dir 2>$null)
 if ($LASTEXITCODE -ne 0 -or -not $gitDir) { throw "$wt is not a git worktree" }
@@ -56,16 +89,27 @@ foreach ($line in $listing) {
     elseif ($block) { $entries[$block] += $line }
 }
 # git lists resolved paths, so look the worktree up by git's own name for it, not the typed path.
-$self = & $norm (git -C $wt rev-parse --show-toplevel)
-if ($LASTEXITCODE -ne 0 -or -not $entries.ContainsKey($self)) {
+# --show-toplevel also answers for a subdirectory, so $Path must BE that root: otherwise a
+# subdirectory's own .claude link could be removed before git rejected the path.
+$top = git -C $wt rev-parse --show-toplevel
+if ($LASTEXITCODE -ne 0 -or -not $top) { throw "git rev-parse failed for $wt; nothing was touched" }
+$self = & $norm $top
+if ((& $norm (& $final $top)) -ne (& $norm $wt)) {
+    throw "refusing: $Path is not the root of a worktree (that is $top); nothing was touched"
+}
+if (-not $entries.ContainsKey($self)) {
     throw "git does not list $wt as a worktree of this repository; nothing was touched"
 }
 
 # Windows cannot delete a directory a process is standing in: git would empty and unregister the
 # worktree, then fail on its top folder, after the link was gone. Refuse before touching anything.
-foreach ($here in @($PWD.ProviderPath, [Environment]::CurrentDirectory)) {
-    $h = & $norm $here
-    $w = & $norm $wt
+# Both locations are compared by final path, so an alias for the worktree or an ancestor of it
+# cannot hide that the shell is inside it.
+$w = & $norm $wt
+$places = @([Environment]::CurrentDirectory)
+if ($PWD.Provider.Name -eq 'FileSystem') { $places += $PWD.ProviderPath }
+foreach ($here in $places) {
+    $h = & $norm (& $final $here)
     if ($h -eq $w -or $h.StartsWith("$w/")) {
         throw "refusing: the current directory ($here) is inside $wt; cd out of it first"
     }
