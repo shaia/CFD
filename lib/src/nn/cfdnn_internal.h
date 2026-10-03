@@ -68,7 +68,7 @@ struct cfd_nn_model {
  * Implementations MUST accumulate over the input-feature axis in ascending
  * index order and MUST NOT reduce across SIMD lanes or threads: lanes and
  * threads carry distinct SAMPLES. That is what keeps OpenMP bit-identical to
- * scalar and keeps SIMD within FMA-contraction distance of it.
+ * scalar, and keeps SIMD's sums within FMA-contraction distance of it.
  */
 typedef void (*cfd_nn_dense_fn)(const cfd_nn_layer_t* l, size_t batch,
                                 const float* in, float* out, float* scratch);
@@ -93,9 +93,10 @@ extern const cfd_nn_backend_impl_t cfd_nn_impl_neon;
  *  when neither AVX2 nor NEON is usable. Its name is "avx2" or "neon". */
 const cfd_nn_backend_impl_t* cfd_nn_simd_impl(void);
 
-/* Shared activation, applied in place to n values. Defined once in the scalar
- * backend and reused by every other backend so the activation can never drift
- * between them. */
+/* Scalar activation, applied in place to n values. Defined once in the scalar
+ * backend; OpenMP uses it for everything, which is part of why OpenMP stays
+ * bit-identical. SIMD uses it for identity/ReLU/leaky ReLU and its scalar
+ * tail, and its own vector approximations for tanh/sigmoid/softplus. */
 void cfd_nn_apply_activation(cfd_nn_activation_t act, float param,
                              float* v, size_t n);
 

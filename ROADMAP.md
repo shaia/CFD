@@ -615,8 +615,9 @@ Pure-C inference with no runtime Python dependency (embedded/HPC friendly).
 - [x] SIMD kernels: AVX2/NEON from one template, vectorized across cells (lanes carry
       samples, so there is no cross-lane reduction), selected at runtime; AVX2 within
       3.4e-6 of scalar. NEON compiled but not yet run on hardware here
-- [ ] Vectorized `tanh`/`softplus`: at closure size the scalar transcendentals hold AVX2
-      to 1.36x over scalar, where the matrix work alone vectorizes 4.5x (design note §2.3)
+- [x] Vectorized `tanh`/`sigmoid`/`softplus` (Cephes `exp`/`log`, rational `tanh`; ≤4.3 ulp,
+      NaN-preserving): AVX2 is 6.9x over scalar on a closure-sized network, up from 1.6x
+      with scalar transcendentals (design note §2.3)
 - [ ] Architectures: MLP (priority), Conv2D (future), Fourier Neural Operator (future)
 - [x] Inference API (`cfd_nn_predict_batch`) + model lifecycle
 - [x] Correction seam at `turb_update_nu_t()`, reaching all three CPU backends, with the
