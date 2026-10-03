@@ -565,7 +565,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Spalart-Allmaras and the eddy viscosity in the momentum equation restarted from nothing, and
   the restarted run diverged from the continuous one at the first step. All four arrays are
   now stored, whether or not a model is active. N steps, a checkpoint and M more now match N+M
-  continuous steps bit for bit under k-epsilon and SA, on the scalar and AVX2 RK2 solvers.
+  continuous steps bit for bit under k-epsilon and SA on the scalar RK2 solver, and under
+  k-epsilon on the AVX2 one.
   Version-7 files are rejected as unsupported (`lib/src/io/checkpoint.c`,
   `tests/io/test_checkpoint.c`).
 
