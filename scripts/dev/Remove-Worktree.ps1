@@ -16,7 +16,11 @@ worktree without its tooling. It also refuses the main worktree, and any worktre
 directory link at any depth, ignored or not, since git would follow that one too. -Force is passed
 through to `git worktree remove` (uncommitted or untracked changes are discarded).
 
-Requires PowerShell 7: its recursive listing does not descend into links, which the link scan relies on.
+Paths are compared by identity (GetFinalPathNameByHandle), so aliases of the worktree or of the
+current directory are seen through, and the path given must be the worktree root itself. Before
+unlinking, it inventories the shared directory recursively and refuses if any part cannot be read;
+after unlinking it checks every path is still there, and stops before git if one is not.
+Requires PowerShell 7.
 
 .EXAMPLE
 .\scripts\dev\Remove-Worktree.ps1 ..\cfd-x
@@ -115,17 +119,42 @@ foreach ($here in $places) {
     }
 }
 
-# git's recursive delete follows a directory link at ANY depth, ignored ones included, so every
-# link but the root .claude is refused, wherever it is. PowerShell 7 lists links without descending
-# into them, so the scan itself never walks into a shared directory. A directory it cannot read
-# could hide one, so a scan error refuses too.
-$scanErrors = $null
-$nested = @(Get-ChildItem -LiteralPath $wt -Recurse -Directory -Force -Attributes ReparsePoint `
-                -ErrorAction SilentlyContinue -ErrorVariable scanErrors |
-            Where-Object { (& $norm $_.FullName) -ne (& $norm (Join-Path $wt '.claude')) })
-if ($scanErrors) {
-    throw "refusing: could not scan all of $wt for links ($($scanErrors[0].Exception.Message)); nothing was touched"
+# Every entry under a directory, recursively, including hidden and system ones. Links are returned
+# but never descended into, so a walk never leaves the tree it was given. A folder that cannot be
+# read throws: a skipped folder could hide a link, or a deletion. Explicit .NET enumeration, because
+# Get-ChildItem -Recurse silently skips a folder it may not list.
+function Get-Tree([string]$Dir) {
+    $opts = [System.IO.EnumerationOptions]::new()
+    $opts.IgnoreInaccessible = $false
+    $opts.AttributesToSkip = [System.IO.FileAttributes]::None
+    $out = [System.Collections.Generic.List[System.IO.FileSystemInfo]]::new()
+    $pending = [System.Collections.Generic.Stack[string]]::new()
+    $pending.Push($Dir)
+    try {
+        while ($pending.Count) {
+            foreach ($e in [System.IO.DirectoryInfo]::new($pending.Pop()).EnumerateFileSystemInfos('*', $opts)) {
+                $out.Add($e)
+                $a = $e.Attributes
+                if (($a -band [System.IO.FileAttributes]::Directory) -and
+                    -not ($a -band [System.IO.FileAttributes]::ReparsePoint)) {
+                    $pending.Push($e.FullName)
+                }
+            }
+        }
+    }
+    catch { throw "could not list all of $Dir ($(($_.Exception.InnerException ?? $_.Exception).Message))" }
+    return , $out
 }
+
+# git's recursive delete follows a directory link at ANY depth, ignored ones included, so every
+# link but the root .claude is refused, wherever it is.
+try { $tree = Get-Tree $wt }
+catch { throw "refusing: $($_.Exception.Message), so it cannot be checked for links; nothing was touched" }
+$rootLink = & $norm (Join-Path $wt '.claude')
+$nested = @($tree | Where-Object {
+        ($_.Attributes -band [System.IO.FileAttributes]::Directory) -and
+        ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -and
+        (& $norm $_.FullName) -ne $rootLink })
 if ($nested) {
     $rel = $nested | ForEach-Object { $_.FullName.Substring($wt.Length).TrimStart('\', '/') }
     throw (("refusing: $wt contains links besides .claude ({0}); git would delete what they point at. " +
@@ -161,17 +190,29 @@ if ($isLink) {
 }
 if (-not $PSCmdlet.ShouldProcess($wt, $plan)) { return }
 
+# Every relative path under the shared directory. A count could hide a nested deletion or a swapped
+# entry, and Get-Tree throws on any folder it cannot read, so two snapshots are always complete.
+function Get-Inventory([string]$Dir) {
+    $set = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($e in (Get-Tree $Dir)) { [void]$set.Add($e.FullName.Substring($Dir.Length).TrimStart('\', '/')) }
+    return , $set
+}
+
 if ($isLink) {
-    $before = @(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue).Count
+    try { $before = Get-Inventory $target }
+    catch { throw "refusing: $($_.Exception.Message); nothing was touched" }
     # Non-recursive RemoveDirectory on the link itself: deletes the reparse point, never the target.
     # Not cmd /c rmdir, which expands %VAR% even inside quotes and could hit another path.
     [System.IO.Directory]::Delete($link, $false)
     if (Test-Path -LiteralPath $link) { throw "could not remove the link $link; nothing else was touched" }
-    $after = @(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue).Count
-    if ($after -lt $before) {
-        throw "the shared directory $target lost entries ($before -> $after) while unlinking; stopping"
+    try { $after = Get-Inventory $target }
+    catch { throw "unlinked $link but $($_.Exception.Message), so it cannot be verified; stopping before git" }
+    $missing = @($before | Where-Object { -not $after.Contains($_) })
+    if ($missing) {
+        throw ("the shared directory $target lost {0} path(s) while unlinking ({1}); stopping before git" -f
+               $missing.Count, (($missing | Select-Object -First 5) -join ', '))
     }
-    Write-Host "unlinked: $link (target $target untouched, $after entries)"
+    Write-Host "unlinked: $link (target $target untouched, all $($before.Count) paths present)"
 }
 
 git @gitArgs
