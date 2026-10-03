@@ -208,9 +208,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Spalart-Allmaras wall distance measures to the wall parts of a face only, as distance
     to a line segment; a face with no segments gives the same distance as before.
   - Validation: `turbulence_bc_add_segment()` refuses a malformed segment and leaves the
-    config unchanged. `turbulence_apply_bcs()` re-checks hand-filled configs before touching
-    any field, and also refuses a k-ε DIRICHLET segment with no profile and `eps <= 0`, and a
-    profile that returns a negative or non-finite value.
+    config unchanged. Hand-filled configs are re-checked by solver init, by the turbulence
+    step (which reads segments for SA wall distance before the BCs run) and by
+    `turbulence_apply_bcs()`, each before touching any field. These checks also refuse a k-ε
+    DIRICHLET segment with no profile and `eps <= 0`. A profile that returns a negative or
+    non-finite value is refused by `turbulence_apply_bcs()`.
   - **Checkpoint format version 7.** Segments are stored except their profile callback,
     which `restore_simulation_checkpoint()` carries across like the other callbacks. A
     profiled DIRICHLET segment's values are stored as NaN, so a segment loaded without its

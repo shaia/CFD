@@ -183,8 +183,8 @@ static inline cfd_status_t ns_check_dt(const ns_solver_params_t* params) {
  *
  * @param params                       Solver parameters (NULL means defaults)
  * @param backend_supports_turbulence  Nonzero if this backend implements RANS
- * @return CFD_SUCCESS, CFD_ERROR_INVALID for an unknown model, or
- *         CFD_ERROR_UNSUPPORTED
+ * @return CFD_SUCCESS, CFD_ERROR_INVALID for an unknown model or a turbulence BC
+ *         segment turb_check_segments() refuses, or CFD_ERROR_UNSUPPORTED
  */
 static inline cfd_status_t ns_check_turbulence_model(const ns_solver_params_t* params,
                                                      int backend_supports_turbulence) {
@@ -211,7 +211,9 @@ static inline cfd_status_t ns_check_turbulence_model(const ns_solver_params_t* p
                       "AVX2 solvers only; the GPU backends have no RANS kernels");
         return CFD_ERROR_UNSUPPORTED;
     }
-    return CFD_SUCCESS;
+    /* At init as well as per step: a bad segment found by the first step's
+     * turbulence validation is found after the velocity has already advanced. */
+    return turb_check_segments(params);
 }
 
 /** Convective first derivatives of (u, v, w) at one grid point */

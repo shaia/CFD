@@ -185,9 +185,23 @@ cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
  */
 cfd_status_t turb_check_closure_config(const ns_solver_params_t* params);
 
+/**
+ * Validate params->turb_bc.segments: the count against NS_TURB_BC_MAX_SEGMENTS,
+ * every rule turbulence_bc_add_segment() applies, and, under k-epsilon, eps > 0
+ * on a DIRICHLET segment without a profile.
+ *
+ * Called by the shared step/BC validation, because the transport step reads the
+ * segments (SA wall distance) before the BCs run, and at solver init, so a bad
+ * segment is refused before any field is advanced.
+ *
+ * @return CFD_SUCCESS or CFD_ERROR_INVALID
+ */
+cfd_status_t turb_check_segments(const ns_solver_params_t* params);
+
 /** Shared argument/grid validation for the turbulence step (all backends):
- *  non-NULL args and fields, known model, 2D only, nx/ny >= 3, uniform
- *  spacing. Assumes turb_model != TURB_MODEL_NONE was already checked. */
+ *  non-NULL args and fields, known model, 2D only, nx/ny >= 3, valid
+ *  segments (turb_check_segments), uniform spacing. Assumes
+ *  turb_model != TURB_MODEL_NONE was already checked. */
 cfd_status_t turb_validate_step_args(const flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params);
 

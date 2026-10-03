@@ -196,6 +196,61 @@ static void turb_apply_algebraic_correction(flow_field* field, const grid* grid,
     }
 }
 
+static int is_nonnegative_finite(double v) {
+    return isfinite(v) && v >= 0.0;
+}
+
+/* The model-independent rules for one segment; see turbulence_bc_add_segment. */
+static cfd_status_t validate_segment(const ns_turbulence_bc_segment_t* seg) {
+    const char* reason = NULL;
+    if (seg->edge != BC_EDGE_LEFT && seg->edge != BC_EDGE_RIGHT &&
+        seg->edge != BC_EDGE_BOTTOM && seg->edge != BC_EDGE_TOP) {
+        reason = "turbulence BC segment: edge must be BC_EDGE_LEFT, _RIGHT, _BOTTOM or _TOP";
+    } else if (!(seg->start >= 0.0 && seg->start < seg->end && seg->end <= 1.0)) {
+        reason = "turbulence BC segment: range must satisfy 0 <= start < end <= 1";
+    } else if (seg->type != BC_TYPE_NEUMANN && seg->type != BC_TYPE_DIRICHLET &&
+               seg->type != BC_TYPE_NOSLIP) {
+        reason = "turbulence BC segment: type must be NEUMANN, DIRICHLET or NOSLIP "
+                 "(PERIODIC has no meaning on part of a face)";
+    } else if (seg->type == BC_TYPE_DIRICHLET && !seg->profile &&
+               (!is_nonnegative_finite(seg->k) || !is_nonnegative_finite(seg->eps) ||
+                !is_nonnegative_finite(seg->nu_tilde))) {
+        reason = "turbulence BC segment: DIRICHLET values must be finite and >= 0 (a "
+                 "profiled segment loaded from a checkpoint has NaN values until its "
+                 "profile is re-attached)";
+    }
+    if (reason) {
+        cfd_set_error(CFD_ERROR_INVALID, reason);
+        return CFD_ERROR_INVALID;
+    }
+    return CFD_SUCCESS;
+}
+
+cfd_status_t turb_check_segments(const ns_solver_params_t* params) {
+    const ns_turbulence_bc_config_t* tbc = &params->turb_bc;
+    if (tbc->n_segments > NS_TURB_BC_MAX_SEGMENTS) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "turbulence_solver: turb_bc.n_segments exceeds "
+                      "NS_TURB_BC_MAX_SEGMENTS");
+        return CFD_ERROR_INVALID;
+    }
+    const int is_ke = (params->turb_model == TURB_MODEL_K_EPSILON);
+    for (size_t n = 0; n < tbc->n_segments; n++) {
+        const ns_turbulence_bc_segment_t* seg = &tbc->segments[n];
+        cfd_status_t status = validate_segment(seg);
+        if (status != CFD_SUCCESS) {
+            return status;
+        }
+        if (is_ke && seg->type == BC_TYPE_DIRICHLET && !seg->profile && !(seg->eps > 0.0)) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                          "turbulence_solver: a k-epsilon DIRICHLET segment needs "
+                          "eps > 0 or a profile");
+            return CFD_ERROR_INVALID;
+        }
+    }
+    return CFD_SUCCESS;
+}
+
 cfd_status_t turb_check_closure_config(const ns_solver_params_t* params) {
     if (!params) {
         return CFD_SUCCESS;
@@ -621,15 +676,9 @@ static cfd_status_t validate_turbulence_args(const flow_field* field, const grid
                       "turbulence_solver: grid too small or missing dx/dy");
         return CFD_ERROR_INVALID;
     }
-    /* Here rather than only in turbulence_apply_bcs: the transport step reads
-     * the segments too (SA wall distance), and may run before the BCs do. */
-    if (params->turb_bc.n_segments > NS_TURB_BC_MAX_SEGMENTS) {
-        cfd_set_error(CFD_ERROR_INVALID,
-                      "turbulence_solver: turb_bc.n_segments exceeds "
-                      "NS_TURB_BC_MAX_SEGMENTS");
-        return CFD_ERROR_INVALID;
-    }
-    return CFD_SUCCESS;
+    /* Shared by the step and the BCs, not left to the BCs: the transport step
+     * reads the segments too (SA wall distance) and runs before the BCs do. */
+    return turb_check_segments(params);
 }
 
 cfd_status_t turb_validate_step_args(const flow_field* field, const grid* grid,
@@ -819,36 +868,6 @@ static void set_dirichlet_nu_t(flow_field* field, const ns_solver_params_t* para
     field->nu_t[idx] = fmin(nu_t, TURB_NU_T_MAX_FACTOR * nu);
 }
 
-static int is_nonnegative_finite(double v) {
-    return isfinite(v) && v >= 0.0;
-}
-
-/* The model-independent rules for one segment; see turbulence_bc_add_segment. */
-static cfd_status_t validate_segment(const ns_turbulence_bc_segment_t* seg) {
-    const char* reason = NULL;
-    if (seg->edge != BC_EDGE_LEFT && seg->edge != BC_EDGE_RIGHT &&
-        seg->edge != BC_EDGE_BOTTOM && seg->edge != BC_EDGE_TOP) {
-        reason = "turbulence BC segment: edge must be BC_EDGE_LEFT, _RIGHT, _BOTTOM or _TOP";
-    } else if (!(seg->start >= 0.0 && seg->start < seg->end && seg->end <= 1.0)) {
-        reason = "turbulence BC segment: range must satisfy 0 <= start < end <= 1";
-    } else if (seg->type != BC_TYPE_NEUMANN && seg->type != BC_TYPE_DIRICHLET &&
-               seg->type != BC_TYPE_NOSLIP) {
-        reason = "turbulence BC segment: type must be NEUMANN, DIRICHLET or NOSLIP "
-                 "(PERIODIC has no meaning on part of a face)";
-    } else if (seg->type == BC_TYPE_DIRICHLET && !seg->profile &&
-               (!is_nonnegative_finite(seg->k) || !is_nonnegative_finite(seg->eps) ||
-                !is_nonnegative_finite(seg->nu_tilde))) {
-        reason = "turbulence BC segment: DIRICHLET values must be finite and >= 0 (a "
-                 "profiled segment loaded from a checkpoint has NaN values until its "
-                 "profile is re-attached)";
-    }
-    if (reason) {
-        cfd_set_error(CFD_ERROR_INVALID, reason);
-        return CFD_ERROR_INVALID;
-    }
-    return CFD_SUCCESS;
-}
-
 /* The BC one boundary node receives: its type and, for DIRICHLET, its values. */
 typedef struct {
     bc_type_t type;
@@ -1015,24 +1034,9 @@ cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
         return CFD_ERROR_INVALID;
     }
 
-    /* Every segment is checked before any field is touched, so a bad one leaves
-     * the fields as they were (the count was checked with the other arguments).
-     * Only a profile's output, which is not known until its node is reached, can
-     * fail part-way. */
-    const int is_ke = (params->turb_model == TURB_MODEL_K_EPSILON);
-    for (size_t n = 0; n < tbc->n_segments; n++) {
-        const ns_turbulence_bc_segment_t* seg = &tbc->segments[n];
-        status = validate_segment(seg);
-        if (status != CFD_SUCCESS) {
-            return status;
-        }
-        if (is_ke && seg->type == BC_TYPE_DIRICHLET && !seg->profile && !(seg->eps > 0.0)) {
-            cfd_set_error(CFD_ERROR_INVALID,
-                          "turbulence_apply_bcs: a k-epsilon DIRICHLET segment needs "
-                          "eps > 0 or a profile");
-            return CFD_ERROR_INVALID;
-        }
-    }
+    /* Every segment was checked with the other arguments, before any field is
+     * touched. Only a profile's output, which is not known until its node is
+     * reached, can fail part-way. */
 
     /* Left and right first, then bottom and top, which overwrite the corners. */
     status = apply_face_bcs(field, grid, params, BC_EDGE_LEFT, tbc->left,

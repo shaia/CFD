@@ -16,7 +16,9 @@
  * 5. Overlapping segments: the last one wins.
  * 6. turbulence_bc_add_segment refuses every malformed segment and leaves the
  *    config unchanged; turbulence_apply_bcs refuses the same in a hand-filled
- *    config before touching any field, plus the model-dependent cases.
+ *    config before touching any field, plus the model-dependent cases; so do
+ *    the transport step (which reads segments for SA wall distance) and
+ *    solver_init.
  * 7. Wall distance (Spalart-Allmaras) sees only the wall part of a face.
  * ============================================================================ */
 
@@ -384,6 +386,64 @@ static void test_apply_refusals(void) {
     grid_destroy(g);
 }
 
+/* A segment that only a hand-filled config can carry: an empty range. */
+static ns_solver_params_t params_with_bad_segment(turbulence_model_t model) {
+    ns_solver_params_t params = make_params(model);
+    params.turb_bc.left = BC_TYPE_NOSLIP;
+    params.turb_bc.segments[0] = (ns_turbulence_bc_segment_t){
+        .edge = BC_EDGE_LEFT, .start = 0.5, .end = 0.5, .type = BC_TYPE_NEUMANN};
+    params.turb_bc.n_segments = 1;
+    return params;
+}
+
+static void test_step_refuses_bad_segment(void) {
+    /* The transport step reads the segments (SA wall distance) before the BCs
+     * run, so it must refuse a bad one itself, leaving the fields as they were. */
+    grid* g = make_grid();
+    const turbulence_model_t models[] = {TURB_MODEL_K_EPSILON, TURB_MODEL_SPALART_ALLMARAS};
+    for (size_t m = 0; m < 2; m++) {
+        flow_field* field = make_field();
+        flow_field* before = make_field();
+        ns_solver_params_t params = params_with_bad_segment(models[m]);
+        TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                          turbulence_step_explicit(field, g, &params, 1e-3, 0.0));
+        assert_fields_identical(before, field);
+        flow_field_destroy(before);
+        flow_field_destroy(field);
+    }
+    grid_destroy(g);
+}
+
+static cfd_status_t init_solver(const char* type, ns_solver_params_t* params) {
+    ns_solver_registry_t* registry = cfd_registry_create();
+    TEST_ASSERT_NOT_NULL(registry);
+    cfd_registry_register_defaults(registry);
+    ns_solver_t* solver = cfd_solver_create(registry, type);
+    TEST_ASSERT_NOT_NULL(solver);
+    grid* g = make_grid();
+    cfd_status_t status = solver_init(solver, g, params);
+    grid_destroy(g);
+    solver_destroy(solver);
+    cfd_registry_destroy(registry);
+    return status;
+}
+
+static void test_solver_init_refuses_bad_segment(void) {
+    /* Refused at init, before any step has advanced the velocity */
+    const char* types[] = {NS_SOLVER_TYPE_PROJECTION, NS_SOLVER_TYPE_RK2,
+                           NS_SOLVER_TYPE_EXPLICIT_EULER};
+    for (size_t t = 0; t < sizeof(types) / sizeof(types[0]); t++) {
+        ns_solver_params_t bad = params_with_bad_segment(TURB_MODEL_K_EPSILON);
+        TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, init_solver(types[t], &bad));
+
+        ns_solver_params_t good = make_params(TURB_MODEL_K_EPSILON);
+        ns_turbulence_bc_segment_t seg = {.edge = BC_EDGE_LEFT, .start = 0.5, .end = 1.0,
+                                          .type = BC_TYPE_DIRICHLET, .k = 1e-3, .eps = 1e-4};
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, turbulence_bc_add_segment(&good.turb_bc, &seg));
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, init_solver(types[t], &good));
+    }
+}
+
 /* ============================================================================
  * TEST 7: wall distance sees only the wall part of a face
  * ============================================================================ */
@@ -443,6 +503,8 @@ int main(void) {
     RUN_TEST(test_last_segment_wins);
     RUN_TEST(test_add_segment_refusals);
     RUN_TEST(test_apply_refusals);
+    RUN_TEST(test_step_refuses_bad_segment);
+    RUN_TEST(test_solver_init_refuses_bad_segment);
     RUN_TEST(test_wall_distance_with_segments);
     return UNITY_END();
 }

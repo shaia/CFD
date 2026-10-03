@@ -55,6 +55,9 @@ extern "C" {
  * @param dt     Time step size
  * @param time   Current physical time
  * @return CFD_SUCCESS; CFD_ERROR_UNSUPPORTED for 3D or non-uniform grids;
+ *         CFD_ERROR_INVALID for a turbulence BC segment turbulence_apply_bcs()
+ *         would refuse (the step reads the segments for wall distance, so it
+ *         checks them itself, before touching any field);
  *         CFD_ERROR_DIVERGED if NaN/Inf detected
  */
 CFD_LIBRARY_EXPORT cfd_status_t turbulence_step_explicit(flow_field* field, const grid* grid,
