@@ -30,9 +30,11 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
         return;
     }
 
-    // Create grid and flow field
+    // Create grid and flow field. grid_create only allocates; the coordinates and
+    // spacings are zero until grid_initialize_uniform fills them.
     grid* grid = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
     flow_field* field = flow_field_create(nx, ny, 1);
+    grid_initialize_uniform(grid);
     initialize_flow_field(field, grid);
 
     // Initialize solver parameters
@@ -41,15 +43,24 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
     params.cfl = 0.5;
     params.tolerance = 1e-6;
 
-    // Initialize solver
-    solver_init(solver, grid, &params);
+    // A backend this build or CPU lacks refuses at init: report it rather than time it
+    cfd_status_t status = solver_init(solver, grid, &params);
+    if (status != CFD_SUCCESS) {
+        const char* reason = cfd_get_last_error();
+        printf("Skipped: %s\n", reason ? reason : cfd_get_error_string(status));
+        goto cleanup;
+    }
 
     // Measure execution time
     clock_t start = clock();
     ns_solver_stats_t stats = ns_solver_stats_default();
 
     for (int i = 0; i < iterations; i++) {
-        solver_step(solver, field, grid, &params, &stats);
+        status = solver_step(solver, field, grid, &params, &stats);
+        if (status != CFD_SUCCESS) {
+            printf("Failed at step %d: %s\n", i, cfd_get_error_string(status));
+            goto cleanup;
+        }
     }
 
     clock_t end = clock();
@@ -61,7 +72,7 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
     printf("Performance: %.0f cell-updates/second\n", cells_per_second);
     printf("Memory usage: %.2f MB\n", (double)(nx * ny * 5 * sizeof(double)) / (1024 * 1024));
 
-    // Cleanup
+cleanup:
     solver_destroy(solver);
     flow_field_destroy(field);
     grid_destroy(grid);

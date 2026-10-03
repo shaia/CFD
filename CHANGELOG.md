@@ -797,6 +797,13 @@ Each item is detailed in the entry it names.
   1.5 rather than the automatic value, and capped the iterations it printed for an off-by-one that
   is fixed. The `poisson_solver.h` usage example called `poisson_solver_init()` without `nz` and
   `dz`, and `max_iterations` was documented as defaulting to 1000 where the default is 5000.
+- `examples/performance_comparison.c` timed solvers that were not running. It never called
+  `grid_initialize_uniform()`, so every solver stepped on a grid whose spacing was zero, and it
+  discarded the init and step statuses: both projection rows timed pressure solves that ran to
+  `max_iterations` and failed (over 300 s in all, with `projection_omp` taking 70-77 s per grid
+  size), and on a build without AVX2 the `*_optimized` rows printed `inf` cell-updates per
+  second. It now initializes the grid, reports a backend that refuses init as skipped, and
+  stops at the first failed step; the whole run takes about a minute.
 - `scripts/ec2-validate.sh` runs every `CavityBackend_*` ctest entry. It ran the test binary
   without a filter, which skips the Re=400 and Re=1000 cases, and under `set -e` a failing run
   ended the script before its FAILED summary.
