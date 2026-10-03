@@ -10,7 +10,8 @@ Complete API documentation for the CFD Framework.
 #include "cfd/core/cfd_init.h"
 
 cfd_status_t cfd_init(void);
-void cfd_cleanup(void);
+void cfd_finalize(void);
+int cfd_is_initialized(void);
 ```
 
 **cfd_init()**
@@ -18,9 +19,12 @@ void cfd_cleanup(void);
 - Safe to call multiple times from different threads
 - Returns `CFD_SUCCESS` on success
 
-**cfd_cleanup()**
-- Cleanup library resources
-- Should be called before program termination
+**cfd_finalize()**
+- Releases the global resources `cfd_init()` allocated
+- Call it when the library is no longer needed, especially in repeated load/unload scenarios
+
+**cfd_is_initialized()**
+- Returns non-zero once `cfd_init()` has run, zero otherwise
 
 **Example:**
 ```c
@@ -33,7 +37,7 @@ int main(void) {
 
     // Use library...
 
-    cfd_cleanup();
+    cfd_finalize();
     return 0;
 }
 ```

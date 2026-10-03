@@ -91,7 +91,10 @@ automatically (per-process only; it never writes the persistent environment).
 
 ```c
 #include "cfd/api/simulation_api.h"
+#include "cfd/core/cfd_init.h"
 #include "cfd/io/vtk_output.h"
+
+#include <stdio.h>
 
 int main(void) {
     // Initialize library
@@ -141,20 +144,25 @@ int main(void) {
 | Solver | Backend | Description |
 | ------ | ------- | ----------- |
 | `explicit_euler` | Scalar | Basic explicit Euler |
-| `explicit_euler_optimized` | SIMD | SIMD-optimized Euler (AVX2/NEON) |
+| `explicit_euler_optimized` | SIMD | AVX2-optimized Euler |
 | `explicit_euler_omp` | OpenMP | Multi-threaded Euler |
+| `explicit_euler_gpu` | GPU | CUDA-accelerated Euler |
 | `projection` | Scalar | Chorin's projection method |
-| `projection_optimized` | SIMD | SIMD-optimized projection (AVX2/NEON) |
+| `projection_optimized` | SIMD | AVX2-optimized projection |
 | `projection_omp` | OpenMP | Multi-threaded projection |
 | `projection_gpu` | GPU | CUDA-accelerated projection (CG pressure solve) |
 | `rk2` | Scalar | 2nd-order Runge-Kutta (Heun) |
-| `rk2_optimized` | SIMD | SIMD-optimized RK2 (AVX2/NEON) |
+| `rk2_optimized` | SIMD | AVX2-optimized RK2 |
 | `rk2_omp` | OpenMP | Multi-threaded RK2 |
 | `rk2_gpu` | GPU | CUDA-accelerated RK2 |
 | `rk4` | Scalar | 4th-order Runge-Kutta (classical) |
-| `rk4_optimized` | SIMD | SIMD-optimized RK4 (AVX2/NEON) |
+| `rk4_optimized` | SIMD | AVX2-optimized RK4 |
 | `rk4_omp` | OpenMP | Multi-threaded RK4 |
 | `rk4_gpu` | GPU | CUDA-accelerated RK4 |
+
+The `*_optimized` solvers need AVX2 compiled in (`-DCFD_ENABLE_AVX2=ON`) and an AVX2+FMA CPU;
+otherwise their init returns `CFD_ERROR_UNSUPPORTED`. There are no NEON Navier-Stokes kernels
+(NEON accelerates the linear solvers, boundary conditions and `.cfdnn` inference).
 
 ### Turbulence backend coverage
 
@@ -269,7 +277,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions welcome! Please see [development guidelines](.claude/CLAUDE.md) and [ROADMAP](ROADMAP.md) for current priorities.
+Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) and [ROADMAP](ROADMAP.md) for current priorities.
 
 ## Citation
 

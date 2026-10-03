@@ -137,7 +137,7 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 ```c
 // Initialization
 cfd_status_t cfd_init(void);
-void cfd_cleanup(void);
+void cfd_finalize(void);
 
 // Simulation
 simulation_data* init_simulation(size_t nx, size_t ny, size_t nz,
@@ -257,8 +257,7 @@ Current documentation corresponds to:
 ### Development Documentation
 
 11. [ROADMAP.md](../ROADMAP.md) - Development roadmap
-12. [CLAUDE.md](../.claude/CLAUDE.md) - Development guidelines
-13. [.claude/commands/](../.claude/commands/) - Development tools
+12. [CONTRIBUTING.md](../CONTRIBUTING.md) - Development guidelines
 
 ---
 
