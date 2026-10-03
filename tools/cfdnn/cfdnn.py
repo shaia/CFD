@@ -77,7 +77,7 @@ MAX_STRING = 1 << 12
 # The writer's library version is informational: the C reader skips it. It
 # records which release of the format contract the exporter was written
 # against, the same thing the C writer records from cfd_version.h.
-LIB_VERSION = (0, 3, 0)
+LIB_VERSION = (0, 4, 0)
 
 _HEADER = struct.Struct("<8sII3HHBBHIII")  # 40 bytes, offsets 0..39
 _LAYER = struct.Struct("<HHfIII")          # kind..weight_count, 20 bytes
