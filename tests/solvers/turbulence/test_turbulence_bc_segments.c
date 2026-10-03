@@ -219,6 +219,14 @@ static void linear_profile(double position, double* k, double* eps, double* nu_t
     *nu_tilde = 3e-4 * (1.0 + position);
 }
 
+static void linear_profile_noop(double position, double* k, double* eps, double* nu_tilde,
+                                void* user_data) {
+    (void)user_data;
+    *k = 1e-3 * (1.0 + position);
+    *eps = 2e-4;
+    *nu_tilde = 3e-4 * (1.0 + position);
+}
+
 static void test_profile_callback(void) {
     grid* g = make_grid();
     flow_field* field = make_field();
@@ -476,6 +484,41 @@ static void test_solver_init_refuses_bad_segment(void) {
     }
 }
 
+static void test_detached_profile_marker(void) {
+    /* A profiled segment as a checkpoint load leaves it: no profile, NaN values.
+     * Init accepts it -- the caller can only re-attach the profile once the
+     * solver exists -- but the step and the BCs refuse it until then. */
+    ns_solver_params_t params = make_params(TURB_MODEL_K_EPSILON);
+    params.turb_bc.segments[0] = (ns_turbulence_bc_segment_t){
+        .edge = BC_EDGE_LEFT, .start = 0.5, .end = 1.0, .type = BC_TYPE_DIRICHLET,
+        .k = NAN, .eps = NAN, .nu_tilde = NAN};
+    params.turb_bc.n_segments = 1;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, init_solver(NS_SOLVER_TYPE_PROJECTION, &params));
+
+    grid* g = make_grid();
+    flow_field* field = make_field();
+    flow_field* before = make_field();
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, turbulence_apply_bcs(field, g, &params));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      turbulence_step_explicit(field, g, &params, 1e-3, 0.0));
+    assert_fields_identical(before, field);
+
+    params.turb_bc.segments[0].profile = linear_profile_noop;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, turbulence_apply_bcs(field, g, &params));
+
+    /* Only the exact marker: one NaN value is just an invalid segment */
+    ns_solver_params_t partial = make_params(TURB_MODEL_K_EPSILON);
+    partial.turb_bc.segments[0] = (ns_turbulence_bc_segment_t){
+        .edge = BC_EDGE_LEFT, .start = 0.5, .end = 1.0, .type = BC_TYPE_DIRICHLET,
+        .k = 1e-3, .eps = NAN, .nu_tilde = 1e-4};
+    partial.turb_bc.n_segments = 1;
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, init_solver(NS_SOLVER_TYPE_PROJECTION, &partial));
+
+    flow_field_destroy(before);
+    flow_field_destroy(field);
+    grid_destroy(g);
+}
+
 /* ============================================================================
  * TEST 7: wall distance sees only the wall part of a face
  * ============================================================================ */
@@ -538,6 +581,7 @@ int main(void) {
     RUN_TEST(test_bad_profile_leaves_fields_untouched);
     RUN_TEST(test_step_refuses_bad_segment);
     RUN_TEST(test_solver_init_refuses_bad_segment);
+    RUN_TEST(test_detached_profile_marker);
     RUN_TEST(test_wall_distance_with_segments);
     return UNITY_END();
 }

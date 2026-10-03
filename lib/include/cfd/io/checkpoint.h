@@ -40,8 +40,10 @@ extern "C" {
  * `turb_nut_correction`, IS stored, as is every other segment field -- except
  * that a DIRICHLET segment with a profile has its k, eps and nu_tilde stored as
  * NaN, since the profile was what supplied them. Loaded without its profile, such
- * a segment is refused by turbulence_apply_bcs(), whatever the model, until the
- * profile is re-attached, rather than run on placeholder values. The same NaN
+ * a segment passes solver init -- so `load_simulation_from_checkpoint()` succeeds
+ * and the caller can re-attach the profile on the simulation it returns -- but
+ * every step refuses it, whatever the model and before any field moves, until
+ * the profile is re-attached, rather than run on placeholder values. The same NaN
  * values are the marker `restore_simulation_checkpoint()` uses: it carries the
  * profile at slot n across only onto a segment stored that way, never onto one
  * saved with constant values.

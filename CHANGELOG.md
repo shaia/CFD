@@ -215,8 +215,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     non-finite value is refused by `turbulence_apply_bcs()`, which resolves every boundary
     node first and writes nothing unless all of them pass.
   - **Checkpoint format version 7.** Segments are stored except their profile callback. A
-    profiled DIRICHLET segment's values are stored as NaN, so a segment loaded without its
-    profile is refused for every model rather than run on placeholders.
+    profiled DIRICHLET segment's values are stored as NaN. `load_simulation_from_checkpoint()`
+    still succeeds, since solver init accepts that marker, but `solver_step()` and
+    `solver_solve()` refuse the segment, for every model and before any field moves, until
+    the profile is re-attached, rather than run on placeholders.
     `restore_simulation_checkpoint()` carries the live profile across by slot, but only onto
     a segment stored that way, never onto one saved with constant values.
     Version-6 files are rejected as unsupported. A count above the array is refused on

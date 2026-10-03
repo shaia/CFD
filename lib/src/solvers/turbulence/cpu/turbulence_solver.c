@@ -200,8 +200,11 @@ static int is_nonnegative_finite(double v) {
     return isfinite(v) && v >= 0.0;
 }
 
-/* The model-independent rules for one segment; see turbulence_bc_add_segment. */
-static cfd_status_t validate_segment(const ns_turbulence_bc_segment_t* seg) {
+/* The model-independent rules for one segment; see turbulence_bc_add_segment.
+ * allow_detached accepts a segment whose profile a checkpoint could not store
+ * (turb_segment_profile_detached), which only solver init may do. */
+static cfd_status_t validate_segment(const ns_turbulence_bc_segment_t* seg,
+                                     int allow_detached) {
     const char* reason = NULL;
     if (seg->edge != BC_EDGE_LEFT && seg->edge != BC_EDGE_RIGHT &&
         seg->edge != BC_EDGE_BOTTOM && seg->edge != BC_EDGE_TOP) {
@@ -212,12 +215,15 @@ static cfd_status_t validate_segment(const ns_turbulence_bc_segment_t* seg) {
                seg->type != BC_TYPE_NOSLIP) {
         reason = "turbulence BC segment: type must be NEUMANN, DIRICHLET or NOSLIP "
                  "(PERIODIC has no meaning on part of a face)";
+    } else if (turb_segment_profile_detached(seg)) {
+        if (!allow_detached) {
+            reason = "turbulence BC segment: its profile was not stored in the checkpoint "
+                     "it was loaded from; re-attach segments[n].profile before stepping";
+        }
     } else if (seg->type == BC_TYPE_DIRICHLET && !seg->profile &&
                (!is_nonnegative_finite(seg->k) || !is_nonnegative_finite(seg->eps) ||
                 !is_nonnegative_finite(seg->nu_tilde))) {
-        reason = "turbulence BC segment: DIRICHLET values must be finite and >= 0 (a "
-                 "profiled segment loaded from a checkpoint has NaN values until its "
-                 "profile is re-attached)";
+        reason = "turbulence BC segment: DIRICHLET values must be finite and >= 0";
     }
     if (reason) {
         cfd_set_error(CFD_ERROR_INVALID, reason);
@@ -226,7 +232,7 @@ static cfd_status_t validate_segment(const ns_turbulence_bc_segment_t* seg) {
     return CFD_SUCCESS;
 }
 
-cfd_status_t turb_check_segments(const ns_solver_params_t* params) {
+cfd_status_t turb_check_segments(const ns_solver_params_t* params, int allow_detached) {
     const ns_turbulence_bc_config_t* tbc = &params->turb_bc;
     if (tbc->n_segments > NS_TURB_BC_MAX_SEGMENTS) {
         cfd_set_error(CFD_ERROR_INVALID,
@@ -237,11 +243,12 @@ cfd_status_t turb_check_segments(const ns_solver_params_t* params) {
     const int is_ke = (params->turb_model == TURB_MODEL_K_EPSILON);
     for (size_t n = 0; n < tbc->n_segments; n++) {
         const ns_turbulence_bc_segment_t* seg = &tbc->segments[n];
-        cfd_status_t status = validate_segment(seg);
+        cfd_status_t status = validate_segment(seg, allow_detached);
         if (status != CFD_SUCCESS) {
             return status;
         }
-        if (is_ke && seg->type == BC_TYPE_DIRICHLET && !seg->profile && !(seg->eps > 0.0)) {
+        if (is_ke && seg->type == BC_TYPE_DIRICHLET && !seg->profile &&
+            !turb_segment_profile_detached(seg) && !(seg->eps > 0.0)) {
             cfd_set_error(CFD_ERROR_INVALID,
                           "turbulence_solver: a k-epsilon DIRICHLET segment needs "
                           "eps > 0 or a profile");
@@ -678,7 +685,7 @@ static cfd_status_t validate_turbulence_args(const flow_field* field, const grid
     }
     /* Shared by the step and the BCs, not left to the BCs: the transport step
      * reads the segments too (SA wall distance) and runs before the BCs do. */
-    return turb_check_segments(params);
+    return turb_check_segments(params, 0);
 }
 
 cfd_status_t turb_validate_step_args(const flow_field* field, const grid* grid,
@@ -1112,7 +1119,7 @@ cfd_status_t turbulence_bc_add_segment(ns_turbulence_bc_config_t* bc,
                       "segments are already set");
         return CFD_ERROR_INVALID;
     }
-    cfd_status_t status = validate_segment(segment);
+    cfd_status_t status = validate_segment(segment, 0);
     if (status != CFD_SUCCESS) {
         return status;
     }

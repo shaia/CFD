@@ -785,6 +785,48 @@ void test_callback_contract(void) {
 }
 
 /**
+ * A fresh-process restart of a turbulent run with a profiled segment. The load
+ * must succeed even though the solver is initialized before the caller can
+ * re-attach the profile; stepping must then be refused, with the field
+ * untouched, until it is; and once it is, the run continues.
+ */
+void test_load_turbulent_run_with_profiled_segment(void) {
+    simulation_data* sim = init_simulation_with_solver(9, 9, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0,
+                                                       NS_SOLVER_TYPE_RK2);
+    TEST_ASSERT_NOT_NULL(sim);
+    sim->params.turb_model = TURB_MODEL_K_EPSILON;
+    sim->params.turb_bc.left = BC_TYPE_NOSLIP;
+    sim->params.turb_bc.right = BC_TYPE_NEUMANN;
+    sim->params.turb_bc.bottom = BC_TYPE_NOSLIP;
+    sim->params.turb_bc.top = BC_TYPE_NOSLIP;
+    sim->params.turb_bc.segments[0] = (ns_turbulence_bc_segment_t){
+        .edge = BC_EDGE_LEFT, .start = 0.5, .end = 1.0, .type = BC_TYPE_DIRICHLET,
+        .profile = dummy_turb_profile};
+    sim->params.turb_bc.n_segments = 1;
+    fill_field_known(sim->field, 1.0);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, save_simulation_checkpoint(sim, CK_PATH));
+    free_simulation(sim);
+
+    simulation_data* loaded = load_simulation_from_checkpoint(CK_PATH);
+    TEST_ASSERT_NOT_NULL(loaded);
+    TEST_ASSERT_NULL(loaded->params.turb_bc.segments[0].profile);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      turbulence_init_uniform(loaded->field, &loaded->params, 1e-3, 1e-4, 0.0));
+
+    const size_t n = loaded->field->nx * loaded->field->ny;
+    double u_before[81];
+    TEST_ASSERT_EQUAL_size_t(81, n);
+    memcpy(u_before, loaded->field->u, n * sizeof(double));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, run_simulation_step(loaded));
+    TEST_ASSERT_EQUAL_MEMORY(u_before, loaded->field->u, n * sizeof(double));
+
+    loaded->params.turb_bc.segments[0].profile = dummy_turb_profile;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, run_simulation_step(loaded));
+
+    free_simulation(loaded);
+}
+
+/**
  * The reverse: a segment saved with constant values stays constant through an
  * in-place restore, even when the live simulation has a profile in that slot.
  * Carrying it across would silently replace the stored values.
@@ -878,6 +920,7 @@ int main(void) {
     RUN_TEST(test_reject_unknown_nut_correction);
     RUN_TEST(test_profiled_segment_refused_until_reattached);
     RUN_TEST(test_restore_keeps_constant_segment_constant);
+    RUN_TEST(test_load_turbulent_run_with_profiled_segment);
     RUN_TEST(test_reject_truncated);
     RUN_TEST(test_reject_crc_corruption);
     RUN_TEST(test_restart_continuity_scalar);

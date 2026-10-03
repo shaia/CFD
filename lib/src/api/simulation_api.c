@@ -7,6 +7,7 @@
 #include "cfd/io/output_registry.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
+#include "../solvers/turbulence/turbulence_solver_internal.h"
 
 #include "cfd/core/cfd_init.h"
 #include <math.h>
@@ -426,9 +427,7 @@ cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char
     for (size_t n = 0; n < new_params.turb_bc.n_segments &&
                        n < sim_data->params.turb_bc.n_segments; n++) {
         ns_turbulence_bc_segment_t* seg = &new_params.turb_bc.segments[n];
-        const int profiled = seg->type == BC_TYPE_DIRICHLET && isnan(seg->k) &&
-                             isnan(seg->eps) && isnan(seg->nu_tilde);
-        if (profiled) {
+        if (turb_segment_profile_detached(seg)) {
             seg->profile = sim_data->params.turb_bc.segments[n].profile;
             seg->profile_user_data = sim_data->params.turb_bc.segments[n].profile_user_data;
         }

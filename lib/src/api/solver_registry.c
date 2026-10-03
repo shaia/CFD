@@ -479,6 +479,10 @@ cfd_status_t solver_step(ns_solver_t* solver, flow_field* field, const grid* gri
     if (dt_status != CFD_SUCCESS) {
         return dt_status;
     }
+    cfd_status_t segment_status = ns_check_turbulence_segments(params);
+    if (segment_status != CFD_SUCCESS) {
+        return segment_status;
+    }
 
     /* Default; a solver that advances by a different step overrides it. */
     if (stats) {
@@ -518,6 +522,10 @@ cfd_status_t solver_solve(ns_solver_t* solver, flow_field* field, const grid* gr
     cfd_status_t dt_status = ns_check_dt(params);
     if (dt_status != CFD_SUCCESS) {
         return dt_status;
+    }
+    cfd_status_t segment_status = ns_check_turbulence_segments(params);
+    if (segment_status != CFD_SUCCESS) {
+        return segment_status;
     }
 
     /* Default; a solver that advances by a different step overrides it. */
