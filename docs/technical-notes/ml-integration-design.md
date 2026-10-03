@@ -412,7 +412,8 @@ vector unit, shared by AVX2 and NEON through the template:
 - `softplus`: the scalar kernel's overflow-safe `max(x, 0) + log1p(exp(−|x|))`, with
   `log1p` by Goldberg's identity `log(u)·t/(u − 1)`, `u = 1 + t`, over a Cephes `logf`. It
   returns `t` itself where `u` rounds to 1, so `softplus` of a very negative x is
-  `exp(x)`, not 0.
+  `exp(x)`, not 0, down to x ≈ −87.3. Below that the vector `exp` flushes to 0, where the
+  scalar kernel returns a float32 denormal under 1e-38.
 
 Accuracy against float64 truth, prototyped in float32 numpy before any C was written:
 `tanh` 4.3 ulp, `exp` 1.0, `log` 0.8, `softplus` 2.7, `sigmoid` 2.3. The worst relative

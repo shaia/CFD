@@ -162,7 +162,9 @@ static inline SIMD_VEC CFDNN_SIMD_FUNC(vsigmoid)(SIMD_VEC x) {
  * softplus(x) = max(x, 0) + log1p(exp(-|x|)), the scalar kernel's overflow-safe
  * form. log1p(t) uses Goldberg's identity log(u) * t / (u - 1), u = 1 + t,
  * which stays accurate where u - 1 loses digits, and returns t itself where u
- * rounds to 1 -- so softplus of a very negative x is exp(x), not 0.
+ * rounds to 1 -- so softplus of a very negative x is exp(x), not 0, down to
+ * x ~ -87.3. Below that vexp flushes to 0, so this returns 0 where the scalar
+ * kernel returns a float32 denormal under ~1e-38.
  */
 static inline SIMD_VEC CFDNN_SIMD_FUNC(vsoftplus)(SIMD_VEC x) {
     SIMD_VEC one = SIMD_SET1(1.0f);
