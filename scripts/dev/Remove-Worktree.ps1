@@ -35,9 +35,19 @@ if ($LASTEXITCODE -ne 0 -or -not $gitDir) { throw "$wt is not a git worktree" }
 if ((Resolve-Path -LiteralPath $gitDir).Path -eq (Resolve-Path -LiteralPath $common).Path) {
     throw "$wt is the main worktree; refusing to remove it"
 }
-# git runs from the main worktree, so the script works from any directory and never asks git to
-# remove the worktree it is running in.
+# git runs from the main worktree, so the script works from any directory outside the worktree.
 $main = Split-Path -Parent (Resolve-Path -LiteralPath $common).Path
+$norm = { param($p) ($p -replace '\\', '/').TrimEnd('/').ToLowerInvariant() }
+
+# Windows cannot delete a directory a process is standing in: git would empty and unregister the
+# worktree, then fail on its top folder, after the link was gone. Refuse before touching anything.
+foreach ($here in @($PWD.ProviderPath, [Environment]::CurrentDirectory)) {
+    $h = & $norm $here
+    $w = & $norm $wt
+    if ($h -eq $w -or $h.StartsWith("$w/")) {
+        throw "refusing: the current directory ($here) is inside $wt; cd out of it first"
+    }
+}
 
 # Any top-level link other than .claude is unexpected: refuse rather than guess what it points at.
 $links = @(Get-ChildItem -LiteralPath $wt -Force | Where-Object { $_.LinkType })
@@ -55,7 +65,6 @@ if ($LASTEXITCODE -ne 0) { throw "git status failed in $wt" }
 if ($dirty.Count -and -not $Force) {
     throw "refusing: $wt has $($dirty.Count) uncommitted or untracked change(s); commit them, or pass -Force to discard them"
 }
-$norm = { param($p) ($p -replace '\\', '/').TrimEnd('/').ToLowerInvariant() }
 $block = $null
 foreach ($line in (git -C $main worktree list --porcelain)) {
     if ($line -like 'worktree *') { $block = & $norm $line.Substring(9) }
@@ -85,6 +94,10 @@ if ($Force) { $gitArgs += '--force' }
 $gitArgs += $wt
 if ($PSCmdlet.ShouldProcess($wt, "git $($gitArgs -join ' ')")) {
     git @gitArgs
-    if ($LASTEXITCODE -ne 0) { throw "git worktree remove failed (the .claude link is already gone; re-run with New-Worktree.ps1 -Existing to restore it)" }
+    if ($LASTEXITCODE -ne 0) {
+        throw ("git worktree remove failed after the .claude link was removed. If git worktree list " +
+               "still shows $wt, restore the link with New-Worktree.ps1 -Existing `"$wt`"; if not, " +
+               "only a leftover folder remains and it holds no link, so it can be deleted.")
+    }
     Write-Host "removed: $wt"
 }
