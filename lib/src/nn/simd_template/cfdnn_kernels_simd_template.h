@@ -17,9 +17,9 @@
  *   SIMD_ABS(a), SIMD_FLOOR(a)
  *   SIMD_SELECT_LT(a, b, t, f)       per lane: a < b ? t : f
  *   SIMD_SELECT_EQ(a, b, t, f)       per lane: a == b ? t : f
- *   SIMD_POW2N(n)        2^n for a vector of integral floats n in [-127, 128], built
- *                        in the exponent bits: -127 gives +0 and 128 gives +inf,
- *                        the flush and overflow vexp's clamps rely on
+ *   SIMD_POW2N(n)        2^n for a vector of integral floats n in [-127, 127], built
+ *                        in the exponent bits: -127 gives +0, the flush vexp's
+ *                        lower clamp relies on (its upper clamp rounds to n = 127)
  *   SIMD_FREXP_E(x)      exponent e of x > 0 (normal), as float: x = m * 2^e
  *   SIMD_FREXP_M(x)      mantissa m of x > 0 (normal), in [0.5, 1)
  *
