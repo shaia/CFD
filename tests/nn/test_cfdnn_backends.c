@@ -13,11 +13,16 @@
  *
  *   SIMD vs scalar  within 1e-5 relative, and the observed maximum is PRINTED
  *                   so drift toward the tolerance is visible before it becomes
- *                   a failure. Bit-exactness is not promised across vector
- *                   widths because of FMA contraction. Checked at every batch
- *                   size around the vector widths (4 and 8), where the full
- *                   blocks meet the scalar tail, and on a layer far wider
- *                   than a vector, which exercises the transpose scratch.
+ *                   a failure. Bit-exactness is not promised: SIMD contracts
+ *                   its dense sums with FMA and evaluates tanh, sigmoid and
+ *                   softplus with vector approximations. Checked at every
+ *                   batch size around the vector widths (4 and 8), where the
+ *                   full blocks meet the scalar tail, on a layer far wider
+ *                   than a vector, which exercises the transpose scratch, and
+ *                   per activation, isolated, to 1e-6.
+ *
+ *   NaN             survives every vectorised activation, so a corrupt model
+ *                   still fails with CFD_ERROR_DIVERGED on SIMD.
  *
  * Backends that are not built are skipped, not failed, per the project's
  * optional-backend policy.
@@ -294,10 +299,130 @@ void test_simd_matches_scalar_at_every_batch_size(void) {
     cfd_nn_model_destroy(m);
 }
 
+/* ============================================================================
+ * Vectorised activations
+ *
+ * The SIMD backend evaluates tanh, sigmoid and softplus with polynomial
+ * approximations rather than the scalar tanhf/expf/log1pf. Each is isolated
+ * here behind a 1 -> 1 identity layer (weight 1, bias 0), so the activation is
+ * the only arithmetic between input and output and its error is not diluted
+ * by a dense sum.
+ * ============================================================================ */
+
+#define ACT_SAMPLES 4096
+
+static float g_one = 1.0f;
+static float g_zero = 0.0f;
+
+static cfd_status_t write_activation_model(cfd_nn_activation_t act) {
+    cfd_nn_layer_desc_t l = {CFD_NN_LAYER_DENSE, act, 0.1f, 1, 1, &g_one, &g_zero};
+    cfd_nn_model_desc_t desc = {"activation-only", &l, 1};
+    return cfd_nn_model_write(TMP_MODEL, &desc);
+}
+
+/* Opens scalar and SIMD contexts on TMP_MODEL; returns 0 (and frees) when SIMD
+ * is unavailable, failing on any other error. */
+static int open_pair(size_t cap, cfd_nn_model_t** m, cfd_nn_context_t** ref,
+                     cfd_nn_context_t** simd) {
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, cfd_nn_model_load(TMP_MODEL, m));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, cfd_nn_context_create(*m, cap, CFD_NN_BACKEND_SCALAR, ref));
+    cfd_status_t st = cfd_nn_context_create(*m, cap, CFD_NN_BACKEND_SIMD, simd);
+    if (st == CFD_ERROR_UNSUPPORTED) {
+        cfd_nn_context_destroy(*ref);
+        cfd_nn_model_destroy(*m);
+        return 0;
+    }
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, st);
+    return 1;
+}
+
+static void check_activation(cfd_nn_activation_t act, const char* name, double lo, double hi) {
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, write_activation_model(act));
+    cfd_nn_model_t* m = NULL;
+    cfd_nn_context_t* ref_ctx = NULL;
+    cfd_nn_context_t* simd_ctx = NULL;
+    if (!open_pair(ACT_SAMPLES, &m, &ref_ctx, &simd_ctx)) {
+        TEST_IGNORE_MESSAGE("SIMD backend not built or not supported by this CPU");
+        return;
+    }
+
+    /* A uniform sweep of [lo, hi], with the first 64 samples replaced by
+     * +-1e-k so small arguments (where tanh must stay odd and accurate) are
+     * covered too. */
+    static double in[ACT_SAMPLES], ref[ACT_SAMPLES], got[ACT_SAMPLES];
+    for (int i = 0; i < ACT_SAMPLES; i++) {
+        in[i] = lo + (hi - lo) * (double)i / (double)(ACT_SAMPLES - 1);
+    }
+    for (int k = 0; k < 64; k++) {
+        in[k] = (k % 2 ? -1.0 : 1.0) * pow(10.0, -(double)(k / 2) * 0.4);
+    }
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
+                          cfd_nn_predict_batch(ref_ctx, ACT_SAMPLES, in, ACT_SAMPLES, ref, ACT_SAMPLES));
+    TEST_ASSERT_EQUAL_INT(CFD_SUCCESS,
+                          cfd_nn_predict_batch(simd_ctx, ACT_SAMPLES, in, ACT_SAMPLES, got, ACT_SAMPLES));
+
+    double worst = 0.0;
+    for (int i = 0; i < ACT_SAMPLES; i++) {
+        double rel = fabs(got[i] - ref[i]) / fmax(fabs(ref[i]), 1e-30);
+        worst = fmax(worst, rel);
+    }
+    printf("    simd=%s %-8s on [%g, %g]: max relative difference %.3e\n",
+           cfd_nn_context_backend(simd_ctx), name, lo, hi, worst);
+    /* About 2.7e-7 in the float32 prototype; scalar libm adds its own ~1 ulp. */
+    TEST_ASSERT_TRUE_MESSAGE(worst < 1e-6, "vectorised activation drifted from scalar");
+
+    cfd_nn_context_destroy(simd_ctx);
+    cfd_nn_context_destroy(ref_ctx);
+    cfd_nn_model_destroy(m);
+}
+
+void test_simd_tanh_matches_scalar(void) { check_activation(CFD_NN_ACT_TANH, "tanh", -20.0, 20.0); }
+void test_simd_sigmoid_matches_scalar(void) {
+    check_activation(CFD_NN_ACT_SIGMOID, "sigmoid", -60.0, 60.0);
+}
+/* Down to -80, where softplus is exp(x) ~ 1e-35: log1p must not round it to 0. */
+void test_simd_softplus_matches_scalar(void) {
+    check_activation(CFD_NN_ACT_SOFTPLUS, "softplus", -80.0, 60.0);
+}
+
+/* A NaN must survive every vectorised activation, so predict still reports
+ * CFD_ERROR_DIVERGED. minps/maxps return their second operand when either is
+ * NaN, so a clamp written the wrong way round would turn NaN into a finite
+ * value and hand a corrupt model's output back as a prediction. The NaN sits
+ * in the vector body (sample 3 of 16), not the scalar tail. */
+void test_simd_activations_propagate_nan(void) {
+    const cfd_nn_activation_t acts[] = {CFD_NN_ACT_TANH, CFD_NN_ACT_SIGMOID, CFD_NN_ACT_SOFTPLUS};
+    for (size_t a = 0; a < sizeof(acts) / sizeof(acts[0]); a++) {
+        TEST_ASSERT_EQUAL_INT(CFD_SUCCESS, write_activation_model(acts[a]));
+        cfd_nn_model_t* m = NULL;
+        cfd_nn_context_t* ref_ctx = NULL;
+        cfd_nn_context_t* simd_ctx = NULL;
+        if (!open_pair(16, &m, &ref_ctx, &simd_ctx)) {
+            TEST_IGNORE_MESSAGE("SIMD backend not built or not supported by this CPU");
+            return;
+        }
+        double in[16], out[16];
+        for (int i = 0; i < 16; i++) {
+            in[i] = 0.25 * (double)i - 2.0;
+        }
+        in[3] = NAN;
+        TEST_ASSERT_EQUAL_INT_MESSAGE(CFD_ERROR_DIVERGED,
+                                      cfd_nn_predict_batch(simd_ctx, 16, in, 16, out, 16),
+                                      "a NaN input came out of the activation finite");
+        cfd_nn_context_destroy(simd_ctx);
+        cfd_nn_context_destroy(ref_ctx);
+        cfd_nn_model_destroy(m);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_omp_is_bit_identical_to_scalar);
     RUN_TEST(test_simd_matches_scalar_within_tolerance);
     RUN_TEST(test_simd_matches_scalar_at_every_batch_size);
+    RUN_TEST(test_simd_tanh_matches_scalar);
+    RUN_TEST(test_simd_sigmoid_matches_scalar);
+    RUN_TEST(test_simd_softplus_matches_scalar);
+    RUN_TEST(test_simd_activations_propagate_nan);
     return UNITY_END();
 }

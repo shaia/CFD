@@ -27,6 +27,39 @@
 #define SIMD_STORE(p, v)  vst1q_f32(p, v)
 #define SIMD_SET1(x)      vdupq_n_f32(x)
 #define SIMD_FMA(a, b, c) vfmaq_f32(c, a, b) /* c + a * b */
+#define SIMD_ADD(a, b)    vaddq_f32(a, b)
+#define SIMD_SUB(a, b)    vsubq_f32(a, b)
+#define SIMD_MUL(a, b)    vmulq_f32(a, b)
+#define SIMD_DIV(a, b)    vdivq_f32(a, b)
+/* fmin/fmax on AArch64 propagate NaN from either operand, which satisfies the
+ * template's contract (NaN in the second operand propagates). */
+#define SIMD_MIN(a, b)             vminq_f32(a, b)
+#define SIMD_MAX(a, b)             vmaxq_f32(a, b)
+#define SIMD_ABS(a)                vabsq_f32(a)
+#define SIMD_FLOOR(a)              vrndmq_f32(a)
+#define SIMD_SELECT_LT(a, b, t, f) vbslq_f32(vcltq_f32(a, b), t, f)
+#define SIMD_SELECT_EQ(a, b, t, f) vbslq_f32(vceqq_f32(a, b), t, f)
+#define SIMD_POW2N(n)              cfdnn_pow2n_neon(n)
+#define SIMD_FREXP_E(x)            cfdnn_frexp_e_neon(x)
+#define SIMD_FREXP_M(x)            cfdnn_frexp_m_neon(x)
+
+/* 2^n for integral n: (n + 127) placed in the exponent field. */
+static inline float32x4_t cfdnn_pow2n_neon(float32x4_t n) {
+    int32x4_t e = vaddq_s32(vcvtq_s32_f32(n), vdupq_n_s32(127));
+    return vreinterpretq_f32_s32(vshlq_n_s32(e, 23));
+}
+
+/* x = m * 2^e with m in [0.5, 1), for normal x > 0. */
+static inline float32x4_t cfdnn_frexp_e_neon(float32x4_t x) {
+    int32x4_t bits = vreinterpretq_s32_f32(x);
+    int32x4_t e = vandq_s32(vshrq_n_s32(bits, 23), vdupq_n_s32(0xFF));
+    return vcvtq_f32_s32(vsubq_s32(e, vdupq_n_s32(126)));
+}
+
+static inline float32x4_t cfdnn_frexp_m_neon(float32x4_t x) {
+    int32x4_t bits = vandq_s32(vreinterpretq_s32_f32(x), vdupq_n_s32(0x007FFFFF));
+    return vreinterpretq_f32_s32(vorrq_s32(bits, vdupq_n_s32(0x3F000000)));
+}
 
 #include "../simd_template/cfdnn_kernels_simd_template.h"
 

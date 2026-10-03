@@ -241,11 +241,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **AVX2 and NEON kernels for `.cfdnn` inference.** `CFD_NN_BACKEND_SIMD` was always
   unsupported; it now runs on AVX2 or NEON, chosen at runtime, and `CFD_NN_BACKEND_AUTO`
   resolves to it ahead of OMP. Lanes carry samples, not features, so nothing is reduced
-  across lanes: AVX2 stays within 3.4e-6 of scalar (tolerance 1e-5). On a closure-sized
-  network AVX2 is 1.36x faster than scalar; the dense arithmetic alone is 4.5x, and the
-  scalar `tanh`/`softplus` take the rest (design note §2.3). NEON shares the AVX2 code
-  through one template and has not yet run on ARM hardware. Avoid an OMP context for
-  `turb_closure`: at the closure's 256-cell tiles it is slower than scalar.
+  across lanes: AVX2 stays within 3.4e-6 of scalar (tolerance 1e-5). `tanh`, `sigmoid`
+  and `softplus` run in the vector unit too: Cephes `exp`/`log` and an odd rational
+  `tanh`, all within 4.3 ulp of float64 truth and NaN-preserving, so a corrupt model
+  still fails with `CFD_ERROR_DIVERGED`. On a closure-sized network (3 → 16 tanh → 16
+  tanh → 1 softplus) AVX2 is 6.9x faster than scalar, against 1.6x with scalar
+  transcendentals (design note §2.3). NEON shares the AVX2 code through one template and
+  has not yet run on ARM hardware. Avoid an OMP context for `turb_closure`: at the
+  closure's 256-cell tiles it is slower than scalar.
 
 - **Examples for features that had none.** `natural_convection.c` (energy equation,
   Boussinesq buoyancy, thermal BCs; within 1.1% of de Vahl Davis at Ra = 1000),

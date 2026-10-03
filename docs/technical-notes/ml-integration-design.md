@@ -377,13 +377,14 @@ Consequences, all of which are contracts the tests enforce:
   reduced, so each cell's arithmetic is untouched. The test asserts exact memory equality,
   not a tolerance. A failure there means someone parallelized a reduction axis — which is
   precisely what we want to catch.
-- **SIMD differs from scalar only by FMA contraction**, around 1e-7 relative. The test
-  tolerance is 1e-5 and the observed maximum is *printed*, so drift toward the tolerance is
-  visible before it becomes a failure.
+- **SIMD differs from scalar by FMA contraction in the dense sums and by the vector
+  activation approximations**, each around 1e-7 relative. The test tolerance is 1e-5 and
+  the observed maximum is *printed*, so drift toward the tolerance is visible before it
+  becomes a failure.
 - Vector loop plus scalar remainder tail, per the established SIMD rule.
-- Transcendental activations run through the shared scalar `cfd_nn_apply_activation()`
-  rather than a vector polynomial approximation, so every backend computes exactly the
-  same activation function.
+- `tanh`, `sigmoid` and `softplus` are vectorised with polynomial approximations (below), so
+  SIMD and scalar evaluate slightly different activation functions, a few ulp apart;
+  identity and the ReLUs use the shared scalar `cfd_nn_apply_activation()`.
 
 **As built.** The input is sample-major, so each block of `SIMD_WIDTH` samples (8 on AVX2,
 4 on NEON) is first transposed into feature-major scratch. Every inner-loop load is then a
@@ -394,28 +395,58 @@ allocation-free and the model stays immutable. Measured differences from scalar:
 the backend test, 3.4e-6 across batches 1–33 on a 300-wide layer, and 1.3e-7 against the
 Python float64 reference, all under the 1e-5 tolerance.
 
-**The activation cost was wrong, measured.** The claim above that transcendentals are "a
-vanishing fraction of the FLOPs" does not hold at closure size. Release/AVX2, the 3 → 16
-tanh → 16 tanh → 1 softplus model of §2.8, one process, best of seven, ns per cell:
+**The activation cost was wrong, measured.** The original plan kept transcendentals scalar
+on the grounds that they are "a vanishing fraction of the FLOPs". At closure size they are
+not. With the AVX2 kernel first built that way, the 3 → 16 tanh → 16 tanh → 1 softplus
+model of §2.8 ran at 147 ns per cell against scalar's 229, only 1.6× faster. Nearly all the
+remaining time was the 33 scalar `tanhf`/`expf`/`log1pf` calls per cell.
 
-| backend | with activations | activations disabled |
-| ------- | ---------------- | -------------------- |
-| scalar  | 338 | 149 |
-| AVX2    | 249 | 33  |
+**Vectorised activations, as built.** `tanh`, `sigmoid` and `softplus` now run in the
+vector unit, shared by AVX2 and NEON through the template:
 
-The matrix work vectorises 4.5×. The 33 scalar transcendentals per cell hold the whole
-network to 1.36×, and they are about 85% of AVX2's time. A vectorised `tanh`/`softplus`
-(an `exp` polynomial accurate to a few ulp) would stay far inside the 1e-5 cross-backend
-tolerance, so this design's reason for refusing one, "breaks agreement for no measurable
-gain", fails on both counts. It is filed as a follow-up rather than done here, because it
-adds a numerical approximation the scalar reference does not make, and that deserves its
-own decision.
+- `exp`: Cephes `expf` (range reduction by ln 2 split in two, degree-5 polynomial, 2ⁿ built
+  in the exponent bits), clamped to ±88.38.
+- `tanh`: an odd 13/6 rational minimax polynomial, clamped at ±7.905 where `tanh` rounds to
+  ±1. Odd in x, so small arguments keep full relative accuracy instead of cancelling as
+  `1 − 2/(e^{2x} + 1)` would.
+- `softplus`: the scalar kernel's overflow-safe `max(x, 0) + log1p(exp(−|x|))`, with
+  `log1p` by Goldberg's identity `log(u)·t/(u − 1)`, `u = 1 + t`, over a Cephes `logf`. It
+  returns `t` itself where `u` rounds to 1, so `softplus` of a very negative x is
+  `exp(x)`, not 0, down to x ≈ −87.3. Below that the vector `exp` flushes to 0, where the
+  scalar kernel returns a float32 denormal under 1e-38.
+
+Accuracy against float64 truth, prototyped in float32 numpy before any C was written:
+`tanh` 4.3 ulp, `exp` 1.0, `log` 0.8, `softplus` 2.7, `sigmoid` 2.3. The worst relative
+error is 2.6e-7, against 1.3 ulp for the scalar `tanhf` it replaces. The C test measures
+2.4e-7 (`tanh`), 1.9e-7 (`sigmoid`) and 2.1e-7 (`softplus`, down to x = −80) against the
+scalar backend, and 1.3e-7 against the Python reference, so the trade costs nothing
+visible against the 1e-5 tolerance. NaN must survive every activation, because
+`cfd_nn_predict_batch()` turns a non-finite output into `CFD_ERROR_DIVERGED`. `minps`/
+`maxps` return their second operand when either input is NaN, so every clamp passes x
+second. A test feeds NaN through each activation and was checked against a clamp written
+the other way round, which it fails.
+
+Release/AVX2, the same model, each backend in its own process, best of five, ns per cell:
+
+| backend | 256-cell tile | 16,641 cells |
+| ------- | ------------- | ------------ |
+| scalar  | 226 | 227 |
+| AVX2, scalar activations | 147 | 146 |
+| AVX2, vector activations | 32 | 33 |
+
+**6.9× over scalar, up from 1.6×.** An earlier measurement in this note reported 1.36×,
+with every backend timed in one process. It was contaminated: after the OpenMP backend
+runs, its worker threads spin-wait (`KMP_BLOCKTIME`) and steal cycles from whatever runs
+next, single-threaded scalar included. Timing each backend in its own process, with
+`OMP_WAIT_POLICY=PASSIVE`, removes that.
 
 **OMP loses at the closure's tile size.** The closure calls `cfd_nn_predict_batch` in
 tiles of `TURB_CLOSURE_TILE` = 256 cells. At that size the OpenMP backend is slower than
-scalar (447 vs 338 ns per cell at 4 threads), because it opens a parallel region per layer
-per tile, and a region costs about 12 µs under MSVC. It wins only on large batches
-(170 ns per cell at 16,641). A closure context should be SIMD or scalar, not OMP.
+scalar (259 vs 231 ns per cell at 4 threads, measured the same isolated way), because it
+opens a parallel region per layer per tile, and a region costs about 12 µs under MSVC. It
+wins only on large batches (80 ns per cell at 16,641, against scalar's 240). With the
+vector activations, SIMD beats both at either size. A closure context should be SIMD, or
+scalar where SIMD is unavailable, never OMP.
 
 One deliberate deviation from existing code: the AVX2 file is guarded on `CFD_HAS_AVX2`
 **alone**. `linear_solver_bicgstab_avx2.c` couples its guard to `CFD_ENABLE_OPENMP`, which

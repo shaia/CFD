@@ -9,8 +9,9 @@
  * Accumulation order is part of the contract, not an implementation detail.
  * The sum over input features runs in ascending index order, and nothing is
  * ever reduced across samples. SIMD and OpenMP backends parallelise the SAMPLE
- * axis, which is not reduced, so OpenMP stays bit-identical to this file and
- * SIMD differs only by FMA contraction.
+ * axis, which is not reduced, so OpenMP stays bit-identical to this file. SIMD
+ * differs by FMA contraction in the dense sums and by its vector tanh/sigmoid/
+ * softplus approximations (a few ulp; see simd_template/), never by order.
  */
 
 #include "../cfdnn_internal.h"
