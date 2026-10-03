@@ -785,6 +785,37 @@ void test_callback_contract(void) {
 }
 
 /**
+ * The reverse: a segment saved with constant values stays constant through an
+ * in-place restore, even when the live simulation has a profile in that slot.
+ * Carrying it across would silently replace the stored values.
+ */
+void test_restore_keeps_constant_segment_constant(void) {
+    int profile_marker = 7;
+    simulation_data* sim = init_simulation_with_solver(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0,
+                                                       NS_SOLVER_TYPE_RK2);
+    TEST_ASSERT_NOT_NULL(sim);
+    sim->params.turb_bc.segments[0] = (ns_turbulence_bc_segment_t){
+        .edge = BC_EDGE_LEFT, .start = 0.5, .end = 1.0, .type = BC_TYPE_DIRICHLET,
+        .k = 1e-3, .eps = 1e-4, .nu_tilde = 2e-4};
+    sim->params.turb_bc.n_segments = 1;
+    fill_field_known(sim->field, 1.0);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, save_simulation_checkpoint(sim, CK_PATH));
+
+    sim->params.turb_bc.segments[0].profile = dummy_turb_profile;
+    sim->params.turb_bc.segments[0].profile_user_data = &profile_marker;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, restore_simulation_checkpoint(sim, CK_PATH));
+
+    const ns_turbulence_bc_segment_t* s = &sim->params.turb_bc.segments[0];
+    TEST_ASSERT_NULL(s->profile);
+    TEST_ASSERT_NULL(s->profile_user_data);
+    TEST_ASSERT_EQUAL_DOUBLE(1e-3, s->k);
+    TEST_ASSERT_EQUAL_DOUBLE(1e-4, s->eps);
+    TEST_ASSERT_EQUAL_DOUBLE(2e-4, s->nu_tilde);
+
+    free_simulation(sim);
+}
+
+/**
  * A profiled DIRICHLET segment cannot come back from a checkpoint as a constant
  * one. Its profile is not stored, and the placeholder values beside it -- here
  * ones that would pass every check -- are stored as NaN, so the loaded segment
@@ -846,6 +877,7 @@ int main(void) {
     RUN_TEST(test_reject_out_of_enum_params);
     RUN_TEST(test_reject_unknown_nut_correction);
     RUN_TEST(test_profiled_segment_refused_until_reattached);
+    RUN_TEST(test_restore_keeps_constant_segment_constant);
     RUN_TEST(test_reject_truncated);
     RUN_TEST(test_reject_crc_corruption);
     RUN_TEST(test_restart_continuity_scalar);

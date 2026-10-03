@@ -420,12 +420,18 @@ cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char
     // closure is a caller-owned context, so the checkpoint stores no trace of it.
     new_params.turb_closure = sim_data->params.turb_closure;
     // And each segment's inflow profile, matched by position in the array, which
-    // the checkpoint preserves.
+    // the checkpoint preserves -- but only onto a segment the checkpoint marks as
+    // profiled (DIRICHLET with NaN values, see checkpoint.h). Attaching one to a
+    // segment saved with constant values would silently replace those values.
     for (size_t n = 0; n < new_params.turb_bc.n_segments &&
                        n < sim_data->params.turb_bc.n_segments; n++) {
-        new_params.turb_bc.segments[n].profile = sim_data->params.turb_bc.segments[n].profile;
-        new_params.turb_bc.segments[n].profile_user_data =
-            sim_data->params.turb_bc.segments[n].profile_user_data;
+        ns_turbulence_bc_segment_t* seg = &new_params.turb_bc.segments[n];
+        const int profiled = seg->type == BC_TYPE_DIRICHLET && isnan(seg->k) &&
+                             isnan(seg->eps) && isnan(seg->nu_tilde);
+        if (profiled) {
+            seg->profile = sim_data->params.turb_bc.segments[n].profile;
+            seg->profile_user_data = sim_data->params.turb_bc.segments[n].profile_user_data;
+        }
     }
 
     // Initialize the new solver against the new grid/params *before* touching the
