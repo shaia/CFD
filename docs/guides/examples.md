@@ -256,38 +256,35 @@ simulation_data* sim = init_simulation_with_solver(
 - Grid size scaling
 - Timing methodology
 
-**Benchmark Setup:**
+**Benchmark Setup:** each of the six solvers (`explicit_euler`, `explicit_euler_optimized`,
+`explicit_euler_omp`, `projection`, `projection_optimized`, `projection_omp`) runs 100 steps
+on grids of 50x25, 100x50, 200x100 and 400x200 over a 1.0 x 0.5 domain.
+
+**Timing Pattern:** a solver that refuses init is reported, not timed, and a failed step ends
+that solver's run:
 ```c
-typedef struct {
-    const char* name;
-    size_t nx, ny;
-    int steps;
-} benchmark_config_t;
+grid* grid = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
+grid_initialize_uniform(grid);  // grid_create only allocates; spacing is zero until this
 
-benchmark_config_t configs[] = {
-    {"Small Grid",  50,  50, 100},
-    {"Medium Grid", 100, 100, 100},
-    {"Large Grid",  200, 200, 100},
-};
-```
-
-**Timing Pattern:**
-```c
-#include <time.h>
-
-clock_t start = clock();
-
-// Run simulation
-for (int step = 0; step < max_steps; step++) {
-    run_simulation_step(sim);
+cfd_status_t status = solver_init(solver, grid, &params);
+if (status != CFD_SUCCESS) {
+    printf("Skipped: %s\n", cfd_get_last_error());
+    goto cleanup;
 }
 
-clock_t end = clock();
-double elapsed = (double)(end - start) / CLOCKS_PER_SEC;
-
-printf("Time: %.3f seconds (%.3f ms/step)\n",
-       elapsed, 1000.0 * elapsed / max_steps);
+clock_t start = clock();
+for (int i = 0; i < iterations; i++) {
+    status = solver_step(solver, field, grid, &params, &stats);
+    if (status != CFD_SUCCESS) {
+        printf("Failed at step %d: %s\n", i, cfd_get_error_string(status));
+        goto cleanup;
+    }
+}
+double cpu_time = (double)(clock() - start) / CLOCKS_PER_SEC;
 ```
+
+`clock()` measures wall time on Windows but CPU time summed over threads on Linux and macOS,
+so OpenMP rows there read slower than they run.
 
 **Run:**
 ```bash
@@ -327,6 +324,10 @@ Execution time: 0.068 seconds
 Performance: 7352941 cell-updates/second
 Memory usage: 0.19 MB
 ```
+
+The Optimized rows need AVX2 compiled in. On a default build (`CFD_ENABLE_AVX2` is OFF) they
+print `Skipped: SIMD Navier-Stokes backend unavailable: built without AVX2 (configure with
+-DCFD_ENABLE_AVX2=ON)` instead of a timing.
 
 ---
 

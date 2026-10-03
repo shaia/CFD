@@ -69,7 +69,7 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 1. Read [Solvers Performance](reference/solvers.md#performance-benchmarks)
 2. Study [SIMD Optimization Analysis](technical-notes/simd-optimization-analysis.md)
 3. Review [Backend Performance](reference/solvers.md#backend-performance)
-4. Run [performance_comparison](guides/examples.md#4-performance_comparisonc)
+4. Run [performance_comparison](guides/examples.md#5-performance_comparisonc)
 
 **Key resources:**
 - [Backend Abstraction](architecture/architecture.md#4-backend-abstraction)
