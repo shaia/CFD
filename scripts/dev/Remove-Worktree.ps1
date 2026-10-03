@@ -102,29 +102,35 @@ if (@($entries[$self] | Where-Object { $_ -like 'locked*' }).Count) {
 
 $link = Join-Path $wt '.claude'
 $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
-if ($item -and $item.LinkType) {
-    $target = @($item.Target)[0]
-    $before = @(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue).Count
-    if ($PSCmdlet.ShouldProcess($link, "remove the $($item.LinkType) (link only; $target is kept)")) {
-        cmd /c rmdir "$link"
-        if (Test-Path -LiteralPath $link) { throw "could not remove the link $link; nothing else was touched" }
-        $after = @(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue).Count
-        if ($after -lt $before) {
-            throw "the shared directory $target lost entries ($before -> $after) while unlinking; stopping"
-        }
-        Write-Host "unlinked: $link (target $target untouched, $after entries)"
-    }
-}
-
+$isLink = [bool]($item -and $item.LinkType)
 $gitArgs = @('-C', $main, 'worktree', 'remove')
 if ($Force) { $gitArgs += '--force' }
 $gitArgs += $wt
-if ($PSCmdlet.ShouldProcess($wt, "git $($gitArgs -join ' ')")) {
-    git @gitArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw ("git worktree remove failed after the .claude link was removed. If git worktree list " +
-               "still shows $wt, restore the link with New-Worktree.ps1 -Existing `"$wt`"; if not, " +
-               "only a leftover folder remains and it holds no link, so it can be deleted.")
-    }
-    Write-Host "removed: $wt"
+
+# One confirmation for the whole operation, before either step: confirming the removal but not the
+# unlink would run git through the junction, and the reverse would strand the worktree untooled.
+$plan = "git $($gitArgs -join ' ')"
+if ($isLink) {
+    $target = @($item.Target)[0]
+    $plan = "remove the $($item.LinkType) $link (link only; $target is kept), then $plan"
 }
+if (-not $PSCmdlet.ShouldProcess($wt, $plan)) { return }
+
+if ($isLink) {
+    $before = @(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue).Count
+    cmd /c rmdir "$link"
+    if (Test-Path -LiteralPath $link) { throw "could not remove the link $link; nothing else was touched" }
+    $after = @(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue).Count
+    if ($after -lt $before) {
+        throw "the shared directory $target lost entries ($before -> $after) while unlinking; stopping"
+    }
+    Write-Host "unlinked: $link (target $target untouched, $after entries)"
+}
+
+git @gitArgs
+if ($LASTEXITCODE -ne 0) {
+    throw ("git worktree remove failed after the .claude link was removed. If git worktree list " +
+           "still shows $wt, restore the link with New-Worktree.ps1 -Existing `"$wt`"; if not, " +
+           "only a leftover folder remains and it holds no link, so it can be deleted.")
+}
+Write-Host "removed: $wt"
