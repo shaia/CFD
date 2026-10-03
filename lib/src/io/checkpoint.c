@@ -309,6 +309,14 @@ static void write_field(chk_io* io, const flow_field* f) {
     put_f64_array(io, f->p, n);
     put_f64_array(io, f->rho, n);
     put_f64_array(io, f->T, n);
+    /* Turbulence state, always allocated (zero when no model is active). All
+     * four carry over between steps -- nu_t through the momentum equation,
+     * including the wall-function values at wall nodes -- so a restart without
+     * them restarts the turbulence from zero and is not bit-exact. */
+    put_f64_array(io, f->turb_k, n);
+    put_f64_array(io, f->turb_eps, n);
+    put_f64_array(io, f->turb_nu_tilde, n);
+    put_f64_array(io, f->nu_t, n);
 }
 
 static void write_params(chk_io* io, const ns_solver_params_t* p) {
@@ -645,6 +653,10 @@ cfd_status_t cfd_checkpoint_read(const char* path,
         get_f64_array(&io, f->p, n);
         get_f64_array(&io, f->rho, n);
         get_f64_array(&io, f->T, n);
+        get_f64_array(&io, f->turb_k, n);
+        get_f64_array(&io, f->turb_eps, n);
+        get_f64_array(&io, f->turb_nu_tilde, n);
+        get_f64_array(&io, f->nu_t, n);
     }
 
     /* --- params (callbacks remain NULL from the memset) --- */
