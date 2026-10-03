@@ -969,19 +969,50 @@ static void apply_node_bc(flow_field* field, const ns_solver_params_t* params,
     }
 }
 
-/* Apply one face node by node, each node taking its segment's BC if it has one.
- * Every node reads only its own interior neighbour, so the order along the face
- * does not matter. */
-static cfd_status_t apply_face_bcs(flow_field* field, const grid* grid,
-                                   const ns_solver_params_t* params, bc_edge_t edge,
-                                   bc_type_t face_type, double k, double eps,
-                                   double nu_tilde) {
+/* Faces in application order: left and right first, then bottom and top, which
+ * overwrite the corners. */
+static const bc_edge_t face_order[4] = {BC_EDGE_LEFT, BC_EDGE_RIGHT, BC_EDGE_BOTTOM,
+                                          BC_EDGE_TOP};
+
+static size_t face_node_count(bc_edge_t edge, size_t nx, size_t ny) {
+    return (edge == BC_EDGE_LEFT || edge == BC_EDGE_RIGHT) ? ny : nx;
+}
+
+/*
+ * Resolve every boundary node of every face, in face_order, into nodes[]
+ * (2 * (nx + ny) entries). This is where profiles are called and their output
+ * checked, so a refusal happens before any field is written.
+ */
+static cfd_status_t resolve_all_faces(const ns_turbulence_bc_config_t* tbc, int is_ke,
+                                      size_t nx, size_t ny, const turb_node_bc_t faces[4],
+                                      turb_node_bc_t* nodes) {
+    size_t offset = 0;
+    for (int f = 0; f < 4; f++) {
+        const size_t count = face_node_count(face_order[f], nx, ny);
+        for (size_t s = 0; s < count; s++) {
+            cfd_status_t status = resolve_node_bc(tbc, face_order[f], &faces[f], is_ke,
+                                                  bc_edge_node_t(s, count),
+                                                  &nodes[offset + s]);
+            if (status != CFD_SUCCESS) {
+                return status;
+            }
+        }
+        offset += count;
+    }
+    return CFD_SUCCESS;
+}
+
+/* Apply one face node by node: node s takes nodes[s], or the face's own BC when
+ * nodes is NULL (no segments). Every node reads only its own interior
+ * neighbour, so the order along the face does not matter. */
+static void apply_face_bcs(flow_field* field, const grid* grid,
+                           const ns_solver_params_t* params, bc_edge_t edge,
+                           const turb_node_bc_t* face, const turb_node_bc_t* nodes) {
     const size_t nx = field->nx;
     const size_t ny = field->ny;
     const int along_y = (edge == BC_EDGE_LEFT || edge == BC_EDGE_RIGHT);
-    const size_t count = along_y ? ny : nx;
+    const size_t count = face_node_count(edge, nx, ny);
     const int is_ke = (params->turb_model == TURB_MODEL_K_EPSILON);
-    const turb_node_bc_t face = {face_type, k, eps, nu_tilde};
 
     double y_p;
     switch (edge) {
@@ -994,16 +1025,10 @@ static cfd_status_t apply_face_bcs(flow_field* field, const grid* grid,
     for (size_t s = 0; s < count; s++) {
         size_t idx, idx_int, idx_per;
         face_node_indices(edge, nx, ny, s, &idx, &idx_int, &idx_per);
-        turb_node_bc_t bc;
-        cfd_status_t status = resolve_node_bc(&params->turb_bc, edge, &face, is_ke,
-                                              bc_edge_node_t(s, count), &bc);
-        if (status != CFD_SUCCESS) {
-            return status;
-        }
         const double u_tan = along_y ? fabs(field->v[idx_int]) : fabs(field->u[idx_int]);
-        apply_node_bc(field, params, &bc, is_ke, idx, idx_int, idx_per, y_p, u_tan);
+        apply_node_bc(field, params, nodes ? &nodes[s] : face, is_ke, idx, idx_int, idx_per,
+                      y_p, u_tan);
     }
-    return CFD_SUCCESS;
 }
 
 cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
@@ -1034,30 +1059,44 @@ cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
         return CFD_ERROR_INVALID;
     }
 
-    /* Every segment was checked with the other arguments, before any field is
-     * touched. Only a profile's output, which is not known until its node is
-     * reached, can fail part-way. */
+    /* In face_order */
+    const turb_node_bc_t faces[4] = {
+        {tbc->left, tbc->k_values.left, tbc->eps_values.left, tbc->nu_tilde_values.left},
+        {tbc->right, tbc->k_values.right, tbc->eps_values.right, tbc->nu_tilde_values.right},
+        {tbc->bottom, tbc->k_values.bottom, tbc->eps_values.bottom,
+         tbc->nu_tilde_values.bottom},
+        {tbc->top, tbc->k_values.top, tbc->eps_values.top, tbc->nu_tilde_values.top},
+    };
+    const size_t nx = field->nx;
+    const size_t ny = field->ny;
 
-    /* Left and right first, then bottom and top, which overwrite the corners. */
-    status = apply_face_bcs(field, grid, params, BC_EDGE_LEFT, tbc->left,
-                            tbc->k_values.left, tbc->eps_values.left,
-                            tbc->nu_tilde_values.left);
-    if (status == CFD_SUCCESS) {
-        status = apply_face_bcs(field, grid, params, BC_EDGE_RIGHT, tbc->right,
-                                tbc->k_values.right, tbc->eps_values.right,
-                                tbc->nu_tilde_values.right);
+    /* With segments, every node is resolved first -- profiles called, their
+     * output checked -- and only then is any field written, so a refusal leaves
+     * the fields as they were (the segments themselves were checked with the
+     * other arguments). One small allocation per call, 2 * (nx + ny) nodes, and
+     * none without segments. */
+    turb_node_bc_t* nodes = NULL;
+    if (tbc->n_segments > 0) {
+        nodes = (turb_node_bc_t*)cfd_calloc(2 * (nx + ny), sizeof(*nodes));
+        if (!nodes) {
+            return CFD_ERROR_NOMEM;
+        }
+        status = resolve_all_faces(tbc, params->turb_model == TURB_MODEL_K_EPSILON, nx, ny,
+                                   faces, nodes);
+        if (status != CFD_SUCCESS) {
+            cfd_free(nodes);
+            return status;
+        }
     }
-    if (status == CFD_SUCCESS) {
-        status = apply_face_bcs(field, grid, params, BC_EDGE_BOTTOM, tbc->bottom,
-                                tbc->k_values.bottom, tbc->eps_values.bottom,
-                                tbc->nu_tilde_values.bottom);
+
+    size_t offset = 0;
+    for (int f = 0; f < 4; f++) {
+        apply_face_bcs(field, grid, params, face_order[f], &faces[f],
+                       nodes ? &nodes[offset] : NULL);
+        offset += face_node_count(face_order[f], nx, ny);
     }
-    if (status == CFD_SUCCESS) {
-        status = apply_face_bcs(field, grid, params, BC_EDGE_TOP, tbc->top,
-                                tbc->k_values.top, tbc->eps_values.top,
-                                tbc->nu_tilde_values.top);
-    }
-    return status;
+    cfd_free(nodes);
+    return CFD_SUCCESS;
 }
 
 cfd_status_t turbulence_bc_add_segment(ns_turbulence_bc_config_t* bc,

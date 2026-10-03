@@ -212,7 +212,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     step (which reads segments for SA wall distance before the BCs run) and by
     `turbulence_apply_bcs()`, each before touching any field. These checks also refuse a k-ε
     DIRICHLET segment with no profile and `eps <= 0`. A profile that returns a negative or
-    non-finite value is refused by `turbulence_apply_bcs()`.
+    non-finite value is refused by `turbulence_apply_bcs()`, which resolves every boundary
+    node first and writes nothing unless all of them pass.
   - **Checkpoint format version 7.** Segments are stored except their profile callback,
     which `restore_simulation_checkpoint()` carries across like the other callbacks. A
     profiled DIRICHLET segment's values are stored as NaN, so a segment loaded without its

@@ -86,7 +86,9 @@ CFD_LIBRARY_EXPORT cfd_status_t turbulence_step_explicit(flow_field* field, cons
  *         turbulence_bc_add_segment() would refuse / a k-epsilon DIRICHLET
  *         segment with no profile and eps <= 0 / a profile returning a negative
  *         or non-finite value (or eps <= 0 under k-epsilon),
- *         CFD_ERROR_UNSUPPORTED for 3D grids.
+ *         CFD_ERROR_UNSUPPORTED for 3D grids, CFD_ERROR_NOMEM if the per-call
+ *         node buffer used with segments cannot be allocated. No field is
+ *         written on any error: every profile is evaluated and checked first.
  */
 CFD_LIBRARY_EXPORT cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
                                                      const ns_solver_params_t* params);

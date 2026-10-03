@@ -386,6 +386,38 @@ static void test_apply_refusals(void) {
     grid_destroy(g);
 }
 
+/* Valid over the first half of its segment, negative k over the second. */
+static void half_bad_profile(double position, double* k, double* eps, double* nu_tilde,
+                             void* user_data) {
+    (void)user_data;
+    *k = (position < 0.5) ? 1e-3 : -1.0;
+    *eps = 1e-4;
+    *nu_tilde = (position < 0.5) ? 1e-4 : -1.0;
+}
+
+static void test_bad_profile_leaves_fields_untouched(void) {
+    /* On the top face, which is applied last: every other face, and the start
+     * of this one, would already have been written if the profile were only
+     * checked as each node was reached. */
+    grid* g = make_grid();
+    const turbulence_model_t models[] = {TURB_MODEL_K_EPSILON, TURB_MODEL_SPALART_ALLMARAS};
+    for (size_t m = 0; m < 2; m++) {
+        flow_field* field = make_field();
+        flow_field* before = make_field();
+        ns_solver_params_t params = make_params(models[m]);
+        params.turb_bc.bottom = BC_TYPE_NOSLIP;
+        ns_turbulence_bc_segment_t seg = {.edge = BC_EDGE_TOP, .start = 0.0, .end = 1.0,
+                                          .type = BC_TYPE_DIRICHLET,
+                                          .profile = half_bad_profile};
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, turbulence_bc_add_segment(&params.turb_bc, &seg));
+        TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, turbulence_apply_bcs(field, g, &params));
+        assert_fields_identical(before, field);
+        flow_field_destroy(before);
+        flow_field_destroy(field);
+    }
+    grid_destroy(g);
+}
+
 /* A segment that only a hand-filled config can carry: an empty range. */
 static ns_solver_params_t params_with_bad_segment(turbulence_model_t model) {
     ns_solver_params_t params = make_params(model);
@@ -503,6 +535,7 @@ int main(void) {
     RUN_TEST(test_last_segment_wins);
     RUN_TEST(test_add_segment_refusals);
     RUN_TEST(test_apply_refusals);
+    RUN_TEST(test_bad_profile_leaves_fields_untouched);
     RUN_TEST(test_step_refuses_bad_segment);
     RUN_TEST(test_solver_init_refuses_bad_segment);
     RUN_TEST(test_wall_distance_with_segments);
