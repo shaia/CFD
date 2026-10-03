@@ -174,7 +174,9 @@ typedef enum {
  * turbulence segment over the same range see the same position at each node.
  * Write all three outputs; only the active model's are read (k and eps for
  * k-epsilon, nu_tilde for Spalart-Allmaras). Must be thread-safe if the caller
- * runs several solvers at once.
+ * runs several solvers at once. The function and its user_data are caller-owned
+ * and are called on every step, so both must outlive every run that uses the
+ * params; like the other callbacks, neither is stored in a checkpoint.
  */
 typedef void (*ns_turbulence_profile_fn)(double position, double* k, double* eps,
                                          double* nu_tilde, void* user_data);
@@ -413,7 +415,7 @@ typedef struct {
      * follow the same numerics. GPU solvers return CFD_ERROR_UNSUPPORTED when
      * a turbulence model is enabled. */
     turbulence_model_t turb_model;      /**< Turbulence model selection */
-    ns_turbulence_bc_config_t turb_bc;  /**< Per-face turbulence BCs (zero-init = all PERIODIC) */
+    ns_turbulence_bc_config_t turb_bc;  /**< Per-face turbulence BCs and part-face segments (zero-init = all PERIODIC, no segments) */
 
     /* Pressure Poisson solver for projection solvers ("projection" and
      * "projection_omp"; 0 = existing CG behavior, backward compatible). */

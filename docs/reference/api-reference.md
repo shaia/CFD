@@ -263,7 +263,7 @@ typedef struct {
     double tolerance;       // Convergence tolerance
     // Turbulence
     turbulence_model_t        turb_model;  // TURB_MODEL_NONE (default), K_EPSILON, SPALART_ALLMARAS
-    ns_turbulence_bc_config_t turb_bc;    // Per-face turbulence BC types
+    ns_turbulence_bc_config_t turb_bc;    // Per-face turbulence BC types, plus part-face segments
     // Pressure Poisson solver (projection solvers)
     ns_pressure_solver_t pressure_solver;  // NS_PRESSURE_SOLVER_DEFAULT (0) = backend's CG
     // Convective-term discretization (momentum and temperature advection)
@@ -368,7 +368,8 @@ typedef enum {
 } turbulence_model_t;
 ```
 
-`ns_turbulence_bc_config_t` holds one BC type per domain face.  Available types:
+`ns_turbulence_bc_config_t` holds one BC type per domain face, which segments (below) can
+override on part of a face.  Available types:
 
 | Constant | Meaning |
 |----------|---------|

@@ -62,7 +62,8 @@ CFD_LIBRARY_EXPORT cfd_status_t turbulence_step_explicit(flow_field* field, cons
                                                          double dt, double time);
 
 /**
- * Apply per-face turbulence boundary conditions, including wall functions.
+ * Apply per-face turbulence boundary conditions, and any part-face segments,
+ * including wall functions.
  *
  * Face types (params->turb_bc): PERIODIC (default), NEUMANN (zero-gradient),
  * DIRICHLET (fixed values), NOSLIP (wall function on the law in
