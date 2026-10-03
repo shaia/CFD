@@ -930,8 +930,10 @@ cfd_status_t write_centerline_to_csv(flow_field* field, grid_t* grid,
 ### Restart / Checkpoint
 
 Portable, versioned binary save/restore of the complete simulation state. The
-`.cfdchk` format stores the grid, flow field, solver parameters (including the
-turbulence model, pressure solver, convection and viscous schemes, and thermal and turbulence
+`.cfdchk` format stores the grid, flow field (velocity, pressure, density, temperature, and
+the turbulence state `turb_k`, `turb_eps`, `turb_nu_tilde` and `nu_t`), solver parameters
+(including the turbulence model, pressure solver, convection and viscous schemes, and thermal
+and turbulence
 boundary conditions), the accumulated simulation time, and the active solver's
 registry name. Solver
 context buffers (e.g. Runge-Kutta stages) are pure per-step scratch and are

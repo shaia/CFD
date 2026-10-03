@@ -558,6 +558,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Checkpoints carry the turbulence state** (checkpoint format version 8). `.cfdchk` files
+  stored velocity, pressure, density and temperature but not `turb_k`, `turb_eps`,
+  `turb_nu_tilde` or `nu_t`, although the format promised a bit-exact restart. A turbulent run
+  restarted from a checkpoint came back with its turbulence at zero: k-epsilon,
+  Spalart-Allmaras and the eddy viscosity in the momentum equation restarted from nothing, and
+  the restarted run diverged from the continuous one at the first step. All four arrays are
+  now stored, whether or not a model is active. N steps, a checkpoint and M more now match N+M
+  continuous steps bit for bit under k-epsilon and SA, on the scalar and AVX2 RK2 solvers.
+  Version-7 files are rejected as unsupported (`lib/src/io/checkpoint.c`,
+  `tests/io/test_checkpoint.c`).
+
 - **AVX2 is only reported when FMA3 is present too.** `cfd_detect_simd_arch()` checked the
   AVX2 bit alone, but FMA3 is a separate CPUID capability: the AVX2 CG, BiCGSTAB, GMRES and
   `.cfdnn` kernels call `_mm256_fmadd_*`, and GCC builds the AVX2 library with `-mfma`. A CPU

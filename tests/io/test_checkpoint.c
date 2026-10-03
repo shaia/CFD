@@ -49,6 +49,10 @@ static void fill_field_known(flow_field* f, double seed) {
         f->p[i] = 100000.0 + 11.0 * t;
         f->rho[i] = 1.2 + 0.001 * t;
         f->T[i] = 300.0 + 0.05 * t;
+        f->turb_k[i] = 1e-3 * (1.0 + 0.1 * sin(0.3 * t));
+        f->turb_eps[i] = 1e-4 * (1.0 + 0.1 * cos(0.5 * t));
+        f->turb_nu_tilde[i] = 2e-4 * (1.0 + 0.1 * sin(0.6 * t));
+        f->nu_t[i] = 3e-5 * (1.0 + 0.1 * cos(0.8 * t));
     }
 }
 
@@ -175,6 +179,10 @@ static void assert_field_equal(const flow_field* a, const flow_field* b) {
     TEST_ASSERT_EQUAL_INT(0, memcmp(a->p, b->p, bytes));
     TEST_ASSERT_EQUAL_INT(0, memcmp(a->rho, b->rho, bytes));
     TEST_ASSERT_EQUAL_INT(0, memcmp(a->T, b->T, bytes));
+    TEST_ASSERT_EQUAL_INT(0, memcmp(a->turb_k, b->turb_k, bytes));
+    TEST_ASSERT_EQUAL_INT(0, memcmp(a->turb_eps, b->turb_eps, bytes));
+    TEST_ASSERT_EQUAL_INT(0, memcmp(a->turb_nu_tilde, b->turb_nu_tilde, bytes));
+    TEST_ASSERT_EQUAL_INT(0, memcmp(a->nu_t, b->nu_t, bytes));
 }
 
 static void assert_params_equal(const ns_solver_params_t* a, const ns_solver_params_t* b) {
@@ -656,11 +664,15 @@ static int run_steps(const char* name, const grid* g, const ns_solver_params_t* 
     memcpy(out->p, init->p, bytes);
     memcpy(out->rho, init->rho, bytes);
     memcpy(out->T, init->T, bytes);
+    memcpy(out->turb_k, init->turb_k, bytes);
+    memcpy(out->turb_eps, init->turb_eps, bytes);
+    memcpy(out->turb_nu_tilde, init->turb_nu_tilde, bytes);
+    memcpy(out->nu_t, init->nu_t, bytes);
 
     ns_solver_params_t pp = *params;
     ns_solver_stats_t stats = ns_solver_stats_default();
     for (int s = 0; s < steps; s++) {
-        solver_step(slv, out, g, &pp, &stats);
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, solver_step(slv, out, g, &pp, &stats));
     }
 
     solver_destroy(slv);
@@ -668,8 +680,10 @@ static int run_steps(const char* name, const grid* g, const ns_solver_params_t* 
     return 0;
 }
 
-/* N steps + checkpoint + M steps must equal N+M continuous, bit-for-bit. */
-static void check_continuity_for(const char* name) {
+/* N steps + checkpoint + M steps must equal N+M continuous, bit-for-bit.
+ * With a turbulence model, that includes k, epsilon, nu_tilde and nu_t: all four
+ * carry state from one step into the next, nu_t through the momentum equation. */
+static void check_continuity_for(const char* name, turbulence_model_t model) {
     const size_t nx = 16, ny = 16;
     const int N = 5, M = 5;
     grid* g = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
@@ -682,6 +696,12 @@ static void check_continuity_for(const char* name) {
 
     flow_field* init = flow_field_create(nx, ny, 1);
     fill_field_known(init, 1.0);
+    if (model != TURB_MODEL_NONE) {
+        p.turb_model = model;
+        p.turb_bc.bottom = BC_TYPE_NOSLIP; /* wall functions; left/right periodic */
+        p.turb_bc.top = BC_TYPE_NOSLIP;
+        TEST_ASSERT_EQUAL(CFD_SUCCESS, turbulence_init_uniform(init, &p, 1e-3, 1e-4, 2e-4));
+    }
 
     /* Continuous run of N+M steps. */
     flow_field* cont = flow_field_create(nx, ny, 1);
@@ -724,14 +744,29 @@ static void check_continuity_for(const char* name) {
 }
 
 void test_restart_continuity_scalar(void) {
-    check_continuity_for(NS_SOLVER_TYPE_RK2);
+    check_continuity_for(NS_SOLVER_TYPE_RK2, TURB_MODEL_NONE);
 }
 
 void test_restart_continuity_simd(void) {
     if (!cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
         TEST_IGNORE_MESSAGE("SIMD backend unavailable");
     }
-    check_continuity_for(NS_SOLVER_TYPE_RK2_OPTIMIZED);
+    check_continuity_for(NS_SOLVER_TYPE_RK2_OPTIMIZED, TURB_MODEL_NONE);
+}
+
+void test_restart_continuity_kepsilon(void) {
+    check_continuity_for(NS_SOLVER_TYPE_RK2, TURB_MODEL_K_EPSILON);
+}
+
+void test_restart_continuity_spalart_allmaras(void) {
+    check_continuity_for(NS_SOLVER_TYPE_RK2, TURB_MODEL_SPALART_ALLMARAS);
+}
+
+void test_restart_continuity_kepsilon_simd(void) {
+    if (!cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
+        TEST_IGNORE_MESSAGE("SIMD backend unavailable");
+    }
+    check_continuity_for(NS_SOLVER_TYPE_RK2_OPTIMIZED, TURB_MODEL_K_EPSILON);
 }
 
 /* --------------------------------------------- 7. callback contract */
@@ -804,14 +839,17 @@ void test_load_turbulent_run_with_profiled_segment(void) {
         .profile = dummy_turb_profile};
     sim->params.turb_bc.n_segments = 1;
     fill_field_known(sim->field, 1.0);
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      turbulence_init_uniform(sim->field, &sim->params, 1e-3, 1e-4, 0.0));
     TEST_ASSERT_EQUAL(CFD_SUCCESS, save_simulation_checkpoint(sim, CK_PATH));
     free_simulation(sim);
 
     simulation_data* loaded = load_simulation_from_checkpoint(CK_PATH);
     TEST_ASSERT_NOT_NULL(loaded);
     TEST_ASSERT_NULL(loaded->params.turb_bc.segments[0].profile);
-    TEST_ASSERT_EQUAL(CFD_SUCCESS,
-                      turbulence_init_uniform(loaded->field, &loaded->params, 1e-3, 1e-4, 0.0));
+    /* The turbulence state came back with the field; nothing to re-initialize */
+    TEST_ASSERT_EQUAL_DOUBLE(1e-3, loaded->field->turb_k[40]);
+    TEST_ASSERT_EQUAL_DOUBLE(1e-4, loaded->field->turb_eps[40]);
 
     const size_t n = loaded->field->nx * loaded->field->ny;
     double u_before[81];
@@ -925,6 +963,9 @@ int main(void) {
     RUN_TEST(test_reject_crc_corruption);
     RUN_TEST(test_restart_continuity_scalar);
     RUN_TEST(test_restart_continuity_simd);
+    RUN_TEST(test_restart_continuity_kepsilon);
+    RUN_TEST(test_restart_continuity_spalart_allmaras);
+    RUN_TEST(test_restart_continuity_kepsilon_simd);
     RUN_TEST(test_callback_contract);
     return UNITY_END();
 }

@@ -261,7 +261,8 @@ stays O(dt), from explicit convection and non-incremental Chorin splitting. See
 ### 1.6 Restart / Checkpoint (P1)
 
 ✅ Done — portable, versioned, CRC-protected binary checkpoint format (`.cfdchk`) saving and
-restoring complete simulation state (grid, field, scalar params, time, solver name);
+restoring complete simulation state (grid, field including the turbulence state k/ε/ν̃/ν_t,
+scalar params, time, solver name);
 little-endian fixed-width encoding with endianness marker and a format-version header that
 rejects unknown versions (`lib/src/io/checkpoint.c`). See CHANGELOG.
 
