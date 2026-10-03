@@ -9,9 +9,12 @@ shared directory's contents (this emptied the harness on 2026-10-03), so a bare 
 is as destructive as deleting the folder by hand.
 
 This script removes the junction itself first (rmdir without /s deletes only the link), checks that the
-shared directory still has its contents, and only then runs `git worktree remove`. It refuses the main
-worktree, and any worktree with another link at its top level that it would not know how to treat.
--Force is passed through to `git worktree remove` (uncommitted or untracked changes are discarded).
+shared directory still has its contents, and only then runs `git worktree remove` (from the main
+worktree, so the script works from any directory). Before touching the link it refuses what git would
+refuse afterwards -- local changes without -Force, a locked worktree -- so a refusal never leaves a
+worktree without its tooling. It also refuses the main worktree, and any worktree with another link
+at its top level that it would not know how to treat. -Force is passed through to
+`git worktree remove` (uncommitted or untracked changes are discarded).
 
 .EXAMPLE
 .\scripts\dev\Remove-Worktree.ps1 ..\cfd-x
@@ -32,13 +35,33 @@ if ($LASTEXITCODE -ne 0 -or -not $gitDir) { throw "$wt is not a git worktree" }
 if ((Resolve-Path -LiteralPath $gitDir).Path -eq (Resolve-Path -LiteralPath $common).Path) {
     throw "$wt is the main worktree; refusing to remove it"
 }
+# git runs from the main worktree, so the script works from any directory and never asks git to
+# remove the worktree it is running in.
+$main = Split-Path -Parent (Resolve-Path -LiteralPath $common).Path
 
 # Any top-level link other than .claude is unexpected: refuse rather than guess what it points at.
 $links = @(Get-ChildItem -LiteralPath $wt -Force | Where-Object { $_.LinkType })
 $others = @($links | Where-Object { $_.Name -ne '.claude' })
 if ($others) {
-    throw ("refusing: $wt has other links at its top level ({0}); remove them by hand first with " +
-           "cmd /c rmdir, which deletes only the link" -f ($others.Name -join ', '))
+    throw (("refusing: $wt has other links at its top level ({0}); remove them by hand first with " +
+            "cmd /c rmdir, which deletes only the link") -f ($others.Name -join ', '))
+}
+
+# Refuse here what git worktree remove would refuse after the link is gone, so a refusal never
+# leaves a worktree without its tooling: local changes (unless -Force) and a lock (always; unlock
+# it with git worktree unlock first).
+$dirty = @(git -C $wt status --porcelain)
+if ($LASTEXITCODE -ne 0) { throw "git status failed in $wt" }
+if ($dirty.Count -and -not $Force) {
+    throw "refusing: $wt has $($dirty.Count) uncommitted or untracked change(s); commit them, or pass -Force to discard them"
+}
+$norm = { param($p) ($p -replace '\\', '/').TrimEnd('/').ToLowerInvariant() }
+$block = $null
+foreach ($line in (git -C $main worktree list --porcelain)) {
+    if ($line -like 'worktree *') { $block = & $norm $line.Substring(9) }
+    elseif ($line -like 'locked*' -and $block -eq (& $norm $wt)) {
+        throw "refusing: $wt is locked; run git worktree unlock `"$wt`" first if it should go"
+    }
 }
 
 $link = Join-Path $wt '.claude'
@@ -57,7 +80,7 @@ if ($item -and $item.LinkType) {
     }
 }
 
-$gitArgs = @('worktree', 'remove')
+$gitArgs = @('-C', $main, 'worktree', 'remove')
 if ($Force) { $gitArgs += '--force' }
 $gitArgs += $wt
 if ($PSCmdlet.ShouldProcess($wt, "git $($gitArgs -join ' ')")) {
