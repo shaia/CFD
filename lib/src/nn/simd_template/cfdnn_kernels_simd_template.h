@@ -78,9 +78,11 @@ static void CFDNN_SIMD_FUNC(dense_tail)(const cfd_nn_layer_t* l, const float* x,
 /**
  * exp(x), Cephes expf: x = n ln2 + r with |r| <= ln2/2, a degree-5 polynomial
  * for e^r, scaled by 2^n built in the exponent bits. Clamped to +-88.376 so
- * 2^n stays representable; below about -87.3 the result flushes to zero,
- * which for every caller here (exp(-|x|) in softplus, exp(-x) in sigmoid) is
- * the value the exact function rounds to anyway or is irrelevant beside 1.
+ * 2^n stays representable; below about -87.3 the result flushes to zero
+ * instead of a float32 subnormal. Added to 1, as in sigmoid and in the u = 1 + t
+ * of softplus's log1p, that makes no difference. It does where exp(x) is
+ * itself the answer: softplus of x between about -87.3 and -104 is a
+ * subnormal the scalar kernel returns and this one drops to 0 (see vsoftplus).
  */
 static inline SIMD_VEC CFDNN_SIMD_FUNC(vexp)(SIMD_VEC x) {
     x = SIMD_MAX(SIMD_SET1(-88.3762626647949f), SIMD_MIN(SIMD_SET1(88.3762626647949f), x));
