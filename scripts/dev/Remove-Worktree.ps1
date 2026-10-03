@@ -91,7 +91,8 @@ if ($nested) {
 # Refuse here what git worktree remove would refuse after the link is gone, so a refusal never
 # leaves a worktree without its tooling: local changes (unless -Force) and a lock (always; unlock
 # it with git worktree unlock first).
-$dirty = @(git -C $wt status --porcelain)
+# Explicit flags, so status.showUntrackedFiles=no or a submodule setting cannot hide a change.
+$dirty = @(git -C $wt status --porcelain --untracked-files=normal --ignore-submodules=none)
 if ($LASTEXITCODE -ne 0) { throw "git status failed in $wt" }
 if ($dirty.Count -and -not $Force) {
     throw "refusing: $wt has $($dirty.Count) uncommitted or untracked change(s); commit them, or pass -Force to discard them"
