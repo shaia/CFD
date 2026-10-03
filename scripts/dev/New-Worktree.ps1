@@ -9,8 +9,8 @@ then creates a directory junction named .claude inside it that points at the sam
 worktree uses: the target of the main worktree's .claude junction, or that directory itself when it
 is a real directory. Pass -HarnessDir to link something else.
 
-Remove worktrees with `git worktree remove <path>`; never delete the directory by hand, because the
-.claude junction points at a shared directory.
+Remove worktrees with Remove-Worktree.ps1. Never with a bare `git worktree remove` or by deleting the
+directory: both follow the .claude junction and delete the shared directory it points at.
 
 .EXAMPLE
 .\scripts\dev\New-Worktree.ps1 -Branch feat/x
@@ -89,4 +89,4 @@ if ($LASTEXITCODE -ne 0) { throw 'git worktree add failed' }
 $wt = (Resolve-Path -LiteralPath $Path).Path
 Add-HarnessJunction $wt
 Write-Host "worktree: $wt"
-Write-Host "remove with: git worktree remove `"$wt`"  (never delete it by hand: .claude is a junction)"
+Write-Host "remove with: .\scripts\dev\Remove-Worktree.ps1 `"$wt`"  (not a bare git worktree remove: it follows the .claude junction and deletes the shared harness)"
