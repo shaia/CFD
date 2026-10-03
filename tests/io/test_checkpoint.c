@@ -640,8 +640,10 @@ void test_reject_crc_corruption(void) {
 /* ------------------------------------------ 5/6. restart continuity */
 
 /* Run `name` for `steps` solver_step calls on a fresh field; returns 0 on
- * success, -1 if the solver/backend is unavailable. The final field is written
- * into `out`. */
+ * success, -1 if the solver/backend is unavailable (init returns
+ * CFD_ERROR_UNSUPPORTED). Any other init or step failure fails the test: a
+ * solver whose init failed may still step, and a run that stopped early would
+ * compare two truncated histories. The final field is written into `out`. */
 static int run_steps(const char* name, const grid* g, const ns_solver_params_t* params,
                      const flow_field* init, int steps, flow_field* out) {
     ns_solver_registry_t* reg = cfd_registry_create();
@@ -651,32 +653,37 @@ static int run_steps(const char* name, const grid* g, const ns_solver_params_t* 
         cfd_registry_destroy(reg);
         return -1;
     }
-    if (solver_init(slv, g, params) == CFD_ERROR_UNSUPPORTED) {
+    cfd_status_t status = solver_init(slv, g, params);
+    if (status == CFD_ERROR_UNSUPPORTED) {
         solver_destroy(slv);
         cfd_registry_destroy(reg);
         return -1;
     }
 
-    size_t bytes = init->nx * init->ny * init->nz * sizeof(double);
-    memcpy(out->u, init->u, bytes);
-    memcpy(out->v, init->v, bytes);
-    memcpy(out->w, init->w, bytes);
-    memcpy(out->p, init->p, bytes);
-    memcpy(out->rho, init->rho, bytes);
-    memcpy(out->T, init->T, bytes);
-    memcpy(out->turb_k, init->turb_k, bytes);
-    memcpy(out->turb_eps, init->turb_eps, bytes);
-    memcpy(out->turb_nu_tilde, init->turb_nu_tilde, bytes);
-    memcpy(out->nu_t, init->nu_t, bytes);
+    if (status == CFD_SUCCESS) {
+        size_t bytes = init->nx * init->ny * init->nz * sizeof(double);
+        memcpy(out->u, init->u, bytes);
+        memcpy(out->v, init->v, bytes);
+        memcpy(out->w, init->w, bytes);
+        memcpy(out->p, init->p, bytes);
+        memcpy(out->rho, init->rho, bytes);
+        memcpy(out->T, init->T, bytes);
+        memcpy(out->turb_k, init->turb_k, bytes);
+        memcpy(out->turb_eps, init->turb_eps, bytes);
+        memcpy(out->turb_nu_tilde, init->turb_nu_tilde, bytes);
+        memcpy(out->nu_t, init->nu_t, bytes);
 
-    ns_solver_params_t pp = *params;
-    ns_solver_stats_t stats = ns_solver_stats_default();
-    for (int s = 0; s < steps; s++) {
-        TEST_ASSERT_EQUAL(CFD_SUCCESS, solver_step(slv, out, g, &pp, &stats));
+        ns_solver_params_t pp = *params;
+        ns_solver_stats_t stats = ns_solver_stats_default();
+        for (int s = 0; s < steps && status == CFD_SUCCESS; s++) {
+            status = solver_step(slv, out, g, &pp, &stats);
+        }
     }
 
     solver_destroy(slv);
     cfd_registry_destroy(reg);
+    /* After the cleanup: a failed assertion longjmps out, which would leak both. */
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, status);
     return 0;
 }
 
