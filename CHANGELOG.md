@@ -191,6 +191,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Python exporter for `.cfdnn` models** (`tools/cfdnn/`, numpy only). Writes, reads and
+  evaluates the format, folds input standardization and BatchNorm exactly into Dense
+  layers, and converts a PyTorch `Sequential` (Linear, ReLU, LeakyReLU, Tanh, Sigmoid,
+  Softplus, BatchNorm1d, Dropout); anything else is refused, not skipped. It is developer
+  tooling, outside the build and CI. The C side is checked by `test_cfdnn_python_export`,
+  which embeds a network distilled from the algebraic `NS_NUT_CORRECTION_S_STAR` law and
+  asserts the C reader loads it, the C writer emits the same bytes, every kernel backend
+  matches the Python reference (1.3e-7), and the network run as `params.turb_closure`
+  reproduces the algebraic correction's `nu_t` (2.7e-4). The fixture is a pipeline check,
+  not a closure model (design note §2.8).
+- **AVX2 and NEON kernels for `.cfdnn` inference.** `CFD_NN_BACKEND_SIMD` was always
+  unsupported; it now runs on AVX2 or NEON, chosen at runtime, and `CFD_NN_BACKEND_AUTO`
+  resolves to it ahead of OMP. Lanes carry samples, not features, so nothing is reduced
+  across lanes: AVX2 stays within 3.4e-6 of scalar (tolerance 1e-5). On a closure-sized
+  network AVX2 is 1.36x faster than scalar; the dense arithmetic alone is 4.5x, and the
+  scalar `tanh`/`softplus` take the rest (design note §2.3). NEON shares the AVX2 code
+  through one template and has not yet run on ARM hardware. Avoid an OMP context for
+  `turb_closure`: at the closure's 256-cell tiles it is slower than scalar.
+
 - **Examples for features that had none.** `natural_convection.c` (energy equation,
   Boussinesq buoyancy, thermal BCs; within 1.1% of de Vahl Davis at Ra = 1000),
   `steady_flow_multigrid.c` (the multigrid pressure solve, timed against CG, plus
@@ -498,6 +517,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/solvers/turbulence/`, `examples/turbulent_channel.c`).
 
 ### Fixed
+
+- **AVX2 is only reported when FMA3 is present too.** `cfd_detect_simd_arch()` checked the
+  AVX2 bit alone, but FMA3 is a separate CPUID capability: the AVX2 CG, BiCGSTAB, GMRES and
+  `.cfdnn` kernels call `_mm256_fmadd_*`, and GCC builds the AVX2 library with `-mfma`. A CPU
+  or VM exposing AVX2 without FMA would have selected those kernels and faulted with an
+  illegal instruction. It now reports `CFD_SIMD_NONE`, so SIMD requests return
+  `CFD_ERROR_UNSUPPORTED` and AUTO falls back. Pre-existing; found in review of the `.cfdnn`
+  SIMD kernels (`lib/src/core/cpu_features.c`).
 
 - **The turbulent channel runs at a stable step, to a real steady state.**
   `test_turbulent_channel` and `examples/turbulent_channel.c` stepped at dt = 2e-3, past the

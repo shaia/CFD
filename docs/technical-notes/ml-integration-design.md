@@ -381,9 +381,41 @@ Consequences, all of which are contracts the tests enforce:
   tolerance is 1e-5 and the observed maximum is *printed*, so drift toward the tolerance is
   visible before it becomes a failure.
 - Vector loop plus scalar remainder tail, per the established SIMD rule.
-- Transcendental activations fall back to the scalar tail rather than growing a
-  polynomial-approximation dependency; they are a vanishing fraction of the FLOPs and
-  hand-rolled approximations would break cross-backend agreement for no measurable gain.
+- Transcendental activations run through the shared scalar `cfd_nn_apply_activation()`
+  rather than a vector polynomial approximation, so every backend computes exactly the
+  same activation function.
+
+**As built.** The input is sample-major, so each block of `SIMD_WIDTH` samples (8 on AVX2,
+4 on NEON) is first transposed into feature-major scratch. Every inner-loop load is then a
+contiguous vector load, where a strided gather per weight would be repeated for every
+output. The scratch is `SIMD_WIDTH × widest` floats owned by the context: the backend table
+declares `scratch_lanes`, and the kernel signature carries the pointer, so the kernel stays
+allocation-free and the model stays immutable. Measured differences from scalar: 8.0e-7 on
+the backend test, 3.4e-6 across batches 1–33 on a 300-wide layer, and 1.3e-7 against the
+Python float64 reference, all under the 1e-5 tolerance.
+
+**The activation cost was wrong, measured.** The claim above that transcendentals are "a
+vanishing fraction of the FLOPs" does not hold at closure size. Release/AVX2, the 3 → 16
+tanh → 16 tanh → 1 softplus model of §2.8, one process, best of seven, ns per cell:
+
+| backend | with activations | activations disabled |
+| ------- | ---------------- | -------------------- |
+| scalar  | 338 | 149 |
+| AVX2    | 249 | 33  |
+
+The matrix work vectorises 4.5×. The 33 scalar transcendentals per cell hold the whole
+network to 1.36×, and they are about 85% of AVX2's time. A vectorised `tanh`/`softplus`
+(an `exp` polynomial accurate to a few ulp) would stay far inside the 1e-5 cross-backend
+tolerance, so this design's reason for refusing one, "breaks agreement for no measurable
+gain", fails on both counts. It is filed as a follow-up rather than done here, because it
+adds a numerical approximation the scalar reference does not make, and that deserves its
+own decision.
+
+**OMP loses at the closure's tile size.** The closure calls `cfd_nn_predict_batch` in
+tiles of `TURB_CLOSURE_TILE` = 256 cells. At that size the OpenMP backend is slower than
+scalar (447 vs 338 ns per cell at 4 threads), because it opens a parallel region per layer
+per tile, and a region costs about 12 µs under MSVC. It wins only on large batches
+(170 ns per cell at 16,641). A closure context should be SIMD or scalar, not OMP.
 
 One deliberate deviation from existing code: the AVX2 file is guarded on `CFD_HAS_AVX2`
 **alone**. `linear_solver_bicgstab_avx2.c` couples its guard to `CFD_ENABLE_OPENMP`, which
@@ -767,6 +799,37 @@ distribution, rather than one where the momentum balance pins it. A separated or
 adverse-pressure-gradient case is now a prerequisite for the learned closure, for the same
 reason DNS data was a prerequisite for measuring closure error at all.
 
+### 2.8 The exporter, and how the pipeline was verified without a model worth shipping
+
+`tools/cfdnn/` holds the Python side: `cfdnn.py` (writer, validating reader, float64
+reference forward pass, exact folding of input standardization and BatchNorm into Dense
+layers, and a PyTorch `Sequential` adapter that duck-types modules so the tooling needs
+numpy only), and `distill_algebraic.py`.
+
+The closure consumes raw features, and the format has no normalization layer and should
+not grow one. A network trained on standardized inputs therefore has its standardization
+folded into the first layer at export, `W' = W / std`, `b' = b - W' mean`, which is exact.
+
+**Verification by distilling a known answer.** §2.7 leaves no closure model worth shipping,
+but the pipeline still has to be proven, and the links most likely to break are the ones a
+format test cannot see: feature order, the folded normalization, and whether the output is
+the `nu_t` multiplier. §2.7 records one inversion on exactly that lever already. So the
+exporter's reference model is an MLP (3 → 16 tanh → 16 tanh → 1 softplus) trained on the
+incumbent itself, `beta = A (S*)^B`, over a box covering the channel runs. It has to learn
+to ignore `ln Re_t` and `ln nu_t/nu`, which is a useful property to see a closure network
+demonstrate.
+
+| check (`test_cfdnn_python_export`) | result |
+| ---------------------------------- | ------ |
+| fit, relative to the law, over the training box | max 0.53%, RMS 0.062% |
+| C scalar / OMP kernels vs Python float64 reference | 1.2e-7 relative |
+| C writer on the same weights | byte-identical (bar the library-version stamp and its CRC) |
+| one k-ε step, `params.turb_closure` vs `NS_NUT_CORRECTION_S_STAR` | `nu_t` within 2.7e-4 |
+
+A feature-order or sign error would show up as an O(1) difference in the last row, not a
+0.03% one. This model is a test fixture, not a closure. It adds nothing the algebraic law
+does not already provide, and it is not offered as one.
+
 ---
 
 ## Part 3 — Limitations, stated up front
@@ -782,10 +845,14 @@ reason DNS data was a prerequisite for measuring closure error at all.
    code before measuring it.
 3. **Cross-backend results are not bit-identical.** SIMD differs from scalar at FMA
    contraction (~1e-7). OMP *is* bit-identical by construction. Promise no more than that.
-4. **Nothing in CI proves the Python exporter matches the C reader.** The exporter is
+4. **CI checks one Python-exported model, not the exporter.** The exporter is
    developer tooling under `tools/cfdnn/`, outside the build and outside CI; adding a
    `setup-python` step would be a policy change needing its own discussion. The gap is
-   narrowed — not closed — by a manual `cfdnn_check` verifier, by the format matching
+   narrowed — not closed — by `tests/nn/test_cfdnn_python_export.c`, which embeds a model
+   the exporter wrote and asserts the C reader loads it, every kernel backend reproduces
+   the Python reference, the C writer emits the same bytes, and the model run as
+   `params.turb_closure` reproduces the algebraic correction it was distilled from (§2.8);
+   by the Python-side tests in `tools/cfdnn/test_cfdnn.py`; by the format matching
    PyTorch's native layout and dtype so the serialization has almost no logic to get wrong,
    and by the runtime clamp of §1.5.
 5. **Scope discipline.** This is not ONNX and must not grow into one. Every added op should

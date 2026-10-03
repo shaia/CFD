@@ -61,7 +61,8 @@ void cfd_nn_apply_activation(cfd_nn_activation_t act, float param, float* v, siz
 }
 
 static void dense_scalar(const cfd_nn_layer_t* l, size_t batch, const float* in,
-                         float* out) {
+                         float* out, float* scratch) {
+    (void)scratch;
     const size_t ni = l->in_features;
     const size_t no = l->out_features;
 
@@ -83,4 +84,5 @@ static void dense_scalar(const cfd_nn_layer_t* l, size_t batch, const float* in,
 const cfd_nn_backend_impl_t cfd_nn_impl_scalar = {
     "scalar",
     dense_scalar,
+    0,
 };

@@ -27,7 +27,8 @@
 #ifdef CFD_ENABLE_OPENMP
 
 static void dense_omp(const cfd_nn_layer_t* l, size_t batch, const float* in,
-                      float* out) {
+                      float* out, float* scratch) {
+    (void)scratch;
     const size_t ni = l->in_features;
     const size_t no = l->out_features;
 
@@ -56,6 +57,7 @@ static void dense_omp(const cfd_nn_layer_t* l, size_t batch, const float* in,
 const cfd_nn_backend_impl_t cfd_nn_impl_omp = {
     "omp",
     dense_omp,
+    0,
 };
 
 #else /* !CFD_ENABLE_OPENMP */
@@ -63,6 +65,7 @@ const cfd_nn_backend_impl_t cfd_nn_impl_omp = {
 const cfd_nn_backend_impl_t cfd_nn_impl_omp = {
     "omp",
     NULL, /* unavailable: reported, never silently substituted */
+    0,
 };
 
 #endif /* CFD_ENABLE_OPENMP */

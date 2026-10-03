@@ -58,10 +58,12 @@ struct cfd_nn_model {
 /**
  * One Dense layer over a batch.
  *
- * @param l      Layer to apply.
- * @param batch  Number of samples.
- * @param in     batch * l->in_features floats, sample-major.
- * @param out    batch * l->out_features floats, sample-major.
+ * @param l        Layer to apply.
+ * @param batch    Number of samples.
+ * @param in       batch * l->in_features floats, sample-major.
+ * @param out      batch * l->out_features floats, sample-major.
+ * @param scratch  scratch_lanes * model->widest floats owned by the context,
+ *                 or NULL when the table's scratch_lanes is 0.
  *
  * Implementations MUST accumulate over the input-feature axis in ascending
  * index order and MUST NOT reduce across SIMD lanes or threads: lanes and
@@ -69,21 +71,27 @@ struct cfd_nn_model {
  * scalar and keeps SIMD within FMA-contraction distance of it.
  */
 typedef void (*cfd_nn_dense_fn)(const cfd_nn_layer_t* l, size_t batch,
-                                const float* in, float* out);
+                                const float* in, float* out, float* scratch);
 
 typedef struct {
     const char*     name;
     cfd_nn_dense_fn dense;
+    /** Samples the kernel transposes at once. The context allocates
+     *  scratch_lanes * widest floats of scratch for it; 0 means none. */
+    size_t          scratch_lanes;
 } cfd_nn_backend_impl_t;
 
 extern const cfd_nn_backend_impl_t cfd_nn_impl_scalar;
 extern const cfd_nn_backend_impl_t cfd_nn_impl_omp;
-extern const cfd_nn_backend_impl_t cfd_nn_impl_simd;
+/* Architecture tables. Each is defined on every platform and carries a NULL
+ * kernel where its instruction set is not compiled in, so the dispatcher can
+ * reference both without an #ifdef. */
+extern const cfd_nn_backend_impl_t cfd_nn_impl_avx2;
+extern const cfd_nn_backend_impl_t cfd_nn_impl_neon;
 
-/** Whether the SIMD backend has a usable implementation on this CPU. */
-bool        cfd_nn_simd_available(void);
-/** "avx2", "neon", or "none". */
-const char* cfd_nn_simd_arch_name(void);
+/** The SIMD table for this build AND this CPU (runtime-detected), or NULL
+ *  when neither AVX2 nor NEON is usable. Its name is "avx2" or "neon". */
+const cfd_nn_backend_impl_t* cfd_nn_simd_impl(void);
 
 /* Shared activation, applied in place to n values. Defined once in the scalar
  * backend and reused by every other backend so the activation can never drift

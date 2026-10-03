@@ -58,6 +58,7 @@ struct cfd_nn_context {
     float*                       buf_a; /* ping-pong activation buffers */
     float*                       buf_b;
     size_t                       buf_elems;
+    float*                       scratch; /* impl->scratch_lanes * widest, or NULL */
 };
 
 static const cfd_nn_backend_impl_t* resolve_backend(cfd_nn_backend_t want) {
@@ -65,15 +66,15 @@ static const cfd_nn_backend_impl_t* resolve_backend(cfd_nn_backend_t want) {
         case CFD_NN_BACKEND_SCALAR:
             return &cfd_nn_impl_scalar;
         case CFD_NN_BACKEND_SIMD:
-            return cfd_nn_impl_simd.dense ? &cfd_nn_impl_simd : NULL;
+            return cfd_nn_simd_impl();
         case CFD_NN_BACKEND_OMP:
             return cfd_nn_impl_omp.dense ? &cfd_nn_impl_omp : NULL;
         case CFD_NN_BACKEND_AUTO:
             /* Priority SIMD > OMP > scalar, matching BC_BACKEND_AUTO. AUTO is
              * allowed to pick; an EXPLICIT request that cannot be honoured is
              * an error, never a silent substitution. */
-            if (cfd_nn_impl_simd.dense) {
-                return &cfd_nn_impl_simd;
+            if (cfd_nn_simd_impl()) {
+                return cfd_nn_simd_impl();
             }
             if (cfd_nn_impl_omp.dense) {
                 return &cfd_nn_impl_omp;
@@ -126,7 +127,13 @@ cfd_status_t cfd_nn_context_create(const cfd_nn_model_t* model, size_t max_batch
 
     ctx->buf_a = (float*)cfd_aligned_malloc(ctx->buf_elems * sizeof(float));
     ctx->buf_b = (float*)cfd_aligned_malloc(ctx->buf_elems * sizeof(float));
-    if (!ctx->buf_a || !ctx->buf_b) {
+    /* Sized by the model, not the batch: scratch_lanes is a vector width and
+     * widest is capped at CFD_NN_MAX_FEATURES, so this product cannot wrap. */
+    if (impl->scratch_lanes) {
+        ctx->scratch = (float*)cfd_aligned_malloc(impl->scratch_lanes * model->widest *
+                                                  sizeof(float));
+    }
+    if (!ctx->buf_a || !ctx->buf_b || (impl->scratch_lanes && !ctx->scratch)) {
         cfd_nn_context_destroy(ctx);
         return CFD_ERROR_NOMEM;
     }
@@ -140,6 +147,7 @@ void cfd_nn_context_destroy(cfd_nn_context_t* ctx) {
     }
     cfd_aligned_free(ctx->buf_a);
     cfd_aligned_free(ctx->buf_b);
+    cfd_aligned_free(ctx->scratch);
     cfd_free(ctx);
 }
 
@@ -147,11 +155,8 @@ const char* cfd_nn_context_backend(const cfd_nn_context_t* ctx) {
     if (!ctx || !ctx->impl) {
         return "none";
     }
-    /* The SIMD table reports the arch actually selected at runtime, so a test
-     * cannot pass while silently running scalar code. */
-    if (ctx->impl == &cfd_nn_impl_simd) {
-        return cfd_nn_simd_arch_name();
-    }
+    /* The SIMD tables are per architecture, so this names the arch actually
+     * selected at runtime and a test cannot pass while running scalar code. */
     return ctx->impl->name;
 }
 
@@ -189,7 +194,7 @@ cfd_status_t cfd_nn_predict_batch(cfd_nn_context_t* ctx, size_t batch,
     }
 
     for (size_t li = 0; li < m->layer_count; li++) {
-        ctx->impl->dense(&m->layers[li], batch, src, dst);
+        ctx->impl->dense(&m->layers[li], batch, src, dst, ctx->scratch);
         float* tmp = src;
         src        = dst;
         dst        = tmp;
