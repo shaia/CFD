@@ -12,15 +12,18 @@ This script removes the junction itself first (rmdir without /s deletes only the
 shared directory still has its contents, and only then runs `git worktree remove` (from the main
 worktree, so the script works from any directory). Before touching the link it refuses what git would
 refuse afterwards -- local changes without -Force, a locked worktree -- so a refusal never leaves a
-worktree without its tooling. It also refuses the main worktree, and any worktree with another link
-at its top level that it would not know how to treat. -Force is passed through to
-`git worktree remove` (uncommitted or untracked changes are discarded).
+worktree without its tooling. It also refuses the main worktree, and any worktree containing another
+directory link at any depth, ignored or not, since git would follow that one too. -Force is passed
+through to `git worktree remove` (uncommitted or untracked changes are discarded).
+
+Requires PowerShell 7: its recursive listing does not descend into links, which the link scan relies on.
 
 .EXAMPLE
 .\scripts\dev\Remove-Worktree.ps1 ..\cfd-x
 .\scripts\dev\Remove-Worktree.ps1 ..\cfd-x -WhatIf
 .\scripts\dev\Remove-Worktree.ps1 ..\cfd-x -Force
 #>
+#Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory, Position = 0)][string]$Path,
@@ -68,12 +71,21 @@ foreach ($here in @($PWD.ProviderPath, [Environment]::CurrentDirectory)) {
     }
 }
 
-# Any top-level link other than .claude is unexpected: refuse rather than guess what it points at.
-$links = @(Get-ChildItem -LiteralPath $wt -Force | Where-Object { $_.LinkType })
-$others = @($links | Where-Object { $_.Name -ne '.claude' })
-if ($others) {
-    throw (("refusing: $wt has other links at its top level ({0}); remove them by hand first with " +
-            "cmd /c rmdir, which deletes only the link") -f ($others.Name -join ', '))
+# git's recursive delete follows a directory link at ANY depth, ignored ones included, so every
+# link but the root .claude is refused, wherever it is. PowerShell 7 lists links without descending
+# into them, so the scan itself never walks into a shared directory. A directory it cannot read
+# could hide one, so a scan error refuses too.
+$scanErrors = $null
+$nested = @(Get-ChildItem -LiteralPath $wt -Recurse -Directory -Force -Attributes ReparsePoint `
+                -ErrorAction SilentlyContinue -ErrorVariable scanErrors |
+            Where-Object { (& $norm $_.FullName) -ne (& $norm (Join-Path $wt '.claude')) })
+if ($scanErrors) {
+    throw "refusing: could not scan all of $wt for links ($($scanErrors[0].Exception.Message)); nothing was touched"
+}
+if ($nested) {
+    $rel = $nested | ForEach-Object { $_.FullName.Substring($wt.Length).TrimStart('\', '/') }
+    throw (("refusing: $wt contains links besides .claude ({0}); git would delete what they point at. " +
+            "Remove them first with cmd /c rmdir, which deletes only the link") -f ($rel -join ', '))
 }
 
 # Refuse here what git worktree remove would refuse after the link is gone, so a refusal never
