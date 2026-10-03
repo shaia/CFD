@@ -970,7 +970,9 @@ energy equation is independent of turbulence in this release.
 |--------|-------|-----|------|-----|-----|-----|
 | 0.1355 | 0.622 | 2/3 | 0.41 | 0.3 | 2   | 7.1 |
 
-Wall distance d is computed on the fly from faces marked `BC_TYPE_NOSLIP` in `turb_bc`.
+Wall distance d is computed on the fly from faces marked `BC_TYPE_NOSLIP` in `turb_bc`. When
+segments cut a face into wall and non-wall parts, d is the distance to the nearest wall part,
+measured as the distance to that line segment.
 
 ### Discretization
 
@@ -985,7 +987,11 @@ Wall distance d is computed on the fly from faces marked `BC_TYPE_NOSLIP` in `tu
 
 ### Wall Functions
 
-Wall-function treatment is applied at every face marked `BC_TYPE_NOSLIP` in `turb_bc`.
+Wall-function treatment is applied at every face marked `BC_TYPE_NOSLIP` in `turb_bc`, and on
+every NOSLIP segment (`turbulence_bc_add_segment()`). A segment overrides its face's type over a
+normalized range of the edge, so one edge can be a wall over part of its length and an inflow
+over the rest: the step face and the inlet of a backward-facing step whose inlet is at the
+step plane.
 
 **Law of the wall** (`params.turb_bc.wall_law`, κ = 0.41, B = 5.2 for both):
 

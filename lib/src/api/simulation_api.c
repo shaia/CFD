@@ -419,6 +419,14 @@ cfd_status_t restore_simulation_checkpoint(simulation_data* sim_data, const char
     // Same reason, and the same silent-physics-change if dropped: the learned
     // closure is a caller-owned context, so the checkpoint stores no trace of it.
     new_params.turb_closure = sim_data->params.turb_closure;
+    // And each segment's inflow profile, matched by position in the array, which
+    // the checkpoint preserves.
+    for (size_t n = 0; n < new_params.turb_bc.n_segments &&
+                       n < sim_data->params.turb_bc.n_segments; n++) {
+        new_params.turb_bc.segments[n].profile = sim_data->params.turb_bc.segments[n].profile;
+        new_params.turb_bc.segments[n].profile_user_data =
+            sim_data->params.turb_bc.segments[n].profile_user_data;
+    }
 
     // Initialize the new solver against the new grid/params *before* touching the
     // old state, so a failed init leaves the existing simulation untouched and

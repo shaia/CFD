@@ -357,6 +357,18 @@ static void write_params(chk_io* io, const ns_solver_params_t* p) {
     put_bc_values(io, &p->turb_bc.nu_tilde_values);
     /* A resume that dropped it would switch the wall law back to the default */
     put_i32(io, (int32_t)p->turb_bc.wall_law);
+    /* turb_bc segments, all but the profile callback, which is caller-owned */
+    put_u32(io, (uint32_t)p->turb_bc.n_segments);
+    for (size_t n = 0; n < p->turb_bc.n_segments; n++) {
+        const ns_turbulence_bc_segment_t* s = &p->turb_bc.segments[n];
+        put_i32(io, (int32_t)s->edge);
+        put_f64(io, s->start);
+        put_f64(io, s->end);
+        put_i32(io, (int32_t)s->type);
+        put_f64(io, s->k);
+        put_f64(io, s->eps);
+        put_f64(io, s->nu_tilde);
+    }
     /* pressure_bc: face types then the prescribed wall values */
     put_i32(io, (int32_t)p->pressure_bc.left);
     put_i32(io, (int32_t)p->pressure_bc.right);
@@ -385,6 +397,11 @@ cfd_status_t cfd_checkpoint_write(const char* path,
     }
     if (field->nx != g->nx || field->ny != g->ny || field->nz != g->nz) {
         cfd_set_error(CFD_ERROR_INVALID, "cfd_checkpoint_write: field/grid dimension mismatch");
+        return CFD_ERROR_INVALID;
+    }
+    if (params->turb_bc.n_segments > NS_TURB_BC_MAX_SEGMENTS) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "cfd_checkpoint_write: turb_bc.n_segments exceeds NS_TURB_BC_MAX_SEGMENTS");
         return CFD_ERROR_INVALID;
     }
 
@@ -497,6 +514,18 @@ static int chk_params_are_legal(const ns_solver_params_t* p) {
     if (p->turb_bc.wall_law != NS_WALL_LAW_LOG
         && p->turb_bc.wall_law != NS_WALL_LAW_SPALDING) {
         return 0;
+    }
+    /* Enums only, like the faces above; ranges and values are checked by
+     * turbulence_apply_bcs(), which applies the same rules to any caller. */
+    for (size_t n = 0; n < p->turb_bc.n_segments; n++) {
+        const ns_turbulence_bc_segment_t* s = &p->turb_bc.segments[n];
+        if (s->edge != BC_EDGE_LEFT && s->edge != BC_EDGE_RIGHT
+            && s->edge != BC_EDGE_BOTTOM && s->edge != BC_EDGE_TOP) {
+            return 0;
+        }
+        if (!chk_bc_type_is_legal(s->type)) {
+            return 0;
+        }
     }
     return 1;
 }
@@ -652,6 +681,23 @@ cfd_status_t cfd_checkpoint_read(const char* path,
     get_bc_values(&io, &out_params->turb_bc.eps_values);
     get_bc_values(&io, &out_params->turb_bc.nu_tilde_values);
     out_params->turb_bc.wall_law = (ns_wall_law_t)get_i32(&io);
+    uint32_t n_segments = get_u32(&io);
+    if (io.status == CFD_SUCCESS && n_segments > NS_TURB_BC_MAX_SEGMENTS) {
+        io.status = CFD_ERROR_INVALID; /* more than the array holds: corrupt */
+    }
+    if (io.status == CFD_SUCCESS) {
+        out_params->turb_bc.n_segments = n_segments;
+        for (uint32_t n = 0; n < n_segments; n++) {
+            ns_turbulence_bc_segment_t* s = &out_params->turb_bc.segments[n];
+            s->edge = (bc_edge_t)get_i32(&io);
+            s->start = get_f64(&io);
+            s->end = get_f64(&io);
+            s->type = (bc_type_t)get_i32(&io);
+            s->k = get_f64(&io);
+            s->eps = get_f64(&io);
+            s->nu_tilde = get_f64(&io);
+        }
+    }
     out_params->pressure_bc.left = (poisson_wall_t)get_i32(&io);
     out_params->pressure_bc.right = (poisson_wall_t)get_i32(&io);
     out_params->pressure_bc.bottom = (poisson_wall_t)get_i32(&io);

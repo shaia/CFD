@@ -9,6 +9,7 @@
 
 #include "cfd/solvers/turbulence_solver.h"
 #include "../turbulence_solver_internal.h"
+#include "boundary/bc_edge_range.h"
 
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
@@ -317,31 +318,104 @@ cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
     return CFD_SUCCESS;
 }
 
+/* Type of the last segment on `edge` whose range strictly contains normalized
+ * position t, or face_type. Used for wall distance, where t is an interval
+ * midpoint and never sits on a bound, so the node-level slack does not apply. */
+static bc_type_t segment_type_at(const ns_turbulence_bc_config_t* tbc, bc_edge_t edge,
+                                 bc_type_t face_type, double t) {
+    for (size_t n = tbc->n_segments; n-- > 0;) {
+        const ns_turbulence_bc_segment_t* seg = &tbc->segments[n];
+        if (seg->edge == edge && t >= seg->start && t <= seg->end) {
+            return seg->type;
+        }
+    }
+    return face_type;
+}
+
+/*
+ * Fold one face's wall into the running minimum distance *d.
+ *
+ * normal: distance from the point to the face's line. along: the point's
+ * coordinate along the face, which spans [lo, hi].
+ *
+ * Without segments on this face the face is a wall or not, and the distance is
+ * `normal` exactly, as it always was. With segments, the face is cut at every
+ * segment bound; each piece is a wall when its midpoint resolves to NOSLIP, and
+ * the distance to a wall piece is the distance to that line segment. Position
+ * maps to coordinate linearly, which is exact on the uniform grids the
+ * turbulence models require.
+ */
+static void face_wall_distance(const ns_turbulence_bc_config_t* tbc, bc_edge_t edge,
+                               bc_type_t face_type, double normal, double along,
+                               double lo, double hi, double* d, int* found) {
+    double cuts[2 + 2 * NS_TURB_BC_MAX_SEGMENTS];
+    size_t n_cuts = 0;
+    cuts[n_cuts++] = 0.0;
+    cuts[n_cuts++] = 1.0;
+    for (size_t n = 0; n < tbc->n_segments; n++) {
+        if (tbc->segments[n].edge == edge) {
+            cuts[n_cuts++] = tbc->segments[n].start;
+            cuts[n_cuts++] = tbc->segments[n].end;
+        }
+    }
+
+    if (n_cuts == 2) {
+        if (face_type == BC_TYPE_NOSLIP) {
+            *d = *found ? fmin(*d, normal) : normal;
+            *found = 1;
+        }
+        return;
+    }
+
+    /* Insertion sort: at most 2 + 2 * NS_TURB_BC_MAX_SEGMENTS values. */
+    for (size_t a = 1; a < n_cuts; a++) {
+        double v = cuts[a];
+        size_t b = a;
+        while (b > 0 && cuts[b - 1] > v) {
+            cuts[b] = cuts[b - 1];
+            b--;
+        }
+        cuts[b] = v;
+    }
+
+    const double span = hi - lo;
+    for (size_t a = 0; a + 1 < n_cuts; a++) {
+        if (!(cuts[a + 1] > cuts[a])) {
+            continue;
+        }
+        double mid = 0.5 * (cuts[a] + cuts[a + 1]);
+        if (segment_type_at(tbc, edge, face_type, mid) != BC_TYPE_NOSLIP) {
+            continue;
+        }
+        double p_lo = lo + cuts[a] * span;
+        double p_hi = lo + cuts[a + 1] * span;
+        double off = 0.0;
+        if (along < p_lo) {
+            off = p_lo - along;
+        } else if (along > p_hi) {
+            off = along - p_hi;
+        }
+        double c = (off > 0.0) ? hypot(normal, off) : normal;
+        *d = *found ? fmin(*d, c) : c;
+        *found = 1;
+    }
+}
+
 double turb_wall_distance(const grid* grid, const ns_turbulence_bc_config_t* tbc,
                           size_t i, size_t j, int* has_wall) {
     double d = 0.0;
     int found = 0;
+    const double x = grid->x[i];
+    const double y = grid->y[j];
+    const double x0 = grid->x[0];
+    const double x1 = grid->x[grid->nx - 1];
+    const double y0 = grid->y[0];
+    const double y1 = grid->y[grid->ny - 1];
 
-    if (tbc->left == BC_TYPE_NOSLIP) {
-        double c = grid->x[i] - grid->x[0];
-        d = found ? fmin(d, c) : c;
-        found = 1;
-    }
-    if (tbc->right == BC_TYPE_NOSLIP) {
-        double c = grid->x[grid->nx - 1] - grid->x[i];
-        d = found ? fmin(d, c) : c;
-        found = 1;
-    }
-    if (tbc->bottom == BC_TYPE_NOSLIP) {
-        double c = grid->y[j] - grid->y[0];
-        d = found ? fmin(d, c) : c;
-        found = 1;
-    }
-    if (tbc->top == BC_TYPE_NOSLIP) {
-        double c = grid->y[grid->ny - 1] - grid->y[j];
-        d = found ? fmin(d, c) : c;
-        found = 1;
-    }
+    face_wall_distance(tbc, BC_EDGE_LEFT, tbc->left, x - x0, y, y0, y1, &d, &found);
+    face_wall_distance(tbc, BC_EDGE_RIGHT, tbc->right, x1 - x, y, y0, y1, &d, &found);
+    face_wall_distance(tbc, BC_EDGE_BOTTOM, tbc->bottom, y - y0, x, x0, x1, &d, &found);
+    face_wall_distance(tbc, BC_EDGE_TOP, tbc->top, y1 - y, x, x0, x1, &d, &found);
 
     *has_wall = found;
     return d;
@@ -547,6 +621,14 @@ static cfd_status_t validate_turbulence_args(const flow_field* field, const grid
                       "turbulence_solver: grid too small or missing dx/dy");
         return CFD_ERROR_INVALID;
     }
+    /* Here rather than only in turbulence_apply_bcs: the transport step reads
+     * the segments too (SA wall distance), and may run before the BCs do. */
+    if (params->turb_bc.n_segments > NS_TURB_BC_MAX_SEGMENTS) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "turbulence_solver: turb_bc.n_segments exceeds "
+                      "NS_TURB_BC_MAX_SEGMENTS");
+        return CFD_ERROR_INVALID;
+    }
     return CFD_SUCCESS;
 }
 
@@ -737,6 +819,172 @@ static void set_dirichlet_nu_t(flow_field* field, const ns_solver_params_t* para
     field->nu_t[idx] = fmin(nu_t, TURB_NU_T_MAX_FACTOR * nu);
 }
 
+static int is_nonnegative_finite(double v) {
+    return isfinite(v) && v >= 0.0;
+}
+
+/* The model-independent rules for one segment; see turbulence_bc_add_segment. */
+static cfd_status_t validate_segment(const ns_turbulence_bc_segment_t* seg) {
+    const char* reason = NULL;
+    if (seg->edge != BC_EDGE_LEFT && seg->edge != BC_EDGE_RIGHT &&
+        seg->edge != BC_EDGE_BOTTOM && seg->edge != BC_EDGE_TOP) {
+        reason = "turbulence BC segment: edge must be BC_EDGE_LEFT, _RIGHT, _BOTTOM or _TOP";
+    } else if (!(seg->start >= 0.0 && seg->start < seg->end && seg->end <= 1.0)) {
+        reason = "turbulence BC segment: range must satisfy 0 <= start < end <= 1";
+    } else if (seg->type != BC_TYPE_NEUMANN && seg->type != BC_TYPE_DIRICHLET &&
+               seg->type != BC_TYPE_NOSLIP) {
+        reason = "turbulence BC segment: type must be NEUMANN, DIRICHLET or NOSLIP "
+                 "(PERIODIC has no meaning on part of a face)";
+    } else if (seg->type == BC_TYPE_DIRICHLET && !seg->profile &&
+               (!is_nonnegative_finite(seg->k) || !is_nonnegative_finite(seg->eps) ||
+                !is_nonnegative_finite(seg->nu_tilde))) {
+        reason = "turbulence BC segment: DIRICHLET values must be finite and >= 0";
+    }
+    if (reason) {
+        cfd_set_error(CFD_ERROR_INVALID, reason);
+        return CFD_ERROR_INVALID;
+    }
+    return CFD_SUCCESS;
+}
+
+/* The BC one boundary node receives: its type and, for DIRICHLET, its values. */
+typedef struct {
+    bc_type_t type;
+    double k;
+    double eps;
+    double nu_tilde;
+} turb_node_bc_t;
+
+/*
+ * Resolve the BC at normalized position t on `edge`: the last segment covering
+ * t, or the face type and face values. A profile is evaluated here and its
+ * output checked, since a negative k or a zero epsilon would otherwise enter
+ * the transport equations as if it were data.
+ */
+static cfd_status_t resolve_node_bc(const ns_turbulence_bc_config_t* tbc, bc_edge_t edge,
+                                    const turb_node_bc_t* face, int is_ke, double t,
+                                    turb_node_bc_t* out) {
+    *out = *face;
+    for (size_t n = tbc->n_segments; n-- > 0;) {
+        const ns_turbulence_bc_segment_t* seg = &tbc->segments[n];
+        double position;
+        if (seg->edge != edge || !bc_edge_range_position(t, seg->start, seg->end, &position)) {
+            continue;
+        }
+        out->type = seg->type;
+        if (seg->type != BC_TYPE_DIRICHLET) {
+            return CFD_SUCCESS;
+        }
+        if (!seg->profile) {
+            out->k = seg->k;
+            out->eps = seg->eps;
+            out->nu_tilde = seg->nu_tilde;
+            return CFD_SUCCESS;
+        }
+        out->k = out->eps = out->nu_tilde = NAN;
+        seg->profile(position, &out->k, &out->eps, &out->nu_tilde, seg->profile_user_data);
+        const int ok = is_ke ? (is_nonnegative_finite(out->k) && isfinite(out->eps) &&
+                                out->eps > 0.0)
+                             : is_nonnegative_finite(out->nu_tilde);
+        if (!ok) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                          "turbulence_apply_bcs: a segment profile returned a negative or "
+                          "non-finite value (or eps <= 0 under k-epsilon)");
+            return CFD_ERROR_INVALID;
+        }
+        return CFD_SUCCESS;
+    }
+    return CFD_SUCCESS;
+}
+
+/* Boundary node s of a face, its first interior neighbour, and its periodic
+ * partner on the opposite face. */
+static void face_node_indices(bc_edge_t edge, size_t nx, size_t ny, size_t s,
+                              size_t* idx, size_t* idx_int, size_t* idx_per) {
+    switch (edge) {
+        case BC_EDGE_LEFT:
+            *idx = s * nx;
+            *idx_int = *idx + 1;
+            *idx_per = s * nx + (nx - 2);
+            break;
+        case BC_EDGE_RIGHT:
+            *idx = s * nx + (nx - 1);
+            *idx_int = *idx - 1;
+            *idx_per = s * nx + 1;
+            break;
+        case BC_EDGE_BOTTOM:
+            *idx = s;
+            *idx_int = s + nx;
+            *idx_per = (ny - 2) * nx + s;
+            break;
+        default: /* BC_EDGE_TOP */
+            *idx = (ny - 1) * nx + s;
+            *idx_int = *idx - nx;
+            *idx_per = nx + s;
+            break;
+    }
+}
+
+/* Apply a resolved BC at one boundary node. y_p and u_tan (the wall-parallel
+ * speed at idx_int) are read only by the wall function. */
+static void apply_node_bc(flow_field* field, const ns_solver_params_t* params,
+                          const turb_node_bc_t* bc, int is_ke, size_t idx, size_t idx_int,
+                          size_t idx_per, double y_p, double u_tan) {
+    if (bc->type == BC_TYPE_NOSLIP) {
+        apply_wall_function_node(field, params, idx, idx_int, y_p, u_tan);
+        return;
+    }
+    if (is_ke) {
+        apply_scalar_face_bc(field->turb_k, bc->type, idx, idx_int, idx_per, bc->k);
+        apply_scalar_face_bc(field->turb_eps, bc->type, idx, idx_int, idx_per, bc->eps);
+    } else {
+        apply_scalar_face_bc(field->turb_nu_tilde, bc->type, idx, idx_int, idx_per,
+                             bc->nu_tilde);
+    }
+    if (bc->type == BC_TYPE_DIRICHLET) {
+        set_dirichlet_nu_t(field, params, idx);
+    } else {
+        apply_scalar_face_bc(field->nu_t, bc->type, idx, idx_int, idx_per, 0.0);
+    }
+}
+
+/* Apply one face node by node, each node taking its segment's BC if it has one.
+ * Every node reads only its own interior neighbour, so the order along the face
+ * does not matter. */
+static cfd_status_t apply_face_bcs(flow_field* field, const grid* grid,
+                                   const ns_solver_params_t* params, bc_edge_t edge,
+                                   bc_type_t face_type, double k, double eps,
+                                   double nu_tilde) {
+    const size_t nx = field->nx;
+    const size_t ny = field->ny;
+    const int along_y = (edge == BC_EDGE_LEFT || edge == BC_EDGE_RIGHT);
+    const size_t count = along_y ? ny : nx;
+    const int is_ke = (params->turb_model == TURB_MODEL_K_EPSILON);
+    const turb_node_bc_t face = {face_type, k, eps, nu_tilde};
+
+    double y_p;
+    switch (edge) {
+        case BC_EDGE_LEFT: y_p = grid->x[1] - grid->x[0]; break;
+        case BC_EDGE_RIGHT: y_p = grid->x[nx - 1] - grid->x[nx - 2]; break;
+        case BC_EDGE_BOTTOM: y_p = grid->y[1] - grid->y[0]; break;
+        default: y_p = grid->y[ny - 1] - grid->y[ny - 2]; break;
+    }
+
+    for (size_t s = 0; s < count; s++) {
+        size_t idx, idx_int, idx_per;
+        face_node_indices(edge, nx, ny, s, &idx, &idx_int, &idx_per);
+        turb_node_bc_t bc;
+        cfd_status_t status = resolve_node_bc(&params->turb_bc, edge, &face, is_ke,
+                                              bc_edge_node_t(s, count), &bc);
+        if (status != CFD_SUCCESS) {
+            return status;
+        }
+        const double u_tan = along_y ? fabs(field->v[idx_int]) : fabs(field->u[idx_int]);
+        apply_node_bc(field, params, &bc, is_ke, idx, idx_int, idx_per, y_p, u_tan);
+    }
+    return CFD_SUCCESS;
+}
+
 cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
                                   const ns_solver_params_t* params) {
     if (!params) {
@@ -754,8 +1002,6 @@ cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
     }
 
     const ns_turbulence_bc_config_t* tbc = &params->turb_bc;
-    size_t nx = field->nx;
-    size_t ny = field->ny;
 
     if (!is_supported_turb_bc(tbc->left) || !is_supported_turb_bc(tbc->right) ||
         !is_supported_turb_bc(tbc->bottom) || !is_supported_turb_bc(tbc->top) ||
@@ -767,132 +1013,66 @@ cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
         return CFD_ERROR_INVALID;
     }
 
+    /* Every segment is checked before any field is touched, so a bad one leaves
+     * the fields as they were (the count was checked with the other arguments).
+     * Only a profile's output, which is not known until its node is reached, can
+     * fail part-way. */
     const int is_ke = (params->turb_model == TURB_MODEL_K_EPSILON);
-
-    /* Left face (i=0) */
-    if (tbc->left == BC_TYPE_NOSLIP) {
-        double y_p = grid->x[1] - grid->x[0];
-        for (size_t j = 0; j < ny; j++) {
-            size_t idx_w = j * nx;
-            size_t idx_p = idx_w + 1;
-            apply_wall_function_node(field, params, idx_w, idx_p, y_p,
-                                     fabs(field->v[idx_p]));
+    for (size_t n = 0; n < tbc->n_segments; n++) {
+        const ns_turbulence_bc_segment_t* seg = &tbc->segments[n];
+        status = validate_segment(seg);
+        if (status != CFD_SUCCESS) {
+            return status;
         }
-    } else {
-        for (size_t j = 0; j < ny; j++) {
-            size_t idx = j * nx;
-            size_t idx_int = idx + 1;
-            size_t idx_per = j * nx + (nx - 2);
-            if (is_ke) {
-                apply_scalar_face_bc(field->turb_k, tbc->left, idx, idx_int, idx_per,
-                                     tbc->k_values.left);
-                apply_scalar_face_bc(field->turb_eps, tbc->left, idx, idx_int, idx_per,
-                                     tbc->eps_values.left);
-            } else {
-                apply_scalar_face_bc(field->turb_nu_tilde, tbc->left, idx, idx_int,
-                                     idx_per, tbc->nu_tilde_values.left);
-            }
-            if (tbc->left == BC_TYPE_DIRICHLET) {
-                set_dirichlet_nu_t(field, params, idx);
-            } else {
-                apply_scalar_face_bc(field->nu_t, tbc->left, idx, idx_int, idx_per, 0.0);
-            }
+        if (is_ke && seg->type == BC_TYPE_DIRICHLET && !seg->profile && !(seg->eps > 0.0)) {
+            cfd_set_error(CFD_ERROR_INVALID,
+                          "turbulence_apply_bcs: a k-epsilon DIRICHLET segment needs "
+                          "eps > 0 or a profile (a profile is not stored in a "
+                          "checkpoint and must be re-attached after loading one)");
+            return CFD_ERROR_INVALID;
         }
     }
 
-    /* Right face (i=nx-1) */
-    if (tbc->right == BC_TYPE_NOSLIP) {
-        double y_p = grid->x[nx - 1] - grid->x[nx - 2];
-        for (size_t j = 0; j < ny; j++) {
-            size_t idx_w = j * nx + (nx - 1);
-            size_t idx_p = idx_w - 1;
-            apply_wall_function_node(field, params, idx_w, idx_p, y_p,
-                                     fabs(field->v[idx_p]));
-        }
-    } else {
-        for (size_t j = 0; j < ny; j++) {
-            size_t idx = j * nx + (nx - 1);
-            size_t idx_int = idx - 1;
-            size_t idx_per = j * nx + 1;
-            if (is_ke) {
-                apply_scalar_face_bc(field->turb_k, tbc->right, idx, idx_int, idx_per,
-                                     tbc->k_values.right);
-                apply_scalar_face_bc(field->turb_eps, tbc->right, idx, idx_int, idx_per,
-                                     tbc->eps_values.right);
-            } else {
-                apply_scalar_face_bc(field->turb_nu_tilde, tbc->right, idx, idx_int,
-                                     idx_per, tbc->nu_tilde_values.right);
-            }
-            if (tbc->right == BC_TYPE_DIRICHLET) {
-                set_dirichlet_nu_t(field, params, idx);
-            } else {
-                apply_scalar_face_bc(field->nu_t, tbc->right, idx, idx_int, idx_per, 0.0);
-            }
-        }
+    /* Left and right first, then bottom and top, which overwrite the corners. */
+    status = apply_face_bcs(field, grid, params, BC_EDGE_LEFT, tbc->left,
+                            tbc->k_values.left, tbc->eps_values.left,
+                            tbc->nu_tilde_values.left);
+    if (status == CFD_SUCCESS) {
+        status = apply_face_bcs(field, grid, params, BC_EDGE_RIGHT, tbc->right,
+                                tbc->k_values.right, tbc->eps_values.right,
+                                tbc->nu_tilde_values.right);
     }
-
-    /* Bottom face (j=0) — runs after left/right, overwrites shared corners */
-    if (tbc->bottom == BC_TYPE_NOSLIP) {
-        double y_p = grid->y[1] - grid->y[0];
-        for (size_t i = 0; i < nx; i++) {
-            size_t idx_w = i;
-            size_t idx_p = idx_w + nx;
-            apply_wall_function_node(field, params, idx_w, idx_p, y_p,
-                                     fabs(field->u[idx_p]));
-        }
-    } else {
-        for (size_t i = 0; i < nx; i++) {
-            size_t idx = i;
-            size_t idx_int = idx + nx;
-            size_t idx_per = (ny - 2) * nx + i;
-            if (is_ke) {
-                apply_scalar_face_bc(field->turb_k, tbc->bottom, idx, idx_int, idx_per,
-                                     tbc->k_values.bottom);
-                apply_scalar_face_bc(field->turb_eps, tbc->bottom, idx, idx_int, idx_per,
-                                     tbc->eps_values.bottom);
-            } else {
-                apply_scalar_face_bc(field->turb_nu_tilde, tbc->bottom, idx, idx_int,
-                                     idx_per, tbc->nu_tilde_values.bottom);
-            }
-            if (tbc->bottom == BC_TYPE_DIRICHLET) {
-                set_dirichlet_nu_t(field, params, idx);
-            } else {
-                apply_scalar_face_bc(field->nu_t, tbc->bottom, idx, idx_int, idx_per, 0.0);
-            }
-        }
+    if (status == CFD_SUCCESS) {
+        status = apply_face_bcs(field, grid, params, BC_EDGE_BOTTOM, tbc->bottom,
+                                tbc->k_values.bottom, tbc->eps_values.bottom,
+                                tbc->nu_tilde_values.bottom);
     }
-
-    /* Top face (j=ny-1) */
-    if (tbc->top == BC_TYPE_NOSLIP) {
-        double y_p = grid->y[ny - 1] - grid->y[ny - 2];
-        for (size_t i = 0; i < nx; i++) {
-            size_t idx_w = (ny - 1) * nx + i;
-            size_t idx_p = idx_w - nx;
-            apply_wall_function_node(field, params, idx_w, idx_p, y_p,
-                                     fabs(field->u[idx_p]));
-        }
-    } else {
-        for (size_t i = 0; i < nx; i++) {
-            size_t idx = (ny - 1) * nx + i;
-            size_t idx_int = idx - nx;
-            size_t idx_per = nx + i;
-            if (is_ke) {
-                apply_scalar_face_bc(field->turb_k, tbc->top, idx, idx_int, idx_per,
-                                     tbc->k_values.top);
-                apply_scalar_face_bc(field->turb_eps, tbc->top, idx, idx_int, idx_per,
-                                     tbc->eps_values.top);
-            } else {
-                apply_scalar_face_bc(field->turb_nu_tilde, tbc->top, idx, idx_int,
-                                     idx_per, tbc->nu_tilde_values.top);
-            }
-            if (tbc->top == BC_TYPE_DIRICHLET) {
-                set_dirichlet_nu_t(field, params, idx);
-            } else {
-                apply_scalar_face_bc(field->nu_t, tbc->top, idx, idx_int, idx_per, 0.0);
-            }
-        }
+    if (status == CFD_SUCCESS) {
+        status = apply_face_bcs(field, grid, params, BC_EDGE_TOP, tbc->top,
+                                tbc->k_values.top, tbc->eps_values.top,
+                                tbc->nu_tilde_values.top);
     }
+    return status;
+}
 
+cfd_status_t turbulence_bc_add_segment(ns_turbulence_bc_config_t* bc,
+                                       const ns_turbulence_bc_segment_t* segment) {
+    if (!bc || !segment) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "turbulence_bc_add_segment: bc and segment must be non-NULL");
+        return CFD_ERROR_INVALID;
+    }
+    if (bc->n_segments >= NS_TURB_BC_MAX_SEGMENTS) {
+        cfd_set_error(CFD_ERROR_INVALID,
+                      "turbulence_bc_add_segment: no room; NS_TURB_BC_MAX_SEGMENTS "
+                      "segments are already set");
+        return CFD_ERROR_INVALID;
+    }
+    cfd_status_t status = validate_segment(segment);
+    if (status != CFD_SUCCESS) {
+        return status;
+    }
+    bc->segments[bc->n_segments++] = *segment;
     return CFD_SUCCESS;
 }
 

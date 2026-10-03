@@ -635,8 +635,10 @@ Pure-C inference with no runtime Python dependency (embedded/HPC friendly).
 - [ ] Separated or adverse-pressure-gradient validation case — **prerequisite** for the
       learned closure: in channel flow the momentum balance pins the shear stress, so the
       closure has little authority over the quantities the gate measures. The laminar
-      backward-facing step now exists (6.1); a turbulent one still needs wall functions on
-      the step face and turbulence inflow values over part of an edge
+      backward-facing step now exists (6.1). The turbulent one (Driver & Seegmiller) has its
+      boundary conditions: turbulence BCs on part of a face (`turbulence_bc_add_segment()`)
+      give wall functions on the step face and a fixed or profiled inflow above it. The
+      validation case itself is still to do
 - [ ] Validation: must beat tuned-Cs Smagorinsky, and must vanish in laminar regions
       (the latter holds structurally and is asserted in `test_nut_correction.c`)
 

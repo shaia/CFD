@@ -31,12 +31,16 @@ extern "C" {
  * complete dynamical state.
  *
  * Caller-owned pointers -- the callbacks (`source_func`, `heat_source_func`) and
- * their contexts, and the learned-closure context `turb_closure` -- cannot be
- * serialized and are excluded. `restore_simulation_checkpoint()` carries them
- * across an in-place restore; `load_simulation_from_checkpoint()` builds a new
- * simulation and leaves them NULL, so a caller using any of them must re-supply
- * them on that path. Everything the correction needs besides the context, such
- * as `turb_nut_correction`, IS stored.
+ * their contexts, the learned-closure context `turb_closure`, and each turbulence
+ * BC segment's `profile` and `profile_user_data` -- cannot be serialized and are
+ * excluded. `restore_simulation_checkpoint()` carries them across an in-place
+ * restore; `load_simulation_from_checkpoint()` builds a new simulation and leaves
+ * them NULL, so a caller using any of them must re-supply them on that path.
+ * Everything the correction needs besides the context, such as
+ * `turb_nut_correction`, IS stored, as is every other segment field. A k-epsilon
+ * DIRICHLET segment that relied on its profile and left `eps` at 0 is refused by
+ * turbulence_apply_bcs() until the profile is re-attached, rather than run with
+ * zero inflow turbulence.
  *
  * Portability: all multi-byte values are written little-endian with fixed-width
  * types and IEEE-754 doubles (no raw struct dumps). A header endianness marker
@@ -45,7 +49,7 @@ extern "C" {
  */
 
 /** Current on-disk checkpoint format version. Bumped on any layout change. */
-#define CFD_CHECKPOINT_FORMAT_VERSION 6u
+#define CFD_CHECKPOINT_FORMAT_VERSION 7u
 
 /** Recommended file extension for checkpoint files. */
 #define CFD_CHECKPOINT_EXTENSION ".cfdchk"

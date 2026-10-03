@@ -97,7 +97,8 @@ __device__ void inlet_compute_velocity_gpu(bc_edge_t edge, bc_inlet_profile_t pr
 /**
  * Map node i of `count` along the edge to its profile position; false for a
  * node outside the bc_inlet_set_range() range, which is left untouched.
- * Mirrors bc_inlet_node_position() in boundary_conditions_inlet_common.h.
+ * Mirrors bc_inlet_node_position() in boundary_conditions_inlet_common.h and
+ * the range convention in bc_edge_range.h.
  */
 __device__ bool inlet_node_position_gpu(int i, size_t count, int range_on,
                                         double range_start, double range_end,

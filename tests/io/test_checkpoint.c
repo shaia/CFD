@@ -124,6 +124,12 @@ static ns_solver_params_t make_nondefault_params(void) {
     p.turb_bc.nu_tilde_values.bottom = 3.4e-5;
     p.turb_bc.nu_tilde_values.front = 3.5e-5;
     p.turb_bc.nu_tilde_values.back = 3.6e-5;
+    p.turb_bc.n_segments = 2;
+    p.turb_bc.segments[0] = (ns_turbulence_bc_segment_t){
+        .edge = BC_EDGE_LEFT, .start = 7.0 / 64.0, .end = 1.0, .type = BC_TYPE_DIRICHLET,
+        .k = 0.031, .eps = 0.032, .nu_tilde = 3.3e-5};
+    p.turb_bc.segments[1] = (ns_turbulence_bc_segment_t){
+        .edge = BC_EDGE_TOP, .start = 0.25, .end = 0.5, .type = BC_TYPE_NOSLIP};
     return p;
 }
 
@@ -217,6 +223,21 @@ static void assert_params_equal(const ns_solver_params_t* a, const ns_solver_par
     assert_bc_values_equal(&a->turb_bc.k_values, &b->turb_bc.k_values);
     assert_bc_values_equal(&a->turb_bc.eps_values, &b->turb_bc.eps_values);
     assert_bc_values_equal(&a->turb_bc.nu_tilde_values, &b->turb_bc.nu_tilde_values);
+    TEST_ASSERT_EQUAL_size_t(a->turb_bc.n_segments, b->turb_bc.n_segments);
+    for (size_t n = 0; n < a->turb_bc.n_segments; n++) {
+        const ns_turbulence_bc_segment_t* sa = &a->turb_bc.segments[n];
+        const ns_turbulence_bc_segment_t* sb = &b->turb_bc.segments[n];
+        TEST_ASSERT_EQUAL_INT(sa->edge, sb->edge);
+        TEST_ASSERT_TRUE(bits_equal(sa->start, sb->start));
+        TEST_ASSERT_TRUE(bits_equal(sa->end, sb->end));
+        TEST_ASSERT_EQUAL_INT(sa->type, sb->type);
+        TEST_ASSERT_TRUE(bits_equal(sa->k, sb->k));
+        TEST_ASSERT_TRUE(bits_equal(sa->eps, sb->eps));
+        TEST_ASSERT_TRUE(bits_equal(sa->nu_tilde, sb->nu_tilde));
+        /* Caller-owned, never stored: the reader leaves it NULL */
+        TEST_ASSERT_NULL(sb->profile);
+        TEST_ASSERT_NULL(sb->profile_user_data);
+    }
 }
 
 /* File-corruption helpers for the rejection tests. */
@@ -448,6 +469,33 @@ void test_reject_unknown_nut_correction(void) {
                                           NULL, 0, NULL, 0));
     TEST_ASSERT_NULL(g2);
     TEST_ASSERT_NULL(f2);
+
+    /* ...and a turbulence BC segment's edge and type */
+    ns_solver_params_t s = ns_solver_params_default();
+    s.turb_bc.n_segments = 1;
+    s.turb_bc.segments[0] = (ns_turbulence_bc_segment_t){
+        .edge = (bc_edge_t)0x40, .start = 0.0, .end = 1.0, .type = BC_TYPE_NOSLIP};
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      cfd_checkpoint_write(CK_PATH, g, f, &s, 0.0, "rk2", NULL, NULL));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      cfd_checkpoint_read(CK_PATH, &g2, &f2, &p2, NULL, name, sizeof(name),
+                                          NULL, 0, NULL, 0));
+    TEST_ASSERT_NULL(g2);
+    s.turb_bc.segments[0].edge = BC_EDGE_LEFT;
+    s.turb_bc.segments[0].type = (bc_type_t)99;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      cfd_checkpoint_write(CK_PATH, g, f, &s, 0.0, "rk2", NULL, NULL));
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      cfd_checkpoint_read(CK_PATH, &g2, &f2, &p2, NULL, name, sizeof(name),
+                                          NULL, 0, NULL, 0));
+    TEST_ASSERT_NULL(g2);
+
+    /* A count past the array cannot be written at all: the file would carry a
+     * count its records do not match. */
+    s.turb_bc.segments[0].type = BC_TYPE_NOSLIP;
+    s.turb_bc.n_segments = NS_TURB_BC_MAX_SEGMENTS + 1;
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
+                      cfd_checkpoint_write(CK_PATH, g, f, &s, 0.0, "rk2", NULL, NULL));
 
     grid_destroy(g);
     flow_field_destroy(f);
@@ -693,26 +741,43 @@ static void dummy_source(double x, double y, double z, double t, void* ctx, doub
     *su = 0.0; *sv = 0.0; *sw = 0.0;
 }
 
+static void dummy_turb_profile(double position, double* k, double* eps, double* nu_tilde,
+                               void* user_data) {
+    (void)position; (void)user_data;
+    *k = 1e-3; *eps = 1e-4; *nu_tilde = 1e-4;
+}
+
 void test_callback_contract(void) {
     int ctx_marker = 42;
+    int profile_marker = 7;
     simulation_data* sim = init_simulation_with_solver(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0,
                                                        NS_SOLVER_TYPE_RK2);
     TEST_ASSERT_NOT_NULL(sim);
     sim->params.source_func = dummy_source;
     sim->params.source_context = &ctx_marker;
+    sim->params.turb_bc.segments[0] = (ns_turbulence_bc_segment_t){
+        .edge = BC_EDGE_LEFT, .start = 0.5, .end = 1.0, .type = BC_TYPE_DIRICHLET,
+        .profile = dummy_turb_profile, .profile_user_data = &profile_marker};
+    sim->params.turb_bc.n_segments = 1;
     fill_field_known(sim->field, 1.0);
     TEST_ASSERT_EQUAL(CFD_SUCCESS, save_simulation_checkpoint(sim, CK_PATH));
 
-    /* In-place restore preserves the existing callback + context. */
+    /* In-place restore preserves the existing callback + context, and the
+     * segment profile + its user data. */
     TEST_ASSERT_EQUAL(CFD_SUCCESS, restore_simulation_checkpoint(sim, CK_PATH));
     TEST_ASSERT_EQUAL_PTR(dummy_source, sim->params.source_func);
     TEST_ASSERT_EQUAL_PTR(&ctx_marker, sim->params.source_context);
+    TEST_ASSERT_EQUAL_size_t(1, sim->params.turb_bc.n_segments);
+    TEST_ASSERT_EQUAL_PTR(dummy_turb_profile, sim->params.turb_bc.segments[0].profile);
+    TEST_ASSERT_EQUAL_PTR(&profile_marker, sim->params.turb_bc.segments[0].profile_user_data);
 
     /* Constructor path leaves callbacks NULL (documented). */
     simulation_data* loaded = load_simulation_from_checkpoint(CK_PATH);
     TEST_ASSERT_NOT_NULL(loaded);
     TEST_ASSERT_NULL(loaded->params.source_func);
     TEST_ASSERT_NULL(loaded->params.source_context);
+    TEST_ASSERT_EQUAL_size_t(1, loaded->params.turb_bc.n_segments);
+    TEST_ASSERT_NULL(loaded->params.turb_bc.segments[0].profile);
 
     free_simulation(sim);
     free_simulation(loaded);
