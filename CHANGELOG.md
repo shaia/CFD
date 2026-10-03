@@ -212,7 +212,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     any field, and also refuses a k-ε DIRICHLET segment with no profile and `eps <= 0`, and a
     profile that returns a negative or non-finite value.
   - **Checkpoint format version 7.** Segments are stored except their profile callback,
-    which `restore_simulation_checkpoint()` carries across like the other callbacks.
+    which `restore_simulation_checkpoint()` carries across like the other callbacks. A
+    profiled DIRICHLET segment's values are stored as NaN, so a segment loaded without its
+    profile is refused for every model rather than run on placeholders.
     Version-6 files are rejected as unsupported. A count above the array is refused on
     write and on read.
   - `ns_turbulence_bc_config_t`, and therefore `ns_solver_params_t`, grew; code built against

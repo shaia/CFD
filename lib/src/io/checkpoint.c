@@ -16,6 +16,7 @@
 #include "cfd/core/logging.h"
 #include "cfd/core/memory.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -365,9 +366,14 @@ static void write_params(chk_io* io, const ns_solver_params_t* p) {
         put_f64(io, s->start);
         put_f64(io, s->end);
         put_i32(io, (int32_t)s->type);
-        put_f64(io, s->k);
-        put_f64(io, s->eps);
-        put_f64(io, s->nu_tilde);
+        /* A profile overrides the values and cannot be stored. NaN in their
+         * place makes turbulence_apply_bcs() refuse the loaded segment, for any
+         * model, until the profile is re-attached -- rather than run on
+         * whatever placeholder values sat beside it. */
+        const int profiled = (s->type == BC_TYPE_DIRICHLET && s->profile != NULL);
+        put_f64(io, profiled ? NAN : s->k);
+        put_f64(io, profiled ? NAN : s->eps);
+        put_f64(io, profiled ? NAN : s->nu_tilde);
     }
     /* pressure_bc: face types then the prescribed wall values */
     put_i32(io, (int32_t)p->pressure_bc.left);

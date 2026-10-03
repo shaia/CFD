@@ -397,7 +397,9 @@ turbulence_bc_add_segment(&params.turb_bc, &inflow);
 ```
 
 Checkpoints store every segment field except `profile` and `profile_user_data`, which, like the
-other callbacks, must be re-attached after `load_simulation_from_checkpoint()`.
+other callbacks, must be re-attached after `load_simulation_from_checkpoint()`. A DIRICHLET
+segment with a profile has its values stored as NaN, so until the profile is re-attached
+`turbulence_apply_bcs()` refuses it, whatever the model, rather than run on placeholder values.
 
 ### Solver Statistics
 

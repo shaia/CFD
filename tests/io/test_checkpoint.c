@@ -14,6 +14,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/io/checkpoint.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "cfd/solvers/turbulence_solver.h"
 #include "unity.h"
 
 #include <math.h>
@@ -783,6 +784,57 @@ void test_callback_contract(void) {
     free_simulation(loaded);
 }
 
+/**
+ * A profiled DIRICHLET segment cannot come back from a checkpoint as a constant
+ * one. Its profile is not stored, and the placeholder values beside it -- here
+ * ones that would pass every check -- are stored as NaN, so the loaded segment
+ * is refused for both models until the profile is re-attached.
+ */
+void test_profiled_segment_refused_until_reattached(void) {
+    grid* g = grid_create(8, 8, 1, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
+    grid_initialize_uniform(g);
+    flow_field* f = flow_field_create(8, 8, 1);
+    fill_field_known(f, 1.0);
+
+    ns_solver_params_t p = ns_solver_params_default();
+    p.mu = 1e-3;
+    p.turb_model = TURB_MODEL_SPALART_ALLMARAS;
+    p.turb_bc.left = BC_TYPE_NOSLIP;
+    p.turb_bc.right = BC_TYPE_NEUMANN;
+    p.turb_bc.bottom = BC_TYPE_NOSLIP;
+    p.turb_bc.top = BC_TYPE_NOSLIP;
+    p.turb_bc.n_segments = 1;
+    p.turb_bc.segments[0] = (ns_turbulence_bc_segment_t){
+        .edge = BC_EDGE_LEFT, .start = 0.5, .end = 1.0, .type = BC_TYPE_DIRICHLET,
+        .k = 1e-3, .eps = 1e-4, .nu_tilde = 1e-4, .profile = dummy_turb_profile};
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, turbulence_apply_bcs(f, g, &p));
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      cfd_checkpoint_write(CK_PATH, g, f, &p, 0.0, "rk2", NULL, NULL));
+
+    grid* g2 = NULL;
+    flow_field* f2 = NULL;
+    ns_solver_params_t p2;
+    char name[64] = {0};
+    TEST_ASSERT_EQUAL(CFD_SUCCESS,
+                      cfd_checkpoint_read(CK_PATH, &g2, &f2, &p2, NULL, name, sizeof(name),
+                                          NULL, 0, NULL, 0));
+    const ns_turbulence_bc_segment_t* s = &p2.turb_bc.segments[0];
+    TEST_ASSERT_NULL(s->profile);
+    TEST_ASSERT_TRUE(isnan(s->k) && isnan(s->eps) && isnan(s->nu_tilde));
+
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, turbulence_apply_bcs(f2, g2, &p2));
+    p2.turb_model = TURB_MODEL_K_EPSILON;
+    TEST_ASSERT_EQUAL(CFD_ERROR_INVALID, turbulence_apply_bcs(f2, g2, &p2));
+
+    p2.turb_bc.segments[0].profile = dummy_turb_profile;
+    TEST_ASSERT_EQUAL(CFD_SUCCESS, turbulence_apply_bcs(f2, g2, &p2));
+
+    grid_destroy(g2);
+    flow_field_destroy(f2);
+    grid_destroy(g);
+    flow_field_destroy(f);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_lowlevel_roundtrip_2d_uniform);
@@ -793,6 +845,7 @@ int main(void) {
     RUN_TEST(test_reject_bad_magic);
     RUN_TEST(test_reject_out_of_enum_params);
     RUN_TEST(test_reject_unknown_nut_correction);
+    RUN_TEST(test_profiled_segment_refused_until_reattached);
     RUN_TEST(test_reject_truncated);
     RUN_TEST(test_reject_crc_corruption);
     RUN_TEST(test_restart_continuity_scalar);

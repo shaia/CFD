@@ -838,7 +838,9 @@ static cfd_status_t validate_segment(const ns_turbulence_bc_segment_t* seg) {
     } else if (seg->type == BC_TYPE_DIRICHLET && !seg->profile &&
                (!is_nonnegative_finite(seg->k) || !is_nonnegative_finite(seg->eps) ||
                 !is_nonnegative_finite(seg->nu_tilde))) {
-        reason = "turbulence BC segment: DIRICHLET values must be finite and >= 0";
+        reason = "turbulence BC segment: DIRICHLET values must be finite and >= 0 (a "
+                 "profiled segment loaded from a checkpoint has NaN values until its "
+                 "profile is re-attached)";
     }
     if (reason) {
         cfd_set_error(CFD_ERROR_INVALID, reason);
@@ -1027,8 +1029,7 @@ cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
         if (is_ke && seg->type == BC_TYPE_DIRICHLET && !seg->profile && !(seg->eps > 0.0)) {
             cfd_set_error(CFD_ERROR_INVALID,
                           "turbulence_apply_bcs: a k-epsilon DIRICHLET segment needs "
-                          "eps > 0 or a profile (a profile is not stored in a "
-                          "checkpoint and must be re-attached after loading one)");
+                          "eps > 0 or a profile");
             return CFD_ERROR_INVALID;
         }
     }

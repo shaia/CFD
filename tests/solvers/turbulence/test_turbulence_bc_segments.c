@@ -357,9 +357,8 @@ static void test_apply_refusals(void) {
     TEST_ASSERT_EQUAL(CFD_ERROR_INVALID,
                       turbulence_step_explicit(field, g, &params, 1e-3, 0.0));
 
-    /* k-epsilon DIRICHLET with eps = 0 and no profile: what a checkpoint load
-     * leaves behind when the profile was carrying the values. Refused, not run
-     * with zero inflow turbulence. Spalart-Allmaras reads no eps and accepts it. */
+    /* k-epsilon DIRICHLET with eps = 0 and no profile: refused, not run with
+     * zero inflow dissipation. Spalart-Allmaras reads no eps and accepts it. */
     ns_turbulence_bc_segment_t s = {.edge = BC_EDGE_LEFT, .start = 0.5, .end = 1.0,
                                     .type = BC_TYPE_DIRICHLET};
     params = make_params(TURB_MODEL_K_EPSILON);
