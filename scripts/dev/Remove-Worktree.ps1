@@ -35,9 +35,28 @@ if ($LASTEXITCODE -ne 0 -or -not $gitDir) { throw "$wt is not a git worktree" }
 if ((Resolve-Path -LiteralPath $gitDir).Path -eq (Resolve-Path -LiteralPath $common).Path) {
     throw "$wt is the main worktree; refusing to remove it"
 }
-# git runs from the main worktree, so the script works from any directory outside the worktree.
-$main = Split-Path -Parent (Resolve-Path -LiteralPath $common).Path
 $norm = { param($p) ($p -replace '\\', '/').TrimEnd('/').ToLowerInvariant() }
+
+# git runs from the main worktree, so the script works from any directory outside the worktree. Its
+# path comes from git itself -- the first `worktree list` entry, the main worktree or a bare
+# repository -- not from the metadata layout, which --separate-git-dir and bare repositories change.
+# The listing must succeed and must contain $wt before anything is touched.
+$listing = @(git -C $wt worktree list --porcelain)
+if ($LASTEXITCODE -ne 0 -or -not $listing -or $listing[0] -notlike 'worktree *') {
+    throw "git worktree list failed for $wt; nothing was touched"
+}
+$main = $listing[0].Substring(9)
+$entries = @{}   # normalised worktree path -> its porcelain lines
+$block = $null
+foreach ($line in $listing) {
+    if ($line -like 'worktree *') { $block = & $norm $line.Substring(9); $entries[$block] = @() }
+    elseif ($block) { $entries[$block] += $line }
+}
+# git lists resolved paths, so look the worktree up by git's own name for it, not the typed path.
+$self = & $norm (git -C $wt rev-parse --show-toplevel)
+if ($LASTEXITCODE -ne 0 -or -not $entries.ContainsKey($self)) {
+    throw "git does not list $wt as a worktree of this repository; nothing was touched"
+}
 
 # Windows cannot delete a directory a process is standing in: git would empty and unregister the
 # worktree, then fail on its top folder, after the link was gone. Refuse before touching anything.
@@ -65,12 +84,8 @@ if ($LASTEXITCODE -ne 0) { throw "git status failed in $wt" }
 if ($dirty.Count -and -not $Force) {
     throw "refusing: $wt has $($dirty.Count) uncommitted or untracked change(s); commit them, or pass -Force to discard them"
 }
-$block = $null
-foreach ($line in (git -C $main worktree list --porcelain)) {
-    if ($line -like 'worktree *') { $block = & $norm $line.Substring(9) }
-    elseif ($line -like 'locked*' -and $block -eq (& $norm $wt)) {
-        throw "refusing: $wt is locked; run git worktree unlock `"$wt`" first if it should go"
-    }
+if (@($entries[$self] | Where-Object { $_ -like 'locked*' }).Count) {
+    throw "refusing: $wt is locked; run git worktree unlock `"$wt`" first if it should go"
 }
 
 $link = Join-Path $wt '.claude'
