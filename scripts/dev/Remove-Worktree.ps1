@@ -8,7 +8,7 @@ worktree shares. Git for Windows follows that junction during `git worktree remo
 shared directory's contents (this emptied the harness on 2026-10-03), so a bare `git worktree remove`
 is as destructive as deleting the folder by hand.
 
-This script removes the junction itself first (rmdir without /s deletes only the link), checks that the
+This script removes the junction itself first (a non-recursive delete of the link), checks that the
 shared directory still has its contents, and only then runs `git worktree remove` (from the main
 worktree, so the script works from any directory). Before touching the link it refuses what git would
 refuse afterwards -- local changes without -Force, a locked worktree -- so a refusal never leaves a
@@ -158,7 +158,8 @@ $nested = @($tree | Where-Object {
 if ($nested) {
     $rel = $nested | ForEach-Object { $_.FullName.Substring($wt.Length).TrimStart('\', '/') }
     throw (("refusing: $wt contains links besides .claude ({0}); git would delete what they point at. " +
-            "Remove them first with cmd /c rmdir, which deletes only the link") -f ($rel -join ', '))
+            "Remove each link first with [System.IO.Directory]::Delete('<full path>'), which deletes " +
+            "only the link and takes the path literally") -f ($rel -join ', '))
 }
 
 # Refuse here what git worktree remove would refuse after the link is gone, so a refusal never
@@ -199,20 +200,34 @@ function Get-Inventory([string]$Dir) {
 }
 
 if ($isLink) {
-    try { $before = Get-Inventory $target }
-    catch { throw "refusing: $($_.Exception.Message); nothing was touched" }
+    # A link whose target is gone protects nothing and endangers nothing: just remove it.
+    $live = Test-Path -LiteralPath $target -PathType Container
+    if ($live) {
+        try { $before = Get-Inventory $target }
+        catch { throw "refusing: $($_.Exception.Message); nothing was touched" }
+    }
     # Non-recursive RemoveDirectory on the link itself: deletes the reparse point, never the target.
     # Not cmd /c rmdir, which expands %VAR% even inside quotes and could hit another path.
     [System.IO.Directory]::Delete($link, $false)
     if (Test-Path -LiteralPath $link) { throw "could not remove the link $link; nothing else was touched" }
-    try { $after = Get-Inventory $target }
-    catch { throw "unlinked $link but $($_.Exception.Message), so it cannot be verified; stopping before git" }
-    $missing = @($before | Where-Object { -not $after.Contains($_) })
-    if ($missing) {
-        throw ("the shared directory $target lost {0} path(s) while unlinking ({1}); stopping before git" -f
-               $missing.Count, (($missing | Select-Object -First 5) -join ', '))
+    # From here the link is gone, so git can no longer reach the shared directory; a rerun of this
+    # script goes straight to git worktree remove.
+    $rerun = "Once the shared directory is confirmed intact, run this script again to finish."
+    if ($live) {
+        try { $after = Get-Inventory $target }
+        catch { throw "unlinked $link but could not re-check the shared directory ($($_.Exception.Message)); stopped before git. $rerun" }
+        $missing = @($before | Where-Object { -not $after.Contains($_) })
+        if ($missing) {
+            throw (("{0} path(s) under the shared directory $target disappeared between the listings " +
+                    "taken before and after unlinking ({1}). Another session editing it can do that; so " +
+                    "could a damaging unlink. Stopped before git. $rerun") -f
+                   $missing.Count, (($missing | Select-Object -First 5) -join ', '))
+        }
+        Write-Host "unlinked: $link (target $target untouched, all $($before.Count) paths present)"
     }
-    Write-Host "unlinked: $link (target $target untouched, all $($before.Count) paths present)"
+    else {
+        Write-Host "unlinked: $link (its target $target no longer exists)"
+    }
 }
 
 git @gitArgs

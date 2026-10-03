@@ -22,5 +22,6 @@ use `build.ps1` / `build.sh` for that. Every script has comment-based help
 - Remove a worktree with `Remove-Worktree.ps1`. A bare `git worktree remove` is not safe here: Git
   for Windows follows the `.claude` junction and deletes the shared directory behind it, which
   emptied the harness on 2026-10-03. Deleting the directory by hand does the same. To do it by
-  hand, `cmd /c rmdir <path>\.claude` first (that removes only the link).
+  hand, first remove the link alone with `[System.IO.Directory]::Delete('<path>\.claude')` in
+  PowerShell (`cmd /c rmdir` also works, but expands any `%VAR%` in the path).
 - `output/` is ignored by git, so run logs and status files never show up as untracked.
