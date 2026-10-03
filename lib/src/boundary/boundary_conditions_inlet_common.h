@@ -11,6 +11,7 @@
 #ifndef CFD_BOUNDARY_CONDITIONS_INLET_COMMON_H
 #define CFD_BOUNDARY_CONDITIONS_INLET_COMMON_H
 
+#include "bc_edge_range.h"
 #include "boundary_conditions_internal.h"
 #include "cfd/core/indexing.h"
 #include <math.h>
@@ -53,12 +54,8 @@ static inline int bc_inlet_edge_to_index(bc_edge_t edge) {
 }
 
 /* ============================================================================
- * Edge sub-range (bc_inlet_set_range)
+ * Edge sub-range (bc_inlet_set_range); the convention lives in bc_edge_range.h
  * ============================================================================ */
-
-/* Slack on the range test, so a bound placed exactly on a node (0.5 on an odd
- * node count) keeps that node despite the rounding in i/(n-1). */
-#define BC_INLET_RANGE_EPS 1e-9
 
 /**
  * Check the range on a config, which may have been filled in by hand rather
@@ -81,19 +78,12 @@ static inline bool bc_inlet_range_is_valid(const bc_inlet_config_t* config, bool
  */
 static inline bool bc_inlet_node_position(const bc_inlet_config_t* config,
                                           size_t i, size_t count, double* position) {
-    double t = (count > 1) ? (double)i / (double)(count - 1) : 0.5;
+    double t = bc_edge_node_t(i, count);
     if (!config->range.enabled) {
         *position = t;
         return true;
     }
-    double start = config->range.start;
-    double end = config->range.end;
-    if (t < start - BC_INLET_RANGE_EPS || t > end + BC_INLET_RANGE_EPS) {
-        return false;
-    }
-    double s = (t - start) / (end - start);
-    *position = fmin(1.0, fmax(0.0, s));
-    return true;
+    return bc_edge_range_position(t, config->range.start, config->range.end, position);
 }
 
 /* ============================================================================

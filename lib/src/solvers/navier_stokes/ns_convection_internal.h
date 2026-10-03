@@ -183,8 +183,8 @@ static inline cfd_status_t ns_check_dt(const ns_solver_params_t* params) {
  *
  * @param params                       Solver parameters (NULL means defaults)
  * @param backend_supports_turbulence  Nonzero if this backend implements RANS
- * @return CFD_SUCCESS, CFD_ERROR_INVALID for an unknown model, or
- *         CFD_ERROR_UNSUPPORTED
+ * @return CFD_SUCCESS, CFD_ERROR_INVALID for an unknown model or a turbulence BC
+ *         segment turb_check_segments() refuses, or CFD_ERROR_UNSUPPORTED
  */
 static inline cfd_status_t ns_check_turbulence_model(const ns_solver_params_t* params,
                                                      int backend_supports_turbulence) {
@@ -211,7 +211,29 @@ static inline cfd_status_t ns_check_turbulence_model(const ns_solver_params_t* p
                       "AVX2 solvers only; the GPU backends have no RANS kernels");
         return CFD_ERROR_UNSUPPORTED;
     }
-    return CFD_SUCCESS;
+    /* At init as well as per step: a bad segment found by the first step's
+     * turbulence validation is found after the velocity has already advanced.
+     * A segment whose profile a checkpoint could not store is accepted here --
+     * load_simulation_from_checkpoint() initializes the solver before its caller
+     * can re-attach the profile -- and refused by ns_check_turbulence_segments()
+     * on every step until it is. */
+    return turb_check_segments(params, 1);
+}
+
+/**
+ * Per-step check of the turbulence BC segments, for the solver_step() and
+ * solver_solve() dispatchers: everything solver init accepted may have changed
+ * since, and a segment whose profile has not been re-attached after a checkpoint
+ * load must be refused before any field moves, not when the turbulence step
+ * runs after the velocity has already advanced.
+ *
+ * @return CFD_SUCCESS (always, without turbulence) or CFD_ERROR_INVALID
+ */
+static inline cfd_status_t ns_check_turbulence_segments(const ns_solver_params_t* params) {
+    if (!params || params->turb_model == TURB_MODEL_NONE) {
+        return CFD_SUCCESS;
+    }
+    return turb_check_segments(params, 0);
 }
 
 /** Convective first derivatives of (u, v, w) at one grid point */

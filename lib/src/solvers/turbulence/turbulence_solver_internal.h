@@ -16,6 +16,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/solvers/navier_stokes_solver.h"
 
+#include <math.h>
 #include <stddef.h>
 
 /* --- Standard k-epsilon (Launder-Spalding) constants --- */
@@ -185,9 +186,37 @@ cfd_status_t turb_apply_nu_t_correction(flow_field* field, const grid* grid,
  */
 cfd_status_t turb_check_closure_config(const ns_solver_params_t* params);
 
+/**
+ * Whether a segment carries the checkpoint's "profile not stored" marker: a
+ * DIRICHLET segment with no profile whose k, eps and nu_tilde are all NaN, the
+ * values cfd_checkpoint_write() stores in place of a profile's. Such a segment
+ * becomes usable again once its profile is re-attached.
+ */
+static inline int turb_segment_profile_detached(const ns_turbulence_bc_segment_t* seg) {
+    return seg->type == BC_TYPE_DIRICHLET && !seg->profile && isnan(seg->k) &&
+           isnan(seg->eps) && isnan(seg->nu_tilde);
+}
+
+/**
+ * Validate params->turb_bc.segments: the count against NS_TURB_BC_MAX_SEGMENTS,
+ * every rule turbulence_bc_add_segment() applies, and, under k-epsilon, eps > 0
+ * on a DIRICHLET segment without a profile.
+ *
+ * allow_detached accepts a segment marked by turb_segment_profile_detached().
+ * Only solver init passes 1: load_simulation_from_checkpoint() initializes the
+ * solver before its caller can re-attach the profile. Everything that steps
+ * passes 0 -- the solver_step/solver_solve dispatchers, before any field moves,
+ * and the shared step/BC validation, because the transport step reads the
+ * segments (SA wall distance) before the BCs run.
+ *
+ * @return CFD_SUCCESS or CFD_ERROR_INVALID
+ */
+cfd_status_t turb_check_segments(const ns_solver_params_t* params, int allow_detached);
+
 /** Shared argument/grid validation for the turbulence step (all backends):
- *  non-NULL args and fields, known model, 2D only, nx/ny >= 3, uniform
- *  spacing. Assumes turb_model != TURB_MODEL_NONE was already checked. */
+ *  non-NULL args and fields, known model, 2D only, nx/ny >= 3, valid
+ *  segments (turb_check_segments), uniform spacing. Assumes
+ *  turb_model != TURB_MODEL_NONE was already checked. */
 cfd_status_t turb_validate_step_args(const flow_field* field, const grid* grid,
                                      const ns_solver_params_t* params);
 

@@ -162,6 +162,56 @@ typedef enum {
     NS_WALL_LAW_SPALDING = 1, /**< Spalding's smooth law of the wall */
 } ns_wall_law_t;
 
+/** Maximum number of turbulence BC segments (ns_turbulence_bc_config_t.segments). */
+#define NS_TURB_BC_MAX_SEGMENTS 4
+
+/**
+ * Inflow turbulence profile for a DIRICHLET segment.
+ *
+ * Called once per boundary node of the segment, every time the BCs are applied.
+ * `position` runs from 0 to 1 across the segment, the same convention as
+ * bc_inlet_profile_fn under bc_inlet_set_range(), so a velocity inlet and a
+ * turbulence segment over the same range see the same position at each node.
+ * Write all three outputs; only the active model's are read (k and eps for
+ * k-epsilon, nu_tilde for Spalart-Allmaras). Must be thread-safe if the caller
+ * runs several solvers at once. The function and its user_data are caller-owned
+ * and are called on every step, so both must outlive every run that uses the
+ * params; like the other callbacks, neither is stored in a checkpoint.
+ */
+typedef void (*ns_turbulence_profile_fn)(double position, double* k, double* eps,
+                                         double* nu_tilde, void* user_data);
+
+/**
+ * A turbulence BC on part of one face, overriding that face's type there.
+ *
+ * Needed wherever one edge carries two kinds of boundary, such as a
+ * backward-facing step with the inlet at the step plane: the step face is a
+ * wall (wall functions) and the rest of the same edge is an inflow (fixed k and
+ * epsilon).
+ *
+ * The range is a normalized edge position, node-index based, with the same
+ * convention and tolerance as bc_inlet_set_range(): node i of n sits at
+ * i/(n-1), 0 at the low-coordinate end. A node inside several segments takes
+ * the last one; a node in none keeps the face type.
+ *
+ * Types: NEUMANN, DIRICHLET (values below, or `profile` when set) and NOSLIP
+ * (wall function, as on a whole face). PERIODIC is refused because a periodic
+ * pairing of part of an edge has no meaning.
+ *
+ * Add segments with turbulence_bc_add_segment(), which validates them.
+ */
+typedef struct {
+    bc_edge_t edge;          /**< BC_EDGE_LEFT, _RIGHT, _BOTTOM or _TOP */
+    double start;            /**< Range start, in [0, 1) */
+    double end;              /**< Range end, in (start, 1] */
+    bc_type_t type;          /**< NEUMANN, DIRICHLET or NOSLIP */
+    double k;                /**< DIRICHLET k when profile is NULL */
+    double eps;              /**< DIRICHLET epsilon when profile is NULL (> 0 for k-epsilon) */
+    double nu_tilde;         /**< DIRICHLET nu_tilde when profile is NULL */
+    ns_turbulence_profile_fn profile;  /**< Optional DIRICHLET profile; overrides the values */
+    void* profile_user_data;           /**< Passed to profile */
+} ns_turbulence_bc_segment_t;
+
 /**
  * Per-face turbulence boundary condition configuration.
  *
@@ -175,8 +225,11 @@ typedef enum {
  *    k and epsilon (or nu_tilde) there; and a first-node eddy viscosity chosen
  *    so the discrete wall shear stress is exactly u_tau^2.
  *
+ * `segments` override the face type on part of a face; see
+ * ns_turbulence_bc_segment_t.
+ *
  * Zero-initialization produces an all-PERIODIC configuration with the log law
- * (NS_WALL_LAW_LOG), mirroring ns_thermal_bc_config_t semantics.
+ * (NS_WALL_LAW_LOG) and no segments, mirroring ns_thermal_bc_config_t semantics.
  */
 typedef struct {
     bc_type_t left;    /**< BC type for x=0 face */
@@ -189,6 +242,8 @@ typedef struct {
     bc_dirichlet_values_t eps_values;       /**< Fixed epsilon per Dirichlet face */
     bc_dirichlet_values_t nu_tilde_values;  /**< Fixed nu_tilde per Dirichlet face */
     ns_wall_law_t wall_law;                 /**< Law of the wall on NOSLIP faces */
+    ns_turbulence_bc_segment_t segments[NS_TURB_BC_MAX_SEGMENTS]; /**< Part-face overrides */
+    size_t n_segments;                      /**< Segments in use (0 = whole faces only) */
 } ns_turbulence_bc_config_t;
 
 /**
@@ -360,7 +415,7 @@ typedef struct {
      * follow the same numerics. GPU solvers return CFD_ERROR_UNSUPPORTED when
      * a turbulence model is enabled. */
     turbulence_model_t turb_model;      /**< Turbulence model selection */
-    ns_turbulence_bc_config_t turb_bc;  /**< Per-face turbulence BCs (zero-init = all PERIODIC) */
+    ns_turbulence_bc_config_t turb_bc;  /**< Per-face turbulence BCs and part-face segments (zero-init = all PERIODIC, no segments) */
 
     /* Pressure Poisson solver for projection solvers ("projection" and
      * "projection_omp"; 0 = existing CG behavior, backward compatible). */

@@ -191,6 +191,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Turbulence BCs on part of a face** (`ns_turbulence_bc_segment_t`,
+  `turbulence_bc_add_segment()`, `ns_turbulence_bc_config_t.segments`/`n_segments`). Turbulence
+  BCs were one type per whole face, so a backward-facing step with its inlet at the step
+  plane could not have both wall functions on the step face and a turbulent inflow above it.
+  This blocked the turbulent separated-flow case that the learned closure needs.
+  - A segment overrides its face's type over a normalized range of the edge. The range uses
+    the same node-index convention and tolerance as `bc_inlet_set_range()`, which now comes
+    from one shared helper (`lib/src/boundary/bc_edge_range.h`). Segment types are NEUMANN,
+    DIRICHLET (fixed values, or a `ns_turbulence_profile_fn` profile evaluated per node with
+    the same position a velocity inlet over the same range sees) and NOSLIP. PERIODIC is
+    refused. Up to `NS_TURB_BC_MAX_SEGMENTS` (4); the last covering segment wins.
+  - The four face loops in `turbulence_apply_bcs()` are now one per-node path. With no
+    segments every node gets the operations it got before, which is checked by a whole-face
+    segment reproducing the face type bit for bit.
+  - Spalart-Allmaras wall distance measures to the wall parts of a face only, as distance
+    to a line segment; a face with no segments gives the same distance as before.
+  - Validation: `turbulence_bc_add_segment()` refuses a malformed segment and leaves the
+    config unchanged. Hand-filled configs are re-checked by solver init, by the turbulence
+    step (which reads segments for SA wall distance before the BCs run) and by
+    `turbulence_apply_bcs()`, each before touching any field. These checks also refuse a k-ε
+    DIRICHLET segment with no profile and `eps <= 0`. A profile that returns a negative or
+    non-finite value is refused by `turbulence_apply_bcs()`, which resolves every boundary
+    node first and writes nothing unless all of them pass.
+  - **Checkpoint format version 7.** Segments are stored except their profile callback. A
+    profiled DIRICHLET segment's values are stored as NaN. `load_simulation_from_checkpoint()`
+    still succeeds, since solver init accepts that marker, but `solver_step()` and
+    `solver_solve()` refuse the segment, for every model and before any field moves, until
+    the profile is re-attached, rather than run on placeholders.
+    `restore_simulation_checkpoint()` carries the live profile across by slot, but only onto
+    a segment stored that way, never onto one saved with constant values.
+    Version-6 files are rejected as unsupported. A count above the array is refused on
+    write and on read.
+  - `ns_turbulence_bc_config_t`, and therefore `ns_solver_params_t`, grew; code built against
+    the old headers must be rebuilt.
+  (`lib/src/solvers/turbulence/cpu/turbulence_solver.c`, `lib/src/io/checkpoint.c`,
+  `tests/solvers/turbulence/test_turbulence_bc_segments.c`, `tests/io/test_checkpoint.c`).
+
 - **Python exporter for `.cfdnn` models** (`tools/cfdnn/`, numpy only). Writes, reads and
   evaluates the format, folds input standardization and BatchNorm exactly into Dense
   layers, and converts a PyTorch `Sequential` (Linear, ReLU, LeakyReLU, Tanh, Sigmoid,

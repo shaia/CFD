@@ -24,9 +24,9 @@
  * Boussinesq-stress transpose term and the -(2/3)k*delta_ij term are omitted
  * (the latter is absorbed into a modified pressure, standard practice).
  *
- * Wall functions (faces marked BC_TYPE_NOSLIP in params->turb_bc): u_tau from
- * the law of the wall in params->turb_bc.wall_law -- the linear/log law
- * (default) or Spalding's smooth law; see ns_wall_law_t.
+ * Wall functions (faces, or segments of faces, marked BC_TYPE_NOSLIP in
+ * params->turb_bc): u_tau from the law of the wall in params->turb_bc.wall_law
+ * -- the linear/log law (default) or Spalding's smooth law; see ns_wall_law_t.
  */
 
 #ifndef CFD_TURBULENCE_SOLVER_H
@@ -55,6 +55,9 @@ extern "C" {
  * @param dt     Time step size
  * @param time   Current physical time
  * @return CFD_SUCCESS; CFD_ERROR_UNSUPPORTED for 3D or non-uniform grids;
+ *         CFD_ERROR_INVALID for a turbulence BC segment turbulence_apply_bcs()
+ *         would refuse (the step reads the segments for wall distance, so it
+ *         checks them itself, before touching any field);
  *         CFD_ERROR_DIVERGED if NaN/Inf detected
  */
 CFD_LIBRARY_EXPORT cfd_status_t turbulence_step_explicit(flow_field* field, const grid* grid,
@@ -62,7 +65,8 @@ CFD_LIBRARY_EXPORT cfd_status_t turbulence_step_explicit(flow_field* field, cons
                                                          double dt, double time);
 
 /**
- * Apply per-face turbulence boundary conditions, including wall functions.
+ * Apply per-face turbulence boundary conditions, and any part-face segments,
+ * including wall functions.
  *
  * Face types (params->turb_bc): PERIODIC (default), NEUMANN (zero-gradient),
  * DIRICHLET (fixed values), NOSLIP (wall function on the law in
@@ -72,15 +76,48 @@ CFD_LIBRARY_EXPORT cfd_status_t turbulence_step_explicit(flow_field* field, cons
  *
  * Faces are applied in the order left, right, bottom, top; later faces
  * overwrite shared corner cells (same precedence as energy_apply_thermal_bcs).
+ * Within a face, each node takes the type of the last segment in
+ * params->turb_bc.segments that covers it, or the face type if none does.
  *
  * No-op returning CFD_SUCCESS when params->turb_model == TURB_MODEL_NONE.
  *
  * @return CFD_SUCCESS, CFD_ERROR_INVALID for NULL args / unsupported face
- *         types / an unknown turb_bc.wall_law / too-small grids,
- *         CFD_ERROR_UNSUPPORTED for 3D grids.
+ *         types / an unknown turb_bc.wall_law / too-small grids / a segment
+ *         turbulence_bc_add_segment() would refuse / a k-epsilon DIRICHLET
+ *         segment with no profile and eps <= 0 / a profile returning a negative
+ *         or non-finite value (or eps <= 0 under k-epsilon),
+ *         CFD_ERROR_UNSUPPORTED for 3D grids, CFD_ERROR_NOMEM if the per-call
+ *         node buffer used with segments cannot be allocated. No field is
+ *         written on any error: every profile is evaluated and checked first.
  */
 CFD_LIBRARY_EXPORT cfd_status_t turbulence_apply_bcs(flow_field* field, const grid* grid,
                                                      const ns_solver_params_t* params);
+
+/**
+ * Append a part-face turbulence BC to @p bc after validating it.
+ *
+ * Example, a backward-facing step with the inlet at the step plane: wall
+ * functions on the step face (lower part of the left edge) and a fixed inflow
+ * above it.
+ *
+ *     params.turb_bc.left = BC_TYPE_NOSLIP;            // the step face
+ *     ns_turbulence_bc_segment_t inflow = {
+ *         .edge = BC_EDGE_LEFT, .start = 0.5, .end = 1.0,
+ *         .type = BC_TYPE_DIRICHLET, .k = 1e-3, .eps = 1e-4};
+ *     turbulence_bc_add_segment(&params.turb_bc, &inflow);
+ *
+ * Checks that do not depend on the turbulence model are made here;
+ * turbulence_apply_bcs() repeats them, so a hand-filled struct is held to the
+ * same rules, and adds the model-dependent one (eps > 0 under k-epsilon).
+ *
+ * @return CFD_SUCCESS; CFD_ERROR_INVALID for NULL arguments, an edge other than
+ *         left/right/bottom/top, a range outside 0 <= start < end <= 1, a type
+ *         other than NEUMANN/DIRICHLET/NOSLIP, negative or non-finite DIRICHLET
+ *         values, or no room left (NS_TURB_BC_MAX_SEGMENTS). @p bc is unchanged
+ *         on failure.
+ */
+CFD_LIBRARY_EXPORT cfd_status_t turbulence_bc_add_segment(ns_turbulence_bc_config_t* bc,
+                                                          const ns_turbulence_bc_segment_t* segment);
 
 /**
  * Initialize the active turbulence fields uniformly and set nu_t consistently.

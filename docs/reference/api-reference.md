@@ -263,7 +263,7 @@ typedef struct {
     double tolerance;       // Convergence tolerance
     // Turbulence
     turbulence_model_t        turb_model;  // TURB_MODEL_NONE (default), K_EPSILON, SPALART_ALLMARAS
-    ns_turbulence_bc_config_t turb_bc;    // Per-face turbulence BC types
+    ns_turbulence_bc_config_t turb_bc;    // Per-face turbulence BC types, plus part-face segments
     // Pressure Poisson solver (projection solvers)
     ns_pressure_solver_t pressure_solver;  // NS_PRESSURE_SOLVER_DEFAULT (0) = backend's CG
     // Convective-term discretization (momentum and temperature advection)
@@ -368,7 +368,8 @@ typedef enum {
 } turbulence_model_t;
 ```
 
-`ns_turbulence_bc_config_t` holds one BC type per domain face.  Available types:
+`ns_turbulence_bc_config_t` holds one BC type per domain face, which segments (below) can
+override on part of a face.  Available types:
 
 | Constant | Meaning |
 |----------|---------|
@@ -376,6 +377,37 @@ typedef enum {
 | `BC_TYPE_NEUMANN` | Zero-gradient (outlet) |
 | `BC_TYPE_DIRICHLET` | Fixed inlet values via per-face `k_values` / `eps_values` / `nu_tilde_values` |
 | `BC_TYPE_NOSLIP` | Wall-function treatment; law of the wall from `turb_bc.wall_law` (log law by default, or Spalding's) |
+
+**Part of a face.** Where one edge carries two kinds of boundary, add up to
+`NS_TURB_BC_MAX_SEGMENTS` (4) segments with `turbulence_bc_add_segment()`. Each segment
+overrides its face's type over a normalized range of that edge, using the same node-index
+convention as `bc_inlet_set_range()`. A node covered by several segments takes the last one.
+Segments may be NEUMANN, DIRICHLET (fixed `k`/`eps`/`nu_tilde`, or a
+`ns_turbulence_profile_fn` profile) or NOSLIP. Wall distance for Spalart-Allmaras sees only the
+wall parts of a face.
+
+```c
+/* Backward-facing step, inlet at the step plane: the step face below 7/64 of the
+ * left edge is a wall, the rest of the edge is an inflow. */
+params.turb_bc.left = BC_TYPE_NOSLIP;
+ns_turbulence_bc_segment_t inflow = {
+    .edge = BC_EDGE_LEFT, .start = 7.0 / 64.0, .end = 1.0,
+    .type = BC_TYPE_DIRICHLET, .profile = inflow_profile, .profile_user_data = &bl};
+turbulence_bc_add_segment(&params.turb_bc, &inflow);
+```
+
+Checkpoints store every segment field except `profile` and `profile_user_data`, which, like the
+other callbacks, must be re-attached after `load_simulation_from_checkpoint()`. A DIRICHLET
+segment with a profile has its values stored as NaN. The load still succeeds, but every step
+refuses the segment, whatever the model and before any field moves, until the profile is
+re-attached, rather than run on placeholder values:
+
+```c
+simulation_data* sim = load_simulation_from_checkpoint("run.cfdchk");
+sim->params.turb_bc.segments[0].profile = inflow_profile;   /* same slot as saved */
+sim->params.turb_bc.segments[0].profile_user_data = &bl;
+run_simulation_step(sim);
+```
 
 ### Solver Statistics
 
@@ -796,7 +828,22 @@ cfd_status_t turbulence_apply_bcs(flow_field* field,
 ```
 
 Apply turbulence boundary conditions (periodic, Neumann, Dirichlet, or wall-function) to all
-faces as configured in `params->turb_bc`.  Also called automatically by the NS solvers.
+faces as configured in `params->turb_bc`, including any part-face segments.  Also called
+automatically by the NS solvers.
+
+### turbulence_bc_add_segment
+
+```c
+cfd_status_t turbulence_bc_add_segment(ns_turbulence_bc_config_t* bc,
+                                       const ns_turbulence_bc_segment_t* segment);
+```
+
+Append a part-face turbulence BC after validating it: an x/y edge, `0 <= start < end <= 1`,
+type NEUMANN, DIRICHLET or NOSLIP (PERIODIC is refused), and finite non-negative DIRICHLET
+values. Returns `CFD_ERROR_INVALID` and leaves `bc` unchanged otherwise, or when all
+`NS_TURB_BC_MAX_SEGMENTS` slots are taken. `turbulence_apply_bcs()` applies the same checks to a
+hand-filled config. It also refuses a k-ε DIRICHLET segment with no profile and `eps <= 0`,
+and a profile that returns a negative or non-finite value.
 
 ### turbulence_wall_u_tau
 

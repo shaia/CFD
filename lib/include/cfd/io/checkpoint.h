@@ -31,12 +31,22 @@ extern "C" {
  * complete dynamical state.
  *
  * Caller-owned pointers -- the callbacks (`source_func`, `heat_source_func`) and
- * their contexts, and the learned-closure context `turb_closure` -- cannot be
- * serialized and are excluded. `restore_simulation_checkpoint()` carries them
- * across an in-place restore; `load_simulation_from_checkpoint()` builds a new
- * simulation and leaves them NULL, so a caller using any of them must re-supply
- * them on that path. Everything the correction needs besides the context, such
- * as `turb_nut_correction`, IS stored.
+ * their contexts, the learned-closure context `turb_closure`, and each turbulence
+ * BC segment's `profile` and `profile_user_data` -- cannot be serialized and are
+ * excluded. `restore_simulation_checkpoint()` carries them across an in-place
+ * restore; `load_simulation_from_checkpoint()` builds a new simulation and leaves
+ * them NULL, so a caller using any of them must re-supply them on that path.
+ * Everything the correction needs besides the context, such as
+ * `turb_nut_correction`, IS stored, as is every other segment field -- except
+ * that a DIRICHLET segment with a profile has its k, eps and nu_tilde stored as
+ * NaN, since the profile was what supplied them. Loaded without its profile, such
+ * a segment passes solver init -- so `load_simulation_from_checkpoint()` succeeds
+ * and the caller can re-attach the profile on the simulation it returns -- but
+ * every step refuses it, whatever the model and before any field moves, until
+ * the profile is re-attached, rather than run on placeholder values. The same NaN
+ * values are the marker `restore_simulation_checkpoint()` uses: it carries the
+ * profile at slot n across only onto a segment stored that way, never onto one
+ * saved with constant values.
  *
  * Portability: all multi-byte values are written little-endian with fixed-width
  * types and IEEE-754 doubles (no raw struct dumps). A header endianness marker
@@ -45,7 +55,7 @@ extern "C" {
  */
 
 /** Current on-disk checkpoint format version. Bumped on any layout change. */
-#define CFD_CHECKPOINT_FORMAT_VERSION 6u
+#define CFD_CHECKPOINT_FORMAT_VERSION 7u
 
 /** Recommended file extension for checkpoint files. */
 #define CFD_CHECKPOINT_EXTENSION ".cfdchk"

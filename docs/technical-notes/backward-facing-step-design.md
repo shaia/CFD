@@ -459,10 +459,14 @@ steps, which is how the convergence behaviour above was observed.
    Erturk and Armaly. It needs a solid block inside the domain, which is the mask /
    immersed-boundary work set aside in section 3.5.
 3. **Turbulent backward-facing step** (the Phase 7 prerequisite, e.g. Driver & Seegmiller
-   conditions). This still needs:
-   - wall functions on the step face, which is a partial left edge;
-   - turbulence inflow values (`k`, `ε` or `ν̃`) over part of an edge. The turbulence
-     boundary conditions are per face today.
+   conditions). Both boundary conditions it needed now exist as turbulence BC segments
+   (`turbulence_bc_add_segment()`), which override a face's type over part of its edge:
+   - wall functions on the step face, a NOSLIP left face below the step height;
+   - turbulence inflow values (`k`, `ε` or `ν̃`, fixed or from a profile callback) over
+     the rest of that edge, a DIRICHLET segment whose range matches the velocity inlet's
+     `bc_inlet_set_range()`.
+
+   The validation case itself is the remaining work.
 4. **GPU inlet test.** The GPU range kernels compile but nothing exercises them. A small
    CUDA test comparing `bc_apply_inlet_gpu()` against the CPU inlet node by node would
    close the gap for the whole GPU inlet, not only the range.
