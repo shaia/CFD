@@ -163,7 +163,9 @@ if (-not $PSCmdlet.ShouldProcess($wt, $plan)) { return }
 
 if ($isLink) {
     $before = @(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue).Count
-    cmd /c rmdir "$link"
+    # Non-recursive RemoveDirectory on the link itself: deletes the reparse point, never the target.
+    # Not cmd /c rmdir, which expands %VAR% even inside quotes and could hit another path.
+    [System.IO.Directory]::Delete($link, $false)
     if (Test-Path -LiteralPath $link) { throw "could not remove the link $link; nothing else was touched" }
     $after = @(Get-ChildItem -LiteralPath $target -Force -ErrorAction SilentlyContinue).Count
     if ($after -lt $before) {
