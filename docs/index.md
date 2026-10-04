@@ -229,7 +229,7 @@ See [Architecture Guide](architecture/architecture.md) for:
 Current documentation corresponds to:
 - **Version:** 0.4.x
 - **Status:** Pre-release (approaching v1.0)
-- **Last Updated:** 2026-10-03
+- **Last Updated:** 2026-10-04
 
 ## Getting Help
 

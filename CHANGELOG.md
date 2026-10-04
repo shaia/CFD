@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-10-03
+## [0.4.0] - 2026-10-04
 
 The turbulence release. RANS k-ε and Spalart-Allmaras models with wall functions, validated
 against channel DNS at Re_τ = 392 and 587, together with what they needed: geometric multigrid
