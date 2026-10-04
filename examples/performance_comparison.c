@@ -44,11 +44,18 @@ cfd_status_t benchmark_solver(const char* solver_name, const char* solver_type, 
     grid_initialize_uniform(grid);
     initialize_flow_field(field, grid);
 
-    // Create solver using modern interface
-    solver = cfd_solver_create(registry, solver_type);
+    // Create the solver. The checked variant refuses a backend this build or CPU lacks
+    // with CFD_ERROR_UNSUPPORTED; plain cfd_solver_create() would report an OpenMP
+    // solver on a build without OpenMP as an unregistered name (CFD_ERROR_NOT_FOUND).
+    solver = cfd_solver_create_checked(registry, solver_type);
     if (!solver) {
         status = cfd_get_last_status() != CFD_SUCCESS ? cfd_get_last_status() : CFD_ERROR;
-        printf("Failed to create solver %s: %s\n", solver_type, failure_reason(status));
+        if (status == CFD_ERROR_UNSUPPORTED) {
+            printf("Skipped: %s\n", failure_reason(status));
+            status = CFD_SUCCESS;
+        } else {
+            printf("Failed to create solver %s: %s\n", solver_type, failure_reason(status));
+        }
         goto cleanup;
     }
 

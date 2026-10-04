@@ -260,10 +260,10 @@ simulation_data* sim = init_simulation_with_solver(
 `explicit_euler_omp`, `projection`, `projection_optimized`, `projection_omp`) runs 100 steps
 on grids of 50x25, 100x50, 200x100 and 400x200 over a 1.0 x 0.5 domain.
 
-**Timing Pattern:** a backend this build or CPU lacks refuses init with
-`CFD_ERROR_UNSUPPORTED` and is reported as skipped, not timed. Any other init or step failure
-is a failure of the run: `benchmark_solver()` returns it, and `main` exits nonzero if any
-solver failed.
+**Timing Pattern:** solvers are created with `cfd_solver_create_checked()`, which refuses a
+backend this build or CPU lacks with `CFD_ERROR_UNSUPPORTED`. That refusal, at creation or at
+init, is reported as skipped, not timed. Any other creation, init or step failure is a failure
+of the run: `benchmark_solver()` returns it, and `main` exits nonzero if any solver failed.
 ```c
 grid* grid = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
 grid_initialize_uniform(grid);  // grid_create only allocates; spacing is zero until this
@@ -335,9 +335,9 @@ Performance: 7352941 cell-updates/second
 Memory usage: 0.19 MB
 ```
 
-The Optimized rows need AVX2 compiled in. On a default build (`CFD_ENABLE_AVX2` is OFF) they
-print `Skipped: SIMD Navier-Stokes backend unavailable: built without AVX2 (configure with
--DCFD_ENABLE_AVX2=ON)` instead of a timing.
+The Optimized rows need AVX2 compiled in (`-DCFD_ENABLE_AVX2=ON`, OFF by default) and the
+OpenMP rows need OpenMP. A row whose backend is missing prints
+`Skipped: Backend 'simd' is not available on this system` (or `'openmp'`) instead of a timing.
 
 ---
 
