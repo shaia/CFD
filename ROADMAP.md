@@ -27,11 +27,14 @@ than itemized here.
 
 ---
 
-## Current State (v0.3.0)
+## Current State (v0.4.0)
 
 A pluggable, multi-backend (CPU / AVX2 / NEON / OpenMP / CUDA) 2D/3D incompressible
-Navier-Stokes library with projection and explicit time-stepping methods, an energy
-equation with Boussinesq buoyancy, a full linear-solver suite, VTK/CSV output, and a
+Navier-Stokes library with projection and explicit time-stepping methods (and implicit
+viscous stepping on the scalar and OpenMP projections), an energy equation with Boussinesq
+buoyancy, RANS turbulence (k-ε and Spalart-Allmaras with wall functions, 2D), a full
+linear-solver suite including geometric multigrid and GMRES(m), checkpoint/restart,
+pure-C neural-network inference for learned closures, VTK/CSV output, and a
 visualization library. Phase 0 (architecture, error handling, thread safety, structured
 logging) is complete. See [CHANGELOG.md](CHANGELOG.md) for the shipped feature history.
 
@@ -709,13 +712,15 @@ already warm-starts.
 - ✅ **v0.2.0** — 3D support (indexing, stencils, NS solvers, BCs, SIMD/OMP/CUDA, VTK,
   validation)
 - ✅ **v0.3.0** — Heat transfer (energy equation, thermal BCs, natural-convection validation,
-  GPU backends) *(current release)*
+  GPU backends)
+- ✅ **v0.4.0** — Turbulence (k-ε + SA with selectable wall laws and partial-face BCs,
+  channel DNS validation), multigrid and GMRES(m) Poisson solvers, implicit viscous
+  stepping, upwind convection, checkpoint/restart, `.cfdnn` inference *(current release)*
 
 **Planned:**
 
 | Milestone | Target |
 | --------- | ------ |
-| ✅ **v0.4.0 — Turbulence** | *(complete: k-ε + SA, log-law wall functions, turbulent channel-flow validation at Re_τ = 395)* |
 | **v0.5.0 — Parallel Computing** | MPI parallelization, scalability benchmarks, HDF5 parallel I/O |
 | **v0.6.0 — Unstructured Meshes** | Unstructured mesh support, Gmsh import, complex-geometry examples |
 | **v1.0.0 — Production Ready** | All Phase 1–6 features, comprehensive validation, complete docs, stable API, performance optimized |

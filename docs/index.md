@@ -69,7 +69,7 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 1. Read [Solvers Performance](reference/solvers.md#performance-benchmarks)
 2. Study [SIMD Optimization Analysis](technical-notes/simd-optimization-analysis.md)
 3. Review [Backend Performance](reference/solvers.md#backend-performance)
-4. Run [performance_comparison](guides/examples.md#4-performance_comparisonc)
+4. Run [performance_comparison](guides/examples.md#5-performance_comparisonc)
 
 **Key resources:**
 - [Backend Abstraction](architecture/architecture.md#4-backend-abstraction)
@@ -137,7 +137,7 @@ Welcome to the CFD Framework documentation. This page provides a comprehensive g
 ```c
 // Initialization
 cfd_status_t cfd_init(void);
-void cfd_cleanup(void);
+void cfd_finalize(void);
 
 // Simulation
 simulation_data* init_simulation(size_t nx, size_t ny, size_t nz,
@@ -227,9 +227,9 @@ See [Architecture Guide](architecture/architecture.md) for:
 ## Version Information
 
 Current documentation corresponds to:
-- **Version:** 0.3.x
+- **Version:** 0.4.x
 - **Status:** Pre-release (approaching v1.0)
-- **Last Updated:** 2026-07-25
+- **Last Updated:** 2026-10-04
 
 ## Getting Help
 
@@ -257,8 +257,7 @@ Current documentation corresponds to:
 ### Development Documentation
 
 11. [ROADMAP.md](../ROADMAP.md) - Development roadmap
-12. [CLAUDE.md](../.claude/CLAUDE.md) - Development guidelines
-13. [.claude/commands/](../.claude/commands/) - Development tools
+12. [CONTRIBUTING.md](../CONTRIBUTING.md) - Development guidelines
 
 ---
 

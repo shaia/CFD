@@ -75,7 +75,7 @@ extern "C" {
  */
 typedef enum {
     POISSON_METHOD_JACOBI,        /**< Jacobi iteration (fully parallelizable) */
-    POISSON_METHOD_GAUSS_SEIDEL,  /**< Gauss-Seidel: SOR at omega = 1 (params.omega is ignored) */
+    POISSON_METHOD_GAUSS_SEIDEL,  /**< Gauss-Seidel: SOR at omega = 1 (params.sor.omega is ignored) */
     POISSON_METHOD_SOR,           /**< Successive Over-Relaxation */
     POISSON_METHOD_REDBLACK_SOR,  /**< Red-Black SOR (parallelizable) */
     POISSON_METHOD_CG,            /**< Conjugate Gradient (for SPD systems) */

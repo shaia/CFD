@@ -78,7 +78,7 @@ int main(void) {
 
     // Cleanup
     free_simulation(sim);
-    cfd_cleanup();
+    cfd_finalize();
 
     return 0;
 }
@@ -256,38 +256,44 @@ simulation_data* sim = init_simulation_with_solver(
 - Grid size scaling
 - Timing methodology
 
-**Benchmark Setup:**
+**Benchmark Setup:** each of the six solvers (`explicit_euler`, `explicit_euler_optimized`,
+`explicit_euler_omp`, `projection`, `projection_optimized`, `projection_omp`) runs 100 steps
+on grids of 50x25, 100x50, 200x100 and 400x200 over a 1.0 x 0.5 domain.
+
+**Timing Pattern:** solvers are created with `cfd_solver_create_checked()`, which refuses a
+backend this build or CPU lacks with `CFD_ERROR_UNSUPPORTED`. That refusal, at creation or at
+init, is reported as skipped, not timed. Any other creation, init or step failure is a failure
+of the run: `benchmark_solver()` returns it, and `main` exits nonzero if any solver failed.
 ```c
-typedef struct {
-    const char* name;
-    size_t nx, ny;
-    int steps;
-} benchmark_config_t;
+grid* grid = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
+grid_initialize_uniform(grid);  // grid_create only allocates; spacing is zero until this
 
-benchmark_config_t configs[] = {
-    {"Small Grid",  50,  50, 100},
-    {"Medium Grid", 100, 100, 100},
-    {"Large Grid",  200, 200, 100},
-};
-```
-
-**Timing Pattern:**
-```c
-#include <time.h>
-
-clock_t start = clock();
-
-// Run simulation
-for (int step = 0; step < max_steps; step++) {
-    run_simulation_step(sim);
+cfd_status_t status = solver_init(solver, grid, &params);
+if (status == CFD_ERROR_UNSUPPORTED) {
+    printf("Skipped: %s\n", failure_reason(status));
+    status = CFD_SUCCESS;
+    goto cleanup;
+}
+if (status != CFD_SUCCESS) {
+    printf("Init failed: %s\n", failure_reason(status));
+    goto cleanup;
 }
 
-clock_t end = clock();
-double elapsed = (double)(end - start) / CLOCKS_PER_SEC;
-
-printf("Time: %.3f seconds (%.3f ms/step)\n",
-       elapsed, 1000.0 * elapsed / max_steps);
+double start = wall_seconds();
+for (int i = 0; i < iterations; i++) {
+    status = solver_step(solver, field, grid, &params, &stats);
+    if (status != CFD_SUCCESS) {
+        printf("Failed at step %d: %s\n", i, failure_reason(status));
+        goto cleanup;
+    }
+}
+double elapsed = wall_seconds() - start;
 ```
+
+`failure_reason()` returns `cfd_get_last_error()`, or `cfd_get_error_string(status)` when the
+library set no message. `wall_seconds()` reads C11 `timespec_get()`: elapsed wall time, so the
+OpenMP rows compare with the scalar ones on every platform. `clock()` would not do here; on
+Linux and macOS it sums CPU time over all threads.
 
 **Run:**
 ```bash
@@ -327,6 +333,10 @@ Execution time: 0.068 seconds
 Performance: 7352941 cell-updates/second
 Memory usage: 0.19 MB
 ```
+
+The Optimized rows need AVX2 compiled in (`-DCFD_ENABLE_AVX2=ON`, OFF by default) and the
+OpenMP rows need OpenMP. A row whose backend is missing prints
+`Skipped: Backend 'simd' is not available on this system` (or `'openmp'`) instead of a timing.
 
 ---
 
@@ -469,7 +479,7 @@ For Re=100, centerline velocities should match Ghia et al. within ~1%.
 
 **Output:**
 - VTK files in `output/lid_cavity_Re<number>/`
-- Compare with published data in [validation/lid-driven-cavity.md](validation/lid-driven-cavity.md)
+- Compare with published data in [validation/lid-driven-cavity.md](../validation/lid-driven-cavity.md)
 
 ---
 
