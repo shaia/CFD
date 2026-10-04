@@ -19,6 +19,9 @@ void test_euler_avx2_ghia_re100(void) {
         EULER_FULL_STEPS, FINE_DT
     );
 
+    if (result.solver_unavailable) {
+        TEST_IGNORE_MESSAGE("AVX2 Euler solver not available (SIMD not enabled)");
+    }
     TEST_ASSERT_TRUE_MESSAGE(result.success, result.error_msg);
     print_ghia_result(&result, "Explicit Euler AVX2");
 
