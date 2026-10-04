@@ -15,16 +15,18 @@ int cfd_is_initialized(void);
 ```
 
 **cfd_init()**
-- Thread-safe initialization (uses `pthread_once` / `InitOnceExecuteOnce`)
-- Safe to call multiple times from different threads
+- Thread-safe: an atomic compare-and-swap marks the library initialized
+- Safe to call multiple times from different threads; once initialized, later calls return at once
 - Returns `CFD_SUCCESS` on success
 
 **cfd_finalize()**
-- Releases the global resources `cfd_init()` allocated
+- Releases the global resources `cfd_init()` allocated and marks the library uninitialized, so a
+  later `cfd_init()` initializes it again
 - Call it when the library is no longer needed, especially in repeated load/unload scenarios
 
 **cfd_is_initialized()**
-- Returns non-zero once `cfd_init()` has run, zero otherwise
+- Returns non-zero while the library is initialized: after `cfd_init()` and before the next
+  `cfd_finalize()`; zero otherwise
 
 **Example:**
 ```c

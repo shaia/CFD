@@ -620,7 +620,7 @@ Planned enhancements (see ROADMAP.md):
 ### Initialization
 
 ```c
-// Thread-safe initialization (uses pthread_once / InitOnceExecuteOnce)
+// Thread-safe initialization (an atomic compare-and-swap on the initialized flag)
 cfd_status_t cfd_init(void);
 
 // Safe for concurrent applications:
