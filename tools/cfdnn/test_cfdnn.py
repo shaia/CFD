@@ -58,6 +58,16 @@ class FormatTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from("<I", data, 40)[0], 3)  # name length
         self.assertEqual(data[44:47], b"abc")
 
+    def test_library_version_stamp_is_the_repository_version(self):
+        # Bytes [16, 22) record the release the exporter was written against, as the C
+        # writer records cfd_version.h. Compared with VERSION, so a release bump that
+        # misses the exporter fails here instead of shipping a stale stamp.
+        version_file = os.path.join(os.path.dirname(__file__), "..", "..", "VERSION")
+        with open(version_file, encoding="utf-8") as f:
+            expected = tuple(int(part) for part in f.read().strip().split("."))
+        data = cfdnn.to_bytes(small_model(), "abc")
+        self.assertEqual(struct.unpack_from("<3H", data, 16), expected)
+
     def test_size_is_exactly_what_the_records_add_up_to(self):
         layers = small_model()
         body = sum(20 + 4 * l.weight.size + 4 + (4 * l.out_features if l.bias is not None else 0)
