@@ -804,8 +804,9 @@ Each item is detailed in the entry it names.
   discarded the init and step statuses: both projection rows timed pressure solves that ran to
   `max_iterations` and failed (over 300 s in all, with `projection_omp` taking 70-77 s per grid
   size), and on a build without AVX2 the `*_optimized` rows printed `inf` cell-updates per
-  second. It now initializes the grid, reports a backend that refuses init as skipped, and
-  stops at the first failed step; the whole run takes about a minute.
+  second. It now initializes the grid and reports a backend that refuses init with
+  `CFD_ERROR_UNSUPPORTED` as skipped; any other init or step failure is reported, and the
+  process exits nonzero, so a run of the examples catches a solver that stops working.
 - `scripts/ec2-validate.sh` runs every `CavityBackend_*` ctest entry. It ran the test binary
   without a filter, which skips the Re=400 and Re=1000 cases, and under `set -e` a failing run
   ended the script before its FAILED summary.

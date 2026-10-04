@@ -13,29 +13,44 @@
 #include <stdlib.h>
 #include <time.h>
 
-// Helper to benchmark a solver type
-void benchmark_solver(const char* solver_name, const char* solver_type, size_t nx, size_t ny,
-                      int iterations) {
+// The library's message for a failure, falling back to the status name
+static const char* failure_reason(cfd_status_t status) {
+    const char* reason = cfd_get_last_error();
+    return reason ? reason : cfd_get_error_string(status);
+}
+
+// Benchmark one solver type. Returns CFD_SUCCESS when it ran, or was skipped because
+// this build or CPU lacks its backend; any other status is a failure of the run.
+cfd_status_t benchmark_solver(const char* solver_name, const char* solver_type, size_t nx,
+                              size_t ny, int iterations) {
     printf("\n=== %s Benchmark ===\n", solver_name);
     printf("Grid size: %zux%zu, Iterations: %d\n", nx, ny, iterations);
 
+    // A previous benchmark's message must not be reported as this one's reason
+    cfd_clear_error();
+    cfd_status_t status = CFD_SUCCESS;
     struct NSSolverRegistry* registry = cfd_registry_create();
-    cfd_registry_register_defaults(registry);
-
-    // Create solver using modern interface
-    struct NSSolver* solver = cfd_solver_create(registry, solver_type);
-    if (!solver) {
-        fprintf(stderr, "Failed to create solver: %s\n", solver_type);
-        cfd_registry_destroy(registry);
-        return;
-    }
-
-    // Create grid and flow field. grid_create only allocates; the coordinates and
-    // spacings are zero until grid_initialize_uniform fills them.
+    struct NSSolver* solver = NULL;
+    // grid_create only allocates; the coordinates and spacings are zero until
+    // grid_initialize_uniform fills them.
     grid* grid = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
     flow_field* field = flow_field_create(nx, ny, 1);
+    if (!registry || !grid || !field) {
+        status = CFD_ERROR_NOMEM;
+        printf("Failed: %s\n", failure_reason(status));
+        goto cleanup;
+    }
+    cfd_registry_register_defaults(registry);
     grid_initialize_uniform(grid);
     initialize_flow_field(field, grid);
+
+    // Create solver using modern interface
+    solver = cfd_solver_create(registry, solver_type);
+    if (!solver) {
+        status = cfd_get_last_status() != CFD_SUCCESS ? cfd_get_last_status() : CFD_ERROR;
+        printf("Failed to create solver %s: %s\n", solver_type, failure_reason(status));
+        goto cleanup;
+    }
 
     // Initialize solver parameters
     ns_solver_params_t params = ns_solver_params_default();
@@ -43,11 +58,16 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
     params.cfl = 0.5;
     params.tolerance = 1e-6;
 
-    // A backend this build or CPU lacks refuses at init: report it rather than time it
-    cfd_status_t status = solver_init(solver, grid, &params);
+    // A backend this build or CPU lacks refuses with CFD_ERROR_UNSUPPORTED: report it
+    // rather than time it. Any other refusal is a real failure.
+    status = solver_init(solver, grid, &params);
+    if (status == CFD_ERROR_UNSUPPORTED) {
+        printf("Skipped: %s\n", failure_reason(status));
+        status = CFD_SUCCESS;
+        goto cleanup;
+    }
     if (status != CFD_SUCCESS) {
-        const char* reason = cfd_get_last_error();
-        printf("Skipped: %s\n", reason ? reason : cfd_get_error_string(status));
+        printf("Init failed: %s\n", failure_reason(status));
         goto cleanup;
     }
 
@@ -58,7 +78,7 @@ void benchmark_solver(const char* solver_name, const char* solver_type, size_t n
     for (int i = 0; i < iterations; i++) {
         status = solver_step(solver, field, grid, &params, &stats);
         if (status != CFD_SUCCESS) {
-            printf("Failed at step %d: %s\n", i, cfd_get_error_string(status));
+            printf("Failed at step %d: %s\n", i, failure_reason(status));
             goto cleanup;
         }
     }
@@ -77,11 +97,15 @@ cleanup:
     flow_field_destroy(field);
     grid_destroy(grid);
     cfd_registry_destroy(registry);
+    return status;
 }
 
 int main() {
     printf("CFD Library Performance Comparison\n");
     printf("==================================\n");
+
+    // Benchmarks that could run but failed; any one makes the process exit nonzero
+    int failures = 0;
 
     // Test different grid sizes
     size_t grid_sizes[][2] = {
@@ -108,21 +132,23 @@ int main() {
         }
         printf("\n");
 
-        // Benchmark basic solver
-        benchmark_solver("Basic NSSolver", NS_SOLVER_TYPE_EXPLICIT_EULER, nx, ny, iterations);
-
-        // Benchmark optimized solver
-        benchmark_solver("Optimized NSSolver", NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED, nx, ny,
-                         iterations);
-
-        // Benchmark OpenMP solver
-        benchmark_solver("OpenMP NSSolver", NS_SOLVER_TYPE_EXPLICIT_EULER_OMP, nx, ny, iterations);
-
-        // Benchmark Projection solvers
-        benchmark_solver("Projection NSSolver", NS_SOLVER_TYPE_PROJECTION, nx, ny, iterations);
-        benchmark_solver("Projection Optimized", NS_SOLVER_TYPE_PROJECTION_OPTIMIZED, nx, ny,
-                         iterations);
-        benchmark_solver("Projection OpenMP", NS_SOLVER_TYPE_PROJECTION_OMP, nx, ny, iterations);
+        static const struct {
+            const char* name;
+            const char* type;
+        } solvers[] = {
+            {"Basic NSSolver", NS_SOLVER_TYPE_EXPLICIT_EULER},
+            {"Optimized NSSolver", NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED},
+            {"OpenMP NSSolver", NS_SOLVER_TYPE_EXPLICIT_EULER_OMP},
+            {"Projection NSSolver", NS_SOLVER_TYPE_PROJECTION},
+            {"Projection Optimized", NS_SOLVER_TYPE_PROJECTION_OPTIMIZED},
+            {"Projection OpenMP", NS_SOLVER_TYPE_PROJECTION_OMP},
+        };
+        for (size_t s = 0; s < sizeof(solvers) / sizeof(solvers[0]); s++) {
+            if (benchmark_solver(solvers[s].name, solvers[s].type, nx, ny, iterations) !=
+                CFD_SUCCESS) {
+                failures++;
+            }
+        }
 
 
         // Calculate speedup
@@ -135,6 +161,10 @@ int main() {
         printf("=");
     }
     printf("\n");
+    if (failures > 0) {
+        printf("Benchmark FAILED: %d solver run(s) failed; see the messages above.\n", failures);
+        return EXIT_FAILURE;
+    }
     printf("Benchmark completed!\n");
     printf("Note: Performance varies by hardware and system load.\n");
     printf("For production use, consider the optimized solver for large grids.\n");

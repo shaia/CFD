@@ -260,15 +260,22 @@ simulation_data* sim = init_simulation_with_solver(
 `explicit_euler_omp`, `projection`, `projection_optimized`, `projection_omp`) runs 100 steps
 on grids of 50x25, 100x50, 200x100 and 400x200 over a 1.0 x 0.5 domain.
 
-**Timing Pattern:** a solver that refuses init is reported, not timed, and a failed step ends
-that solver's run:
+**Timing Pattern:** a backend this build or CPU lacks refuses init with
+`CFD_ERROR_UNSUPPORTED` and is reported as skipped, not timed. Any other init or step failure
+is a failure of the run: `benchmark_solver()` returns it, and `main` exits nonzero if any
+solver failed.
 ```c
 grid* grid = grid_create(nx, ny, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0);
 grid_initialize_uniform(grid);  // grid_create only allocates; spacing is zero until this
 
 cfd_status_t status = solver_init(solver, grid, &params);
+if (status == CFD_ERROR_UNSUPPORTED) {
+    printf("Skipped: %s\n", failure_reason(status));
+    status = CFD_SUCCESS;
+    goto cleanup;
+}
 if (status != CFD_SUCCESS) {
-    printf("Skipped: %s\n", cfd_get_last_error());
+    printf("Init failed: %s\n", failure_reason(status));
     goto cleanup;
 }
 
@@ -276,12 +283,15 @@ clock_t start = clock();
 for (int i = 0; i < iterations; i++) {
     status = solver_step(solver, field, grid, &params, &stats);
     if (status != CFD_SUCCESS) {
-        printf("Failed at step %d: %s\n", i, cfd_get_error_string(status));
+        printf("Failed at step %d: %s\n", i, failure_reason(status));
         goto cleanup;
     }
 }
 double cpu_time = (double)(clock() - start) / CLOCKS_PER_SEC;
 ```
+
+`failure_reason()` returns `cfd_get_last_error()`, or `cfd_get_error_string(status)` when the
+library set no message.
 
 `clock()` measures wall time on Windows but CPU time summed over threads on Linux and macOS,
 so OpenMP rows there read slower than they run.
