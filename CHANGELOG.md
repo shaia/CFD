@@ -807,7 +807,8 @@ Each item is detailed in the entry it names.
   second. It now initializes the grid, creates solvers with `cfd_solver_create_checked()`, and
   reports a backend this build or CPU lacks (`CFD_ERROR_UNSUPPORTED`, at creation or at init)
   as skipped; any other failure is reported, and the process exits nonzero, so a run of the
-  examples catches a solver that stops working.
+  examples catches a solver that stops working. It also times with wall-clock time rather than
+  `clock()`, which on Linux and macOS summed CPU time over every OpenMP thread.
 - `scripts/ec2-validate.sh` runs every `CavityBackend_*` ctest entry. It ran the test binary
   without a filter, which skips the Re=400 and Re=1000 cases, and under `set -e` a failing run
   ended the script before its FAILED summary.

@@ -13,6 +13,14 @@
 #include <stdlib.h>
 #include <time.h>
 
+// Elapsed wall time. clock() would charge every OpenMP thread's CPU time on Linux and
+// macOS, which makes threaded rows look slower than they run.
+static double wall_seconds(void) {
+    struct timespec ts;
+    timespec_get(&ts, TIME_UTC);
+    return (double)ts.tv_sec + (1e-9 * (double)ts.tv_nsec);
+}
+
 // The library's message for a failure, falling back to the status name
 static const char* failure_reason(cfd_status_t status) {
     const char* reason = cfd_get_last_error();
@@ -79,7 +87,7 @@ cfd_status_t benchmark_solver(const char* solver_name, const char* solver_type, 
     }
 
     // Measure execution time
-    clock_t start = clock();
+    double start = wall_seconds();
     ns_solver_stats_t stats = ns_solver_stats_default();
 
     for (int i = 0; i < iterations; i++) {
@@ -90,12 +98,10 @@ cfd_status_t benchmark_solver(const char* solver_name, const char* solver_type, 
         }
     }
 
-    clock_t end = clock();
+    double elapsed = wall_seconds() - start;
+    double cells_per_second = (double)(nx * ny * iterations) / elapsed;
 
-    double cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-    double cells_per_second = (double)(nx * ny * iterations) / cpu_time;
-
-    printf("Execution time: %.3f seconds\n", cpu_time);
+    printf("Execution time: %.3f seconds\n", elapsed);
     printf("Performance: %.0f cell-updates/second\n", cells_per_second);
     printf("Memory usage: %.2f MB\n", (double)(nx * ny * 5 * sizeof(double)) / (1024 * 1024));
 

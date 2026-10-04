@@ -279,7 +279,7 @@ if (status != CFD_SUCCESS) {
     goto cleanup;
 }
 
-clock_t start = clock();
+double start = wall_seconds();
 for (int i = 0; i < iterations; i++) {
     status = solver_step(solver, field, grid, &params, &stats);
     if (status != CFD_SUCCESS) {
@@ -287,14 +287,13 @@ for (int i = 0; i < iterations; i++) {
         goto cleanup;
     }
 }
-double cpu_time = (double)(clock() - start) / CLOCKS_PER_SEC;
+double elapsed = wall_seconds() - start;
 ```
 
 `failure_reason()` returns `cfd_get_last_error()`, or `cfd_get_error_string(status)` when the
-library set no message.
-
-`clock()` measures wall time on Windows but CPU time summed over threads on Linux and macOS,
-so OpenMP rows there read slower than they run.
+library set no message. `wall_seconds()` reads C11 `timespec_get()`: elapsed wall time, so the
+OpenMP rows compare with the scalar ones on every platform. `clock()` would not do here; on
+Linux and macOS it sums CPU time over all threads.
 
 **Run:**
 ```bash
