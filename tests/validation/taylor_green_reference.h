@@ -32,6 +32,7 @@
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "solver_availability.h"
 #include "unity.h"
 
 #include <math.h>
@@ -344,6 +345,7 @@ static inline double tg_compute_max_divergence(const tg_context_t* ctx) {
 typedef struct {
     /* Status */
     int success;
+    int solver_unavailable;  /* 1 only if the backend is not built or not supported here */
     char error_msg[256];
 
     /* Error metrics at final time */
@@ -424,22 +426,39 @@ static inline tg_result_t tg_run_simulation(
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* solver = cfd_solver_create(registry, solver_type);
+    ns_solver_t* solver = validation_create_solver(registry, solver_type,
+                                                   &result.solver_unavailable,
+                                                   result.error_msg, sizeof(result.error_msg));
     if (!solver) {
-        snprintf(result.error_msg, sizeof(result.error_msg),
-                 "Solver '%s' not available", solver_type);
         cfd_registry_destroy(registry);
         tg_context_destroy(ctx);
         return result;
     }
 
-    solver_init(solver, ctx->g, &params);
+    cfd_status_t status = solver_init(solver, ctx->g, &params);
+    if (status != CFD_SUCCESS) {
+        result.solver_unavailable = (status == CFD_ERROR_UNSUPPORTED);
+        snprintf(result.error_msg, sizeof(result.error_msg), "Solver '%s' init failed: %s",
+                 solver_type, cfd_get_error_string(status));
+        solver_destroy(solver);
+        cfd_registry_destroy(registry);
+        tg_context_destroy(ctx);
+        return result;
+    }
     ns_solver_stats_t stats = ns_solver_stats_default();
 
     /* Run simulation */
     for (int step = 0; step < max_steps; step++) {
         tg_apply_bc(ctx->field);
-        solver_step(solver, ctx->field, ctx->g, &params, &stats);
+        status = solver_step(solver, ctx->field, ctx->g, &params, &stats);
+        if (status != CFD_SUCCESS) {
+            snprintf(result.error_msg, sizeof(result.error_msg), "Step %d failed: %s", step,
+                     cfd_get_error_string(status));
+            solver_destroy(solver);
+            cfd_registry_destroy(registry);
+            tg_context_destroy(ctx);
+            return result;
+        }
 
         /* Check for numerical blowup */
         double max_v = tg_compute_max_velocity(ctx);

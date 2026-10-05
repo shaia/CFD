@@ -16,6 +16,7 @@
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "solver_availability.h"
 #include "unity.h"
 
 #include <math.h>
@@ -113,10 +114,10 @@ static q3d_result_t q3d_run_zero_field(const char* solver_type) {
     }
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* solver = cfd_solver_create(registry, solver_type);
+    ns_solver_t* solver = validation_create_solver(registry, solver_type,
+                                                   &result.solver_unavailable,
+                                                   result.error_msg, sizeof(result.error_msg));
     if (!solver) {
-        snprintf(result.error_msg, sizeof(result.error_msg),
-                 "Solver '%s' not available", solver_type);
         cfd_registry_destroy(registry);
         flow_field_destroy(field);
         grid_destroy(g);

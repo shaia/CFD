@@ -38,6 +38,7 @@
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "solver_availability.h"
 #include "unity.h"
 
 #include <math.h>
@@ -165,9 +166,10 @@ static bfs_result_t run_bfs(const bfs_case_t* c) {
     params.pressure_bc.right = POISSON_WALL_DIRICHLET;
     params.pressure_bc.values.right = 0.0;
 
-    solver = cfd_solver_create(registry, c->solver);
+    int unavailable = 0;
+    solver = validation_create_solver(registry, c->solver, &unavailable, r.msg, sizeof(r.msg));
     if (!solver) {
-        snprintf(r.msg, sizeof(r.msg), "could not create %s", c->solver);
+        r.ok = unavailable ? -1 : 0;
         goto cleanup;
     }
     cfd_status_t status = solver_init(solver, g, &params);

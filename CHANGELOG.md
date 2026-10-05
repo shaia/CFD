@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the directory for its direct-API VTK file, which it wrote into a missing `output/` while
   reporting success; `runtime_comparison` prints `n/a` for a missing backend instead of
   timing an absent simulation.
+- **Validation tests skip only a missing backend.** Several harnesses treated any NULL from
+  `cfd_solver_create()` as "not available" and skipped, which also hid an unregistered name or
+  an allocation failure; `BackwardFacingStepRe400Test` failed instead of skipping on a build
+  without OpenMP, where the `_omp` solvers are not registered. A
+  shared helper (`tests/validation/solver_availability.h`) creates solvers with
+  `cfd_solver_create_checked()` and skips only `CFD_ERROR_UNSUPPORTED`. The Taylor-Green
+  harness also stopped ignoring `solver_init` and `solver_step` statuses, and its backend
+  consistency test no longer treats every failure as a skip.
 
 ## [0.4.0] - 2026-10-04
 
