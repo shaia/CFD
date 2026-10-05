@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Examples report failures and exit nonzero.** `custom_source_terms`, `minimal_example`,
+  `minimal_example_3d`, `runtime_comparison`, `solver_selection` and `steady_flow_multigrid`
+  discarded `solver_init` / `solver_step` / `run_simulation_step` statuses, so a solver that
+  stopped working still printed results and exited 0. They now check every status, skip a
+  solver whose backend this build or machine lacks, and exit 1 on anything else.
+  `solver_selection` checks `cfd_backend_is_available()` before switching to the AVX2 solver,
+  since a solver switched in without its backend fails only at its first step, and creates
+  the directory for its direct-API VTK file, which it wrote into a missing `output/` while
+  reporting success; `runtime_comparison` prints `n/a` for a missing backend instead of
+  timing an absent simulation.
+- **Validation tests skip only a missing backend.** Several harnesses treated any NULL from
+  `cfd_solver_create()` as "not available" and skipped, which also hid an unregistered name or
+  an allocation failure; `BackwardFacingStepRe400Test` failed instead of skipping on a build
+  without OpenMP, where the `_omp` solvers are not registered. A
+  shared helper (`tests/validation/solver_availability.h`) creates solvers with
+  `cfd_solver_create_checked()` and skips only `CFD_ERROR_UNSUPPORTED`. The Taylor-Green
+  harness also stopped ignoring `solver_init` and `solver_step` statuses, and its backend
+  consistency test no longer treats every failure as a skip.
+
 ## [0.4.0] - 2026-10-04
 
 The turbulence release. RANS k-ε and Spalart-Allmaras models with wall functions, validated

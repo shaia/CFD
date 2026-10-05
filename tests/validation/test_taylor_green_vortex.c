@@ -229,10 +229,11 @@ void test_backend_consistency(void) {
             TG_DEFAULT_NU, TG_DEFAULT_DT, TG_DEFAULT_STEPS / 2  /* Fewer steps for faster testing */
         );
 
-        if (!result.success) {
-            printf("      %s: SKIPPED (solver not available)\n", solver_names[i]);
+        if (result.solver_unavailable) {
+            printf("      %s: SKIPPED (%s)\n", solver_names[i], result.error_msg);
             continue;
         }
+        TEST_ASSERT_TRUE_MESSAGE(result.success, result.error_msg);
 
         printf("      %s: velocity_decay=%.6f, ke_decay=%.6f\n",
                solver_names[i], result.measured_velocity_decay, result.measured_ke_decay);

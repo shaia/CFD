@@ -15,6 +15,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "solver_availability.h"
 #include "unity.h"
 
 #include <math.h>
@@ -326,17 +327,10 @@ static inline cavity_sim_result_t cavity_run_with_solver(
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    /* The checked variant refuses a backend this build or CPU lacks with
-     * CFD_ERROR_UNSUPPORTED before the name lookup, so a solver left unregistered
-     * because its backend is not compiled in is reported the same way. Only that
-     * status means unavailable; a NULL for any other reason (an unregistered name,
-     * an allocation failure) is a failure the test must see. */
-    ns_solver_t* solver = cfd_solver_create_checked(registry, solver_type);
+    ns_solver_t* solver = validation_create_solver(registry, solver_type,
+                                                   &result.solver_unavailable,
+                                                   result.error_msg, sizeof(result.error_msg));
     if (!solver) {
-        cfd_status_t create_status = cfd_get_last_status();
-        result.solver_unavailable = (create_status == CFD_ERROR_UNSUPPORTED);
-        snprintf(result.error_msg, sizeof(result.error_msg), "Solver '%s' not created: %s",
-                 solver_type, cfd_get_error_string(create_status));
         cfd_registry_destroy(registry);
         cavity_context_destroy(ctx);
         return result;
@@ -489,17 +483,10 @@ static inline cavity_sim_result_t cavity_run_with_pressure_solver_ctx(
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
 
-    /* The checked variant refuses a backend this build or CPU lacks with
-     * CFD_ERROR_UNSUPPORTED before the name lookup, so a solver left unregistered
-     * because its backend is not compiled in is reported the same way. Only that
-     * status means unavailable; a NULL for any other reason (an unregistered name,
-     * an allocation failure) is a failure the test must see. */
-    ns_solver_t* solver = cfd_solver_create_checked(registry, solver_type);
+    ns_solver_t* solver = validation_create_solver(registry, solver_type,
+                                                   &result.solver_unavailable,
+                                                   result.error_msg, sizeof(result.error_msg));
     if (!solver) {
-        cfd_status_t create_status = cfd_get_last_status();
-        result.solver_unavailable = (create_status == CFD_ERROR_UNSUPPORTED);
-        snprintf(result.error_msg, sizeof(result.error_msg), "Solver '%s' not created: %s",
-                 solver_type, cfd_get_error_string(create_status));
         cfd_registry_destroy(registry);
         cavity_context_destroy(ctx);
         return result;
