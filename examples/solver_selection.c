@@ -81,10 +81,12 @@ void print_stats(const ns_solver_stats_t* stats) {
     printf("  Elapsed time: %.2f ms\n", stats->elapsed_time_ms);
 }
 
-// The library's message for a failure, falling back to the status name
+// The library's message for a failure, falling back to the status name. The stored
+// message is used only when it belongs to this status: a failure that sets none would
+// otherwise be reported with an earlier, unrelated one.
 static const char* failure_reason(cfd_status_t status) {
     const char* reason = cfd_get_last_error();
-    return reason ? reason : cfd_get_error_string(status);
+    return (reason && cfd_get_last_status() == status) ? reason : cfd_get_error_string(status);
 }
 
 // Returns the number of solvers that could run here but failed
