@@ -30,6 +30,10 @@
 static inline ns_solver_t* validation_create_solver(ns_solver_registry_t* registry,
                                                     const char* type, int* unavailable,
                                                     char* msg, size_t msg_size) {
+    /* The last status is sticky, and cfd_solver_create() reports a factory's NULL as
+     * CFD_ERROR_NOMEM only while it is still CFD_SUCCESS: an earlier UNSUPPORTED left
+     * standing would make an allocation failure here read as a skip. */
+    cfd_clear_error();
     ns_solver_t* solver = cfd_solver_create_checked(registry, type);
     *unavailable = 0;
     if (!solver) {
