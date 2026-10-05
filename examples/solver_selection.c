@@ -106,9 +106,15 @@ int run_solver_comparison(void) {
         printf("  %d. %s\n", i + 1, solver_names[i]);
     }
 
-    // The list can name solvers this build does not contain (the GPU ones without
-    // CUDA), so check the registry before treating a missing solver as a failure.
+    // The list can name solvers this build or machine cannot run (the GPU ones without
+    // CUDA). cfd_solver_create_checked() refuses those with CFD_ERROR_UNSUPPORTED before
+    // looking the name up, so only that status is a skip; a name the registry does not
+    // know is a failure, since the list and the registry should agree.
     struct NSSolverRegistry* registry = cfd_registry_create();
+    if (!registry) {
+        printf("  ERROR: could not create a solver registry: out of memory\n");
+        return failures + 1;
+    }
     cfd_registry_register_defaults(registry);
 
     // Test each solver
@@ -119,10 +125,19 @@ int run_solver_comparison(void) {
         printf("Testing solver: %s\n", solver_type);
         print_separator();
 
-        if (!cfd_registry_has(registry, solver_type)) {
-            printf("  SKIPPED: not built into this library\n");
+        cfd_clear_error();
+        struct NSSolver* probe = cfd_solver_create_checked(registry, solver_type);
+        if (!probe) {
+            cfd_status_t status = cfd_get_last_status();
+            if (status == CFD_ERROR_UNSUPPORTED) {
+                printf("  SKIPPED: %s\n", failure_reason(status));
+            } else {
+                printf("  ERROR: solver not created: %s\n", failure_reason(status));
+                failures++;
+            }
             continue;
         }
+        solver_destroy(probe);
 
         // Create simulation with this solver. A backend this build or CPU lacks
         // refuses at init with CFD_ERROR_UNSUPPORTED; anything else is a failure.

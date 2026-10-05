@@ -107,9 +107,11 @@ static void print_header(const char* title) {
 }
 
 // Create a simulation for `solver`. Returns NULL with *unavailable = 1 when this build
-// or machine lacks the solver's backend: the name is not registered (a GPU solver
-// without CUDA), or its init refuses with CFD_ERROR_UNSUPPORTED (an AVX2 solver without
-// AVX2). NULL with *unavailable = 0 is a failure, already reported on stderr.
+// or machine lacks the solver's backend: cfd_solver_create_checked() refuses it with
+// CFD_ERROR_UNSUPPORTED before looking the name up (a GPU solver without CUDA), or its
+// init does (an AVX2 solver without AVX2). NULL with *unavailable = 0 is a failure,
+// already reported on stderr -- an unregistered name included: that is a misspelled or
+// removed solver, not a missing backend.
 static simulation_data* create_sim(const char* solver, size_t nx, size_t ny, int* unavailable) {
     *unavailable = 0;
     ns_solver_registry_t* registry = cfd_registry_create();
@@ -118,10 +120,18 @@ static simulation_data* create_sim(const char* solver, size_t nx, size_t ny, int
         return NULL;
     }
     cfd_registry_register_defaults(registry);
-    int registered = cfd_registry_has(registry, solver);
+    cfd_clear_error();
+    ns_solver_t* probe = cfd_solver_create_checked(registry, solver);
+    cfd_status_t probe_status = cfd_get_last_status();
+    if (probe) {
+        solver_destroy(probe);
+    }
     cfd_registry_destroy(registry);
-    if (!registered) {
-        *unavailable = 1;
+    if (!probe) {
+        *unavailable = (probe_status == CFD_ERROR_UNSUPPORTED);
+        if (!*unavailable) {
+            fprintf(stderr, "  %s: not created: %s\n", solver, cfd_get_error_string(probe_status));
+        }
         return NULL;
     }
 
