@@ -40,7 +40,12 @@ int main() {
     printf("\nRunning 3D simulation...\n");
 
     for (int step = 0; step < 10; step++) {
-        run_simulation_step(sim);
+        cfd_status_t status = run_simulation_step(sim);
+        if (status != CFD_SUCCESS) {
+            printf("Error: step %d failed: %s\n", step, cfd_get_error_string(status));
+            free_simulation(sim);
+            return 1;
+        }
         simulation_write_outputs(sim, step);
 
         if (step % 5 == 0) {

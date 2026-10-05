@@ -25,15 +25,21 @@ double calculate_max_velocity(const flow_field* field, size_t nx, size_t ny) {
     return max_vel;
 }
 
-// Helper function to run simulation with given parameters
-void run_simulation_case(struct NSSolver* solver, flow_field* field, grid* grid,
-                         ns_solver_params_t* params, int steps) {
+// Helper function to run simulation with given parameters. Returns the status of the
+// first step that fails, or CFD_SUCCESS.
+cfd_status_t run_simulation_case(struct NSSolver* solver, flow_field* field, grid* grid,
+                                 ns_solver_params_t* params, int steps) {
     initialize_flow_field(field, grid);
 
     ns_solver_stats_t stats = ns_solver_stats_default();
     for (int step = 0; step < steps; step++) {
-        solver_step(solver, field, grid, params, &stats);
+        cfd_status_t status = solver_step(solver, field, grid, params, &stats);
+        if (status != CFD_SUCCESS) {
+            fprintf(stderr, "Step %d failed: %s\n", step, cfd_get_error_string(status));
+            return status;
+        }
     }
+    return CFD_SUCCESS;
 }
 
 int main(int argc, char* argv[]) {
@@ -86,11 +92,19 @@ int main(int argc, char* argv[]) {
     printf("   - Source decay rate:  %.3f\n", params_default.source_decay_rate);
     printf("   - Pressure coupling:  %.3f\n", params_default.pressure_coupling);
 
+    int exit_code = 1;
+
     // Initialize solver
-    solver_init(solver, grid, &params_default);
+    cfd_status_t init_status = solver_init(solver, grid, &params_default);
+    if (init_status != CFD_SUCCESS) {
+        fprintf(stderr, "Solver init failed: %s\n", cfd_get_error_string(init_status));
+        goto cleanup;
+    }
 
     // Run simulation
-    run_simulation_case(solver, field, grid, &params_default, 10);
+    if (run_simulation_case(solver, field, grid, &params_default, 10) != CFD_SUCCESS) {
+        goto cleanup;
+    }
 
     // Save default case
     write_vtk_output("..\\..\\artifacts\\output\\default_source_terms.vtk", "u_velocity", field->u,
@@ -113,7 +127,9 @@ int main(int argc, char* argv[]) {
     printf("   - Pressure coupling:  %.3f (stronger)\n", params_high_energy.pressure_coupling);
 
     // Run with high energy parameters
-    run_simulation_case(solver, field, grid, &params_high_energy, 10);
+    if (run_simulation_case(solver, field, grid, &params_high_energy, 10) != CFD_SUCCESS) {
+        goto cleanup;
+    }
 
     // Save high energy case
     write_vtk_output("..\\..\\artifacts\\output\\high_energy_source_terms.vtk", "u_velocity",
@@ -138,7 +154,9 @@ int main(int argc, char* argv[]) {
     printf("   - Pressure coupling:  %.3f (weaker)\n", params_low_energy.pressure_coupling);
 
     // Run with low energy parameters
-    run_simulation_case(solver, field, grid, &params_low_energy, 10);
+    if (run_simulation_case(solver, field, grid, &params_low_energy, 10) != CFD_SUCCESS) {
+        goto cleanup;
+    }
 
     // Save low energy case
     write_vtk_output("..\\..\\artifacts\\output\\low_energy_source_terms.vtk", "u_velocity",
@@ -162,7 +180,9 @@ int main(int argc, char* argv[]) {
     printf("   - Pressure coupling:  %.3f (medium)\n", params_asymmetric.pressure_coupling);
 
     // Run with asymmetric parameters
-    run_simulation_case(solver, field, grid, &params_asymmetric, 10);
+    if (run_simulation_case(solver, field, grid, &params_asymmetric, 10) != CFD_SUCCESS) {
+        goto cleanup;
+    }
 
     // Save asymmetric case
     write_vtk_output("..\\..\\artifacts\\output\\asymmetric_source_terms.vtk", "u_velocity",
@@ -180,7 +200,9 @@ int main(int argc, char* argv[]) {
                                    &params_asymmetric};
 
     for (int case_idx = 0; case_idx < 4; case_idx++) {
-        run_simulation_case(solver, field, grid, all_params[case_idx], 5);
+        if (run_simulation_case(solver, field, grid, all_params[case_idx], 5) != CFD_SUCCESS) {
+            goto cleanup;
+        }
         max_velocities[case_idx] = calculate_max_velocity(field, nx, ny);
 
         printf("%s case: Max velocity = %.4f m/s\n", case_names[case_idx],
@@ -207,10 +229,12 @@ int main(int argc, char* argv[]) {
 
     printf("All output files saved to ..\\..\\artifacts\\output\\\n");
     printf("Use visualization tools to compare the different cases.\n");
+    exit_code = 0;
 
-    // Clean up
+cleanup:
     solver_destroy(solver);
     flow_field_destroy(field);
     grid_destroy(grid);
     cfd_registry_destroy(registry);
+    return exit_code;
 }

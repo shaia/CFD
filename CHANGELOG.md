@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Examples report failures and exit nonzero.** `custom_source_terms`, `minimal_example`,
+  `minimal_example_3d`, `runtime_comparison`, `solver_selection` and `steady_flow_multigrid`
+  discarded `solver_init` / `solver_step` / `run_simulation_step` statuses, so a solver that
+  stopped working still printed results and exited 0. They now check every status, skip a
+  solver whose backend this build or machine lacks, and exit 1 on anything else.
+  `solver_selection` checks `cfd_backend_is_available()` before switching to the AVX2 solver,
+  since a solver switched in without its backend fails only at its first step, and creates
+  the directory for its direct-API VTK file, which it wrote into a missing `output/` while
+  reporting success; `runtime_comparison` prints `n/a` for a missing backend instead of
+  timing an absent simulation.
+
 ## [0.4.0] - 2026-10-04
 
 The turbulence release. RANS k-ε and Spalart-Allmaras models with wall functions, validated

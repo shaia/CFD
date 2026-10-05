@@ -74,6 +74,9 @@ typedef struct {
     double max_velocity;
     double max_pressure;
     int gpu_available;
+    int simd_ran;  /* 0 when the SIMD solver's backend is missing here */
+    int gpu_ran;   /* 0 when the GPU solver's backend is missing here */
+    int failed;    /* a solver that could run here failed */
 } benchmark_result;
 
 // High-resolution timer
@@ -103,6 +106,76 @@ static void print_header(const char* title) {
     print_separator();
 }
 
+// Create a simulation for `solver`. Returns NULL with *unavailable = 1 when this build
+// or machine lacks the solver's backend: the name is not registered (a GPU solver
+// without CUDA), or its init refuses with CFD_ERROR_UNSUPPORTED (an AVX2 solver without
+// AVX2). NULL with *unavailable = 0 is a failure, already reported on stderr.
+static simulation_data* create_sim(const char* solver, size_t nx, size_t ny, int* unavailable) {
+    *unavailable = 0;
+    ns_solver_registry_t* registry = cfd_registry_create();
+    if (!registry) {
+        fprintf(stderr, "  %s: out of memory\n", solver);
+        return NULL;
+    }
+    cfd_registry_register_defaults(registry);
+    int registered = cfd_registry_has(registry, solver);
+    cfd_registry_destroy(registry);
+    if (!registered) {
+        *unavailable = 1;
+        return NULL;
+    }
+
+    cfd_clear_error();
+    simulation_data* sim = init_simulation_with_solver(nx, ny, 1, 0.0, 2.0, 0.0, 1.0, 0.0, 0.0, solver);
+    if (!sim) {
+        cfd_status_t status = cfd_get_last_status();
+        *unavailable = (status == CFD_ERROR_UNSUPPORTED);
+        if (!*unavailable) {
+            fprintf(stderr, "  %s: init failed: %s\n", solver, cfd_get_error_string(status));
+        }
+        return NULL;
+    }
+    sim->params.dt = 0.005; /* the step this example has always run at */
+    return sim;
+}
+
+// Time `iterations` steps of `solver`, after WARMUP_STEPS on a separate simulation,
+// averaged over REPEAT_COUNT fresh simulations. Returns CFD_SUCCESS with *time_ms set,
+// CFD_ERROR_UNSUPPORTED when the backend is missing here (*unavailable = 1), or the
+// status of the failure. max_vel and max_press may be NULL.
+static cfd_status_t time_solver(const char* solver, size_t nx, size_t ny, int iterations,
+                                double* time_ms, double* max_vel, double* max_press,
+                                int* unavailable) {
+    double total_time = 0.0;
+    for (int run = -1; run < REPEAT_COUNT; run++) {  // run -1 is the warmup
+        simulation_data* sim = create_sim(solver, nx, ny, unavailable);
+        if (!sim) {
+            return *unavailable ? CFD_ERROR_UNSUPPORTED : CFD_ERROR;
+        }
+        int steps = (run < 0) ? WARMUP_STEPS : iterations;
+        double start = get_time_ms();
+        for (int i = 0; i < steps; i++) {
+            cfd_status_t status = run_simulation_step(sim);
+            if (status != CFD_SUCCESS) {
+                fprintf(stderr, "  %s: step %d failed: %s\n", solver, i,
+                        cfd_get_error_string(status));
+                free_simulation(sim);
+                return status;
+            }
+        }
+        double end = get_time_ms();
+        if (run >= 0) {
+            total_time += (end - start);
+            const ns_solver_stats_t* stats = simulation_get_stats(sim);
+            if (stats && max_vel) *max_vel = stats->max_velocity;
+            if (stats && max_press) *max_press = stats->max_pressure;
+        }
+        free_simulation(sim);
+    }
+    *time_ms = total_time / REPEAT_COUNT;
+    return CFD_SUCCESS;
+}
+
 // Run benchmark for a specific configuration
 static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, const char* simd_solver,
                                       const char* gpu_solver, const char* name) {
@@ -115,158 +188,104 @@ static benchmark_result run_benchmark(size_t nx, size_t ny, int iterations, cons
     result.solver_name = name;
     result.gpu_available = gpu_is_available();
 
-    double xmin = 0.0, xmax = 2.0;
-    double ymin = 0.0, ymax = 1.0;
-
-    // Benchmark SIMD solver
-    {
-        simulation_data* sim =
-            init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, simd_solver);
-        if (!sim) {
-            fprintf(stderr, "Failed to create SIMD simulation\n");
-            return result;
-        }
-        sim->params.dt = 0.005; /* the step this example has always run at */
-
-        // Warmup
-        for (int i = 0; i < WARMUP_STEPS; i++) {
-            run_simulation_step(sim);
-        }
-
-        // Reset for actual benchmark
-        free_simulation(sim);
-        sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, simd_solver);
-        if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
-
-        // Timed run (average over repeats)
-        double total_time = 0.0;
-        for (int r = 0; r < REPEAT_COUNT; r++) {
-            // Reset simulation
-            free_simulation(sim);
-            sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, simd_solver);
-            if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
-
-            double start = get_time_ms();
-            for (int i = 0; i < iterations; i++) {
-                run_simulation_step(sim);
-            }
-            double end = get_time_ms();
-            total_time += (end - start);
-        }
-        result.simd_time_ms = total_time / REPEAT_COUNT;
-
-        // Get final stats
-        const ns_solver_stats_t* stats = simulation_get_stats(sim);
-        if (stats) {
-            result.max_velocity = stats->max_velocity;
-            result.max_pressure = stats->max_pressure;
-        }
-
-        free_simulation(sim);
+    int unavailable = 0;
+    cfd_status_t status = time_solver(simd_solver, nx, ny, iterations, &result.simd_time_ms,
+                                      &result.max_velocity, &result.max_pressure, &unavailable);
+    result.simd_ran = (status == CFD_SUCCESS);
+    if (status != CFD_SUCCESS && !unavailable) {
+        result.failed = 1;
     }
 
-    // Benchmark GPU solver
-    {
-        simulation_data* sim =
-            init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, gpu_solver);
-        if (!sim) {
-            fprintf(stderr, "Failed to create GPU simulation\n");
-            return result;
-        }
-        sim->params.dt = 0.005; /* the step this example has always run at */
-
-        // Warmup
-        for (int i = 0; i < WARMUP_STEPS; i++) {
-            run_simulation_step(sim);
-        }
-
-        // Reset for actual benchmark
-        free_simulation(sim);
-        sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, gpu_solver);
-        if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
-
-        // Timed run (average over repeats)
-        double total_time = 0.0;
-        for (int r = 0; r < REPEAT_COUNT; r++) {
-            // Reset simulation
-            free_simulation(sim);
-            sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, gpu_solver);
-            if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
-
-            double start = get_time_ms();
-            for (int i = 0; i < iterations; i++) {
-                run_simulation_step(sim);
-            }
-            double end = get_time_ms();
-            total_time += (end - start);
-        }
-        result.gpu_time_ms = total_time / REPEAT_COUNT;
-
-        free_simulation(sim);
+    status = time_solver(gpu_solver, nx, ny, iterations, &result.gpu_time_ms, NULL, NULL,
+                         &unavailable);
+    result.gpu_ran = (status == CFD_SUCCESS);
+    if (status != CFD_SUCCESS && !unavailable) {
+        result.failed = 1;
     }
 
-    // Calculate speedup (positive = GPU faster, negative = SIMD faster)
-    if (result.gpu_time_ms > 0) {
+    // Speedup only means something when both ran (above 1 = GPU faster)
+    if (result.simd_ran && result.gpu_ran && result.gpu_time_ms > 0) {
         result.speedup = result.simd_time_ms / result.gpu_time_ms;
     }
 
     return result;
 }
 
-// Print single result
-static void print_result(const benchmark_result* r) {
-    const char* winner = (r->speedup >= 1.0) ? "GPU" : "SIMD";
-    double speedup_display = (r->speedup >= 1.0) ? r->speedup : (1.0 / r->speedup);
-
-    printf("| %4zux%-4zu | %4d | %-18s | %10.2f | %10.2f | %5.2fx %-4s |\n", r->nx, r->ny,
-           r->iterations, r->solver_name, r->simd_time_ms, r->gpu_time_ms, speedup_display, winner);
+// Print one timing cell: the time, or n/a when that solver's backend is missing here
+static void print_time_cell(int ran, double time_ms) {
+    if (ran) {
+        printf(" %10.2f |", time_ms);
+    } else {
+        printf(" %10s |", "n/a");
+    }
 }
 
-// Test 1: grid size scaling
-static void test_grid_size_scaling(void) {
+// Print single result
+static void print_result(const benchmark_result* r) {
+    printf("| %4zux%-4zu | %4d | %-18s |", r->nx, r->ny, r->iterations, r->solver_name);
+    print_time_cell(r->simd_ran, r->simd_time_ms);
+    print_time_cell(r->gpu_ran, r->gpu_time_ms);
+    if (r->simd_ran && r->gpu_ran) {
+        const char* winner = (r->speedup >= 1.0) ? "GPU" : "SIMD";
+        double speedup_display = (r->speedup >= 1.0) ? r->speedup : (1.0 / r->speedup);
+        printf(" %5.2fx %-4s |\n", speedup_display, winner);
+    } else {
+        printf(" %-11s |\n", "n/a");
+    }
+}
+
+// Test 1: grid size scaling. Returns the number of failed benchmarks.
+static int test_grid_size_scaling(void) {
     print_header("TEST 1: grid Size Scaling (100 iterations)");
     printf("| grid Size | Iter | NSSolver             | SIMD (ms)  | GPU (ms)   | Speedup     |\n");
     print_separator();
 
+    int failures = 0;
     for (size_t pair = 0; pair < NUM_SOLVER_PAIRS; pair++) {
         for (size_t g = 0; g < NUM_GRID_SIZES; g++) {
             benchmark_result result = run_benchmark(
                 GRID_SIZES[g][0], GRID_SIZES[g][1], 100, SOLVER_PAIRS[pair].simd_solver,
                 SOLVER_PAIRS[pair].gpu_solver, SOLVER_PAIRS[pair].name);
             print_result(&result);
+            failures += result.failed;
         }
         if (pair < NUM_SOLVER_PAIRS - 1) {
             print_separator();
         }
     }
+    return failures;
 }
 
-// Test 2: Iteration count scaling
-static void test_iteration_scaling(void) {
+// Test 2: Iteration count scaling. Returns the number of failed benchmarks.
+static int test_iteration_scaling(void) {
     print_header("TEST 2: Iteration Count Scaling (200x100 grid)");
     printf("| grid Size | Iter | NSSolver             | SIMD (ms)  | GPU (ms)   | Speedup     |\n");
     print_separator();
 
     size_t nx = 200, ny = 100;
 
+    int failures = 0;
     for (size_t pair = 0; pair < NUM_SOLVER_PAIRS; pair++) {
         for (size_t i = 0; i < NUM_ITERATION_COUNTS; i++) {
             benchmark_result result =
                 run_benchmark(nx, ny, ITERATION_COUNTS[i], SOLVER_PAIRS[pair].simd_solver,
                               SOLVER_PAIRS[pair].gpu_solver, SOLVER_PAIRS[pair].name);
             print_result(&result);
+            failures += result.failed;
         }
         if (pair < NUM_SOLVER_PAIRS - 1) {
             print_separator();
         }
     }
+    return failures;
 }
 
-// Test 3: Find GPU crossover point
-static void test_gpu_crossover(void) {
+// Test 3: Find GPU crossover point. Returns the number of failed benchmarks.
+static int test_gpu_crossover(void) {
     print_header("TEST 3: GPU Crossover Analysis");
     printf("Finding the grid size where GPU becomes faster than SIMD...\n\n");
 
+    int failures = 0;
     for (size_t pair = 0; pair < NUM_SOLVER_PAIRS; pair++) {
         printf("NSSolver: %s\n", SOLVER_PAIRS[pair].name);
         printf("| grid Size  | Points    | SIMD (ms) | GPU (ms)  | Winner | Speedup |\n");
@@ -284,6 +303,15 @@ static void test_gpu_crossover(void) {
             benchmark_result result = run_benchmark(
                 test_sizes[t][0], test_sizes[t][1], 100, SOLVER_PAIRS[pair].simd_solver,
                 SOLVER_PAIRS[pair].gpu_solver, SOLVER_PAIRS[pair].name);
+            failures += result.failed;
+
+            if (!(result.simd_ran && result.gpu_ran)) {
+                printf("| %4zux%-5zu | %9zu | %9s | %9s | %-6s | %-9s |\n", test_sizes[t][0],
+                       test_sizes[t][1], test_sizes[t][0] * test_sizes[t][1],
+                       result.simd_ran ? "ran" : "n/a", result.gpu_ran ? "ran" : "n/a", "n/a",
+                       "n/a");
+                continue;
+            }
 
             const char* winner = (result.speedup >= 1.0) ? "GPU" : "SIMD";
             double speedup = (result.speedup >= 1.0) ? result.speedup : (1.0 / result.speedup);
@@ -308,10 +336,11 @@ static void test_gpu_crossover(void) {
         }
         printf("\n");
     }
+    return failures;
 }
 
-// Test 4: All solvers comparison
-static void test_all_solvers(void) {
+// Test 4: All solvers comparison. Returns the number of solvers that failed.
+static int test_all_solvers(void) {
     print_header("TEST 4: All Solvers Comparison (200x100 grid, 100 iterations)");
 
     const char* all_solvers[] = {
@@ -323,44 +352,24 @@ static void test_all_solvers(void) {
 
     size_t nx = 200, ny = 100;
     int iterations = 100;
-    double xmin = 0.0, xmax = 2.0;
-    double ymin = 0.0, ymax = 1.0;
 
     printf("| NSSolver                       | Time (ms) | Max Vel | Max Press | Cells/sec   |\n");
     print_separator();
 
     double best_time = 1e9;
     const char* best_solver = NULL;
+    int failures = 0;
 
     for (size_t s = 0; s < num_solvers; s++) {
-        simulation_data* sim =
-            init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, all_solvers[s]);
-        if (!sim) {
+        double time_ms = 0.0, max_vel = 0.0, max_press = 0.0;
+        int unavailable = 0;
+        cfd_status_t status = time_solver(all_solvers[s], nx, ny, iterations, &time_ms, &max_vel,
+                                          &max_press, &unavailable);
+        if (status != CFD_SUCCESS) {
+            printf("| %-28s | %-9s |\n", all_solvers[s], unavailable ? "n/a" : "FAILED");
+            failures += !unavailable;
             continue;
         }
-        sim->params.dt = 0.005; /* the step this example has always run at */
-
-        // Warmup
-        for (int i = 0; i < WARMUP_STEPS; i++) {
-            run_simulation_step(sim);
-        }
-
-        // Reset
-        free_simulation(sim);
-        sim = init_simulation_with_solver(nx, ny, 1, xmin, xmax, ymin, ymax, 0.0, 0.0, all_solvers[s]);
-        if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
-
-        // Timed run
-        double start = get_time_ms();
-        for (int i = 0; i < iterations; i++) {
-            run_simulation_step(sim);
-        }
-        double end = get_time_ms();
-        double time_ms = end - start;
-
-        const ns_solver_stats_t* stats = simulation_get_stats(sim);
-        double max_vel = stats ? stats->max_velocity : 0.0;
-        double max_press = stats ? stats->max_pressure : 0.0;
 
         double cells_per_sec = (double)(nx * ny * iterations) / (time_ms / 1000.0);
 
@@ -371,16 +380,17 @@ static void test_all_solvers(void) {
             best_time = time_ms;
             best_solver = all_solvers[s];
         }
-
-        free_simulation(sim);
     }
 
     print_separator();
-    printf("Fastest solver: %s (%.2f ms)\n", best_solver, best_time);
+    if (best_solver) {
+        printf("Fastest solver: %s (%.2f ms)\n", best_solver, best_time);
+    }
+    return failures;
 }
 
-// Test 5: Large grid performance
-static void test_large_grid(void) {
+// Test 5: Large grid performance. Returns the number of failed benchmarks.
+static int test_large_grid(void) {
     print_header("TEST 5: Large grid Performance");
 
     // Reduced sizes for faster testing
@@ -394,12 +404,20 @@ static void test_large_grid(void) {
     printf("| grid Size  | Points    | SIMD (ms) | GPU (ms)  | Winner | Throughput  |\n");
     printf("|------------|-----------|-----------|-----------|--------|-------------|\n");
 
+    int failures = 0;
     for (size_t i = 0; i < num_sizes; i++) {
         size_t nx = large_sizes[i][0];
         size_t ny = large_sizes[i][1];
 
         benchmark_result result = run_benchmark(nx, ny, 50, NS_SOLVER_TYPE_PROJECTION_OPTIMIZED,
                                                 NS_SOLVER_TYPE_PROJECTION_GPU, "Projection");
+        failures += result.failed;
+
+        if (!(result.simd_ran && result.gpu_ran)) {
+            printf("| %4zux%-5zu | %9zu | %9s | %9s | %-6s | %-11s |\n", nx, ny, nx * ny,
+                   result.simd_ran ? "ran" : "n/a", result.gpu_ran ? "ran" : "n/a", "n/a", "n/a");
+            continue;
+        }
 
         const char* winner = (result.speedup >= 1.0) ? "GPU" : "SIMD";
         double best_time = (result.speedup >= 1.0) ? result.gpu_time_ms : result.simd_time_ms;
@@ -408,6 +426,7 @@ static void test_large_grid(void) {
         printf("| %4zux%-5zu | %9zu | %9.2f | %9.2f | %-6s | %8.2e |\n", nx, ny, nx * ny,
                result.simd_time_ms, result.gpu_time_ms, winner, throughput);
     }
+    return failures;
 }
 
 // Print system info
@@ -494,11 +513,11 @@ int main(int argc, char** argv) {
     print_system_info();
 
     // Run tests
-    test_grid_size_scaling();
-    test_iteration_scaling();
-    test_gpu_crossover();
-    test_all_solvers();
-    test_large_grid();
+    int failures = test_grid_size_scaling();
+    failures += test_iteration_scaling();
+    failures += test_gpu_crossover();
+    failures += test_all_solvers();
+    failures += test_large_grid();
 
     // Summary
     print_header("SUMMARY");
@@ -518,6 +537,11 @@ int main(int argc, char** argv) {
     // write_results_csv();
 
     printf("\n==========================================================================\n");
+    if (failures > 0) {
+        printf("        Benchmarks FAILED: %d solver run(s) failed; see stderr\n", failures);
+        printf("==========================================================================\n");
+        return 1;
+    }
     printf("                         Benchmarks Complete\n");
     printf("==========================================================================\n");
 
