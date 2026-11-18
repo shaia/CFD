@@ -81,10 +81,21 @@ void print_stats(const ns_solver_stats_t* stats) {
     printf("  Elapsed time: %.2f ms\n", stats->elapsed_time_ms);
 }
 
-void run_solver_comparison(void) {
+// The library's message for a failure, falling back to the status name. The stored
+// message is used only when it belongs to this status: a failure that sets none would
+// otherwise be reported with an earlier, unrelated one.
+static const char* failure_reason(cfd_status_t status) {
+    const char* reason = cfd_get_last_error();
+    return (reason && cfd_get_last_status() == status) ? reason : cfd_get_error_string(status);
+}
+
+// Returns the number of solvers that could run here but failed
+int run_solver_comparison(void) {
     print_separator();
     printf("SOLVER COMPARISON TEST\n");
     print_separator();
+
+    int failures = 0;
 
     // List available solvers
     const char* solver_names[10];
@@ -95,6 +106,17 @@ void run_solver_comparison(void) {
         printf("  %d. %s\n", i + 1, solver_names[i]);
     }
 
+    // The list can name solvers this build or machine cannot run (the GPU ones without
+    // CUDA). cfd_solver_create_checked() refuses those with CFD_ERROR_UNSUPPORTED before
+    // looking the name up, so only that status is a skip; a name the registry does not
+    // know is a failure, since the list and the registry should agree.
+    struct NSSolverRegistry* registry = cfd_registry_create();
+    if (!registry) {
+        printf("  ERROR: could not create a solver registry: out of memory\n");
+        return failures + 1;
+    }
+    cfd_registry_register_defaults(registry);
+
     // Test each solver
     for (int i = 0; i < num_solvers; i++) {
         const char* solver_type = solver_names[i];
@@ -103,11 +125,33 @@ void run_solver_comparison(void) {
         printf("Testing solver: %s\n", solver_type);
         print_separator();
 
-        // Create simulation with this solver
+        cfd_clear_error();
+        struct NSSolver* probe = cfd_solver_create_checked(registry, solver_type);
+        if (!probe) {
+            cfd_status_t status = cfd_get_last_status();
+            if (status == CFD_ERROR_UNSUPPORTED) {
+                printf("  SKIPPED: %s\n", failure_reason(status));
+            } else {
+                printf("  ERROR: solver not created: %s\n", failure_reason(status));
+                failures++;
+            }
+            continue;
+        }
+        solver_destroy(probe);
+
+        // Create simulation with this solver. A backend this build or CPU lacks
+        // refuses at init with CFD_ERROR_UNSUPPORTED; anything else is a failure.
+        cfd_clear_error();
         simulation_data* sim =
             init_simulation_with_solver(NX, NY, 1, XMIN, XMAX, YMIN, YMAX, 0.0, 0.0, solver_type);
         if (!sim) {
-            printf("  ERROR: Failed to create simulation\n");
+            cfd_status_t status = cfd_get_last_status();
+            if (status == CFD_ERROR_UNSUPPORTED) {
+                printf("  SKIPPED: %s\n", failure_reason(status));
+            } else {
+                printf("  ERROR: Failed to create simulation: %s\n", failure_reason(status));
+                failures++;
+            }
             continue;
         }
         sim->params.dt = 0.005; /* the step this example has always run at */
@@ -127,22 +171,34 @@ void run_solver_comparison(void) {
 
         // Run simulation
         printf("\nRunning %d steps...\n", NUM_STEPS);
+        cfd_status_t status = CFD_SUCCESS;
         for (int step = 0; step <= NUM_STEPS; step++) {
-            run_simulation_step(sim);
+            status = run_simulation_step(sim);
+            if (status != CFD_SUCCESS) {
+                printf("  ERROR: step %d failed: %s\n", step, failure_reason(status));
+                failures++;
+                break;
+            }
             simulation_write_outputs(sim, step);
         }
 
-        // Print final statistics
-        printf("\nFinal statistics:\n");
-        print_stats(simulation_get_stats(sim));
-        printf("\nOutput written automatically\n");
+        if (status == CFD_SUCCESS) {
+            // Print final statistics
+            printf("\nFinal statistics:\n");
+            print_stats(simulation_get_stats(sim));
+            printf("\nOutput written automatically\n");
+        }
 
         // Cleanup
         free_simulation(sim);
     }
+
+    cfd_registry_destroy(registry);
+    return failures;
 }
 
-void run_dynamic_solver_switch(void) {
+// Returns the number of failures
+int run_dynamic_solver_switch(void) {
     print_separator();
     printf("DYNAMIC SOLVER SWITCHING\n");
     print_separator();
@@ -150,7 +206,12 @@ void run_dynamic_solver_switch(void) {
     // Start with default solver (explicit_euler)
     printf("\n1. Creating simulation with default solver...\n");
     simulation_data* sim = init_simulation(NX, NY, 1, XMIN, XMAX, YMIN, YMAX, 0.0, 0.0);
-    if (sim) sim->params.dt = 0.005; /* the step this example has always run at */
+    if (!sim) {
+        printf("  ERROR: Failed to create simulation: %s\n",
+               failure_reason(cfd_get_last_status()));
+        return 1;
+    }
+    sim->params.dt = 0.005; /* the step this example has always run at */
     simulation_set_run_prefix(sim, "dynamic_switch");
     simulation_set_output_dir(sim, "../../artifacts");
 
@@ -161,39 +222,60 @@ void run_dynamic_solver_switch(void) {
     print_solver_info(solver);
 
     int step_counter = 0;
+    int failures = 0;
 
     // Run a few steps
     printf("\nRunning 10 steps with default solver...\n");
     for (int step = 0; step < 10; step++, step_counter++) {
-        run_simulation_step(sim);
+        cfd_status_t status = run_simulation_step(sim);
+        if (status != CFD_SUCCESS) {
+            printf("  ERROR: step %d failed: %s\n", step, failure_reason(status));
+            free_simulation(sim);
+            return 1;
+        }
         simulation_write_outputs(sim, step_counter);
     }
 
-    // Switch to optimized solver
+    // Switch to optimized solver. It needs AVX2 compiled in and supported by the CPU;
+    // check that first, since a solver switched in whose backend is missing fails at
+    // its first step rather than at the switch.
     printf("\n2. Switching to optimized solver...\n");
-    if (simulation_set_solver_by_name(sim, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED) == 0) {
+    if (!cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
+        printf("  SKIPPED: the AVX2 backend is not available in this build or on this CPU\n");
+    } else if (simulation_set_solver_by_name(sim, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED) == 0) {
         solver = simulation_get_solver(sim);
         print_solver_info(solver);
 
         // Run more steps
         printf("\nRunning 10 more steps with optimized solver...\n");
+        cfd_status_t status = CFD_SUCCESS;
         for (int step = 0; step < 10; step++, step_counter++) {
-            run_simulation_step(sim);
+            status = run_simulation_step(sim);
+            if (status != CFD_SUCCESS) {
+                printf("  ERROR: step %d failed: %s\n", step, failure_reason(status));
+                failures++;
+                break;
+            }
             simulation_write_outputs(sim, step_counter);
         }
 
-        printf("\nStatistics after optimized solver:\n");
-        print_stats(simulation_get_stats(sim));
+        if (status == CFD_SUCCESS) {
+            printf("\nStatistics after optimized solver:\n");
+            print_stats(simulation_get_stats(sim));
+        }
     } else {
-        printf("  ERROR: Failed to switch solver\n");
+        printf("  ERROR: Failed to switch solver: %s\n", failure_reason(cfd_get_last_status()));
+        failures++;
     }
 
     printf("\nOutput written automatically at regular intervals\n");
 
     free_simulation(sim);
+    return failures;
 }
 
-void run_direct_solver_usage(void) {
+// Returns the number of failures
+int run_direct_solver_usage(void) {
     print_separator();
     printf("DIRECT SOLVER API USAGE\n");
     print_separator();
@@ -205,9 +287,9 @@ void run_direct_solver_usage(void) {
     printf("\nCreating solver directly via cfd_solver_create()...\n");
     struct NSSolver* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_EXPLICIT_EULER);
     if (!solver) {
-        printf("  ERROR: Failed to create solver\n");
+        printf("  ERROR: Failed to create solver: %s\n", failure_reason(cfd_get_last_status()));
         cfd_registry_destroy(registry);
-        return;
+        return 1;
     }
 
     print_solver_info(solver);
@@ -223,9 +305,16 @@ void run_direct_solver_usage(void) {
     params.max_iter = 1;
     params.dt = 0.005;
 
+    int failures = 0;
+
     // Initialize solver
     cfd_status_t status = solver_init(solver, grid, &params);
     printf("\nSolver init status: %d\n", status);
+    if (status != CFD_SUCCESS) {
+        printf("  ERROR: Solver init failed: %s\n", failure_reason(status));
+        failures++;
+        goto cleanup;
+    }
 
     // Run steps directly
     printf("\nRunning 20 steps using direct solver API...\n");
@@ -233,6 +322,11 @@ void run_direct_solver_usage(void) {
 
     for (int step = 0; step < 20; step++) {
         status = solver_step(solver, field, grid, &params, &stats);
+        if (status != CFD_SUCCESS) {
+            printf("  ERROR: step %d failed: %s\n", step, failure_reason(status));
+            failures++;
+            goto cleanup;
+        }
 
         if (step % 5 == 0) {
             printf("  Step %d: max_vel=%.4f, max_p=%.4f, time=%.2fms\n", step, stats.max_velocity,
@@ -240,17 +334,27 @@ void run_direct_solver_usage(void) {
         }
     }
 
-    // Write output using VTK functions directly
+    // Write output using VTK functions directly. make_output_path() only composes
+    // "{base}/output/<file>", so create the directory first: write_vtk_flow_field()
+    // returns no status to check.
+    char output_dir[512];
+    make_output_path(output_dir, sizeof(output_dir), "");
+    if (!ensure_directory_exists(output_dir)) {
+        printf("  ERROR: could not create output directory %s\n", output_dir);
+        failures++;
+        goto cleanup;
+    }
     char output_path[512];
     make_output_path(output_path, sizeof(output_path), "direct_api_test.vtk");
     write_vtk_flow_field(output_path, field, NX, NY, 1, XMIN, XMAX, YMIN, YMAX, 0.0, 0.0);
     printf("\nOutput written to: %s\n", output_path);
 
-    // Cleanup
+cleanup:
     solver_destroy(solver);
     flow_field_destroy(field);
     grid_destroy(grid);
     cfd_registry_destroy(registry);
+    return failures;
 }
 
 int main(int argc, char** argv) {
@@ -262,11 +366,16 @@ int main(int argc, char** argv) {
 
 
     // Run demonstrations
-    run_solver_comparison();
-    run_dynamic_solver_switch();
-    run_direct_solver_usage();
+    int failures = run_solver_comparison();
+    failures += run_dynamic_solver_switch();
+    failures += run_direct_solver_usage();
 
     print_separator();
+    if (failures > 0) {
+        printf("FAILED: %d solver run(s) failed; see the messages above.\n", failures);
+        print_separator();
+        return 1;
+    }
     printf("All tests completed!\n");
     print_separator();
 

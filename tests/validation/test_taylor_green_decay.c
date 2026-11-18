@@ -39,6 +39,7 @@
 #include "cfd/core/indexing.h"
 #include "cfd/core/memory.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "solver_availability.h"
 #include "unity.h"
 
 #include <math.h>
@@ -187,10 +188,9 @@ static tgd_result_t tgd_run(const char* solver_type, size_t n, double t_end) {
     params.source_amplitude_v = 0.0;
 
     cfd_registry_register_defaults(registry);
-    solver = cfd_solver_create(registry, solver_type);
+    solver = validation_create_solver(registry, solver_type, &r.unavailable, r.error_msg,
+                                      sizeof(r.error_msg));
     if (!solver) {
-        r.unavailable = 1;
-        snprintf(r.error_msg, sizeof(r.error_msg), "Solver '%s' not available", solver_type);
         goto cleanup;
     }
     cfd_status_t status = solver_init(solver, g, &params);

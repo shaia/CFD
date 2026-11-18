@@ -221,21 +221,26 @@ for (int i = 0; i < count; i++) {
 }
 ```
 
-**Check backend availability:**
+**Check backend availability before switching:**
 ```c
-if (cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
-    printf("SIMD (AVX2/NEON) available\n");
-} else {
-    printf("SIMD not available - using scalar\n");
+if (!cfd_backend_is_available(NS_SOLVER_BACKEND_SIMD)) {
+    printf("SKIPPED: the AVX2 backend is not available in this build or on this CPU\n");
+} else if (simulation_set_solver_by_name(sim, NS_SOLVER_TYPE_EXPLICIT_EULER_OPTIMIZED) == 0) {
+    // step with the AVX2 solver
 }
 ```
+There is no fallback to a scalar solver: check first, because a solver switched in whose
+backend is missing fails at its first step rather than at the switch.
 
 **Use specific solver:**
 ```c
 simulation_data* sim = init_simulation_with_solver(
-    100, 50, 0.0, 1.0, 0.0, 0.5,
-    "projection_optimized"
+    100, 50, 1, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0,
+    NS_SOLVER_TYPE_PROJECTION_OPTIMIZED
 );
+if (!sim && cfd_get_last_status() == CFD_ERROR_UNSUPPORTED) {
+    // AVX2 not compiled in or not supported by this CPU: skip, do not fail
+}
 ```
 
 **Run:**
@@ -243,6 +248,9 @@ simulation_data* sim = init_simulation_with_solver(
 ./solver_selection
 # Lists solvers, runs with each, compares results
 ```
+
+A solver whose backend this build lacks is reported as `SKIPPED`; any other failure is
+reported, and the example exits 1.
 
 ---
 
@@ -570,20 +578,12 @@ for (int step = 0; step < max_steps; step++) {
 - Grid size scaling
 - Iteration count impact
 
-**Benchmark Configurations:**
-```c
-typedef struct {
-    size_t nx, ny;
-    int iterations;
-} gpu_benchmark_t;
+**Benchmark Configurations:** the AVX2 Explicit Euler and projection solvers against their
+CUDA counterparts on grids from 50x25 to 300x150 (crossover search up to 500x250), at 10, 50
+and 100 iterations, after a short warmup on a separate simulation.
 
-gpu_benchmark_t tests[] = {
-    { 50,  50, 100},    // Small - expect CPU faster
-    {100, 100, 100},    // Medium - crossover region
-    {200, 200, 100},    // Large - GPU starts winning
-    {500, 500, 100},    // Very large - GPU dominates
-};
-```
+A solver whose backend this build or machine lacks (no AVX2, no CUDA, no GPU) shows `n/a` in
+its column; any other failure is reported on stderr and the example exits 1.
 
 **Run:**
 ```bash

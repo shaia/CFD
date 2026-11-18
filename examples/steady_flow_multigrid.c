@@ -99,7 +99,10 @@ static double time_per_step(const char* solver, size_t n, double re, double dt,
     /* Let the flow start first: the opening steps are not typical of a run */
     for (int k = 0; k < 50; k++) {
         apply_cavity_bc(sim->field);
-        run_simulation_step(sim);
+        if (run_simulation_step(sim) != CFD_SUCCESS) {
+            free_simulation(sim);
+            return -1.0;
+        }
     }
     double t0 = wall_seconds();
     for (int k = 0; k < steps; k++) {

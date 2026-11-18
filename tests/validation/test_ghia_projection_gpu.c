@@ -15,16 +15,24 @@ void tearDown(void) {}
 
 static int gpu_available = -1;  /* -1 = not checked, 0 = no, 1 = yes */
 
+/* 1 if the GPU projection solver can be created, 0 if its backend is unavailable.
+ * Any other creation failure fails the calling test rather than reading as "no GPU". */
 static int check_gpu_available(void) {
     if (gpu_available < 0) {
         ns_solver_registry_t* registry = cfd_registry_create();
         cfd_registry_register_defaults(registry);
 
-        ns_solver_t* solver = cfd_solver_create(registry, NS_SOLVER_TYPE_PROJECTION_GPU);
-        gpu_available = (solver != NULL) ? 1 : 0;
-
+        int unavailable = 0;
+        char msg[256];
+        ns_solver_t* solver = validation_create_solver(registry, NS_SOLVER_TYPE_PROJECTION_GPU,
+                                                       &unavailable, msg, sizeof(msg));
+        int created = (solver != NULL);
         if (solver) solver_destroy(solver);
         cfd_registry_destroy(registry);
+        if (!created && !unavailable) {
+            TEST_FAIL_MESSAGE(msg);
+        }
+        gpu_available = created;
     }
     return gpu_available;
 }

@@ -35,6 +35,7 @@
 #include "cfd/core/grid.h"
 #include "cfd/core/indexing.h"
 #include "cfd/solvers/navier_stokes_solver.h"
+#include "solver_availability.h"
 #include "steady_state.h"
 #include "unity.h"
 
@@ -192,13 +193,19 @@ static void run_dvd_benchmark(const char* solver_name, double Ra, size_t n,
     TEST_ASSERT_NOT_NULL(registry);
     cfd_registry_register_defaults(registry);
 
-    ns_solver_t* solver = cfd_solver_create(registry, solver_name);
+    int unavailable = 0;
+    char create_msg[256];
+    ns_solver_t* solver = validation_create_solver(registry, solver_name, &unavailable,
+                                                   create_msg, sizeof(create_msg));
     if (!solver) {
-        /* Backend not compiled in — skip without failing */
-        printf("\n  [skip] de Vahl Davis: solver '%s' unavailable\n", solver_name);
         cfd_registry_destroy(registry);
         flow_field_destroy(field);
         grid_destroy(g);
+        if (!unavailable) {
+            TEST_FAIL_MESSAGE(create_msg);
+        }
+        /* Backend not compiled in — skip without failing */
+        printf("\n  [skip] de Vahl Davis: solver '%s' unavailable\n", solver_name);
         return;
     }
     cfd_status_t init_status = solver_init(solver, g, &params);

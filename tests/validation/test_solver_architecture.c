@@ -197,10 +197,9 @@ static arch_run_t run_taylor_green(const char* type, int steps, double dt) {
 
     ns_solver_registry_t* registry = cfd_registry_create();
     cfd_registry_register_defaults(registry);
-    ns_solver_t* solver = cfd_solver_create(registry, type);
+    ns_solver_t* solver = validation_create_solver(registry, type, &r.unavailable, r.error_msg,
+                                                   sizeof(r.error_msg));
     if (!solver) {
-        r.unavailable = 1;
-        snprintf(r.error_msg, sizeof(r.error_msg), "Solver '%s' not available", type);
         cfd_registry_destroy(registry);
         return r;
     }
